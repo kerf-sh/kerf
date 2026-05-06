@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" width="1200" height="630" shape-rendering="geometricPrecision">
+  <title>kerf — chat-driven CAD</title>
+
+  <!-- Surface -->
+  <rect width="1200" height="630" fill="#0a0b0d"/>
+
+  <!-- A second, very subtle band so the surface isn't flat -->
+  <rect x="0" y="0" width="1200" height="630" fill="url(#vignette)"/>
+
+  <!-- Tasteful kerf-line accent: a single thin diagonal saw cut spanning the whole canvas,
+       parallel to the mark's own kerf. Same yellow, very thin, low-opacity. -->
+  <line x1="-40" y1="690" x2="1240" y2="-60" stroke="#ffd633" stroke-width="1.5" opacity="0.18"/>
+
+  <!-- LOGOMARK (left side). Mark drawn at scale 14× the favicon viewBox.
+       Centered around (315, 315). Original viewBox is 32 units; scale 14 → 448px tall. -->
+  <g transform="translate(91 91) scale(14)">
+    <!-- Upper-left half -->
+    <path d="M5 5 H24 L5 24 Z" fill="#ffd633"/>
+    <!-- Lower-right half, offset perpendicular to the cut -->
+    <path d="M27 8 V27 H8 Z" fill="#ffd633"/>
+  </g>
+
+  <!-- Vertical hairline rule between mark and wordmark column -->
+  <line x1="600" y1="190" x2="600" y2="440" stroke="#232730" stroke-width="1"/>
+
+  <!-- WORDMARK + TAGLINE (right side) -->
+  <g font-family="Geist, Inter, system-ui, sans-serif" fill="#e2e6ee">
+    <!-- "kerf" wordmark -->
+    <text x="660" y="320"
+          font-size="180"
+          font-weight="600"
+          letter-spacing="-6"
+          fill="#e2e6ee">kerf</text>
+
+    <!-- Tagline -->
+    <text x="664" y="378"
+          font-size="30"
+          font-weight="400"
+          letter-spacing="2"
+          fill="#8a93a6">chat-driven CAD</text>
+
+    <!-- Caret-style accent under the tagline, in mono — gives it that terminal feel -->
+    <text x="664" y="438"
+          font-family="JetBrains Mono, ui-monospace, Menlo, monospace"
+          font-size="18"
+          fill="#ffd633"
+          opacity="0.85">&gt; sketch · cut · refine</text>
+  </g>
+
+  <defs>
+    <radialGradient id="vignette" cx="50%" cy="50%" r="75%">
+      <stop offset="0%"   stop-color="#14171c" stop-opacity="0.6"/>
+      <stop offset="100%" stop-color="#0a0b0d" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+</svg>

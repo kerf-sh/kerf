@@ -1,0 +1,73 @@
+/* =========================================================================
+   Kerf — chat-driven CAD.
+   Brand reference sheet. Not imported by the app; this file documents the
+   tokens and usage rules the canonical design tokens (in src/index.css)
+   are built from. Treat it as the source of truth for the brand.
+
+   ─────────────────────────────────────────────────────────────────────────
+   Mark rationale
+   The Kerf mark is a solid block bisected by a diagonal saw kerf — the
+   lower-right half is offset perpendicular to the cut so the gap (the
+   actual kerf line) is visible. A kerf is the slot a saw blade leaves in
+   material, and the product turns conversation into precise geometric
+   cuts; the mark is the literal thing we're named for. The diagonal
+   carries the implied motion of a stroke, and the parted halves read as
+   "material, post-cut" rather than a generic notch. It survives at 16px
+   because it is two strong shapes plus one bright line, and it works in
+   pure monochrome because the kerf is negative space.
+
+   ─────────────────────────────────────────────────────────────────────────
+   Usage
+   - Primary lockup: yellow mark (#ffd633) on ink (#0a0b0d).
+   - Inverted: ink mark on yellow ground for stickers, packaging, light UI.
+   - Monochrome: use currentColor; the kerf gap inherits the surface tone.
+
+   Clear-space
+   - Maintain a clear-space margin equal to one quarter of the mark's
+     bounding box (5 units in the 32-unit viewBox) on every side.
+
+   Minimum sizes
+   - Digital favicon: 16 px square (already verified — kerf gap ≈ 2 px).
+   - Lockup with wordmark: 20 px tall mark, 18 px wordmark cap-height.
+   - Print: never below 8 mm; the kerf gap blurs at smaller sizes.
+
+   Do
+   - Pair with Inter / Geist 600 at -0.02em tracking for the wordmark.
+   - Let the mark sit on solid ink-950 or ink-900; avoid busy photographic
+     backgrounds without a scrim.
+
+   Don't
+   - Don't recolor the kerf gap. It is the surface showing through.
+   - Don't rotate, shear, outline, or add a drop shadow to the mark.
+   - Don't render the wordmark in any case other than lowercase.
+   - Don't tighten the kerf gap to "clean it up" — the offset is the idea.
+   ========================================================================= */
+
+:root {
+  /* Brand surface */
+  --brand-ink:           #0a0b0d; /* primary surface, equal to --color-ink-950 */
+  --brand-ink-soft:      #0f1115; /* secondary surface */
+
+  /* Brand accent — kerf yellow, the cut-line */
+  --brand-kerf:          #ffd633; /* primary accent, equal to --color-kerf-300 */
+  --brand-kerf-hot:      #f5c518; /* hover / pressed */
+  --brand-kerf-deep:     #6b5100; /* on-light background or text-on-yellow */
+
+  /* Foreground */
+  --brand-fg:            #e2e6ee; /* body text on ink */
+  --brand-fg-muted:      #8a93a6; /* secondary text */
+
+  /* Optional edges — sparingly, for diagrams and selection states */
+  --brand-edge-cyan:     #6bd4ff;
+  --brand-edge-magenta:  #ff6bd4;
+
+  /* Type stack mirrors --font-* tokens in index.css */
+  --brand-font-display:  "Geist", "Inter", system-ui, sans-serif;
+  --brand-font-sans:     "Inter", "Geist", system-ui, sans-serif;
+  --brand-font-mono:     "JetBrains Mono", "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+  /* Geometry constants for the mark — handy if you redraw it elsewhere */
+  --brand-mark-viewbox:  "0 0 32 32";
+  --brand-mark-radius:   6;       /* container corner radius for the favicon plate */
+  --brand-mark-kerf-gap: 3;       /* perpendicular offset of the parted halves */
+}

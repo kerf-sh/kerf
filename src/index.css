@@ -1,0 +1,61 @@
+@import "tailwindcss";
+
+/* Kerf design tokens. Final palette comes from the branding pass. */
+@theme {
+  --font-sans: "Inter", "Geist", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-display: "Geist", "Inter", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+  /* Surfaces */
+  --color-ink-950: #0a0b0d;
+  --color-ink-900: #0f1115;
+  --color-ink-850: #14171c;
+  --color-ink-800: #1a1d24;
+  --color-ink-700: #232730;
+  --color-ink-600: #2d323d;
+  --color-ink-500: #3a4150;
+  --color-ink-400: #5a6275;
+  --color-ink-300: #8a93a6;
+  --color-ink-200: #b8bfcc;
+  --color-ink-100: #e2e6ee;
+  --color-ink-50:  #f4f6fa;
+
+  /* Brand: kerf yellow (cut-line) */
+  --color-kerf-50:  #fffbe6;
+  --color-kerf-100: #fff3a8;
+  --color-kerf-200: #ffe566;
+  --color-kerf-300: #ffd633;
+  --color-kerf-400: #f5c518;
+  --color-kerf-500: #d9a800;
+  --color-kerf-600: #a87f00;
+  --color-kerf-700: #6b5100;
+
+  /* Accents */
+  --color-cyan-edge: #6bd4ff;
+  --color-magenta-edge: #ff6bd4;
+}
+
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-ink-950);
+  color: var(--color-ink-100);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Subtle selection */
+::selection {
+  background: var(--color-kerf-300);
+  color: var(--color-ink-950);
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: var(--color-ink-600); border-radius: 5px; }
+::-webkit-scrollbar-thumb:hover { background: var(--color-ink-500); }
+::-webkit-scrollbar-track { background: transparent; }
