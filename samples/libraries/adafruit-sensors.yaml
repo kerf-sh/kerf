@@ -1,0 +1,140 @@
+# Adafruit Sensors — curated starter library.
+#
+# A small, opinionated set of widely-stocked sensor breakout boards
+# from Adafruit. These are real products with real Adafruit/DigiKey
+# part numbers; URLs were verified against the manufacturer's site at
+# the time of authoring.
+#
+# Pricing/stock are deliberately omitted — the existing distributor
+# sweep refreshes them once the Parts land in the DB. Hand-baking
+# prices here would lock us to a stale snapshot.
+#
+# Apply with:
+#
+#   kerf library-import --manifest samples/libraries/adafruit-sensors.yaml
+#
+# Re-running is idempotent (rows are upserted by name).
+
+publisher_email: "adafruit@kerf.system"
+publisher_name: "Adafruit Industries"
+publisher_url: "https://www.adafruit.com"
+mark_verified: true
+
+library_name: "Adafruit Sensors"
+library_description: |
+  Curated set of Adafruit sensor breakout boards — temperature,
+  humidity, pressure, IMU, and time. Good first picks for hobby
+  projects.
+library_visibility: "public"
+
+parts:
+  - name: "BMP280 Pressure Sensor Breakout"
+    description: |
+      Bosch barometric pressure + temperature sensor on a breakout
+      board with both I2C and SPI interfaces and built-in 3.3V LDO.
+    category: "sensor"
+    manufacturer: "Adafruit / Bosch"
+    mpn: "BMP280"
+    datasheet_url: "https://cdn-shop.adafruit.com/datasheets/BST-BMP280-DS001-11.pdf"
+    visibility: "public"
+    distributors:
+      - name: "adafruit"
+        sku: "2651"
+        url: "https://www.adafruit.com/product/2651"
+      - name: "digikey"
+        sku: "1528-1063-ND"
+        url: "https://www.digikey.com/en/products/detail/adafruit-industries-llc/2651/5774334"
+    metadata:
+      vcc: "3.3V or 5V (onboard LDO)"
+      interface: "I2C / SPI"
+      pressure_range_hpa: "300 to 1100"
+
+  - name: "DHT22 Temperature/Humidity Sensor"
+    description: |
+      AM2302 / DHT22 digital temperature and relative humidity
+      sensor. Single-wire interface; ±0.5 °C accuracy.
+    category: "sensor"
+    manufacturer: "Aosong"
+    mpn: "DHT22"
+    datasheet_url: "https://cdn-shop.adafruit.com/datasheets/Digital+humidity+and+temperature+sensor+AM2302.pdf"
+    visibility: "public"
+    distributors:
+      - name: "adafruit"
+        sku: "385"
+        url: "https://www.adafruit.com/product/385"
+
+  - name: "BME680 Environmental Sensor Breakout"
+    description: |
+      Bosch BME680 — temperature, humidity, pressure and gas
+      (VOC) sensor on a STEMMA QT / Qwiic breakout.
+    category: "sensor"
+    manufacturer: "Adafruit / Bosch"
+    mpn: "BME680"
+    datasheet_url: "https://cdn-shop.adafruit.com/product-files/3660/BME680.pdf"
+    visibility: "public"
+    distributors:
+      - name: "adafruit"
+        sku: "3660"
+        url: "https://www.adafruit.com/product/3660"
+    metadata:
+      interface: "I2C / SPI"
+      includes: "STEMMA QT connector"
+
+  - name: "BNO055 9-DOF Absolute Orientation IMU"
+    description: |
+      Bosch BNO055 9-axis IMU with onboard sensor fusion. Spits
+      out absolute orientation as quaternion / Euler angles over
+      I2C — no DSP wizardry on the host required.
+    category: "sensor"
+    manufacturer: "Adafruit / Bosch"
+    mpn: "BNO055"
+    datasheet_url: "https://cdn-shop.adafruit.com/datasheets/BST_BNO055_DS000_12.pdf"
+    visibility: "public"
+    distributors:
+      - name: "adafruit"
+        sku: "2472"
+        url: "https://www.adafruit.com/product/2472"
+
+  - name: "DS3231 Precision RTC Breakout"
+    description: |
+      Maxim DS3231 temperature-compensated real-time clock with
+      integrated crystal. Holds time across power loss with the
+      onboard CR1220 cell. Drift around ±2 ppm.
+    category: "rtc"
+    manufacturer: "Adafruit / Maxim"
+    mpn: "DS3231"
+    datasheet_url: "https://datasheets.maximintegrated.com/en/ds/DS3231.pdf"
+    visibility: "public"
+    distributors:
+      - name: "adafruit"
+        sku: "3013"
+        url: "https://www.adafruit.com/product/3013"
+
+  - name: "MPU-6050 6-DOF Accel + Gyro Breakout"
+    description: |
+      Classic InvenSense MPU-6050 three-axis accelerometer and
+      three-axis gyroscope on a STEMMA QT breakout. I2C, runs on
+      3.3 or 5 V via the onboard regulator.
+    category: "sensor"
+    manufacturer: "Adafruit / InvenSense"
+    mpn: "MPU-6050"
+    datasheet_url: "https://cdn-shop.adafruit.com/datasheets/MPU-6050_DataSheet_V3+4.pdf"
+    visibility: "public"
+    distributors:
+      - name: "adafruit"
+        sku: "3886"
+        url: "https://www.adafruit.com/product/3886"
+
+  - name: "VL53L0X Time-of-Flight Distance Sensor"
+    description: |
+      ST Microelectronics VL53L0X laser-ranging time-of-flight
+      sensor. Up to ~2 m range, eye-safe Class 1 940 nm laser, I2C.
+    category: "sensor"
+    manufacturer: "Adafruit / STMicro"
+    mpn: "VL53L0X"
+    datasheet_url: "https://www.st.com/resource/en/datasheet/vl53l0x.pdf"
+    visibility: "public"
+    distributors:
+      - name: "adafruit"
+        sku: "3317"
+        url: "https://www.adafruit.com/product/3317"

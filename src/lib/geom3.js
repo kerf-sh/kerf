@@ -45,6 +45,31 @@ export function geom3ToBufferGeometry(geom) {
   return g
 }
 
+// Apply a 4x4 transform (Three.Matrix4) to a part's geom. Accepts a JSCAD
+// Geom3 or a Three.BufferGeometry. Always returns a fresh BufferGeometry
+// owned by the caller — original input is not mutated.
+//
+// Used by the assembly pipeline to bake per-component transforms into the
+// flattened parts list before handing it to the renderer.
+export function applyMatrixToGeom(geom, matrix4) {
+  if (!geom) return null
+  let bg
+  if (geom.isBufferGeometry) {
+    bg = geom.clone()
+  } else {
+    bg = geom3ToBufferGeometry(geom)
+  }
+  if (matrix4 && !matrix4.isIdentity?.()) {
+    bg.applyMatrix4(matrix4)
+    // applyMatrix4 transforms positions and normals, but a non-uniform scale
+    // can leave normals non-unit. Recompute if there's clearly a scale that
+    // would skew them — cheap and safe for most assembly uses.
+    bg.computeBoundingBox()
+    bg.computeBoundingSphere()
+  }
+  return bg
+}
+
 // Compute a combined bounding box for an array of {id, geometry} entries.
 export function combinedBoundingBox(entries) {
   const box = new THREE.Box3()

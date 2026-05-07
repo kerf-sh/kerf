@@ -1,12 +1,13 @@
 import { forwardRef, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import {
   Send, Star, MessageSquarePlus, MessageSquare, Trash2, Plus,
-  Code as CodeIcon, ChevronDown, ChevronRight, Check, X, Sparkles,
+  Code as CodeIcon, ChevronDown, ChevronRight, ChevronLeft, Check, X, Sparkles,
   FolderTree, FileText, FilePen, Pencil, FilePlus, FileX, Search,
   Box, ShieldCheck, Wrench,
 } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import rehypeHighlight from 'rehype-highlight'
 import PartChip from './PartChip.jsx'
 import { api } from '../lib/api.js'
 import { useWorkspace } from '../store/workspace.js'
@@ -304,7 +305,11 @@ const MD_COMPONENTS = {
 function Markdown({ text }) {
   if (!text) return null
   return (
-    <ReactMarkdown remarkPlugins={[remarkGfm]} components={MD_COMPONENTS}>
+    <ReactMarkdown
+      remarkPlugins={[remarkGfm]}
+      rehypePlugins={[[rehypeHighlight, { detect: true, ignoreMissing: true }]]}
+      components={MD_COMPONENTS}
+    >
       {text}
     </ReactMarkdown>
   )
@@ -669,6 +674,8 @@ const ChatInput = forwardRef(function ChatInput({
 
 // ---------- root ----------
 
+const COLLAPSE_STORAGE_KEY = 'kerf:chat:collapsed'
+
 const ChatPanel = forwardRef(function ChatPanel({
   threads, currentThreadId, messages, pendingPartRefs,
   onSelectThread, onCreateThread, onToggleStar, onDeleteThread,
@@ -678,6 +685,19 @@ const ChatPanel = forwardRef(function ChatPanel({
   const [models, setModels] = useState([])
   const setThreadModel = useWorkspace((s) => s.setThreadModel)
   const [pendingModel, setPendingModel] = useState(null)
+
+  // Collapsed state, persisted to localStorage so the user's choice survives
+  // reloads. Read lazily on mount so SSR-style first paint stays predictable.
+  const [collapsed, setCollapsed] = useState(() => {
+    if (typeof window === 'undefined') return false
+    try { return window.localStorage.getItem(COLLAPSE_STORAGE_KEY) === '1' }
+    catch { return false }
+  })
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    try { window.localStorage.setItem(COLLAPSE_STORAGE_KEY, collapsed ? '1' : '0') }
+    catch { /* storage may be disabled — non-fatal */ }
+  }, [collapsed])
 
   useEffect(() => {
     let cancelled = false
@@ -730,47 +750,97 @@ const ChatPanel = forwardRef(function ChatPanel({
 
   const renderItems = useMemo(() => buildRenderItems(messages), [messages])
 
+  // Outer wrapper owns the width — the parent <aside> in Editor.jsx has no
+  // width of its own, so we drive 380px ↔ 44px ourselves and let the rest of
+  // the grid track sit empty when collapsed. `overflow-hidden` clips inner
+  // content during the width transition so nothing bleeds visually.
   return (
-    <div className="h-full flex flex-col bg-ink-900 border-l border-ink-800 min-h-0">
-      <ThreadSwitcher
-        threads={threads}
-        currentThreadId={currentThreadId}
-        onSelect={onSelectThread}
-        onCreate={onCreateThread}
-        onToggleStar={onToggleStar}
-        onDelete={onDeleteThread}
-      />
-
-      <div ref={scrollRef} className="flex-1 overflow-auto px-3 py-4 flex flex-col gap-3 min-h-0">
-        {loadingMessages ? (
-          <div className="text-xs text-ink-400 text-center py-8">Loading messages…</div>
-        ) : renderItems.length === 0 ? (
-          <EmptyState hasThreads={(threads || []).length > 0} />
-        ) : renderItems.map((item, i) => {
-          if (item.kind === 'tool-group') {
-            return <ToolGroup key={`tg-${item.id || i}`} calls={item.calls} model={item.model} modelLookup={modelLookup} />
-          }
-          return <MessageBlock key={item.message.id || i} message={item.message} modelLookup={modelLookup} />
-        })}
-        {sending && (
-          <div className="flex items-center gap-2 text-[11px] text-ink-400">
-            <Sparkles size={11} className="text-kerf-300 animate-pulse" />
-            <span className="animate-pulse">Kerf is thinking…</span>
+    <div
+      className={`h-full flex flex-col bg-ink-900 border-l border-ink-800 min-h-0 overflow-hidden transition-[width] duration-200 ease-out ${
+        collapsed ? 'w-[44px]' : 'w-[380px]'
+      }`}
+    >
+      {collapsed ? (
+        <button
+          type="button"
+          onClick={() => setCollapsed(false)}
+          className="group h-full w-full flex flex-col items-center bg-ink-900 hover:bg-ink-850 transition-colors"
+          title="Expand chat"
+          aria-label="Expand chat"
+        >
+          <div className="w-full flex items-center justify-center py-2 border-b border-ink-800">
+            <ChevronLeft size={14} className="text-ink-400 group-hover:text-kerf-300 transition-colors" />
           </div>
-        )}
-      </div>
+          <div className="flex-1 flex items-center justify-center min-h-0">
+            <div
+              className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-ink-300 group-hover:text-kerf-300 transition-colors"
+              style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}
+            >
+              <MessageSquare size={12} />
+              <span>Chat</span>
+            </div>
+          </div>
+        </button>
+      ) : (
+        <>
+          {/* ThreadSwitcher already provides its own border-b + bg; we just
+              graft a collapse button onto the right edge by sitting beside
+              it in a flex row. The switcher's popover is absolute-positioned
+              relative to its own wrapper so it stays correctly anchored. */}
+          <div className="flex items-stretch">
+            <div className="flex-1 min-w-0">
+              <ThreadSwitcher
+                threads={threads}
+                currentThreadId={currentThreadId}
+                onSelect={onSelectThread}
+                onCreate={onCreateThread}
+                onToggleStar={onToggleStar}
+                onDelete={onDeleteThread}
+              />
+            </div>
+            <button
+              type="button"
+              onClick={() => setCollapsed(true)}
+              className="px-2.5 border-l border-b border-ink-800 bg-ink-900 text-ink-400 hover:bg-ink-800 hover:text-kerf-300 transition-colors flex-shrink-0"
+              title="Collapse chat"
+              aria-label="Collapse chat"
+            >
+              <ChevronRight size={14} />
+            </button>
+          </div>
 
-      <ChatInput
-        ref={inputRef}
-        pendingPartRefs={pendingPartRefs}
-        onRemoveRef={onRemovePartRef}
-        onSubmit={handleSend}
-        sending={sending}
-        disabled={loadingMessages}
-        models={models}
-        selectedModelId={selectedModelId}
-        onSelectModel={handleSelectModel}
-      />
+          <div ref={scrollRef} className="flex-1 overflow-auto px-3 py-4 flex flex-col gap-3 min-h-0">
+            {loadingMessages ? (
+              <div className="text-xs text-ink-400 text-center py-8">Loading messages…</div>
+            ) : renderItems.length === 0 ? (
+              <EmptyState hasThreads={(threads || []).length > 0} />
+            ) : renderItems.map((item, i) => {
+              if (item.kind === 'tool-group') {
+                return <ToolGroup key={`tg-${item.id || i}`} calls={item.calls} model={item.model} modelLookup={modelLookup} />
+              }
+              return <MessageBlock key={item.message.id || i} message={item.message} modelLookup={modelLookup} />
+            })}
+            {sending && (
+              <div className="flex items-center gap-2 text-[11px] text-ink-400">
+                <Sparkles size={11} className="text-kerf-300 animate-pulse" />
+                <span className="animate-pulse">Kerf is thinking…</span>
+              </div>
+            )}
+          </div>
+
+          <ChatInput
+            ref={inputRef}
+            pendingPartRefs={pendingPartRefs}
+            onRemoveRef={onRemovePartRef}
+            onSubmit={handleSend}
+            sending={sending}
+            disabled={loadingMessages}
+            models={models}
+            selectedModelId={selectedModelId}
+            onSelectModel={handleSelectModel}
+          />
+        </>
+      )}
     </div>
   )
 })

@@ -17,13 +17,47 @@ type User struct {
 
 type Project struct {
 	ID          string    `json:"id"`
-	OwnerID     string    `json:"owner_id"`
+	WorkspaceID string    `json:"workspace_id"`
 	Name        string    `json:"name"`
 	Description string    `json:"description"`
 	Visibility  string    `json:"visibility"`
 	MyRole      string    `json:"my_role,omitempty"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
+}
+
+// Workspace is the top-level multi-member container that owns projects.
+type Workspace struct {
+	ID           string    `json:"id"`
+	Slug         string    `json:"slug"`
+	Name         string    `json:"name"`
+	AvatarURL    string    `json:"avatar_url,omitempty"`
+	CreatedBy    string    `json:"created_by"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
+	MyRole       string    `json:"my_role,omitempty"`
+	MemberCount  int       `json:"member_count,omitempty"`
+	ProjectCount int       `json:"project_count,omitempty"`
+}
+
+// WorkspaceMember associates a user with a workspace (owner / admin / member).
+type WorkspaceMember struct {
+	WorkspaceID string    `json:"workspace_id"`
+	UserID      string    `json:"user_id"`
+	Role        string    `json:"role"`
+	User        User      `json:"user"`
+	CreatedAt   time.Time `json:"created_at"`
+}
+
+// WorkspaceInvite is a pending invite to a workspace by email + token.
+type WorkspaceInvite struct {
+	ID          string    `json:"id"`
+	WorkspaceID string    `json:"workspace_id"`
+	Email       string    `json:"email"`
+	Role        string    `json:"role"`
+	Token       string    `json:"token,omitempty"`
+	CreatedBy   string    `json:"created_by"`
+	CreatedAt   time.Time `json:"created_at"`
 }
 
 type File struct {

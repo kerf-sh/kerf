@@ -1,0 +1,196 @@
+# kerf.toml — Kerf backend configuration.
+#
+# Copy this file to one of:
+#   ./kerf.toml                       (project-local — usually for dev)
+#   ~/.config/kerf/config.toml        (per-user — recommended for installs)
+#   /etc/kerf/config.toml             (system-wide)
+#
+# The server picks the first one it finds, in the order above. You can
+# override with `--config <path>` or the KERF_CONFIG environment variable.
+
+# ---------------------------------------------------------------------------
+# Server
+# ---------------------------------------------------------------------------
+[server]
+port = "8080"
+env = "local"                         # "local" | "dev" | "main"
+cors_origin = "http://localhost:5173"
+
+# ---------------------------------------------------------------------------
+# Database (Postgres)
+# ---------------------------------------------------------------------------
+[database]
+url = "postgres://postgres:postgres@localhost:5432/kerf?sslmode=disable"
+
+# ---------------------------------------------------------------------------
+# Auth
+#
+# Auth is always on — the legacy `optional` flag was removed. For the
+# brew/curl-install "open browser, you're already logged in" UX, fill in
+# [system_user] below: when the server boots and `[system_user].password`
+# is set, it ensures that user exists in the DB, mints a long-lived
+# refresh token, and writes it to ~/.config/kerf/state.json. The frontend
+# reads /api/bootstrap on first load and silently signs the user in.
+# Multi-user deploys leave [system_user].password blank.
+# ---------------------------------------------------------------------------
+[auth]
+jwt_secret = "dev-only-change-me-in-prod"
+access_ttl = "15m"
+refresh_ttl = "720h"
+password_pepper = "dev-only-pepper"
+
+  [auth.google]
+  client_id = ""
+  client_secret = ""
+  redirect_url = "http://localhost:8080/auth/google/callback"
+
+# ---------------------------------------------------------------------------
+# Storage
+#
+# backend = "local" | "s3" | "filesystem"
+#   local       — opaque blob store under local_path (default).
+#   s3          — AWS S3 or any S3-compatible endpoint.
+#   filesystem  — projects mirror to disk as folders. Each project is a
+#                 subdirectory of filesystem_root. Files are real files on
+#                 disk. Simplest for local single-user use.
+# ---------------------------------------------------------------------------
+[storage]
+backend = "local"
+local_path = "./.kerf-storage"
+filesystem_root = "~/kerf-projects"
+# Public URL prefix for blobs served to the browser (avatars, thumbnails).
+# When set, Storage.PublicURL returns "<cdn_base_url>/<key>?v=<unix>" and
+# the frontend hits the CDN directly. Leave empty to keep blob serving on
+# the auth-protected /api/blobs/ backend route.
+#
+# Recommended setup with bunny.net:
+#   1. Configure [storage.s3] (R2 or S3) below.
+#   2. Create a bunny.net Pull Zone with origin = your bucket's public
+#      endpoint (e.g. https://<bucket>.<account>.r2.cloudflarestorage.com).
+#   3. Set cdn_base_url = "https://<your-zone>.b-cdn.net".
+# See cloud/README.md for a fuller walkthrough.
+cdn_base_url = ""
+
+  [storage.s3]
+  bucket = ""
+  region = ""
+  access_key_id = ""
+  secret_access_key = ""
+  endpoint = ""                       # for R2/MinIO/etc.
+  public_url_base = ""
+
+# ---------------------------------------------------------------------------
+# LLM providers
+# A blank api_key disables that provider. At least one must be set, or
+# wire up a BYO-keys frontend flow.
+# ---------------------------------------------------------------------------
+[llm]
+default_model = "claude-opus-4-7"
+
+  [llm.anthropic]
+  api_key = ""
+
+  [llm.openai]
+  api_key = ""
+
+  [llm.moonshot]
+  api_key = ""
+
+  [llm.gemini]
+  api_key = ""
+
+# ---------------------------------------------------------------------------
+# Usage tracking
+#
+# When enabled, the server records token + storage usage in cloud_usage_events
+# even in OSS builds — useful for "how much have I burned this month" stats.
+# Cloud builds layer billing on top of these same events.
+# ---------------------------------------------------------------------------
+[usage]
+enabled = true
+
+# ---------------------------------------------------------------------------
+# Limits
+# ---------------------------------------------------------------------------
+[limits]
+max_threads_per_project = 50
+# Per-file cap on retained revision rows. Each PATCH / write tool / restore
+# appends one row; the oldest beyond this cap are pruned on the next write.
+file_revisions_max = 200
+# Maximum size (bytes) of a single chunked STEP upload. 200 MB by default.
+step_max_bytes = 200000000
+# Chunk size (bytes) advertised by the chunked upload init endpoint. The
+# frontend must honour this exactly. 5 MB plays well with S3 multipart.
+upload_chunk_size = 5242880
+# How long an incomplete upload session is retained before the janitor
+# wipes its temp chunks. Resumable uploads must complete within this window.
+upload_session_ttl_hours = 24
+# Server-side STEP pre-tessellation (Performance Phase 3).
+#
+# After a STEP upload finalizes, a background worker shells out to the
+# Node sidecar at scripts/step-tessellate.mjs to produce a .glb (glTF
+# binary) the browser can render without re-running the heavy WASM
+# parser. The frontend prefers the .glb when present.
+#
+# Requires `node` on PATH unless `step_tessellate_node_bin` is set. Set
+# `step_tessellate_workers = -1` to disable the worker pool entirely
+# (jobs queue up, no harm done — useful in CI / tests without Node).
+step_tessellate_workers = 2
+step_tessellate_timeout_sec = 300
+# step_tessellate_node_bin = "/usr/bin/node"        # optional override
+# step_tessellate_script = "./scripts/step-tessellate.mjs"
+
+# ---------------------------------------------------------------------------
+# System user
+#
+# Used by both `kerf migrate` (seed) and the auto-bootstrap that powers
+# the brew/curl-install single-user UX. When `password` is set, the
+# server (a) ensures this user row exists in the DB, (b) mints a
+# long-lived refresh token, and (c) writes it to
+# ~/.config/kerf/state.json. The frontend reads /api/bootstrap on first
+# load and silently signs you in.
+#
+# Leave `password` blank for multi-user deploys — the bootstrap is then
+# a no-op and the regular signup screen renders.
+# ---------------------------------------------------------------------------
+[system_user]
+email = "system@kerf.local"
+name = "Kerf System"
+password = ""
+
+# ---------------------------------------------------------------------------
+# Cloud — only honored when the binary is built with `-tags=cloud`.
+# Ignored by OSS builds.
+# ---------------------------------------------------------------------------
+[cloud]
+enabled = false
+
+  [cloud.paystack]
+  secret_key = ""
+  public_key = ""
+  webhook_secret = ""
+
+  [cloud.fx]
+  base_currency = "USD"
+  settlement_currency = "ZAR"
+  refresh_url = "https://api.exchangerate.host/latest?base=USD&symbols=ZAR"
+  spread_pct = 1.5                    # added to fetched rate before charging
+
+  [cloud.pricing]
+  token_markup_pct = 20.0
+  storage_usd_per_gb_month = 0.20
+  free_storage_mb = 50
+
+  # Real git integration (cloud-only). Bare repos are stored as S3 objects
+  # under `<prefix>/<project_id>/...` in the same bucket as `[storage.s3]`,
+  # so the service is fully stateless and safe on ephemeral filesystems
+  # (Cloud Run, Fly Machines, etc.). Requires `storage.backend = "s3"` and
+  # a configured `[storage.s3]`. GitHub sync (push/pull/import) requires
+  # the OAuth app below.
+  [cloud.git]
+  prefix = "git"                        # S3 key prefix under the same bucket as `[storage.s3]`
+
+    [cloud.git.github]
+    client_id = ""
+    client_secret = ""
+    redirect_url = "http://localhost:8080/auth/github/callback"

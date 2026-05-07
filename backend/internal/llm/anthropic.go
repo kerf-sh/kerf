@@ -63,7 +63,7 @@ type anthropicRequest struct {
 	Model       string               `json:"model"`
 	System      string               `json:"system,omitempty"`
 	MaxTokens   int                  `json:"max_tokens"`
-	Temperature float64              `json:"temperature"`
+	Temperature float64              `json:"temperature,omitempty"`
 	Messages    []anthropicMessage   `json:"messages"`
 	Tools       []anthropicTool      `json:"tools,omitempty"`
 	ToolChoice  *anthropicToolChoice `json:"tool_choice,omitempty"`
@@ -154,10 +154,10 @@ func (a *Anthropic) Complete(ctx context.Context, req CompleteRequest) (Complete
 	if maxTokens <= 0 {
 		maxTokens = 4096
 	}
+	// Don't send temperature unless the caller explicitly set it. Newer
+	// Anthropic models (e.g. Opus 4.7) reject the field entirely with
+	// "temperature is deprecated for this model".
 	temperature := req.Temperature
-	if temperature == 0 {
-		temperature = 0.7
-	}
 
 	msgs := buildAnthropicMessages(req.Messages)
 

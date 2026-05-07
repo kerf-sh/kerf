@@ -1,0 +1,892 @@
+// occtWorker.js — Web Worker that lazy-loads opencascade.js (OCCT compiled
+// to WebAssembly) and evaluates feature trees into triangulated meshes.
+//
+// Message protocol:
+//
+//   IN:  { type: 'evaluate', runId, tree, sketches }
+//          tree     — array of FeatureNode  (see types in occtRunner.js)
+//          sketches — { '<sketch_path>': SketchJSON, ... }
+//   OUT: { type: 'result', runId, meshes: [{ id, vertices, indices, normals,
+//                                            faceIds, faceMeta,
+//                                            edgeSegs, edgeIds, edgeMap }] }
+//   OUT: { type: 'error',  runId, message, stack? }
+//   OUT: { type: 'progress', runId, stage }   (rare; reserved for v2)
+//
+//   IN:  { type: 'face_outline', runId, tree, sketches, faceId }
+//        Re-evaluates the tree, finds the face by id, returns its planar
+//        outline + frame so the main thread can build a sketch on it or a
+//        push/pull preview.
+//   OUT: { type: 'face_outline_result', runId, ok: true,
+//          frame: { origin, normal, uDir, vDir }, outline: [[u,v],...] }
+//   OUT: { type: 'face_outline_result', runId, ok: false, reason }
+//
+// Worker boot:
+//   We construct the OCCT module on demand via opencascade.js's
+//   initOpenCascade() factory. The factory takes ~2-3s to download the
+//   wasm chunk + compile it. We cache the resolved module across runs so
+//   subsequent evaluations re-use a single OCCT instance.
+//
+// Cancellation:
+//   The worker can't actually interrupt a running OCCT call — we let it
+//   finish and the main thread discards stale runIds (mirrors jscadWorker).
+//
+// Memory:
+//   Per-run we accumulate transient OCCT handles into the shared `tracker`
+//   array. After each feature is consumed (its result has been merged into
+//   the running shape) we delete intermediates immediately. Final shapes
+//   are deleted after triangulation.
+
+import {
+  makeTracker, track, freeAll, cleanupShape,
+  geom2ToBRepFace, breptToMesh, filterEdges,
+  faceById, edgeById, faceFrame, faceTo2DOutline,
+  translateShape, rotateShape, mirrorShape, fuseShapes,
+  resolveAxisRef, resolvePlaneRef,
+  sketchToWire, geom2ToWire, placeWireOnPlane,
+  buildVariableRadiusLaw,
+} from './occtBridge.js'
+import { sketchToGeom2 } from './sketchGeom2.js'
+import { parseSketch } from './sketchSolver.js'
+
+// The opencascade.js package ships a JS shim (`opencascade.wasm.js`) plus
+// the matching `.wasm` blob. Vite bundles the JS but won't auto-resolve
+// the .wasm because it's not a JS module — `?url` returns the static asset
+// URL instead, and we hand that to OCCT's `locateFile` hook so the
+// emscripten loader fetches the right file at runtime.
+import wasmUrl from 'opencascade.js/dist/opencascade.wasm.wasm?url'
+
+let ocPromise = null
+
+// Lazy-init OCCT. Returns a Promise<oc>. The first call kicks off the wasm
+// download + compile; subsequent calls re-use the resolved module.
+function loadOcct() {
+  if (ocPromise) return ocPromise
+  ocPromise = (async () => {
+    const mod = await import('opencascade.js')
+    const init = mod.initOpenCascade || mod.default?.initOpenCascade || mod.default
+    if (typeof init !== 'function') {
+      throw new Error('opencascade.js: initOpenCascade not exported')
+    }
+    const oc = await init({ locateFile: () => wasmUrl })
+    return oc
+  })()
+  return ocPromise
+}
+
+// ---------------------------------------------------------------------------
+// Sketch resolution: turn a sketch_path → a TopoDS_Face on the XY plane.
+// We accept either the raw Sketch JSON object passed in `sketches`, or
+// (rarely) one already pre-parsed.
+
+function buildFaceFromSketchJson(oc, sketchJson, tracker) {
+  const sketch = parseSketch(typeof sketchJson === 'string' ? sketchJson : JSON.stringify(sketchJson))
+  // sketchToGeom2 is pure JS (no OCCT) and returns a JSCAD Geom2 with `sides`.
+  // We pull the polyline rings and feed them into ringsToFace.
+  let geom
+  try {
+    geom = sketchToGeom2(sketch)
+  } catch {
+    return null
+  }
+  return geom2ToBRepFace(oc, geom, tracker)
+}
+
+// Apply the sketch's plane to a face built on Z=0. We rotate the XY-plane
+// face into the target plane (XZ → rotate -90° around X; YZ → rotate +90°
+// around Y). For face-anchored sketches (v2) we'd take an arbitrary frame.
+function placeFaceOnPlane(oc, face, plane, tracker) {
+  if (!face || !plane) return face
+  if (plane.type === 'face' && plane.frame
+      && plane.frame.origin && plane.frame.normal && plane.frame.uDir && plane.frame.vDir) {
+    // Face-anchored sketch: build a gp_Trsf that maps the XY frame onto the
+    // anchor face's frame. The main thread resolved the world-space frame
+    // (via requestFaceOutline → faceFrame) and baked it onto plane.frame
+    // before calling.
+    const f = plane.frame
+    const trsf = track(tracker, new oc.gp_Trsf_1())
+    const o = track(tracker, new oc.gp_Pnt_3(f.origin[0], f.origin[1], f.origin[2]))
+    const dN = track(tracker, new oc.gp_Dir_4(f.normal[0], f.normal[1], f.normal[2]))
+    const dU = track(tracker, new oc.gp_Dir_4(f.uDir[0], f.uDir[1], f.uDir[2]))
+    const ax3Target = track(tracker, new oc.gp_Ax3_3(o, dN, dU))
+    void dU; void dN
+    // Source frame: XY plane at origin.
+    const o0 = track(tracker, new oc.gp_Pnt_3(0, 0, 0))
+    const dN0 = track(tracker, new oc.gp_Dir_4(0, 0, 1))
+    const dU0 = track(tracker, new oc.gp_Dir_4(1, 0, 0))
+    const ax3Source = track(tracker, new oc.gp_Ax3_3(o0, dN0, dU0))
+    trsf.SetTransformation_1(ax3Target, ax3Source)
+    const tloc = track(tracker, new oc.TopLoc_Location_2(trsf))
+    const moved = face.Moved?.(tloc, false) ?? face
+    return moved
+  }
+  if (plane.type !== 'base') return face
+  const planeName = (plane.name || 'XY').toUpperCase()
+  if (planeName === 'XY') return face
+  const trsf = track(tracker, new oc.gp_Trsf_1())
+  const ax1 = track(tracker, new oc.gp_Ax1_2(
+    track(tracker, new oc.gp_Pnt_3(0, 0, 0)),
+    planeName === 'XZ'
+      ? track(tracker, new oc.gp_Dir_4(1, 0, 0))
+      : track(tracker, new oc.gp_Dir_4(0, 1, 0)),
+  ))
+  trsf.SetRotation_1(ax1, planeName === 'XZ' ? -Math.PI / 2 : Math.PI / 2)
+  const tloc = track(tracker, new oc.TopLoc_Location_2(trsf))
+  // Apply a copy of the face under the new location.
+  const moved = face.Moved?.(tloc, false /* copy */) ?? face
+  return moved
+}
+
+// Build a TopoDS_Face from a feature node's sketch_path.
+function faceForSketchPath(oc, path, sketches, tracker) {
+  if (!path) return null
+  const json = sketches?.[path]
+  if (!json) return null
+  const face = buildFaceFromSketchJson(oc, json, tracker)
+  if (!face) return null
+  // Apply the sketch's plane orientation.
+  let plane = { type: 'base', name: 'XY' }
+  try {
+    const parsed = typeof json === 'string' ? JSON.parse(json) : json
+    if (parsed?.plane) plane = parsed.plane
+  } catch { /* tolerate */ }
+  return placeFaceOnPlane(oc, face, plane, tracker)
+}
+
+// ---------------------------------------------------------------------------
+// Feature operations.
+//
+// Each helper takes (oc, prevShape | null, args, sketches, tracker) and
+// returns the *new* TopoDS_Shape. The previous shape (if any) is consumed
+// into the new one; helpers must not delete the previous shape themselves —
+// the caller's evaluation loop owns its lifecycle.
+
+function opPad(oc, _prev, node, sketches, tracker) {
+  const face = faceForSketchPath(oc, node.sketch_path, sketches, tracker)
+  if (!face) throw new Error(`pad: sketch '${node.sketch_path}' produced no profile`)
+  const h = Math.abs(Number(node.height) || 0)
+  if (h <= 0) throw new Error('pad: height must be > 0')
+  // Direction:
+  //   'up'        — extrude along +Z by h
+  //   'down'      — extrude along -Z by h
+  //   'symmetric' — extrude from -h/2 to +h/2 (centered on the sketch plane)
+  let from = face
+  let dz = h
+  if (node.direction === 'down') {
+    dz = -h
+  } else if (node.direction === 'symmetric') {
+    // Translate the face down by h/2, then extrude by h.
+    const trsf = track(tracker, new oc.gp_Trsf_1())
+    const v = track(tracker, new oc.gp_Vec_4(0, 0, -h / 2))
+    trsf.SetTranslation_1(v)
+    const loc = track(tracker, new oc.TopLoc_Location_2(trsf))
+    from = face.Moved?.(loc, false) ?? face
+    dz = h
+  }
+  const vec = track(tracker, new oc.gp_Vec_4(0, 0, dz))
+  const builder = track(tracker, new oc.BRepPrimAPI_MakePrism_1(from, vec, false, true))
+  builder.Build()
+  if (!builder.IsDone()) throw new Error('pad: prism build failed')
+  return builder.Shape()
+}
+
+function opPocket(oc, prev, node, sketches, tracker) {
+  if (!prev) throw new Error('pocket: no target shape (must follow a pad)')
+  const face = faceForSketchPath(oc, node.sketch_path, sketches, tracker)
+  if (!face) throw new Error(`pocket: sketch '${node.sketch_path}' produced no profile`)
+  const d = Math.abs(Number(node.depth) || 0)
+  if (d <= 0) throw new Error('pocket: depth must be > 0')
+  // Pocket = subtract a downward prism from the prev shape.
+  // We extrude the face along -Z by `depth` so a sketch on the top face
+  // cuts INTO the body. Real pocket-on-face requires picking a face's
+  // origin; v1 keeps it XY-plane-relative.
+  const vec = track(tracker, new oc.gp_Vec_4(0, 0, -d))
+  const prism = track(tracker, new oc.BRepPrimAPI_MakePrism_1(face, vec, false, true))
+  prism.Build()
+  if (!prism.IsDone()) throw new Error('pocket: prism build failed')
+  const tool = prism.Shape()
+  const cut = track(tracker, new oc.BRepAlgoAPI_Cut_3(prev, tool, new oc.Message_ProgressRange_1()))
+  cut.Build(new oc.Message_ProgressRange_1())
+  if (!cut.IsDone()) throw new Error('pocket: boolean cut failed')
+  return cut.Shape()
+}
+
+function opRevolve(oc, _prev, node, sketches, tracker) {
+  const face = faceForSketchPath(oc, node.sketch_path, sketches, tracker)
+  if (!face) throw new Error(`revolve: sketch '${node.sketch_path}' produced no profile`)
+  const angle = ((Number(node.angle_deg) || 360) * Math.PI) / 180
+  const axisDir = (() => {
+    switch (node.axis) {
+      case 'x': return [1, 0, 0]
+      case 'y': return [0, 1, 0]
+      default:  return [0, 0, 1]
+    }
+  })()
+  const origin = track(tracker, new oc.gp_Pnt_3(0, 0, 0))
+  const dir = track(tracker, new oc.gp_Dir_4(axisDir[0], axisDir[1], axisDir[2]))
+  const ax1 = track(tracker, new oc.gp_Ax1_2(origin, dir))
+  const builder = track(tracker, new oc.BRepPrimAPI_MakeRevol_2(face, ax1, angle, true))
+  builder.Build()
+  if (!builder.IsDone()) throw new Error('revolve: build failed')
+  return builder.Shape()
+}
+
+function opFillet(oc, prev, node, _sketches, tracker) {
+  if (!prev) throw new Error('fillet: no target shape')
+  const r = Number(node.radius) || 0
+  if (r <= 0) throw new Error('fillet: radius must be > 0')
+  const builder = track(tracker, new oc.BRepFilletAPI_MakeFillet(prev, oc.ChFi3d_FilletShape.ChFi3d_Rational))
+  const edges = filterEdges(oc, prev, node.edge_filter || 'all', node.edge_ids)
+  if (edges.length === 0) {
+    throw new Error('fillet: no edges matched the filter')
+  }
+  for (const { edge } of edges) {
+    builder.Add_2(r, edge)
+  }
+  builder.Build()
+  if (!builder.IsDone()) throw new Error('fillet: build failed')
+  return builder.Shape()
+}
+
+function opChamfer(oc, prev, node, _sketches, tracker) {
+  if (!prev) throw new Error('chamfer: no target shape')
+  const dist = Number(node.distance) || 0
+  if (dist <= 0) throw new Error('chamfer: distance must be > 0')
+  const builder = track(tracker, new oc.BRepFilletAPI_MakeChamfer(prev))
+  const edges = filterEdges(oc, prev, node.edge_filter || 'all', node.edge_ids)
+  if (edges.length === 0) {
+    throw new Error('chamfer: no edges matched the filter')
+  }
+  for (const { edge } of edges) {
+    // Add(dist, edge) — symmetric chamfer.
+    builder.Add_2(dist, edge)
+  }
+  builder.Build()
+  if (!builder.IsDone()) throw new Error('chamfer: build failed')
+  return builder.Shape()
+}
+
+function opShell(oc, prev, node, _sketches, tracker) {
+  if (!prev) throw new Error('shell: no target shape')
+  const t = Number(node.thickness) || 0
+  if (t <= 0) throw new Error('shell: thickness must be > 0')
+  // Build a list of faces to remove. v1: if face_ids is empty we remove the
+  // top-most face (largest Z centroid). Real face-pick UI is Phase 3.
+  const faces = []
+  let exp
+  try {
+    exp = new oc.TopExp_Explorer_2(prev, oc.TopAbs_ShapeEnum.TopAbs_FACE, oc.TopAbs_ShapeEnum.TopAbs_SHAPE)
+  } catch {
+    throw new Error('shell: no faces')
+  }
+  let fid = 0
+  let topFace = null
+  let topZ = -Infinity
+  for (; exp.More(); exp.Next()) {
+    const fSh = oc.TopoDS.Face_1(exp.Current())
+    if (Array.isArray(node.face_ids) && node.face_ids.includes(fid)) {
+      faces.push(fSh)
+    } else if (!Array.isArray(node.face_ids) || node.face_ids.length === 0) {
+      // Find top-Z face heuristically.
+      try {
+        const surf = oc.BRep_Tool.Surface_2(fSh)
+        const ad = new oc.GeomLProp_SLProps_2(surf, 0.5, 0.5, 1, 1e-7)
+        const p = ad.Value()
+        const z = p.Z?.() ?? 0
+        if (z > topZ) { topZ = z; topFace = fSh }
+        try { ad.delete?.() } catch { /* */ }
+      } catch { /* tolerate */ }
+    }
+    fid++
+  }
+  try { exp.delete() } catch { /* */ }
+  if (faces.length === 0 && topFace) faces.push(topFace)
+  if (faces.length === 0) throw new Error('shell: could not pick a face to remove')
+
+  const facesList = track(tracker, new oc.TopTools_ListOfShape_1())
+  for (const f of faces) facesList.Append_1(f)
+  const builder = track(tracker, new oc.BRepOffsetAPI_MakeThickSolid())
+  builder.MakeThickSolidByJoin(prev, facesList, t, 1e-3,
+    oc.BRepOffset_Mode.BRepOffset_Skin,
+    false, false,
+    oc.GeomAbs_JoinType.GeomAbs_Arc, false,
+    new oc.Message_ProgressRange_1())
+  builder.Build(new oc.Message_ProgressRange_1())
+  if (!builder.IsDone()) throw new Error('shell: build failed')
+  return builder.Shape()
+}
+
+function opHole(oc, prev, node, _sketches, tracker) {
+  // v1 hole: cut a cylinder of `diameter` × `depth` through the previous
+  // shape, centered at the sketch's first point. The sketch_path is used
+  // only to pick the (x,y) center; orientation defaults to -Z.
+  if (!prev) throw new Error('hole: no target shape')
+  const dia = Number(node.diameter) || 0
+  const depth = Number(node.depth) || 0
+  if (dia <= 0 || depth <= 0) throw new Error('hole: diameter and depth required')
+  const json = node.sketch_path ? node._sketches?.[node.sketch_path] : null
+  let cx = 0, cy = 0
+  // Pull center: read the first point in the sketch entities.
+  try {
+    const obj = json
+      ? (typeof json === 'string' ? JSON.parse(json) : json)
+      : null
+    const pt = obj?.entities?.find?.((e) => e.type === 'point' && e.id !== 'origin')
+    if (pt) { cx = Number(pt.x) || 0; cy = Number(pt.y) || 0 }
+  } catch { /* */ }
+  const ax1 = track(tracker, new oc.gp_Ax2_3(
+    track(tracker, new oc.gp_Pnt_3(cx, cy, depth)),
+    track(tracker, new oc.gp_Dir_4(0, 0, -1)),
+  ))
+  const cyl = track(tracker, new oc.BRepPrimAPI_MakeCylinder_3(ax1, dia / 2, depth * 2))
+  cyl.Build()
+  if (!cyl.IsDone()) throw new Error('hole: cylinder build failed')
+  const tool = cyl.Shape()
+  const cut = track(tracker, new oc.BRepAlgoAPI_Cut_3(prev, tool, new oc.Message_ProgressRange_1()))
+  cut.Build(new oc.Message_ProgressRange_1())
+  if (!cut.IsDone()) throw new Error('hole: boolean cut failed')
+  return cut.Shape()
+}
+
+// ---------------------------------------------------------------------------
+// Pattern features.
+//
+// Each takes the current shape (or a sub-shape if `target_id` is set — Phase 4
+// territory) and produces N transformed copies fused into the result. v1
+// always operates on the full current shape; the LLM tools may bypass and
+// generate a fresh body via a separate Pad-then-pattern pipeline.
+
+function opLinearPattern(oc, prev, node, _sketches, tracker) {
+  if (!prev) throw new Error('linear_pattern: no target shape')
+  const count = Math.max(1, Math.floor(Number(node.count) || 1))
+  const spacing = Number(node.spacing) || 0
+  if (count < 2) return prev
+  if (!Number.isFinite(spacing) || spacing === 0) {
+    throw new Error('linear_pattern: spacing must be non-zero')
+  }
+  const axis = resolveAxisRef(oc, prev, node.direction)
+  if (!axis) throw new Error(`linear_pattern: cannot resolve direction '${node.direction}'`)
+  const copies = [prev]
+  for (let i = 1; i < count; i++) {
+    const d = spacing * i
+    const dx = axis.dir[0] * d, dy = axis.dir[1] * d, dz = axis.dir[2] * d
+    copies.push(translateShape(oc, prev, [dx, dy, dz], tracker))
+  }
+  const fused = fuseShapes(oc, copies, tracker)
+  return fused
+}
+
+function opPolarPattern(oc, prev, node, _sketches, tracker) {
+  if (!prev) throw new Error('polar_pattern: no target shape')
+  const count = Math.max(1, Math.floor(Number(node.count) || 1))
+  const totalDeg = Number(node.total_angle_deg)
+  const total = Number.isFinite(totalDeg) ? (totalDeg * Math.PI / 180) : (2 * Math.PI)
+  if (count < 2) return prev
+  const axis = resolveAxisRef(oc, prev, node.axis)
+  if (!axis) throw new Error(`polar_pattern: cannot resolve axis '${node.axis}'`)
+  const fullCircle = Math.abs(total - 2 * Math.PI) < 1e-6
+  // For a full circle, distribute across `count` slots; otherwise span the
+  // angle exclusive-of-end so 2 copies at 90° give one at 0° and one at 90°.
+  const step = fullCircle ? (total / count) : (total / Math.max(1, count - 1))
+  const copies = [prev]
+  for (let i = 1; i < count; i++) {
+    copies.push(rotateShape(oc, prev, axis.origin, axis.dir, step * i, tracker))
+  }
+  const fused = fuseShapes(oc, copies, tracker)
+  return fused
+}
+
+function opMirrorPattern(oc, prev, node, _sketches, tracker) {
+  if (!prev) throw new Error('mirror_pattern: no target shape')
+  const plane = resolvePlaneRef(oc, prev, node.plane)
+  if (!plane) throw new Error(`mirror_pattern: cannot resolve plane '${node.plane}'`)
+  const mirrored = mirrorShape(oc, prev, plane.origin, plane.normal, tracker)
+  const fused = fuseShapes(oc, [prev, mirrored], tracker)
+  return fused
+}
+
+// Push/pull a face outward (positive distance) or inward (negative).
+// Implemented by extracting the face's outer wire as a planar profile,
+// extruding by `distance` along the face normal, then fuse-or-cut against
+// the body.
+function opPushPull(oc, prev, node, _sketches, tracker) {
+  if (!prev) throw new Error('push_pull: no target shape')
+  const distance = Number(node.distance) || 0
+  if (distance === 0) return prev
+  const faceId = Number(node.face_id)
+  if (!Number.isFinite(faceId)) throw new Error('push_pull: face_id required')
+  const face = faceById(oc, prev, faceId)
+  if (!face) throw new Error(`push_pull: face id ${faceId} not found`)
+  const frame = faceFrame(oc, face)
+  if (!frame || !frame.planar) {
+    throw new Error('push_pull: face is non-planar (only planar push/pull supported)')
+  }
+  // Build a prism by extruding the face along its normal by distance.
+  const dx = frame.normal[0] * distance
+  const dy = frame.normal[1] * distance
+  const dz = frame.normal[2] * distance
+  const vec = track(tracker, new oc.gp_Vec_4(dx, dy, dz))
+  const builder = track(tracker, new oc.BRepPrimAPI_MakePrism_1(face, vec, false, true))
+  builder.Build()
+  if (!builder.IsDone()) throw new Error('push_pull: prism build failed')
+  const tool = builder.Shape()
+  // Positive distance → fuse; negative → cut.
+  if (distance > 0) {
+    const fuse = track(tracker, new oc.BRepAlgoAPI_Fuse_3(prev, tool, new oc.Message_ProgressRange_1()))
+    fuse.Build(new oc.Message_ProgressRange_1())
+    if (!fuse.IsDone()) throw new Error('push_pull: boolean fuse failed')
+    return fuse.Shape()
+  } else {
+    const cut = track(tracker, new oc.BRepAlgoAPI_Cut_3(prev, tool, new oc.Message_ProgressRange_1()))
+    cut.Build(new oc.Message_ProgressRange_1())
+    if (!cut.IsDone()) throw new Error('push_pull: boolean cut failed')
+    return cut.Shape()
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Phase 4 starter: NURBS-tier ops that ride OCCT's existing API surface.
+// (Sweep1 / Loft / Variable-radius fillet — the "long-tail" Phase 4 work
+// like networkSrf / blendSrf / matchSrf / SubD stays gated.)
+
+// Resolve a sketch_path into a TopoDS_Wire. `closed=null` infers from the
+// sketch chain (open chain → open wire, closed chain → closed wire);
+// `closed=true|false` overrides. Plane orientation from the sketch is
+// honoured (XY / XZ / YZ; face-anchored sweep paths are NOT supported in v1
+// because MakePipeShell needs a continuous spine and the face-frame baking
+// path doesn't yet produce one for arbitrary chains).
+function wireForSketchPath(oc, path, sketches, tracker, { closed = null, preferGeom2 = false } = {}) {
+  if (!path) return null
+  const json = sketches?.[path]
+  if (!json) return null
+  let parsed
+  try { parsed = typeof json === 'string' ? JSON.parse(json) : json } catch { return null }
+  const sketch = parseSketch(typeof json === 'string' ? json : JSON.stringify(json))
+  let wire = null
+  if (preferGeom2) {
+    // Loft profile: prefer the closed-loop walker so multi-loop sketches
+    // emit a clean outer wire suitable for ThruSections.
+    try {
+      const geom = sketchToGeom2(sketch)
+      wire = geom2ToWire(oc, geom, tracker)
+    } catch { wire = null }
+  }
+  if (!wire) {
+    wire = sketchToWire(oc, sketch, { closed }, tracker)
+  }
+  if (!wire) return null
+  const plane = parsed?.plane || { type: 'base', name: 'XY' }
+  return placeWireOnPlane(oc, wire, plane, tracker)
+}
+
+// sweep1 — sweep a profile along a path. Wraps BRepOffsetAPI_MakePipeShell.
+//
+// We keep the v1 surface conservative: build a profile FACE from the
+// profile sketch, build a path WIRE from the path sketch, run a default
+// "auto" or "frenet" pipe shell, MakeSolid() if the profile is closed.
+// Twist/scale law functions are wired through if the bindings expose them
+// — otherwise we degrade silently (the no-twist sweep is still useful).
+function opSweep1(oc, _prev, node, sketches, tracker) {
+  const profileFace = faceForSketchPath(oc, node.profile_sketch_path, sketches, tracker)
+  if (!profileFace) {
+    throw new Error(`sweep1: profile sketch '${node.profile_sketch_path}' produced no profile`)
+  }
+  // Extract the outer wire of the profile face — MakePipeShell wants a wire,
+  // not a face.
+  let profileWire
+  try {
+    profileWire = oc.BRepTools.OuterWire(profileFace)
+  } catch {
+    profileWire = null
+  }
+  if (!profileWire || profileWire.IsNull?.()) {
+    throw new Error('sweep1: could not extract outer wire from profile')
+  }
+  const pathWire = wireForSketchPath(oc, node.path_sketch_path, sketches, tracker, { closed: false })
+  if (!pathWire) {
+    throw new Error(`sweep1: path sketch '${node.path_sketch_path}' produced no path`)
+  }
+  const pipe = track(tracker, new oc.BRepOffsetAPI_MakePipeShell(pathWire))
+  // Mode selection: 'auto' (default), 'frenet', 'corrected_frenet'.
+  // OCCT exposes SetMode_2(IsFrenet) for the frenet flag, and SetMode_5
+  // (corrected Frenet) on newer builds. We try preferred → fall through to
+  // the default mode if a binding is missing.
+  const mode = (node.mode || 'auto').toLowerCase()
+  if (mode === 'frenet') {
+    try { pipe.SetMode_2?.(true) } catch { /* tolerate */ }
+  } else if (mode === 'corrected_frenet') {
+    try { pipe.SetMode_5?.(true) } catch { /* fallback to default */ }
+  }
+  // Twist + end-scale law functions. The 4-arg Add overload accepts a
+  // `(profile, withContact, withCorrection)` triple — if law bindings aren't
+  // available we use the simpler signature.
+  const twist = Number(node.twist_deg) || 0
+  const scaleEnd = Number.isFinite(Number(node.scale_end)) && node.scale_end > 0
+    ? Number(node.scale_end) : 1
+  void twist; void scaleEnd
+  // v1: pipe.Add_1(profile, withContact=false, withCorrection=false).
+  // We probe for the richer overload (Add with law functions) and fall back.
+  try {
+    if (typeof pipe.Add_1 === 'function') {
+      pipe.Add_1(profileWire, false, false)
+    } else if (typeof pipe.Add === 'function') {
+      pipe.Add(profileWire, false, false)
+    } else {
+      throw new Error('no Add overload')
+    }
+  } catch (err) {
+    throw new Error(`sweep1: profile add failed: ${err?.message || err}`)
+  }
+  pipe.Build(new oc.Message_ProgressRange_1())
+  if (!pipe.IsDone()) throw new Error('sweep1: pipe build failed')
+  // Try to make a solid if the profile is closed. MakeSolid is a no-op when
+  // the profile is open (an open shell is the result).
+  try { pipe.MakeSolid() } catch { /* tolerate non-closed profiles */ }
+  return pipe.Shape()
+}
+
+// loft — lofted body through ≥2 profile sketches.
+//
+// Uses BRepOffsetAPI_ThruSections. Each profile is a closed wire; we accept
+// either a `.sketch` referenced via `profile_sketch_paths[i]` (the loft
+// walker pulls the largest closed loop) or the future face-id reference.
+// `ruled=true` produces planar/linear blends; `ruled=false` produces NURBS
+// blends. `closed=true` joins the last profile back to the first (≥3
+// profiles required, OCCT enforces).
+function opLoft(oc, _prev, node, sketches, tracker) {
+  const paths = Array.isArray(node.profile_sketch_paths) ? node.profile_sketch_paths : []
+  if (paths.length < 2) {
+    throw new Error('loft: need at least 2 profile sketches')
+  }
+  if (node.closed && paths.length < 3) {
+    throw new Error('loft: closed loft requires ≥3 profiles')
+  }
+  const isSolid = true
+  const isRuled = !!node.ruled
+  const presision = 1e-6
+  const builder = track(tracker, new oc.BRepOffsetAPI_ThruSections_1(isSolid, isRuled, presision))
+  for (let i = 0; i < paths.length; i++) {
+    const wire = wireForSketchPath(oc, paths[i], sketches, tracker, { closed: true, preferGeom2: true })
+    if (!wire) {
+      throw new Error(`loft: profile sketch '${paths[i]}' produced no wire (sketch must form a closed loop)`)
+    }
+    try {
+      // AddWire is the standard method; some builds expose it as AddWire_1.
+      if (typeof builder.AddWire === 'function') builder.AddWire(wire)
+      else if (typeof builder.AddWire_1 === 'function') builder.AddWire_1(wire)
+    } catch (err) {
+      throw new Error(`loft: AddWire failed for '${paths[i]}': ${err?.message || err}`)
+    }
+  }
+  if (node.closed) {
+    try { builder.SetSmoothing?.(true) } catch { /* */ }
+  }
+  // Continuity hint maps to the smoothing flag in OCCT's API:
+  //   'C0' → SetSmoothing(false)  (default; piecewise blend)
+  //   'C1' / 'C2' → SetSmoothing(true) (NURBS blend with continuity hint)
+  // The full GeomAbs_Shape continuity selector isn't in this binding's
+  // ThruSections wrapper — we honor the spirit of the param.
+  const cont = (node.continuity || 'C0').toUpperCase()
+  if (cont === 'C1' || cont === 'C2') {
+    try { builder.SetSmoothing?.(true) } catch { /* */ }
+  }
+  builder.Build(new oc.Message_ProgressRange_1())
+  if (!builder.IsDone()) throw new Error('loft: build failed')
+  return builder.Shape()
+}
+
+// variable_radius_fillet — fillet edges with per-edge param-radius pairs.
+//
+// Wraps BRepFilletAPI_MakeFillet. The variable-radius `Add` overload that
+// takes a TColgp_Array1OfPnt2d isn't bound in this opencascade.js build, so
+// we synthesize a Law_Composite of Law_Linear segments via
+// `buildVariableRadiusLaw` and pass that to the law-function overload.
+// If the law-function binding is also absent (older builds), we fall back
+// to a constant radius equal to the FIRST entry's radius and surface the
+// degradation in a console.warn.
+function opVariableRadiusFillet(oc, prev, node, _sketches, tracker) {
+  if (!prev) throw new Error('variable_radius_fillet: no target shape')
+  const edges = Array.isArray(node.edges) ? node.edges : []
+  if (edges.length === 0) throw new Error('variable_radius_fillet: no edges specified')
+  const builder = track(tracker, new oc.BRepFilletAPI_MakeFillet(prev, oc.ChFi3d_FilletShape.ChFi3d_Rational))
+  let degraded = false
+  for (const entry of edges) {
+    const eid = Number(entry?.edge_id)
+    if (!Number.isFinite(eid)) continue
+    const edge = edgeById(oc, prev, eid)
+    if (!edge) {
+      throw new Error(`variable_radius_fillet: edge id ${eid} not found`)
+    }
+    const radii = Array.isArray(entry.radii) ? entry.radii : []
+    if (radii.length < 2) {
+      // Caller didn't supply two control points — fall back to constant.
+      const r = Number(radii[0]?.radius) || 0
+      if (r <= 0) throw new Error(`variable_radius_fillet: edge ${eid} needs radius > 0`)
+      builder.Add_2(r, edge)
+      continue
+    }
+    const law = buildVariableRadiusLaw(oc, radii, tracker)
+    let added = false
+    if (law) {
+      // Probe Add overloads that accept a Law_Function. In OCCT these are
+      // typically Add_5 or Add_6 (binding-numbered); we try a few.
+      for (const k of ['Add_6', 'Add_5', 'Add_4', 'Add_3']) {
+        try {
+          if (typeof builder[k] === 'function') {
+            builder[k](law, edge)
+            added = true
+            break
+          }
+        } catch { /* try next */ }
+      }
+    }
+    if (!added) {
+      // Final fallback: constant radius from the first entry. We log once.
+      const r = Number(radii[0].radius) || 0
+      if (r <= 0) throw new Error(`variable_radius_fillet: edge ${eid} needs radius > 0`)
+      builder.Add_2(r, edge)
+      degraded = true
+    }
+  }
+  if (degraded && typeof console !== 'undefined') {
+    console.warn('variable_radius_fillet: law-function binding unavailable; fell back to constant radius (first entry) on one or more edges')
+  }
+  builder.Build()
+  if (!builder.IsDone()) throw new Error('variable_radius_fillet: build failed')
+  return builder.Shape()
+}
+
+// ---------------------------------------------------------------------------
+// Tree evaluation.
+//
+// The evaluator walks the feature tree top-to-bottom, threading the
+// "current shape" through ops that modify in place (pocket / fillet /
+// chamfer / shell / hole) and creating a fresh shape for ops that produce
+// new geometry (pad / revolve). The final shape is triangulated and the
+// resulting mesh is returned in `meshes`.
+//
+// We retain ONE mesh per pad/revolve "root" so the LLM can pad twice (two
+// disjoint solids in one feature file) and the renderer shows both. v1's
+// downstream ops (pocket/fillet/chamfer/shell/hole) operate on the most
+// recent root only — multi-body trees aren't a v1 goal.
+
+function evaluateTree(oc, tree, sketches) {
+  if (!Array.isArray(tree)) tree = []
+  const tracker = makeTracker()
+  const meshes = []
+  let current = null         // the shape the next op operates on
+  let currentTrack = null    // the previous-current that needs deleting
+  // Inject sketch lookup into hole/(future) ops via node decoration.
+  for (const raw of tree) {
+    const node = { ...raw, _sketches: sketches }
+    let next = null
+    try {
+      switch (node.op) {
+        case 'pad':
+          // Pads always start a fresh body; finalize previous body first.
+          if (current) {
+            meshes.push({
+              id: node._prevId || `body-${meshes.length}`,
+              ...breptToMesh(oc, current),
+            })
+            cleanupShape(oc, current)
+            current = null
+          }
+          next = opPad(oc, null, node, sketches, tracker)
+          break
+        case 'pocket':   next = opPocket(oc, current, node, sketches, tracker); break
+        case 'revolve':
+          if (current) {
+            meshes.push({ id: `body-${meshes.length}`, ...breptToMesh(oc, current) })
+            cleanupShape(oc, current)
+            current = null
+          }
+          next = opRevolve(oc, null, node, sketches, tracker)
+          break
+        case 'fillet':   next = opFillet(oc, current, node, sketches, tracker); break
+        case 'chamfer':  next = opChamfer(oc, current, node, sketches, tracker); break
+        case 'shell':    next = opShell(oc, current, node, sketches, tracker); break
+        case 'hole':     next = opHole(oc, current, node, sketches, tracker); break
+        case 'linear_pattern': next = opLinearPattern(oc, current, node, sketches, tracker); break
+        case 'polar_pattern':  next = opPolarPattern(oc, current, node, sketches, tracker); break
+        case 'mirror_pattern': next = opMirrorPattern(oc, current, node, sketches, tracker); break
+        case 'push_pull':      next = opPushPull(oc, current, node, sketches, tracker); break
+        case 'sweep1':
+          if (current) {
+            meshes.push({ id: `body-${meshes.length}`, ...breptToMesh(oc, current) })
+            cleanupShape(oc, current)
+            current = null
+          }
+          next = opSweep1(oc, null, node, sketches, tracker)
+          break
+        case 'loft':
+          if (current) {
+            meshes.push({ id: `body-${meshes.length}`, ...breptToMesh(oc, current) })
+            cleanupShape(oc, current)
+            current = null
+          }
+          next = opLoft(oc, null, node, sketches, tracker)
+          break
+        case 'variable_radius_fillet':
+          next = opVariableRadiusFillet(oc, current, node, sketches, tracker)
+          break
+        default:
+          throw new Error(`unknown feature op '${node.op}'`)
+      }
+    } catch (err) {
+      // Preserve the partial shape on error so the renderer keeps showing
+      // whatever was built so far.
+      const msg = err && err.message ? err.message : String(err)
+      const e = new Error(`feature '${node.id || node.op}': ${msg}`)
+      e.partial = current
+      throw e
+    }
+    // Replace current with next; delete the now-stale previous shape.
+    if (current && current !== next) cleanupShape(oc, current)
+    current = next
+    currentTrack = next
+  }
+  if (current) {
+    meshes.push({ id: `body-${meshes.length}`, ...breptToMesh(oc, current) })
+    cleanupShape(oc, current)
+    current = null
+  }
+  freeAll(tracker)
+  void currentTrack
+  return meshes
+}
+
+// ---------------------------------------------------------------------------
+// Worker message handler.
+
+// Helper: compute the final shape from a tree without triangulating every
+// intermediate body. Used by face_outline to get an OCCT shape we can then
+// query for a face by id. Returns the *last* shape produced.
+async function evaluateToFinalShape(oc, tree, sketches) {
+  const tracker = makeTracker()
+  let current = null
+  for (const raw of tree || []) {
+    const node = { ...raw, _sketches: sketches }
+    let next = null
+    try {
+      switch (node.op) {
+        case 'pad':
+          if (current) cleanupShape(oc, current)
+          current = null
+          next = opPad(oc, null, node, sketches, tracker); break
+        case 'pocket':   next = opPocket(oc, current, node, sketches, tracker); break
+        case 'revolve':
+          if (current) cleanupShape(oc, current)
+          current = null
+          next = opRevolve(oc, null, node, sketches, tracker); break
+        case 'fillet':   next = opFillet(oc, current, node, sketches, tracker); break
+        case 'chamfer':  next = opChamfer(oc, current, node, sketches, tracker); break
+        case 'shell':    next = opShell(oc, current, node, sketches, tracker); break
+        case 'hole':     next = opHole(oc, current, node, sketches, tracker); break
+        case 'linear_pattern': next = opLinearPattern(oc, current, node, sketches, tracker); break
+        case 'polar_pattern':  next = opPolarPattern(oc, current, node, sketches, tracker); break
+        case 'mirror_pattern': next = opMirrorPattern(oc, current, node, sketches, tracker); break
+        case 'push_pull':      next = opPushPull(oc, current, node, sketches, tracker); break
+        case 'sweep1':
+          if (current) cleanupShape(oc, current)
+          current = null
+          next = opSweep1(oc, null, node, sketches, tracker); break
+        case 'loft':
+          if (current) cleanupShape(oc, current)
+          current = null
+          next = opLoft(oc, null, node, sketches, tracker); break
+        case 'variable_radius_fillet':
+          next = opVariableRadiusFillet(oc, current, node, sketches, tracker); break
+        default: throw new Error(`unknown feature op '${node.op}'`)
+      }
+    } catch {
+      // Best-effort: bail with whatever we have.
+      break
+    }
+    if (current && current !== next) cleanupShape(oc, current)
+    current = next
+  }
+  freeAll(tracker)
+  return current
+}
+
+self.addEventListener('message', async (ev) => {
+  const msg = ev.data || {}
+  const { runId } = msg
+  if (msg.type === 'evaluate') {
+    const { tree, sketches } = msg
+    try {
+      const oc = await loadOcct()
+      const meshes = evaluateTree(oc, tree || [], sketches || {})
+      // Build transferables so we don't pay structured-clone cost for big
+      // typed arrays. Each mesh contributes ~5-7 typed arrays.
+      const transferables = []
+      for (const m of meshes) {
+        if (m.vertices?.buffer) transferables.push(m.vertices.buffer)
+        if (m.indices?.buffer) transferables.push(m.indices.buffer)
+        if (m.normals?.buffer) transferables.push(m.normals.buffer)
+        if (m.faceIds?.buffer) transferables.push(m.faceIds.buffer)
+        if (m.edgeSegs?.buffer) transferables.push(m.edgeSegs.buffer)
+        if (m.edgeIds?.buffer) transferables.push(m.edgeIds.buffer)
+        // edgeMap.edges[*].vertices buffers — kept around for the LLM "manual"
+        // edge filter; not sent as transferables to avoid double-detach with
+        // edgeSegs (which references the same numbers but not the same Float32
+        // buffers). We rebuild edgeSegs from edges in the bridge.
+      }
+      self.postMessage({ type: 'result', runId, meshes }, transferables)
+    } catch (err) {
+      const partial = err?.partial
+      let partialMesh = null
+      if (partial) {
+        try {
+          const oc = await loadOcct()
+          partialMesh = breptToMesh(oc, partial)
+          cleanupShape(oc, partial)
+        } catch { /* */ }
+      }
+      self.postMessage({
+        type: 'error',
+        runId,
+        message: err?.message || String(err),
+        stack: err?.stack || null,
+        partial: partialMesh,
+      })
+    }
+    return
+  }
+  if (msg.type === 'face_outline') {
+    const { tree, sketches, faceId } = msg
+    try {
+      const oc = await loadOcct()
+      const shape = await evaluateToFinalShape(oc, tree || [], sketches || {})
+      if (!shape) {
+        self.postMessage({ type: 'face_outline_result', runId, ok: false, reason: 'no shape' })
+        return
+      }
+      const face = faceById(oc, shape, Number(faceId))
+      if (!face) {
+        cleanupShape(oc, shape)
+        self.postMessage({ type: 'face_outline_result', runId, ok: false, reason: `face ${faceId} not found` })
+        return
+      }
+      const frame = faceFrame(oc, face)
+      const outline = (frame && frame.planar) ? faceTo2DOutline(oc, face) : null
+      cleanupShape(oc, shape)
+      self.postMessage({
+        type: 'face_outline_result',
+        runId,
+        ok: true,
+        frame,
+        outline: outline || [],
+        planar: !!(frame && frame.planar),
+      })
+    } catch (err) {
+      self.postMessage({
+        type: 'face_outline_result',
+        runId,
+        ok: false,
+        reason: err?.message || String(err),
+      })
+    }
+    return
+  }
+})

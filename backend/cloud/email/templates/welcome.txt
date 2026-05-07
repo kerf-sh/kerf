@@ -1,0 +1,14 @@
+Kerf Cloud — Proprietary. Copyright (c) 2026 Imran Paruk.
+See cloud/LICENSE for terms.
+
+Welcome{{if .Name}}, {{.Name}}{{end}}.
+
+Your kerf account is ready. Start a project at {{.AppURL}}/projects — JSCAD
+code, sketches, assemblies and drawings, all in one place.
+
+Top up credits any time at {{.AppURL}}/billing. There's no subscription —
+pay only for what you use.
+
+--
+This email was sent by kerf — transactional only, no marketing.
+Questions? Reply to this email and a human will get back to you.

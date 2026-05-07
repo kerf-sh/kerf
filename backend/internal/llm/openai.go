@@ -151,10 +151,8 @@ func (o *OpenAICompatible) Complete(ctx context.Context, req CompleteRequest) (C
 	if maxTokens <= 0 {
 		maxTokens = 4096
 	}
+	// Only send if explicitly set; newer models prefer their own defaults.
 	temperature := req.Temperature
-	if temperature == 0 {
-		temperature = 0.7
-	}
 
 	msgs := buildOpenAIMessages(req.System, req.Messages)
 

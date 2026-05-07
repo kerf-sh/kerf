@@ -1,0 +1,41 @@
+Kerf Cloud — Proprietary License
+================================
+
+Copyright (c) 2026 Imran Paruk. All rights reserved.
+
+This license applies to:
+  - all files under this directory (cloud/**)
+  - all files under backend/cloud/**
+  - all files under src/cloud/**
+
+These files are NOT covered by the MIT license at the repository root.
+
+Permitted use
+-------------
+You may read this source code for the purpose of understanding how Kerf's
+hosted service is built, evaluating it, or auditing it.
+
+You may NOT, without prior written permission from the copyright holder:
+  1. Run, deploy, or operate this code as a hosted service for third parties.
+  2. Distribute, sublicense, or sell this code or any derivative work of it.
+  3. Use this code, in whole or in part, to provide a competing commercial
+     service.
+  4. Remove or alter the copyright notices.
+
+Personal, non-commercial self-hosting
+-------------------------------------
+You may run this code privately for your own personal, non-commercial use
+(for example, evaluating it locally, or hosting it for your own personal
+projects with no other users). Charging anyone — including yourself through
+a separate entity — for access falls outside personal use and requires a
+commercial license.
+
+No warranty
+-----------
+THIS SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+
+Contact
+-------
+For commercial licensing, contact: exolutionza@gmail.com

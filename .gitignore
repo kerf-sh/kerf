@@ -7,10 +7,17 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
+.claude/
+
 node_modules
 dist
 dist-ssr
 *.local
+
+# Embedded frontend bundle: built by `npm run build:web`, ignored except
+# for the placeholder that keeps the directory present for //go:embed.
+backend/internal/web/dist/*
+!backend/internal/web/dist/.gitkeep
 
 # Editor
 .vscode/*
@@ -23,17 +30,27 @@ dist-ssr
 *.sln
 *.sw?
 
-# Env (commit only .env.example)
+# Env (commit only .env.example) — frontend Vite vars only.
 .env
 .env.dev
 .env.main
 .env.*.local
+
+# Backend config (commit only kerf.example.toml).
+kerf.toml
 
 # Go
 backend/bin/
 backend/tmp/
 *.test
 *.out
+
+# Compiled Go binaries (built into repo root and backend/)
+/kerf
+/kerf-cloud
+/backend/server
+/backend/test
+/backend/migrate
 
 # Local storage backend (STEP files, uploads)
 .kerf-storage/

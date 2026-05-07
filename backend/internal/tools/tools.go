@@ -27,6 +27,8 @@ type ProjectCtx struct {
 	UserID     uuid.UUID
 	Role       string // "owner" | "editor" | "viewer"
 	HTTPClient *http.Client
+	// FileRevisionsMax bounds per-file revision retention; 0 → use default.
+	FileRevisionsMax int
 }
 
 // Executor runs a single tool call. It returns a JSON string suitable to send
@@ -43,7 +45,14 @@ type Tool struct {
 }
 
 // Registry is the static list of tools the agent loop can dispatch to.
+//
+// Following the LLM tool-surface consolidation, per-element drawing /
+// assembly / feature / circuit / part-mutation tools are gone — the
+// model edits those JSON / TSX files directly via write_file /
+// edit_file after consulting the embedded authoring docs at
+// /docs/llm/<kind>.md (search_kerf_docs → read_file).
 var Registry = []Tool{
+	// File ops.
 	{Spec: listFilesSpec, Run: runListFiles},
 	{Spec: readFileSpec, Run: runReadFile},
 	{Spec: writeFileSpec, Write: true, Run: runWriteFile},
@@ -52,7 +61,27 @@ var Registry = []Tool{
 	{Spec: deleteFileSpec, Write: true, Run: runDeleteFile},
 	{Spec: searchCodeSpec, Run: runSearchCode},
 	{Spec: importStepSpec, Write: true, Run: runImportStep},
+
+	// Object ops (bracket-matched edits inside a JSCAD Part).
+	{Spec: duplicateObjectSpec, Write: true, Run: runDuplicateObject},
+	{Spec: deleteObjectSpec, Write: true, Run: runDeleteObject},
+
+	// Validation + queries.
 	{Spec: validateJSCADSpec, Run: runValidateJSCAD},
+	{Spec: generateBOMSpec, Run: runGenerateBOM},
+
+	// Scaffolding for kinds that need a canonical seed.
+	{Spec: createSketchSpec, Write: true, Run: runCreateSketch},
+	{Spec: createFeatureSpec, Write: true, Run: runCreateFeature},
+	{Spec: createPartSpec, Write: true, Run: runCreatePart},
+	{Spec: createCircuitSpec, Write: true, Run: runCreateCircuit},
+
+	// Authoring docs the LLM searches before editing non-.jscad kinds.
+	{Spec: searchKerfDocsSpec, Run: runSearchKerfDocs},
+
+	// Revisions / undo.
+	{Spec: listRevisionsSpec, Run: runListRevisions},
+	{Spec: restoreRevisionSpec, Write: true, Run: runRestoreRevision},
 }
 
 // Specs returns the JSON schemas of every tool a given role is allowed to use.

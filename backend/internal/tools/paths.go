@@ -55,11 +55,11 @@ func splitPath(p string) []string {
 	return strings.Split(p, "/")
 }
 
-// listProjectFiles loads every file row for a project so we can walk the tree
-// in memory. Caches keyed by parent_id then name.
+// listProjectFiles loads every (non-soft-deleted) file row for a project so
+// we can walk the tree in memory. Caches keyed by parent_id then name.
 func listProjectFiles(ctx context.Context, pc ProjectCtx) ([]fileNode, error) {
 	rows, err := pc.Pool.Query(ctx,
-		`select id, parent_id, name, kind from files where project_id = $1`,
+		`select id, parent_id, name, kind from files where project_id = $1 and deleted_at is null`,
 		pc.ProjectID)
 	if err != nil {
 		return nil, err

@@ -24,15 +24,15 @@ var listFilesSpec = llm.ToolSpec{
 }
 
 type listedFile struct {
-	Path string  `json:"path"`
-	Kind string  `json:"kind"`
-	Size *int64  `json:"size,omitempty"`
+	Path string `json:"path"`
+	Kind string `json:"kind"`
+	Size *int64 `json:"size,omitempty"`
 }
 
 func runListFiles(ctx context.Context, pc ProjectCtx, _ json.RawMessage) (string, error) {
 	rows, err := pc.Pool.Query(ctx,
 		`select id, parent_id, name, kind, length(content), size
-		 from files where project_id = $1`,
+		 from files where project_id = $1 and deleted_at is null`,
 		pc.ProjectID)
 	if err != nil {
 		return "", err
@@ -40,12 +40,12 @@ func runListFiles(ctx context.Context, pc ProjectCtx, _ json.RawMessage) (string
 	defer rows.Close()
 
 	type row struct {
-		id      uuid.UUID
-		parent  *uuid.UUID
-		name    string
-		kind    string
-		clen    int64
-		size    *int64
+		id     uuid.UUID
+		parent *uuid.UUID
+		name   string
+		kind   string
+		clen   int64
+		size   *int64
 	}
 	var all []row
 	idx := map[uuid.UUID]row{}
@@ -95,7 +95,7 @@ func runListFiles(ctx context.Context, pc ProjectCtx, _ json.RawMessage) (string
 
 var readFileSpec = llm.ToolSpec{
 	Name:        "read_file",
-	Description: "Read the full text content of a file by absolute path. Errors on binary kinds (e.g. step).",
+	Description: "Read the full text content of a file by absolute path. Errors on binary kinds (e.g. step). Paths under '/docs/llm/' route to the embedded Kerf authoring corpus instead of the project tree (use search_kerf_docs to discover them).",
 	InputSchema: map[string]any{
 		"type": "object",
 		"properties": map[string]any{
@@ -113,6 +113,16 @@ func runReadFile(ctx context.Context, pc ProjectCtx, args json.RawMessage) (stri
 	var a readFileArgs
 	if err := json.Unmarshal(args, &a); err != nil {
 		return errPayload("invalid args: "+err.Error(), "BAD_ARGS"), nil
+	}
+	// Special-case the embedded LLM authoring corpus. Paths under
+	// /docs/llm/ are served from the in-binary docsFS rather than the
+	// project file tree so the LLM can follow up on a search_kerf_docs
+	// hit using the same read_file tool it uses for project files.
+	if strings.HasPrefix(a.Path, "/docs/llm/") {
+		if body, ok := docCorpusReadFile(a.Path); ok {
+			return okPayload(map[string]any{"path": a.Path, "content": body}), nil
+		}
+		return errPayload("doc not found: "+a.Path+" (use search_kerf_docs to discover available pages)", "NOT_FOUND"), nil
 	}
 	rp, err := resolvePath(ctx, pc, a.Path)
 	if err != nil {
@@ -179,7 +189,18 @@ func runWriteFile(ctx context.Context, pc ProjectCtx, args json.RawMessage) (str
 			a.Content, rp.ID, pc.ProjectID); err != nil {
 			return "", err
 		}
+		_ = recordRevisionForFile(ctx, pc, rp.ID, a.Content, "tool")
 		return okPayload(map[string]any{"path": clean, "bytes": len(a.Content)}), nil
+	}
+	lowClean := strings.ToLower(clean)
+	if strings.HasSuffix(lowClean, ".sketch") {
+		return errPayload("create sketches with create_sketch, not write_file (then edit via write_file once the file exists)", "READONLY_SKETCH"), nil
+	}
+	if strings.HasSuffix(lowClean, ".feature") {
+		return errPayload("create feature files with create_feature, not write_file (then edit via write_file once the file exists)", "READONLY_FEATURE"), nil
+	}
+	if strings.HasSuffix(lowClean, ".part") {
+		return errPayload("create part files with create_part, not write_file (then edit via write_file once the file exists)", "READONLY_PART"), nil
 	}
 	parent, err := ensureFolders(ctx, pc, parts[:len(parts)-1])
 	if err != nil {
@@ -194,6 +215,9 @@ func runWriteFile(ctx context.Context, pc ProjectCtx, args json.RawMessage) (str
 		pc.ProjectID, parent, leaf, a.Content).Scan(&newID)
 	if err != nil {
 		return "", err
+	}
+	if a.Content != "" {
+		_ = recordRevisionForFile(ctx, pc, newID, a.Content, "tool")
 	}
 	return okPayload(map[string]any{"path": clean, "bytes": len(a.Content), "id": newID.String()}), nil
 }
@@ -254,6 +278,7 @@ func runEditFile(ctx context.Context, pc ProjectCtx, args json.RawMessage) (stri
 		updated, rp.ID, pc.ProjectID); err != nil {
 		return "", err
 	}
+	_ = recordRevisionForFile(ctx, pc, rp.ID, updated, "tool")
 	return okPayload(map[string]any{"path": a.Path, "replaced": 1}), nil
 }
 
@@ -261,7 +286,7 @@ func runEditFile(ctx context.Context, pc ProjectCtx, args json.RawMessage) (stri
 
 var createFileSpec = llm.ToolSpec{
 	Name:        "create_file",
-	Description: "Create a new file, folder, or assembly. Auto-creates intermediate folders. kind defaults to 'file'.",
+	Description: "Create a new file, folder, assembly, or drawing. Auto-creates intermediate folders. kind defaults to 'file'.",
 	InputSchema: map[string]any{
 		"type": "object",
 		"properties": map[string]any{
@@ -269,7 +294,7 @@ var createFileSpec = llm.ToolSpec{
 			"content": map[string]any{"type": "string"},
 			"kind": map[string]any{
 				"type": "string",
-				"enum": []string{"file", "folder", "assembly"},
+				"enum": []string{"file", "folder", "assembly", "drawing"},
 			},
 		},
 		"required": []string{"path"},
@@ -290,8 +315,20 @@ func runCreateFile(ctx context.Context, pc ProjectCtx, args json.RawMessage) (st
 	if a.Kind == "" {
 		a.Kind = "file"
 	}
-	if a.Kind != "file" && a.Kind != "folder" && a.Kind != "assembly" {
-		return errPayload("invalid kind (must be file|folder|assembly)", "BAD_ARGS"), nil
+	if a.Kind == "sketch" {
+		return errPayload("use create_sketch to create sketches; create_file does not support kind='sketch'", "READONLY_SKETCH"), nil
+	}
+	if a.Kind == "feature" {
+		return errPayload("use create_feature to create feature files; create_file does not support kind='feature'", "READONLY_FEATURE"), nil
+	}
+	if a.Kind == "part" {
+		return errPayload("use create_part to create library parts; create_file does not support kind='part'", "READONLY_PART"), nil
+	}
+	if a.Kind == "circuit" {
+		return errPayload("use create_circuit to create electronics designs; create_file does not support kind='circuit'", "BAD_ARGS"), nil
+	}
+	if a.Kind != "file" && a.Kind != "folder" && a.Kind != "assembly" && a.Kind != "drawing" {
+		return errPayload("invalid kind (must be file|folder|assembly|drawing)", "BAD_ARGS"), nil
 	}
 	clean, err := normalizePath(a.Path)
 	if err != nil {
@@ -303,6 +340,16 @@ func runCreateFile(ctx context.Context, pc ProjectCtx, args json.RawMessage) (st
 	}
 	if rp, _ := resolvePath(ctx, pc, clean); rp.Exists {
 		return errPayload("path already exists", "EXISTS"), nil
+	}
+	lowCreate := strings.ToLower(clean)
+	if strings.HasSuffix(lowCreate, ".sketch") {
+		return errPayload("use create_sketch to create sketches", "READONLY_SKETCH"), nil
+	}
+	if strings.HasSuffix(lowCreate, ".feature") {
+		return errPayload("use create_feature to create feature files", "READONLY_FEATURE"), nil
+	}
+	if strings.HasSuffix(lowCreate, ".part") {
+		return errPayload("use create_part to create library parts", "READONLY_PART"), nil
 	}
 	parent, err := ensureFolders(ctx, pc, parts[:len(parts)-1])
 	if err != nil {
@@ -317,6 +364,9 @@ func runCreateFile(ctx context.Context, pc ProjectCtx, args json.RawMessage) (st
 		pc.ProjectID, parent, leaf, a.Kind, a.Content).Scan(&newID)
 	if err != nil {
 		return "", err
+	}
+	if a.Content != "" {
+		_ = recordRevisionForFile(ctx, pc, newID, a.Content, "tool")
 	}
 	return okPayload(map[string]any{"path": clean, "id": newID.String()}), nil
 }
@@ -348,18 +398,18 @@ func runDeleteFile(ctx context.Context, pc ProjectCtx, args json.RawMessage) (st
 	if err != nil || !rp.Exists {
 		return errPayload("file not found: "+a.Path, "NOT_FOUND"), nil
 	}
-	// Capture storage_key for later cleanup.
-	var storageKey *string
-	_ = pc.Pool.QueryRow(ctx,
-		`select storage_key from files where id = $1 and project_id = $2`,
-		rp.ID, pc.ProjectID).Scan(&storageKey)
+	// Capture current content + a final revision BEFORE soft-deleting so the
+	// user can later restore from the History drawer (or via restore_revision).
+	var content string
+	if err := pc.Pool.QueryRow(ctx,
+		`select content from files where id = $1 and project_id = $2`,
+		rp.ID, pc.ProjectID).Scan(&content); err == nil {
+		_ = recordRevisionForFile(ctx, pc, rp.ID, content, "tool")
+	}
 	if _, err := pc.Pool.Exec(ctx,
-		`delete from files where id = $1 and project_id = $2`,
+		`update files set deleted_at = now(), updated_at = now() where id = $1 and project_id = $2`,
 		rp.ID, pc.ProjectID); err != nil {
 		return "", err
-	}
-	if pc.Storage != nil && storageKey != nil && *storageKey != "" {
-		_ = pc.Storage.Delete(ctx, *storageKey)
 	}
 	return okPayload(map[string]any{"path": a.Path}), nil
 }
@@ -403,7 +453,7 @@ func runSearchCode(ctx context.Context, pc ProjectCtx, args json.RawMessage) (st
 	}
 	rows, err := pc.Pool.Query(ctx,
 		`select id, content from files
-		 where project_id = $1 and kind in ('file','assembly')`,
+		 where project_id = $1 and kind in ('file','assembly') and deleted_at is null`,
 		pc.ProjectID)
 	if err != nil {
 		return "", err

@@ -121,9 +121,9 @@ func (d *Deps) LookupShare(w http.ResponseWriter, r *http.Request) {
 	}
 	var p models.Project
 	if err := d.Pool.QueryRow(r.Context(), `
-		select id, owner_id, name, description, visibility, created_at, updated_at
+		select id, workspace_id, name, description, visibility, created_at, updated_at
 		from projects where id = $1
-	`, link.ProjectID).Scan(&p.ID, &p.OwnerID, &p.Name, &p.Description, &p.Visibility, &p.CreatedAt, &p.UpdatedAt); err != nil {
+	`, link.ProjectID).Scan(&p.ID, &p.WorkspaceID, &p.Name, &p.Description, &p.Visibility, &p.CreatedAt, &p.UpdatedAt); err != nil {
 		genericServerError(w, err)
 		return
 	}
@@ -136,7 +136,12 @@ func (d *Deps) LookupShare(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// AcceptShare adds the caller to the project at the link's role and increments uses.
+// AcceptShare grants the caller membership of the project's workspace (as
+// 'member') and increments the link's use count. The link's role still maps:
+//   - 'editor' / 'owner' on the link → workspace 'member' (edit access)
+//   - 'viewer' → workspace 'member' too in v1 (we don't model viewers yet)
+//
+// TODO: introduce a viewer-tier workspace role for proper per-link viewer access.
 func (d *Deps) AcceptShare(w http.ResponseWriter, r *http.Request) {
 	uid := middleware.UserID(r.Context())
 	if uid == "" {
@@ -148,22 +153,20 @@ func (d *Deps) AcceptShare(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	var ownerID string
+	var workspaceID string
 	if err := d.Pool.QueryRow(r.Context(),
-		`select owner_id from projects where id = $1`, link.ProjectID).Scan(&ownerID); err != nil {
+		`select workspace_id from projects where id = $1`, link.ProjectID).Scan(&workspaceID); err != nil {
 		genericServerError(w, err)
 		return
 	}
-	if ownerID != uid {
-		_, err := d.Pool.Exec(r.Context(), `
-			insert into project_members(project_id, user_id, role)
-			values ($1,$2,$3)
-			on conflict (project_id, user_id) do nothing
-		`, link.ProjectID, uid, link.Role)
-		if err != nil {
-			genericServerError(w, err)
-			return
-		}
+	_, err := d.Pool.Exec(r.Context(), `
+		insert into workspace_members(workspace_id, user_id, role)
+		values ($1, $2, 'member')
+		on conflict (workspace_id, user_id) do nothing
+	`, workspaceID, uid)
+	if err != nil {
+		genericServerError(w, err)
+		return
 	}
 	if _, err := d.Pool.Exec(r.Context(),
 		`update share_links set uses = uses + 1 where id = $1`, link.ID); err != nil {

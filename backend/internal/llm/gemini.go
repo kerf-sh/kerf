@@ -75,9 +75,6 @@ func (g *Gemini) Complete(ctx context.Context, req CompleteRequest) (CompleteRes
 		maxTokens = 4096
 	}
 	temperature := req.Temperature
-	if temperature == 0 {
-		temperature = 0.7
-	}
 
 	contents := make([]geminiContent, 0, len(req.Messages))
 	for _, m := range req.Messages {

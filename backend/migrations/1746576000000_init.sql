@@ -66,17 +66,32 @@ create table if not exists files (
     project_id uuid not null references projects(id) on delete cascade,
     parent_id uuid references files(id) on delete cascade,
     name text not null,
-    kind text not null default 'file' check (kind in ('file','folder','assembly','step')),
+    kind text not null default 'file' check (kind in ('file','folder','assembly','step','drawing','sketch')),
     content text not null default '',
     storage_key text,
     mime_type text,
     size bigint,
+    deleted_at timestamptz,
     created_at timestamptz not null default now(),
     updated_at timestamptz not null default now()
 );
 create index if not exists files_project_id_idx on files(project_id);
 create index if not exists files_parent_id_idx on files(parent_id);
 create index if not exists files_storage_key_idx on files(storage_key);
+create index if not exists files_deleted_at_idx on files(deleted_at);
+
+-- Per-file revision history. Every write to a file's content (via PATCH, the
+-- write tools, soft-delete, or restore) appends a row here. The capacity is
+-- pruned per-file by the application using the FileRevisionsMax config knob.
+create table if not exists file_revisions (
+    id uuid primary key default gen_random_uuid(),
+    file_id uuid not null references files(id) on delete cascade,
+    content text not null,
+    source text not null check (source in ('user','llm','tool','restore')),
+    user_id uuid references users(id) on delete set null,
+    created_at timestamptz not null default now()
+);
+create index if not exists file_revisions_file_id_created_at_idx on file_revisions(file_id, created_at desc);
 
 create table if not exists chat_threads (
     id uuid primary key default gen_random_uuid(),

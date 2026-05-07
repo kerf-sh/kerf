@@ -48,10 +48,16 @@ func decodeJSON(r *http.Request, dst interface{}) error {
 }
 
 // projectRole returns the caller's role on the project (or "" if none) and a
-// boolean indicating whether the project exists.
+// boolean indicating whether the project exists. With workspaces, the role is
+// the caller's role on the project's workspace, mapped:
+//   - workspace owner → "owner"
+//   - workspace admin → "editor"
+//   - workspace member → "editor"
+//
+// (We collapse all members to edit access in v1; share_links still grant viewer.)
 func projectRole(ctx context.Context, pool *pgxpool.Pool, projectID, userID string) (role string, exists bool, err error) {
-	var ownerID string
-	err = pool.QueryRow(ctx, `select owner_id from projects where id = $1`, projectID).Scan(&ownerID)
+	var workspaceID string
+	err = pool.QueryRow(ctx, `select workspace_id from projects where id = $1`, projectID).Scan(&workspaceID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return "", false, nil
@@ -59,18 +65,23 @@ func projectRole(ctx context.Context, pool *pgxpool.Pool, projectID, userID stri
 		return "", false, err
 	}
 	exists = true
-	if ownerID == userID {
-		return "owner", true, nil
-	}
-	var r string
-	err = pool.QueryRow(ctx, `select role from project_members where project_id = $1 and user_id = $2`, projectID, userID).Scan(&r)
+	var wsRole string
+	err = pool.QueryRow(ctx,
+		`select role from workspace_members where workspace_id = $1 and user_id = $2`,
+		workspaceID, userID).Scan(&wsRole)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return "", true, nil
 		}
 		return "", true, err
 	}
-	return r, true, nil
+	switch wsRole {
+	case "owner":
+		return "owner", true, nil
+	case "admin", "member":
+		return "editor", true, nil
+	}
+	return "", true, nil
 }
 
 // requireMember returns the caller's role; writes 404/403 and returns "" if not authorized.

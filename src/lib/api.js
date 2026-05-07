@@ -83,6 +83,10 @@ export const api = {
   googleAuthUrl: () => `${API_URL}/auth/google/start`,
   refresh: () => refreshAccessToken(),
   me: () => request('/api/me'),
+  updateMe: (patch) => request('/api/me', { method: 'PATCH', body: patch }),
+  changePassword: (current_password, new_password) =>
+    request('/api/me/password', { method: 'POST', body: { current_password, new_password } }),
+  deleteMe: () => request('/api/me?confirm=DELETE', { method: 'DELETE' }),
   logout: () => {
     const { refreshToken, logout } = useAuth.getState()
     logout()
@@ -93,13 +97,45 @@ export const api = {
 
   // ---- Projects ----
   listProjects: () => request('/api/projects'),
-  createProject: (name, description) =>
-    request('/api/projects', { method: 'POST', body: { name, description } }),
+  // createProject accepts an optional project_type ('mechanical' /
+  // 'electronics' / 'architecture'). Old call-sites that pass
+  // (name, description) still work — the backend defaults to 'mechanical'
+  // when project_type is omitted. New call-sites pass an options object
+  // for clarity; we accept both shapes.
+  createProject: (name, description, projectType) => {
+    const body = { name, description }
+    if (projectType) body.project_type = projectType
+    return request('/api/projects', { method: 'POST', body })
+  },
   getProject: (id) => request(`/api/projects/${id}`),
   updateProject: (id, patch) =>
     request(`/api/projects/${id}`, { method: 'PATCH', body: patch }),
   deleteProject: (id) =>
     request(`/api/projects/${id}`, { method: 'DELETE' }),
+
+  // Upload a JPEG thumbnail rendered client-side. Multipart, so we
+  // bypass the JSON request() helper.
+  uploadProjectThumbnail: async (projectId, blob) => {
+    const fd = new FormData()
+    fd.append('file', blob, 'thumbnail.jpg')
+    const url = `${API_URL}/api/projects/${projectId}/thumbnail`
+    const token = useAuth.getState().accessToken
+    const headers = {}
+    if (token) headers.authorization = `Bearer ${token}`
+    let res = await fetch(url, { method: 'POST', headers, body: fd })
+    if (res.status === 401 && useAuth.getState().refreshToken) {
+      try {
+        const newToken = await refreshAccessToken()
+        headers.authorization = `Bearer ${newToken}`
+        res = await fetch(url, { method: 'POST', headers, body: fd })
+      } catch { /* fall through */ }
+    }
+    if (!res.ok) {
+      const text = await res.text().catch(() => '')
+      throw new ApiError(res.status, text || res.statusText)
+    }
+    return res.json()
+  },
 
   // ---- Files / Assemblies ----
   listFiles: (projectId) => request(`/api/projects/${projectId}/files`),
@@ -220,4 +256,371 @@ export const api = {
 
   // ---- Models ----
   listModels: () => request('/api/models'),
+
+  // Chunked, resumable binary upload (Phase 2). Used for STEP files; see
+  // ROADMAP.md "Performance roadmap". Computes a SHA-256 of the file, asks the backend for a
+  // session (which may resume an existing one), uploads any missing chunks
+  // with bounded concurrency + per-chunk retry, then finalizes.
+  //
+  // onProgress({received, total, bytes}) fires after each chunk completes.
+  uploadAssetChunked: (projectId, file, opts = {}) =>
+    uploadAssetChunked(projectId, file, opts),
+  cancelUpload: (projectId, uploadId) => cancelUpload(projectId, uploadId),
+
+  // ---- Bill of Materials ----
+  getBOM: (projectId) => request(`/api/projects/${projectId}/bom`),
+
+  // ---- Activity timeline ----
+  // Per-project merged feed of recent events (file revisions, chat messages,
+  // file lifecycle, project_created). `before` is an ISO timestamp returned
+  // as `next_cursor` by the previous page; pass it to walk further back.
+  getActivity: (projectId, before, limit) =>
+    request(`/api/projects/${projectId}/activity?limit=${limit ?? 50}${before ? `&before=${encodeURIComponent(before)}` : ''}`),
+
+  // ---- Library: Part photos ----
+  // Multipart upload of a single image. Backend resizes (longest side ≤
+  // 1024 px), stores as JPEG, and appends to the Part's photos array. The
+  // first photo on a Part is auto-promoted to primary.
+  uploadPartPhoto: async (projectId, fileId, blob) => {
+    const fd = new FormData()
+    const name = (blob && blob.name) || 'photo.jpg'
+    fd.append('file', blob, name)
+    const url = `${API_URL}/api/projects/${projectId}/files/${fileId}/photos`
+    const token = useAuth.getState().accessToken
+    const headers = {}
+    if (token) headers.authorization = `Bearer ${token}`
+    let res = await fetch(url, { method: 'POST', headers, body: fd })
+    if (res.status === 401 && useAuth.getState().refreshToken) {
+      try {
+        const newToken = await refreshAccessToken()
+        headers.authorization = `Bearer ${newToken}`
+        res = await fetch(url, { method: 'POST', headers, body: fd })
+      } catch { /* fall through */ }
+    }
+    if (!res.ok) {
+      const text = await res.text()
+      let msg = text
+      try { msg = JSON.parse(text).error || text } catch { /* ignore */ }
+      throw new ApiError(res.status, msg || res.statusText)
+    }
+    return res.json()
+  },
+  deletePartPhoto: (projectId, fileId, storageKey) =>
+    request(`/api/projects/${projectId}/files/${fileId}/photos?key=${encodeURIComponent(storageKey)}`,
+      { method: 'DELETE' }),
+  setPrimaryPartPhoto: (projectId, fileId, storageKey) =>
+    request(`/api/projects/${projectId}/files/${fileId}/photos/primary?key=${encodeURIComponent(storageKey)}`,
+      { method: 'PATCH' }),
+
+  // ---- Library: Part 3D model ----
+  // Thin wrapper around the chunked upload helper that returns a
+  // {storage_key, mime_type} pair. Used by LibraryEditor's "Attach model"
+  // affordance — the workspace store also has a higher-level
+  // `replacePartModel` action that wraps this with revision recording.
+  uploadPartModel: async (projectId, blob, fileName, opts = {}) => {
+    const file = blob instanceof File
+      ? blob
+      : new File([blob], fileName || 'model.step', { type: blob.type || 'model/step' })
+    const created = await uploadAssetChunked(projectId, file, {
+      kind: 'step',
+      parent_id: null,
+      ...opts,
+    })
+    return created
+  },
+
+  // ---- File revisions (per-file undo history) ----
+  listRevisions: (projectId, fileId, limit) =>
+    request(`/api/projects/${projectId}/files/${fileId}/revisions${limit ? `?limit=${limit}` : ''}`),
+  getRevision: (projectId, fileId, revisionId) =>
+    request(`/api/projects/${projectId}/files/${fileId}/revisions/${revisionId}`),
+  restoreRevision: (projectId, fileId, revisionId) =>
+    request(`/api/projects/${projectId}/files/${fileId}/restore/${revisionId}`, { method: 'POST' }),
+
+  // ---- Avatar ----
+  // Upload a new avatar from the user's local picker. The backend
+  // resizes server-side (256x256, JPEG q=85) and returns the updated
+  // user row with a freshly resolved avatar_url.
+  uploadAvatar: async (blob) => {
+    const fd = new FormData()
+    const name = (blob && blob.name) || 'avatar.jpg'
+    fd.append('file', blob, name)
+    const url = `${API_URL}/api/me/avatar`
+    const token = useAuth.getState().accessToken
+    const headers = {}
+    if (token) headers.authorization = `Bearer ${token}`
+    let res = await fetch(url, { method: 'POST', headers, body: fd })
+    if (res.status === 401 && useAuth.getState().refreshToken) {
+      try {
+        const newToken = await refreshAccessToken()
+        headers.authorization = `Bearer ${newToken}`
+        res = await fetch(url, { method: 'POST', headers, body: fd })
+      } catch { /* fall through */ }
+    }
+    if (!res.ok) {
+      const text = await res.text()
+      let msg = text
+      try { msg = JSON.parse(text).error || text } catch { /* ignore */ }
+      throw new ApiError(res.status, msg || res.statusText)
+    }
+    return res.json()
+  },
+  deleteAvatar: () => request('/api/me/avatar', { method: 'DELETE' }),
+
+  // ---- Admin: distributor credentials (Library Phase 2) ----
+  // All admin-only (account_role='admin'). The list endpoint returns
+  // unconfigured rows too, so the UI can render a stub "configure"
+  // affordance for each known distributor.
+  admin: {
+    listDistributors: () => request('/api/admin/distributors'),
+    updateDistributor: (name, payload) =>
+      request(`/api/admin/distributors/${encodeURIComponent(name)}`, {
+        method: 'PUT',
+        body: payload,
+      }),
+    deleteDistributor: (name) =>
+      request(`/api/admin/distributors/${encodeURIComponent(name)}`, {
+        method: 'DELETE',
+      }),
+
+    // Library Phase 3: verified-publisher curation. The backend
+    // returns user rows with a library_count rollup and a
+    // next_cursor for pagination. Search filters on email + name
+    // server-side; verified_only=true narrows to flagged accounts.
+    listPublishers: ({ search, verifiedOnly, cursor, limit } = {}) => {
+      const qs = []
+      if (search) qs.push(`search=${encodeURIComponent(search)}`)
+      if (verifiedOnly) qs.push('verified_only=true')
+      if (cursor) qs.push(`cursor=${encodeURIComponent(cursor)}`)
+      if (limit) qs.push(`limit=${limit}`)
+      const tail = qs.length ? `?${qs.join('&')}` : ''
+      return request(`/api/admin/publishers${tail}`)
+    },
+    setPublisherVerified: (userId, isVerified) =>
+      request(`/api/admin/publishers/${encodeURIComponent(userId)}`, {
+        method: 'PUT',
+        body: { is_verified_publisher: !!isVerified },
+      }),
+  },
+
+  // ---- Library Phase 2: per-Part distributor refresh ----
+  // Synchronous. The endpoint returns {updated: N, content: "<JSON>"}.
+  refreshPartDistributors: (projectId, fileId) =>
+    request(
+      `/api/projects/${projectId}/files/${fileId}/distributors/refresh`,
+      { method: 'POST' },
+    ),
+}
+
+// ---------------------------------------------------------------------------
+// Chunked upload helpers (Phase 2)
+// ---------------------------------------------------------------------------
+
+// CHUNK_CONCURRENCY caps how many chunks can be in flight at once. 3 is the
+// sweet spot for typical home-broadband upstream — more pipelined transfers
+// rarely beat the single-stream throughput once link buffer fills.
+const CHUNK_CONCURRENCY = 3
+// Per-chunk retry policy. Three retries with exponential backoff (250 / 500 /
+// 1000 ms) before we surface the error to the caller.
+const CHUNK_RETRIES = 3
+
+// Compute SHA-256 over a File, returning a 64-char lowercase hex digest.
+// Web Crypto's `crypto.subtle.digest` doesn't expose an incremental API, so
+// we feed it the entire ArrayBuffer in one shot. Fine within the 200 MB cap;
+// switch to `js-sha256` streaming if we ever raise the cap.
+async function sha256OfFile(file) {
+  const buf = await file.arrayBuffer()
+  const digest = await crypto.subtle.digest('SHA-256', buf)
+  const bytes = new Uint8Array(digest)
+  let hex = ''
+  for (let i = 0; i < bytes.length; i++) {
+    hex += bytes[i].toString(16).padStart(2, '0')
+  }
+  return hex
+}
+
+// authedFetch: a thin fetch wrapper that injects the bearer token and
+// transparently refreshes on 401. Returns the raw Response so the caller
+// can decide what to do (we use it for both JSON and 204 responses).
+async function authedFetch(url, init = {}) {
+  const token = useAuth.getState().accessToken
+  const headers = { ...(init.headers || {}) }
+  if (token) headers.authorization = `Bearer ${token}`
+  let res = await fetch(url, { ...init, headers })
+  if (res.status === 401 && useAuth.getState().refreshToken) {
+    try {
+      const newToken = await refreshAccessToken()
+      headers.authorization = `Bearer ${newToken}`
+      res = await fetch(url, { ...init, headers })
+    } catch { /* fall through to caller */ }
+  }
+  return res
+}
+
+async function readErrorJSON(res) {
+  const text = await res.text().catch(() => '')
+  let msg = text || res.statusText
+  let code
+  try {
+    const j = JSON.parse(text)
+    msg = j.error || msg
+    code = j.code
+  } catch { /* not JSON */ }
+  const err = new ApiError(res.status, msg)
+  if (code) err.code = code
+  return err
+}
+
+// uploadAssetChunked: the main entry point — see api.uploadAssetChunked.
+async function uploadAssetChunked(projectId, file, { kind = 'step', parent_id = null, onProgress, onInit, signal } = {}) {
+  if (!file) throw new Error('uploadAssetChunked: file required')
+
+  const sha256 = await sha256OfFile(file)
+
+  // 1. Init / resume.
+  const initRes = await authedFetch(`${API_URL}/api/projects/${projectId}/uploads`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      filename: file.name,
+      size: file.size,
+      mime: file.type || 'model/step',
+      sha256,
+    }),
+  })
+  if (!initRes.ok) throw await readErrorJSON(initRes)
+  const init = await initRes.json()
+  const { upload_id: uploadId, chunk_size: chunkSize, total_chunks: totalChunks } = init
+  let received = new Set((init.received_chunks || []).map((n) => Number(n)))
+  // Surface the upload_id so the caller (e.g. workspace store) can wire a
+  // proper DELETE on cancel.
+  if (typeof onInit === 'function') {
+    try { onInit({ uploadId, chunkSize, totalChunks }) } catch { /* swallow */ }
+  }
+
+  // Helper: drive a clean abort by DELETE-ing the session on the server,
+  // then surfacing a recognisable error to the caller.
+  async function abortAndThrow() {
+    try {
+      await authedFetch(`${API_URL}/api/projects/${projectId}/uploads/${uploadId}`, {
+        method: 'DELETE',
+      })
+    } catch { /* best-effort */ }
+    const err = new Error('upload aborted')
+    err.aborted = true
+    throw err
+  }
+
+  // 2. If the server says we're already complete (idempotent re-upload of
+  // the same SHA), skip straight to finalize.
+  if (!init.complete) {
+    // 3. Build the missing-chunk worklist.
+    const missing = []
+    for (let i = 0; i < totalChunks; i++) {
+      if (!received.has(i)) missing.push(i)
+    }
+
+    // 4. Bounded concurrency loop. We pull from the worklist via a shared
+    // index so each "worker" simply asks for the next item to do.
+    const total = totalChunks
+    const fireProgress = () => {
+      if (typeof onProgress === 'function') {
+        const r = received.size
+        onProgress({
+          received: r,
+          total,
+          bytes: Math.min(file.size, r * chunkSize),
+        })
+      }
+    }
+    fireProgress() // initial tick (for resumed uploads, this could be > 0).
+
+    if (signal?.aborted) await abortAndThrow()
+
+    let nextIdx = 0
+    let firstError = null
+    const workers = []
+    const concurrency = Math.min(CHUNK_CONCURRENCY, missing.length || 1)
+    for (let w = 0; w < concurrency; w++) {
+      workers.push((async () => {
+        while (firstError == null) {
+          if (signal?.aborted) {
+            firstError = new Error('upload aborted')
+            firstError.aborted = true
+            return
+          }
+          const myIdx = nextIdx++
+          if (myIdx >= missing.length) return
+          const chunkIndex = missing[myIdx]
+          const start = chunkIndex * chunkSize
+          const end = Math.min(file.size, start + chunkSize)
+          const blob = file.slice(start, end)
+          try {
+            await uploadOneChunk(projectId, uploadId, chunkIndex, blob, signal)
+            received.add(chunkIndex)
+            fireProgress()
+          } catch (err) {
+            firstError = err
+            return
+          }
+        }
+      })())
+    }
+    await Promise.all(workers)
+    if (firstError) {
+      if (firstError.aborted || signal?.aborted) await abortAndThrow()
+      throw firstError
+    }
+  }
+
+  if (signal?.aborted) await abortAndThrow()
+
+  // 5. Finalize.
+  const finRes = await authedFetch(`${API_URL}/api/projects/${projectId}/uploads/${uploadId}/finalize`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ kind, parent_id }),
+  })
+  if (!finRes.ok) throw await readErrorJSON(finRes)
+  return finRes.json()
+}
+
+// uploadOneChunk: PUT a single chunk with retries + exponential backoff.
+async function uploadOneChunk(projectId, uploadId, chunkIndex, blob, signal) {
+  let attempt = 0
+  let lastErr
+  while (attempt <= CHUNK_RETRIES) {
+    if (signal?.aborted) throw new Error('upload aborted')
+    try {
+      const url = `${API_URL}/api/projects/${projectId}/uploads/${uploadId}/chunks/${chunkIndex}`
+      const res = await authedFetch(url, {
+        method: 'PUT',
+        headers: { 'content-type': 'application/octet-stream' },
+        body: blob,
+        signal,
+      })
+      if (res.ok || res.status === 204) return
+      // Non-retryable client errors: don't bother retrying.
+      if (res.status >= 400 && res.status < 500 && res.status !== 408 && res.status !== 429) {
+        throw await readErrorJSON(res)
+      }
+      lastErr = await readErrorJSON(res)
+    } catch (err) {
+      lastErr = err
+    }
+    attempt++
+    if (attempt > CHUNK_RETRIES) break
+    const backoffMs = 250 * (2 ** (attempt - 1))
+    await new Promise((r) => setTimeout(r, backoffMs))
+  }
+  throw lastErr || new Error(`chunk ${chunkIndex} upload failed`)
+}
+
+// cancelUpload: best-effort DELETE of an in-flight upload session.
+export async function cancelUpload(projectId, uploadId) {
+  try {
+    await authedFetch(`${API_URL}/api/projects/${projectId}/uploads/${uploadId}`, {
+      method: 'DELETE',
+    })
+  } catch { /* best-effort */ }
 }

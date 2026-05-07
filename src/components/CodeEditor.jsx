@@ -1,6 +1,7 @@
 import { useCallback } from 'react'
 import Editor from '@monaco-editor/react'
 import { AlertTriangle } from 'lucide-react'
+import { useWorkspace } from '../store/workspace.js'
 
 const OPTIONS = {
   minimap: { enabled: false },
@@ -98,7 +99,7 @@ const JSCAD_AMBIENT = `declare module '@jscad/modeling' {
 }
 `
 
-export default function CodeEditor({ value, onChange, errors, readOnly = false }) {
+export default function CodeEditor({ value, onChange, errors, readOnly = false, readOnlyReason = null }) {
   const errs = (errors || []).filter(Boolean)
 
   // Configure Monaco once when the editor first mounts. The handler runs in the
@@ -131,6 +132,16 @@ export default function CodeEditor({ value, onChange, errors, readOnly = false }
     js.addExtraLib(JSCAD_AMBIENT, 'file:///node_modules/@jscad/modeling/index.d.ts')
   }, [])
 
+  // Track Monaco focus on the workspace store so the global Cmd+Z handler
+  // can yield to Monaco's buffer-undo while the editor has focus and use
+  // its own revision-undo otherwise. Workspace store is read via getState
+  // here to avoid retriggering the editor on focus state changes.
+  const handleMount = useCallback((editor) => {
+    const set = (focused) => useWorkspace.getState().setEditorFocused(focused)
+    editor.onDidFocusEditorText(() => set(true))
+    editor.onDidBlurEditorText(() => set(false))
+  }, [])
+
   return (
     <div className="flex flex-col h-full bg-ink-900">
       {errs.length > 0 && (
@@ -139,6 +150,12 @@ export default function CodeEditor({ value, onChange, errors, readOnly = false }
           <div className="flex-1 whitespace-pre-wrap break-words">
             {errs.join('\n')}
           </div>
+        </div>
+      )}
+      {readOnly && readOnlyReason && (
+        <div className="flex items-center gap-2 px-3 py-1.5 bg-amber-950/40 border-b border-amber-900/40 text-amber-200 text-[11px]">
+          <AlertTriangle size={12} className="flex-shrink-0" />
+          <span>{readOnlyReason}</span>
         </div>
       )}
       <div className="flex-1 min-h-0">
@@ -150,6 +167,7 @@ export default function CodeEditor({ value, onChange, errors, readOnly = false }
           onChange={(v) => onChange?.(v ?? '')}
           options={{ ...OPTIONS, readOnly }}
           beforeMount={handleBeforeMount}
+          onMount={handleMount}
         />
       </div>
     </div>

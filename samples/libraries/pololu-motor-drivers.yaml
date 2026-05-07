@@ -1,0 +1,121 @@
+# Pololu Motor Drivers — curated starter library.
+#
+# A small set of widely-used DC and stepper motor driver carriers
+# from Pololu Robotics. Each carrier exposes the bare driver IC
+# (Allegro, TI, …) on a breakout with logic-level pins and screw
+# terminals. Pricing is omitted — Pololu's catalogue prices change
+# regularly and we don't want to bake in a stale snapshot.
+#
+# Pololu product numbers double as the order code; the URL slugs are
+# the human-readable carrier names.
+
+publisher_email: "pololu@kerf.system"
+publisher_name: "Pololu Robotics & Electronics"
+publisher_url: "https://www.pololu.com"
+mark_verified: true
+
+library_name: "Pololu Motor Drivers"
+library_description: |
+  Small, robust DC + stepper driver carriers from Pololu — the
+  go-to picks for hobby robotics, CNC, and 3D-printer extruder
+  drivers.
+library_visibility: "public"
+
+parts:
+  - name: "DRV8825 Stepper Motor Driver Carrier — High Current"
+    description: |
+      Texas Instruments DRV8825 high-current stepper driver carrier.
+      Microstepping down to 1/32, up to 2.2 A per coil with cooling.
+      Drop-in replacement for the older A4988 carriers.
+    category: "motor-driver"
+    manufacturer: "Pololu / TI"
+    mpn: "2133"
+    datasheet_url: "https://www.pololu.com/file/0J590/drv8825.pdf"
+    visibility: "public"
+    distributors:
+      - name: "pololu"
+        sku: "2133"
+        url: "https://www.pololu.com/product/2133"
+      - name: "digikey"
+        sku: "1568-1109-ND"
+        url: "https://www.digikey.com/en/products/detail/pololu-corporation/2133/10450426"
+    metadata:
+      max_coil_current_a: 2.2
+      microstep_modes: "1, 1/2, 1/4, 1/8, 1/16, 1/32"
+      logic_voltage: "3.3 to 5 V"
+
+  - name: "A4988 Stepper Motor Driver Carrier"
+    description: |
+      Allegro A4988 stepper driver carrier, the original RepRap-era
+      driver. Microstepping down to 1/16, up to 2 A per coil with
+      cooling.
+    category: "motor-driver"
+    manufacturer: "Pololu / Allegro"
+    mpn: "1182"
+    datasheet_url: "https://www.pololu.com/file/0J450/A4988.pdf"
+    visibility: "public"
+    distributors:
+      - name: "pololu"
+        sku: "1182"
+        url: "https://www.pololu.com/product/1182"
+    metadata:
+      max_coil_current_a: 2.0
+      microstep_modes: "1, 1/2, 1/4, 1/8, 1/16"
+
+  - name: "TB6612FNG Dual Motor Driver Carrier"
+    description: |
+      Toshiba TB6612FNG dual H-bridge breakout — drives two brushed
+      DC motors up to 1.2 A each (3 A peak). 4.5 to 13.5 V motor
+      supply, 2.7 to 5.5 V logic.
+    category: "motor-driver"
+    manufacturer: "Pololu / Toshiba"
+    mpn: "713"
+    datasheet_url: "https://www.pololu.com/file/0J86/TB6612FNG.pdf"
+    visibility: "public"
+    distributors:
+      - name: "pololu"
+        sku: "713"
+        url: "https://www.pololu.com/product/713"
+    metadata:
+      channels: 2
+      continuous_current_a: 1.2
+      peak_current_a: 3.0
+
+  - name: "DRV8833 Dual Motor Driver Carrier"
+    description: |
+      Texas Instruments DRV8833 dual H-bridge breakout — 1.2 A per
+      channel (parallelable to 2.4 A on a single channel). Lower
+      voltage range than the TB6612 but tidier per-pin protection.
+    category: "motor-driver"
+    manufacturer: "Pololu / TI"
+    mpn: "2130"
+    datasheet_url: "https://www.pololu.com/file/0J534/drv8833.pdf"
+    visibility: "public"
+    distributors:
+      - name: "pololu"
+        sku: "2130"
+        url: "https://www.pololu.com/product/2130"
+    metadata:
+      channels: 2
+      continuous_current_a: 1.2
+      paralleled_current_a: 2.4
+
+  - name: "TMC2209 Silent Stepper Driver Carrier"
+    description: |
+      Trinamic TMC2209 stepper driver carrier — silent (StealthChop2)
+      operation, up to 2 A RMS coil current, 1/256 microstepping
+      with native 1/8 control. Popular swap-in for 3D-printer
+      extruders.
+    category: "motor-driver"
+    manufacturer: "Pololu / Trinamic"
+    mpn: "3213"
+    datasheet_url: "https://www.pololu.com/file/0J1814/TMC2209_datasheet_rev1.09.pdf"
+    visibility: "public"
+    distributors:
+      - name: "pololu"
+        sku: "3213"
+        url: "https://www.pololu.com/product/3213"
+    metadata:
+      microstep_modes: "1 to 1/256 interpolated"
+      max_coil_current_a: 2.0
+      features: "StealthChop2, SpreadCycle, CoolStep"

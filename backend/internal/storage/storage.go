@@ -32,9 +32,34 @@ type Storage interface {
 	Delete(ctx context.Context, key string) error
 	// SignedURL returns a presigned URL good for `ttl` (or "" if not supported).
 	SignedURL(ctx context.Context, key string, ttl time.Duration) (string, error)
-	// PublicURL returns a best-effort URL for the object. Local backend
-	// returns the /api/blobs/<key> route — auth required.
-	PublicURL(key string) string
+	// PublicURL returns a public-facing URL for the given key. When
+	// cfg.Storage.CDNBaseURL is set, returns "<cdn>/<key>?v=<unix>".
+	// Otherwise returns "/api/blobs/<key>?v=<unix>". The cache-buster is
+	// optional — pass time.Time{} (zero) to omit. The local backend always
+	// emits the /api/blobs/ route since blobs are auth-protected; the s3
+	// backend prefers cdn_base, falls back to public_url_base, otherwise
+	// returns the virtual-hosted s3 URL.
+	PublicURL(key string, updatedAt time.Time) string
+
+	// --- Chunked upload helpers (Phase 2) -------------------------------
+	//
+	// uploadKey is an opaque identifier scoped to one in-flight upload —
+	// for the local backend it doubles as a temp directory name; for S3
+	// it's the upload session id used to look up the multipart upload id.
+	// chunkIndex is 0-based.
+
+	// PutChunk stores chunk #chunkIndex of an upload. body is a contiguous
+	// byte stream for that chunk; the implementation reads it to EOF.
+	PutChunk(ctx context.Context, uploadKey string, chunkIndex int, body io.Reader) error
+	// ListChunks returns the indices already received, sorted ascending.
+	ListChunks(ctx context.Context, uploadKey string) ([]int, error)
+	// ConcatChunksTo assembles all received chunks (in index order) into a
+	// single object at dstKey, returning the total byte count written.
+	// The implementation may stream chunks directly without re-reading.
+	ConcatChunksTo(ctx context.Context, uploadKey string, dstKey string) (int64, error)
+	// DeleteUpload wipes all temp state for an upload (chunks, multipart
+	// abort, etc). Idempotent: missing uploads are not an error.
+	DeleteUpload(ctx context.Context, uploadKey string) error
 }
 
 // New returns the configured Storage backend.
@@ -58,7 +83,13 @@ func New(cfg *config.Config) (Storage, error) {
 		return NewS3(cfg)
 	case "local":
 		return NewLocal(cfg)
+	case "filesystem":
+		// Filesystem mode mirrors user-facing files to disk via the
+		// filesystem.Mirror; binary assets (STEP uploads, thumbnails)
+		// don't have a good "real-file" representation, so they keep
+		// using the local blob backend at cfg.LocalStoragePath.
+		return NewLocal(cfg)
 	default:
-		return nil, fmt.Errorf("storage: unknown backend %q (expected local|s3)", backend)
+		return nil, fmt.Errorf("storage: unknown backend %q (expected local|s3|filesystem)", backend)
 	}
 }

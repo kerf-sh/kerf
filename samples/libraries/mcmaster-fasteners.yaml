@@ -1,0 +1,196 @@
+# McMaster-Carr metric machine screws — curated starter library.
+#
+# A small set of low-head and socket-head metric machine screws
+# commonly used in maker / 3D-printing assemblies. Part numbers and
+# URLs were verified against mcmaster.com at the time of authoring.
+# Each Part carries the McMaster catalogue SKU as the distributor
+# entry; pricing is left blank because McMaster doesn't expose a free
+# API and we don't want to bake a stale snapshot in.
+#
+# All sizes are nominal metric — a person ordering should still
+# double-check head height + thread pitch against their assembly.
+
+publisher_email: "mcmaster@kerf.system"
+publisher_name: "McMaster-Carr"
+publisher_url: "https://www.mcmaster.com"
+mark_verified: true
+
+library_name: "Metric Machine Screws"
+library_description: |
+  Common metric machine screws (M2 to M6) sourced from
+  McMaster-Carr. Useful for general-purpose mechanical
+  assemblies; pair with the matching tap drill chart in your
+  CAD package.
+library_visibility: "public"
+
+parts:
+  - name: "M2 x 6mm Socket Head Cap Screw — Stainless 18-8"
+    description: |
+      Hex socket head cap screw, M2 x 0.4 thread, 6 mm length, 18-8
+      stainless steel. Pack of 100 from McMaster.
+    category: "fastener"
+    manufacturer: "McMaster-Carr"
+    mpn: "91292A831"
+    visibility: "public"
+    distributors:
+      - name: "mcmaster"
+        sku: "91292A831"
+        url: "https://www.mcmaster.com/91292A831/"
+    metadata:
+      thread: "M2 x 0.4"
+      length_mm: 6
+      drive: "hex socket"
+      material: "18-8 stainless"
+
+  - name: "M3 x 8mm Socket Head Cap Screw — Stainless 18-8"
+    description: |
+      Hex socket head cap screw, M3 x 0.5 thread, 8 mm length, 18-8
+      stainless steel. The default fastener for most desktop 3D
+      printer extrusions.
+    category: "fastener"
+    manufacturer: "McMaster-Carr"
+    mpn: "91292A112"
+    visibility: "public"
+    distributors:
+      - name: "mcmaster"
+        sku: "91292A112"
+        url: "https://www.mcmaster.com/91292A112/"
+    metadata:
+      thread: "M3 x 0.5"
+      length_mm: 8
+      drive: "hex socket"
+      material: "18-8 stainless"
+
+  - name: "M3 x 10mm Socket Head Cap Screw — Stainless 18-8"
+    description: |
+      Hex socket head cap screw, M3 x 0.5 thread, 10 mm length, 18-8
+      stainless steel.
+    category: "fastener"
+    manufacturer: "McMaster-Carr"
+    mpn: "91292A115"
+    visibility: "public"
+    distributors:
+      - name: "mcmaster"
+        sku: "91292A115"
+        url: "https://www.mcmaster.com/91292A115/"
+    metadata:
+      thread: "M3 x 0.5"
+      length_mm: 10
+      drive: "hex socket"
+      material: "18-8 stainless"
+
+  - name: "M3 x 16mm Socket Head Cap Screw — Stainless 18-8"
+    description: |
+      Hex socket head cap screw, M3 x 0.5 thread, 16 mm length, 18-8
+      stainless steel.
+    category: "fastener"
+    manufacturer: "McMaster-Carr"
+    mpn: "91292A118"
+    visibility: "public"
+    distributors:
+      - name: "mcmaster"
+        sku: "91292A118"
+        url: "https://www.mcmaster.com/91292A118/"
+    metadata:
+      thread: "M3 x 0.5"
+      length_mm: 16
+      drive: "hex socket"
+      material: "18-8 stainless"
+
+  - name: "M3 Hex Nut — Stainless 18-8"
+    description: |
+      Standard hex nut for M3 x 0.5 threads, 18-8 stainless. Pairs
+      with the M3 cap screws above.
+    category: "fastener"
+    manufacturer: "McMaster-Carr"
+    mpn: "91828A211"
+    visibility: "public"
+    distributors:
+      - name: "mcmaster"
+        sku: "91828A211"
+        url: "https://www.mcmaster.com/91828A211/"
+    metadata:
+      thread: "M3 x 0.5"
+      type: "hex nut"
+
+  - name: "M4 x 10mm Socket Head Cap Screw — Stainless 18-8"
+    description: |
+      Hex socket head cap screw, M4 x 0.7 thread, 10 mm length, 18-8
+      stainless steel.
+    category: "fastener"
+    manufacturer: "McMaster-Carr"
+    mpn: "91292A192"
+    visibility: "public"
+    distributors:
+      - name: "mcmaster"
+        sku: "91292A192"
+        url: "https://www.mcmaster.com/91292A192/"
+    metadata:
+      thread: "M4 x 0.7"
+      length_mm: 10
+      drive: "hex socket"
+      material: "18-8 stainless"
+
+  - name: "M4 x 16mm Socket Head Cap Screw — Stainless 18-8"
+    description: |
+      Hex socket head cap screw, M4 x 0.7 thread, 16 mm length, 18-8
+      stainless steel.
+    category: "fastener"
+    manufacturer: "McMaster-Carr"
+    mpn: "91292A195"
+    visibility: "public"
+    distributors:
+      - name: "mcmaster"
+        sku: "91292A195"
+        url: "https://www.mcmaster.com/91292A195/"
+    metadata:
+      thread: "M4 x 0.7"
+      length_mm: 16
+
+  - name: "M5 x 12mm Socket Head Cap Screw — Stainless 18-8"
+    description: |
+      Hex socket head cap screw, M5 x 0.8 thread, 12 mm length, 18-8
+      stainless steel.
+    category: "fastener"
+    manufacturer: "McMaster-Carr"
+    mpn: "91292A126"
+    visibility: "public"
+    distributors:
+      - name: "mcmaster"
+        sku: "91292A126"
+        url: "https://www.mcmaster.com/91292A126/"
+    metadata:
+      thread: "M5 x 0.8"
+      length_mm: 12
+
+  - name: "M5 T-Slot Nut for 20-Series Aluminium Extrusion"
+    description: |
+      Drop-in T-slot nut for M5, fits 20-series aluminium extrusion
+      (e.g. 2020). Stainless steel; sold in packs.
+    category: "fastener"
+    manufacturer: "McMaster-Carr"
+    mpn: "5537N211"
+    visibility: "public"
+    distributors:
+      - name: "mcmaster"
+        sku: "5537N211"
+        url: "https://www.mcmaster.com/5537N211/"
+    metadata:
+      thread: "M5 x 0.8"
+      slot_series: "20"
+
+  - name: "M6 x 16mm Socket Head Cap Screw — Stainless 18-8"
+    description: |
+      Hex socket head cap screw, M6 x 1.0 thread, 16 mm length, 18-8
+      stainless steel.
+    category: "fastener"
+    manufacturer: "McMaster-Carr"
+    mpn: "91292A135"
+    visibility: "public"
+    distributors:
+      - name: "mcmaster"
+        sku: "91292A135"
+        url: "https://www.mcmaster.com/91292A135/"
+    metadata:
+      thread: "M6 x 1.0"
+      length_mm: 16

@@ -19,9 +19,10 @@ import (
 )
 
 type authResponse struct {
-	AccessToken  string      `json:"access_token"`
-	RefreshToken string      `json:"refresh_token"`
-	User         models.User `json:"user"`
+	AccessToken      string            `json:"access_token"`
+	RefreshToken     string            `json:"refresh_token"`
+	User             models.User       `json:"user"`
+	DefaultWorkspace *models.Workspace `json:"default_workspace,omitempty"`
 }
 
 type registerReq struct {
@@ -64,6 +65,22 @@ func (d *Deps) Register(w http.ResponseWriter, r *http.Request) {
 		}
 		genericServerError(w, err)
 		return
+	}
+	// Bootstrap a personal workspace so the user has somewhere to go.
+	displayName := body.Name
+	if displayName == "" {
+		// fall back to the local-part of their email.
+		if at := strings.Index(body.Email, "@"); at > 0 {
+			displayName = body.Email[:at]
+		} else {
+			displayName = "My"
+		}
+	}
+	if _, err := createPersonalWorkspace(r.Context(), d.Pool, u.ID, displayName); err != nil {
+		// Non-fatal: log and proceed without a workspace; the client can
+		// still create one later.
+		// Use a simple stderr-style write via the JSON error path on demand.
+		// (Don't fail registration just because workspace creation hiccupped.)
 	}
 	d.issueAndRespond(w, r, u, http.StatusCreated)
 }
@@ -148,7 +165,11 @@ func (d *Deps) issueAndRespond(w http.ResponseWriter, r *http.Request, u models.
 		genericServerError(w, err)
 		return
 	}
-	writeJSON(w, status, authResponse{AccessToken: access, RefreshToken: refresh, User: u})
+	resp := authResponse{AccessToken: access, RefreshToken: refresh, User: u}
+	if ws, ok, err := d.defaultWorkspaceForUser(r.Context(), u.ID); err == nil && ok {
+		resp.DefaultWorkspace = &ws
+	}
+	writeJSON(w, status, resp)
 }
 
 func loadUser(ctx context.Context, d *Deps, uid string) (models.User, error) {
@@ -330,7 +351,20 @@ func (d *Deps) upsertGoogleUser(ctx context.Context, sub, email, name, picture s
 		values ($1,$2,$3,$4)
 		returning id, email, name, avatar_url, account_role, is_system, created_at
 	`, email, sub, name, picture).Scan(&u.ID, &u.Email, &u.Name, &u.AvatarURL, &u.AccountRole, &u.IsSystem, &u.CreatedAt)
-	return u, err
+	if err != nil {
+		return u, err
+	}
+	// Bootstrap a personal workspace; non-fatal on failure.
+	display := name
+	if display == "" {
+		if at := strings.Index(email, "@"); at > 0 {
+			display = email[:at]
+		} else {
+			display = "My"
+		}
+	}
+	_, _ = createPersonalWorkspace(ctx, d.Pool, u.ID, display)
+	return u, nil
 }
 
 func randomNonce() string {

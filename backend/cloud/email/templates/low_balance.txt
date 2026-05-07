@@ -1,0 +1,14 @@
+Kerf Cloud — Proprietary. Copyright (c) 2026 Imran Paruk.
+See cloud/LICENSE for terms.
+
+Your kerf credit balance is running low.
+
+Current balance: ${{printf "%.2f" .BalanceUSD}}. New requests will start to
+fail once the balance reaches zero.
+
+Top up: {{.AppURL}}/billing
+
+--
+This email was sent by kerf — transactional only, no marketing. We send
+at most one low-balance notice per 24 hours.
+Questions? Reply to this email and a human will get back to you.

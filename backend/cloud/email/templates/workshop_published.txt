@@ -1,0 +1,13 @@
+Kerf Cloud — Proprietary. Copyright (c) 2026 Imran Paruk.
+See cloud/LICENSE for terms.
+
+{{.Title}} is live on the kerf Workshop.
+
+Anyone can view, like, or fork it from:
+{{.ListingURL}}
+
+You can update or unpublish the listing any time from the project page.
+
+--
+This email was sent by kerf — transactional only, no marketing.
+Questions? Reply to this email and a human will get back to you.

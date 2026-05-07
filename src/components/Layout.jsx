@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { ChevronDown, LogOut, User as UserIcon } from 'lucide-react'
+import { ChevronDown, LogOut, User as UserIcon, ImagePlus } from 'lucide-react'
 import clsx from 'clsx'
 import { LogoWordmark } from './Logo.jsx'
+import AvatarUploader from './AvatarUploader.jsx'
 import { useAuth } from '../store/auth.js'
 import { api } from '../lib/api.js'
 
@@ -16,7 +17,7 @@ function initials(name = '', email = '') {
   return src.slice(0, 2).toUpperCase()
 }
 
-function UserMenu({ user, onLogout }) {
+function UserMenu({ user, onLogout, onEditAvatar }) {
   const [open, setOpen] = useState(false)
   const ref = useRef(null)
 
@@ -86,6 +87,18 @@ function UserMenu({ user, onLogout }) {
             role="menuitem"
             onClick={() => {
               setOpen(false)
+              onEditAvatar?.()
+            }}
+            className="w-full flex items-center gap-2 px-3 py-2 text-sm text-ink-100 hover:bg-ink-800/80"
+          >
+            <ImagePlus size={14} className="text-ink-300" />
+            Edit avatar
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              setOpen(false)
               onLogout()
             }}
             className="w-full flex items-center gap-2 px-3 py-2 text-sm text-ink-100 hover:bg-ink-800/80"
@@ -106,6 +119,7 @@ export default function Layout({ children, wide = false, padded = true }) {
   const setUser = useAuth((s) => s.setUser)
   const logout = useAuth((s) => s.logout)
   const fetchedRef = useRef(false)
+  const [avatarOpen, setAvatarOpen] = useState(false)
 
   // Hydrate user once if we have a token but no profile yet.
   useEffect(() => {
@@ -156,7 +170,11 @@ export default function Layout({ children, wide = false, padded = true }) {
                 loading…
               </span>
             )}
-            <UserMenu user={fallbackUser} onLogout={onLogout} />
+            <UserMenu
+              user={fallbackUser}
+              onLogout={onLogout}
+              onEditAvatar={() => setAvatarOpen(true)}
+            />
           </div>
         </div>
       </header>
@@ -169,6 +187,13 @@ export default function Layout({ children, wide = false, padded = true }) {
       >
         {children}
       </main>
+
+      {avatarOpen && user && (
+        <AvatarUploader
+          user={user}
+          onClose={() => setAvatarOpen(false)}
+        />
+      )}
     </div>
   )
 }

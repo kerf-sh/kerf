@@ -10,7 +10,13 @@ import (
 	"github.com/imranp/kerf/backend/internal/models"
 )
 
-// Me returns the currently authenticated user.
+type meResponse struct {
+	models.User
+	DefaultWorkspace *models.Workspace `json:"default_workspace,omitempty"`
+}
+
+// Me returns the currently authenticated user, plus their default workspace
+// (oldest workspace they're a member of) so the client can route home.
 func (d *Deps) Me(w http.ResponseWriter, r *http.Request) {
 	uid := middleware.UserID(r.Context())
 	var u models.User
@@ -25,5 +31,9 @@ func (d *Deps) Me(w http.ResponseWriter, r *http.Request) {
 		genericServerError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, u)
+	resp := meResponse{User: u}
+	if ws, ok, err := d.defaultWorkspaceForUser(r.Context(), uid); err == nil && ok {
+		resp.DefaultWorkspace = &ws
+	}
+	writeJSON(w, http.StatusOK, resp)
 }

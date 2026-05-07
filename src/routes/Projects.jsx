@@ -20,6 +20,7 @@ import Button from '../components/Button.jsx'
 import Input, { Textarea } from '../components/Input.jsx'
 import { api, ApiError } from '../lib/api.js'
 import { useAuth } from '../store/auth.js'
+import { PROJECT_TYPES, DEFAULT_PROJECT_TYPE, projectTypeById } from '../lib/projectTypes.js'
 // Forward dep — workspace agent owns this file. Treat as optional.
 import ShareModal from '../components/ShareModal.jsx'
 
@@ -92,9 +93,83 @@ function Modal({ open, onClose, title, children, footer, widthClass = 'max-w-md'
   )
 }
 
+// ProjectTypePicker — 3-option grid that drives `type` in the new-project
+// modal. Stub types (architecture) render with a "WIP" pill so
+// users know they default to the mechanical surface for now. Selection
+// is keyboard-accessible: each card is a real radio input wrapped in a
+// label so arrow keys and tab work without us reimplementing focus.
+function ProjectTypePicker({ value, onChange }) {
+  return (
+    <fieldset>
+      <legend className="text-[11px] font-mono uppercase tracking-wider text-ink-400 mb-2">
+        Project type
+      </legend>
+      <div className="grid grid-cols-2 gap-2">
+        {PROJECT_TYPES.map((t) => {
+          const Icon = t.icon
+          const selected = value === t.id
+          return (
+            <label
+              key={t.id}
+              className={clsx(
+                'group relative flex items-start gap-3 px-3 py-2.5 rounded-lg border cursor-pointer transition-colors',
+                selected
+                  ? `${t.border} bg-ink-800/60`
+                  : 'border-ink-800 bg-ink-900 hover:border-ink-700',
+              )}
+            >
+              <input
+                type="radio"
+                name="project_type"
+                value={t.id}
+                checked={selected}
+                onChange={() => onChange(t.id)}
+                className="sr-only"
+              />
+              <div
+                className={clsx(
+                  'mt-0.5 grid place-items-center w-7 h-7 rounded-md border shrink-0',
+                  selected
+                    ? `${t.badgeBg}`
+                    : 'bg-ink-800 border-ink-700 text-ink-300',
+                )}
+              >
+                <Icon size={14} />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[13px] font-semibold text-ink-100">{t.label}</span>
+                  {t.wip && (
+                    <span className="px-1 py-px rounded bg-ink-800 text-[9px] font-mono uppercase tracking-wider text-ink-400">
+                      WIP
+                    </span>
+                  )}
+                </div>
+                <span className="block mt-0.5 text-[11px] text-ink-400 leading-tight">
+                  {t.subtitle}
+                </span>
+              </div>
+              {/* Faint corner check when selected, mirrors the picker pattern
+                  the assembly-insert dialog uses. */}
+              <span
+                className={clsx(
+                  'absolute top-2 right-2 w-2 h-2 rounded-full transition-opacity',
+                  selected ? `${t.accent} opacity-100` : 'opacity-0',
+                )}
+                style={{ background: 'currentColor' }}
+              />
+            </label>
+          )
+        })}
+      </div>
+    </fieldset>
+  )
+}
+
 function NewProjectModalBody({ onClose, onCreated }) {
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
+  const [projectType, setProjectType] = useState(DEFAULT_PROJECT_TYPE)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState(null)
   const inputRef = useRef(null)
@@ -114,7 +189,7 @@ function NewProjectModalBody({ onClose, onCreated }) {
     setError(null)
     setSubmitting(true)
     try {
-      const project = await api.createProject(name.trim(), description.trim())
+      const project = await api.createProject(name.trim(), description.trim(), projectType)
       onCreated(project)
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not create project.')
@@ -127,6 +202,7 @@ function NewProjectModalBody({ onClose, onCreated }) {
       open
       onClose={onClose}
       title="New project"
+      widthClass="max-w-lg"
       footer={
         <>
           <Button variant="ghost" size="md" onClick={onClose} disabled={submitting}>
@@ -150,6 +226,7 @@ function NewProjectModalBody({ onClose, onCreated }) {
             <span>{error}</span>
           </div>
         )}
+        <ProjectTypePicker value={projectType} onChange={setProjectType} />
         <Input
           ref={inputRef}
           label="Name"
@@ -388,53 +465,138 @@ function KebabMenu({ project, isOwner, onShare, onRename, onDelete }) {
   )
 }
 
+// useThumbnailBlob fetches the auth-protected JPEG and exposes it as an
+// object URL the <img> tag can render. Lives behind RequireAuth so we
+// can't just point a vanilla <img src> at the route — bearer headers
+// aren't sent by image elements. The blob is revoked on unmount and on
+// URL change so we don't leak.
+function useThumbnailBlob(thumbnailUrl) {
+  const [objectUrl, setObjectUrl] = useState(null)
+  useEffect(() => {
+    if (!thumbnailUrl) return undefined
+    let cancelled = false
+    let created = null
+    const API_URL = import.meta.env.VITE_API_URL || ''
+    const token = useAuth.getState().accessToken
+    const headers = {}
+    if (token) headers.authorization = `Bearer ${token}`
+    fetch(`${API_URL}${thumbnailUrl}`, { headers })
+      .then((res) => res.ok ? res.blob() : null)
+      .then((blob) => {
+        if (cancelled || !blob) return
+        created = URL.createObjectURL(blob)
+        setObjectUrl(created)
+      })
+      .catch(() => { /* leave null → placeholder */ })
+    return () => {
+      cancelled = true
+      setObjectUrl(null)
+      if (created) URL.revokeObjectURL(created)
+    }
+  }, [thumbnailUrl])
+  return objectUrl
+}
+
+function ThumbnailPreview({ project }) {
+  // The backend bakes a `?v=<unix>` cache-buster into thumbnail_url so
+  // a fresh upload re-triggers the fetch (URL string changes → effect
+  // re-runs).
+  const blobUrl = useThumbnailBlob(project.thumbnail_url || null)
+  if (blobUrl) {
+    return (
+      <img
+        src={blobUrl}
+        alt=""
+        loading="lazy"
+        decoding="async"
+        width={512}
+        height={512}
+        className="absolute inset-0 w-full h-full object-cover"
+      />
+    )
+  }
+  const glyph = (project.name || '?').trim().slice(0, 1).toUpperCase() || '?'
+  return (
+    <div className="absolute inset-0 grid place-items-center bg-gradient-to-br from-ink-800 to-ink-900">
+      <span className="font-display text-5xl font-semibold text-ink-700 select-none">
+        {glyph}
+      </span>
+    </div>
+  )
+}
+
+function ProjectTypeBadge({ projectType }) {
+  // Falls back to mechanical so old project rows missing the field don't
+  // render a blank chip.
+  const t = projectTypeById(projectType || DEFAULT_PROJECT_TYPE)
+  const Icon = t.icon
+  return (
+    <span
+      title={t.subtitle}
+      className={clsx(
+        'inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-mono uppercase tracking-wider border',
+        t.badgeBg,
+      )}
+    >
+      <Icon size={10} />
+      {t.label}
+    </span>
+  )
+}
+
 function ProjectCard({ project, currentUserId, onShare, onRename, onDelete }) {
   const isOwner = project.my_role === 'owner' || project.owner_id === currentUserId
   return (
     <Card className="group relative overflow-hidden hover:border-ink-700 transition-colors">
       <Link
         to={`/projects/${project.id}`}
-        className="block p-5 focus:outline-none focus-visible:ring-2 focus-visible:ring-kerf-300/40 rounded-xl"
+        className="block focus:outline-none focus-visible:ring-2 focus-visible:ring-kerf-300/40 rounded-xl"
       >
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex items-center gap-3 min-w-0">
-            <div className="grid place-items-center w-9 h-9 rounded-lg bg-ink-800 border border-ink-700 text-kerf-300 shrink-0">
-              <Box size={16} />
-            </div>
-            <div className="min-w-0">
-              <h3 className="font-display text-base font-semibold tracking-tight text-ink-100 truncate">
-                {project.name}
-              </h3>
-              <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-ink-400 font-mono">
-                <VisibilityIcon visibility={project.visibility} />
-                <span>{project.visibility || 'private'}</span>
-                <span className="text-ink-600">·</span>
-                <span>updated {relativeTime(project.updated_at)}</span>
+        {/* Thumbnail: explicit aspect-ratio so the page doesn't reflow as
+            images load. object-fit:cover handles the 1:1 source crop. */}
+        <div className="relative w-full aspect-[4/3] bg-ink-900 border-b border-ink-800 overflow-hidden">
+          <ThumbnailPreview project={project} />
+        </div>
+
+        <div className="p-5">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="grid place-items-center w-9 h-9 rounded-lg bg-ink-800 border border-ink-700 text-kerf-300 shrink-0">
+                <Box size={16} />
+              </div>
+              <div className="min-w-0">
+                <h3 className="font-display text-base font-semibold tracking-tight text-ink-100 truncate">
+                  {project.name}
+                </h3>
+                <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-ink-400 font-mono">
+                  <VisibilityIcon visibility={project.visibility} />
+                  <span>{project.visibility || 'private'}</span>
+                  <span className="text-ink-600">·</span>
+                  <span>updated {relativeTime(project.updated_at)}</span>
+                </div>
               </div>
             </div>
           </div>
-          <div className="opacity-0 group-hover:opacity-100 transition-opacity">
-            {/* placeholder so layout doesn't shift; KebabMenu lives outside the link below */}
-          </div>
-        </div>
 
-        <p className="mt-4 text-sm text-ink-300 leading-relaxed line-clamp-2 min-h-[2.5rem]">
-          {project.description || (
-            <span className="text-ink-500 italic">No description.</span>
-          )}
-        </p>
-
-        <div className="mt-5 flex items-center gap-2">
-          <span
-            className={clsx(
-              'inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-mono uppercase tracking-wider border',
-              isOwner
-                ? 'bg-kerf-300/10 text-kerf-200 border-kerf-300/30'
-                : 'bg-ink-800/60 text-ink-300 border-ink-700',
+          <p className="mt-4 text-sm text-ink-300 leading-relaxed line-clamp-2 min-h-[2.5rem]">
+            {project.description || (
+              <span className="text-ink-500 italic">No description.</span>
             )}
-          >
-            {isOwner ? 'You' : `Shared · ${project.my_role || 'viewer'}`}
-          </span>
+          </p>
+
+          <div className="mt-5 flex items-center gap-2 flex-wrap">
+            <span
+              className={clsx(
+                'inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-mono uppercase tracking-wider border',
+                isOwner
+                  ? 'bg-kerf-300/10 text-kerf-200 border-kerf-300/30'
+                  : 'bg-ink-800/60 text-ink-300 border-ink-700',
+              )}
+            >
+              {isOwner ? 'You' : `Shared · ${project.my_role || 'viewer'}`}
+            </span>
+            <ProjectTypeBadge projectType={project.project_type} />
+          </div>
         </div>
       </Link>
 
@@ -479,8 +641,10 @@ function EmptyState({ onCreate }) {
         No projects yet
       </h3>
       <p className="mt-1 text-sm text-ink-400">
-        Create one to start. We&apos;ll seed it with a{' '}
-        <span className="font-mono text-ink-200">main.jscad</span> file.
+        Create one to start. Pick a project type — we&apos;ll seed it with the
+        right starter file (<span className="font-mono text-ink-200">main.jscad</span>{' '}
+        for mechanical, <span className="font-mono text-ink-200">main.circuit.tsx</span>{' '}
+        for electronics).
       </p>
       <div className="mt-5">
         <Button variant="primary" size="md" onClick={onCreate}>

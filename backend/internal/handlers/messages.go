@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -15,7 +17,31 @@ import (
 	"github.com/imranp/kerf/backend/internal/middleware"
 	"github.com/imranp/kerf/backend/internal/models"
 	"github.com/imranp/kerf/backend/internal/tools"
+	"github.com/imranp/kerf/backend/internal/usage"
 )
+
+// friendlyLLMError turns a provider error into a single short user-facing
+// sentence. The full error is always logged separately for ops.
+func friendlyLLMError(providerName string, err error) string {
+	if err == nil {
+		return ""
+	}
+	msg := err.Error()
+	low := strings.ToLower(msg)
+	switch {
+	case strings.Contains(low, "rate limit") || strings.Contains(low, "429"):
+		return "The model provider rate-limited the request. Please try again in a moment."
+	case strings.Contains(low, "401") || strings.Contains(low, "unauthorized") || strings.Contains(low, "invalid api key"):
+		return "The provider rejected the API key. Check the server's environment variables."
+	case strings.Contains(low, "context") && strings.Contains(low, "length"):
+		return "This thread is too long for the selected model. Start a fresh thread or pick a model with a larger context."
+	case strings.Contains(low, "timeout") || strings.Contains(low, "deadline"):
+		return "The model took too long to respond. Try again or pick a faster model."
+	case strings.Contains(low, "deprecated"):
+		return "The selected model rejected one of the request parameters. Try picking a different model — this usually means the catalog needs updating."
+	}
+	return "The model returned an error. Try again, or pick a different model from the dropdown."
+}
 
 // MaxAgentIterations bounds the tool-use feedback loop so a misbehaving model
 // can't run forever (or rack up an unbounded LLM bill).
@@ -138,6 +164,13 @@ func (d *Deps) PostMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Was this the first user message in the thread? If so, auto-title later.
+	var existingUserCount int
+	_ = d.Pool.QueryRow(r.Context(),
+		`select count(*) from chat_messages where thread_id = $1 and role = 'user'`,
+		tid).Scan(&existingUserCount)
+	isFirstUserMessage := existingUserCount == 0
+
 	// Resolve model: body.model -> thread.model -> cfg.DefaultModel.
 	var threadModel *string
 	if err := d.Pool.QueryRow(r.Context(), `select model from chat_threads where id = $1`, tid).Scan(&threadModel); err != nil {
@@ -202,7 +235,10 @@ func (d *Deps) PostMessage(w http.ResponseWriter, r *http.Request) {
 	}
 	provider, providerModelID, err := d.LLM.Resolve(chosenModel)
 	if err != nil {
-		assistantMsg, _ := d.insertAssistantMessage(r.Context(), tid, "LLM error: "+err.Error(), "none", nil)
+		log.Printf("llm: resolve %q failed: %v", chosenModel, err)
+		assistantMsg, _ := d.insertAssistantMessage(r.Context(), tid,
+			"That model isn't available right now. Try picking a different one from the model dropdown.",
+			"none", nil)
 		_ = d.touchThread(r.Context(), tid)
 		writeJSON(w, http.StatusCreated, postMessageResp{
 			UserMessage: userMsg, AssistantMessage: assistantMsg, ToolMessages: nil,
@@ -221,13 +257,23 @@ func (d *Deps) PostMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	projCtx := tools.ProjectCtx{
-		Pool:       d.Pool,
-		Storage:    d.Storage,
-		ProjectID:  pcProject,
-		UserID:     pcUser,
-		Role:       role,
-		HTTPClient: &http.Client{Timeout: 30 * time.Second},
+		Pool:             d.Pool,
+		Storage:          d.Storage,
+		ProjectID:        pcProject,
+		UserID:           pcUser,
+		Role:             role,
+		HTTPClient:       &http.Client{Timeout: 30 * time.Second},
+		FileRevisionsMax: d.Cfg.FileRevisionsMax,
 	}
+
+	// Resolve the project_type once per request. Used to prepend a small
+	// per-call addendum to the SystemPrompt so the model knows which domain
+	// it's in (mechanical / electronics / architecture). Missing
+	// or unknown values fall through to "" and the addendum is skipped.
+	var projectType string
+	_ = d.Pool.QueryRow(r.Context(),
+		`select project_type from projects where id = $1`, pid).Scan(&projectType)
+	typeAddendum := llm.BuildProjectTypeAddendum(projectType)
 
 	// Agent loop.
 	toolSpecs := tools.Specs(role)
@@ -239,12 +285,16 @@ func (d *Deps) PostMessage(w http.ResponseWriter, r *http.Request) {
 	for iter := 0; iter < MaxAgentIterations; iter++ {
 		resp, err := provider.Complete(r.Context(), llm.CompleteRequest{
 			Model:    providerModelID,
-			System:   llm.SystemPrompt + agentSystemAddendum,
+			System:   llm.SystemPrompt + agentSystemAddendum + typeAddendum,
 			Messages: historyMsgs,
 			Tools:    toolSpecs,
 		})
 		if err != nil {
-			lastAssistant, _ = d.insertAssistantMessage(r.Context(), tid, "LLM error: "+err.Error(), providerModelID, nil)
+			log.Printf("llm: provider %s model %s call failed (iter=%d): %v",
+				provider.Name(), providerModelID, iter, err)
+			lastAssistant, _ = d.insertAssistantMessage(r.Context(), tid,
+				friendlyLLMError(provider.Name(), err),
+				providerModelID, nil)
 			_ = d.touchThread(r.Context(), tid)
 			writeJSON(w, http.StatusCreated, postMessageResp{
 				UserMessage: userMsg, AssistantMessage: lastAssistant, ToolMessages: toolMsgs,
@@ -259,6 +309,14 @@ func (d *Deps) PostMessage(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		lastAssistant = am
+
+		// Record token usage. Always-on for visibility; cloud builds bill
+		// from these rows by computing cost + debiting balances out-of-band.
+		if d.Cfg.UsageEnabled && (resp.InputTokens > 0 || resp.OutputTokens > 0) {
+			pidVal := pid
+			_ = usage.RecordToken(r.Context(), d.Pool, uid, &pidVal,
+				providerModelID, resp.InputTokens, resp.OutputTokens)
+		}
 
 		// Append assistant turn to history (so the next provider call sees it).
 		assistantHist := llm.Message{
@@ -304,6 +362,12 @@ func (d *Deps) PostMessage(w http.ResponseWriter, r *http.Request) {
 
 	_ = d.touchThread(r.Context(), tid)
 
+	// Auto-title the thread on the first exchange. Fire-and-forget so the
+	// HTTP response doesn't wait on the title-gen LLM call.
+	if isFirstUserMessage && d.LLM.HasAny() {
+		go d.autoTitleThread(tid, body.Content, lastAssistant.Content, provider, providerModelID)
+	}
+
 	writeJSON(w, http.StatusCreated, postMessageResp{
 		UserMessage:      userMsg,
 		AssistantMessage: lastAssistant,
@@ -337,6 +401,47 @@ func (d *Deps) insertToolMessage(ctx context.Context, tid, toolCallID, content s
 	`, tid, content, toolCallID).Scan(
 		&m.ID, &m.ThreadID, &m.Role, &m.Content, &m.PartRefs, &m.ToolCalls, &m.ToolCallID, &m.Model, &m.CreatedAt)
 	return m, err
+}
+
+// autoTitleThread asks the LLM for a 3-5 word title for the thread and writes
+// it into chat_threads.title. Runs in its own goroutine; errors are logged
+// only. Skips if the user already set a non-default title.
+func (d *Deps) autoTitleThread(tid, userContent, assistantContent string, provider llm.Provider, modelID string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+
+	prompt := "Generate a concise 3-6 word title for the following CAD chat exchange. Return ONLY the title, no quotes, no trailing punctuation, no preamble.\n\nUser: " +
+		truncate(userContent, 600) + "\n\nAssistant: " + truncate(assistantContent, 600)
+
+	resp, err := provider.Complete(ctx, llm.CompleteRequest{
+		Model:     modelID,
+		System:    "You name CAD chat threads succinctly. Output only the title.",
+		Messages:  []llm.Message{{Role: "user", Content: prompt}},
+		MaxTokens: 32,
+	})
+	if err != nil {
+		log.Printf("auto-title: provider call failed: %v", err)
+		return
+	}
+	title := strings.TrimSpace(resp.Content)
+	title = strings.Trim(title, "\"'`")
+	title = strings.TrimRight(title, ".!?")
+	if len(title) > 80 {
+		title = title[:80]
+	}
+	if title == "" {
+		return
+	}
+	if _, err := d.Pool.Exec(ctx, `update chat_threads set title = $1, updated_at = now() where id = $2`, title, tid); err != nil {
+		log.Printf("auto-title: db update failed: %v", err)
+	}
+}
+
+func truncate(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "…"
 }
 
 // touchThread bumps last_message_at + updated_at.
@@ -444,7 +549,7 @@ func (d *Deps) loadPartContexts(ctx context.Context, projectID string, refs []mo
 			content string
 		)
 		err := d.Pool.QueryRow(ctx,
-			`select name, content from files where id = $1 and project_id = $2`,
+			`select name, content from files where id = $1 and project_id = $2 and deleted_at is null`,
 			ref.FileID, projectID).Scan(&name, &content)
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {

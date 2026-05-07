@@ -17,6 +17,7 @@ import (
 
 	"github.com/imranp/kerf/backend/internal/middleware"
 	"github.com/imranp/kerf/backend/internal/models"
+	"github.com/imranp/kerf/backend/internal/usage"
 )
 
 // upload limits.
@@ -85,7 +86,7 @@ func (d *Deps) UploadAsset(w http.ResponseWriter, r *http.Request) {
 		// Verify parent belongs to project and is a folder.
 		var pkind string
 		if err := d.Pool.QueryRow(r.Context(),
-			`select kind from files where id = $1 and project_id = $2`,
+			`select kind from files where id = $1 and project_id = $2 and deleted_at is null`,
 			v, pid).Scan(&pkind); err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
 				writeError(w, http.StatusBadRequest, "parent not found")
@@ -128,6 +129,18 @@ func (d *Deps) UploadAsset(w http.ResponseWriter, r *http.Request) {
 		genericServerError(w, err)
 		return
 	}
+	if d.Cfg.UsageEnabled && pr.Size > 0 {
+		pidVal := pid
+		_ = usage.RecordStorage(r.Context(), d.Pool, uid, &pidVal, pr.Size)
+	}
+	// Performance Phase 3: enqueue server-side STEP pre-tessellation
+	// (mirrors the chunked-upload path). Failure here is non-fatal — the
+	// upload itself succeeded; the worker just won't have a row to claim.
+	if _, qerr := d.Pool.Exec(r.Context(),
+		`insert into step_tessellation_jobs (file_id) values ($1) on conflict (file_id) do nothing`,
+		f.ID); qerr != nil {
+		fmt.Printf("assets: enqueue tessellate job (file=%s): %v\n", f.ID, qerr)
+	}
 	d.attachDownloadURL(&f)
 	writeJSON(w, http.StatusCreated, f)
 }
@@ -147,7 +160,7 @@ func (d *Deps) DownloadFile(w http.ResponseWriter, r *http.Request) {
 		size        *int64
 	)
 	err := d.Pool.QueryRow(r.Context(),
-		`select name, storage_key, mime_type, size from files where id = $1 and project_id = $2`,
+		`select name, storage_key, mime_type, size from files where id = $1 and project_id = $2 and deleted_at is null`,
 		fid, pid).Scan(&name, &key, &mimeType, &size)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -192,8 +205,14 @@ func (d *Deps) DownloadFile(w http.ResponseWriter, r *http.Request) {
 }
 
 // ServeBlob serves an arbitrary storage key (local backend only).
-// Auth + project-membership is enforced by looking up the storage_key against
-// the files table and checking the caller's role on the owning project.
+//
+// Two key shapes are recognized:
+//   - "projects/..." — owned by a project; auth requires membership on the
+//     owning project (looked up via the files table).
+//   - "users/<uid>/avatar.jpg" — public to any signed-in user (no
+//     project scoping; avatars are intentionally visible across the app).
+//
+// Anything else is 404'd.
 func (d *Deps) ServeBlob(w http.ResponseWriter, r *http.Request) {
 	uid := middleware.UserID(r.Context())
 	if uid == "" {
@@ -216,6 +235,23 @@ func (d *Deps) ServeBlob(w http.ResponseWriter, r *http.Request) {
 	// chi already URL-decodes path params, but be safe.
 	if dec, err := url.PathUnescape(rawKey); err == nil {
 		rawKey = dec
+	}
+
+	// Avatar route: keys under "users/<uid>/" are visible to any
+	// authenticated user. We still require auth so the key isn't probable
+	// from outside the app, and we let the storage layer 404 on miss.
+	if strings.HasPrefix(rawKey, "users/") {
+		rc, ct, err := d.Storage.Get(r.Context(), rawKey)
+		if err != nil {
+			writeError(w, http.StatusNotFound, "blob not found")
+			return
+		}
+		defer rc.Close()
+		w.Header().Set("Content-Type", ct)
+		// Avatars are immutable per cache-buster; allow short edge caching.
+		w.Header().Set("Cache-Control", "private, max-age=300")
+		_, _ = io.Copy(w, rc)
+		return
 	}
 
 	var (

@@ -99,6 +99,27 @@ func main() {
 			// Authenticated blob serving for the local storage backend.
 			r.Get("/blobs/*", deps.ServeBlob)
 
+			// Workspaces.
+			r.Route("/workspaces", func(r chi.Router) {
+				r.Get("/", deps.ListWorkspaces)
+				r.Post("/", deps.CreateWorkspace)
+				r.Post("/accept", deps.AcceptWorkspaceInvite)
+				r.Get("/avatar/{id}", deps.ServeWorkspaceAvatar)
+
+				r.Route("/{slug}", func(r chi.Router) {
+					r.Get("/", deps.GetWorkspace)
+					r.Patch("/", deps.UpdateWorkspace)
+					r.Delete("/", deps.DeleteWorkspace)
+
+					r.Post("/avatar", deps.UploadWorkspaceAvatar)
+					r.Delete("/avatar", deps.DeleteWorkspaceAvatar)
+
+					r.Post("/members", deps.InviteWorkspaceMember)
+					r.Patch("/members/{user_id}", deps.ChangeWorkspaceMemberRole)
+					r.Delete("/members/{user_id}", deps.RemoveWorkspaceMember)
+				})
+			})
+
 			r.Route("/projects", func(r chi.Router) {
 				r.Get("/", deps.ListProjects)
 				r.Post("/", deps.CreateProject)
