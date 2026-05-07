@@ -19,7 +19,7 @@ func (d *Deps) ListFiles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rows, err := d.Pool.Query(r.Context(), `
-		select id, project_id, parent_id, name, kind, created_at, updated_at
+		select id, project_id, parent_id, name, kind, storage_key, mime_type, size, created_at, updated_at
 		from files
 		where project_id = $1
 		order by kind desc, name asc
@@ -32,13 +32,23 @@ func (d *Deps) ListFiles(w http.ResponseWriter, r *http.Request) {
 	out := []models.File{}
 	for rows.Next() {
 		var f models.File
-		if err := rows.Scan(&f.ID, &f.ProjectID, &f.ParentID, &f.Name, &f.Kind, &f.CreatedAt, &f.UpdatedAt); err != nil {
+		if err := rows.Scan(&f.ID, &f.ProjectID, &f.ParentID, &f.Name, &f.Kind, &f.StorageKey, &f.MimeType, &f.Size, &f.CreatedAt, &f.UpdatedAt); err != nil {
 			genericServerError(w, err)
 			return
 		}
+		d.attachDownloadURL(&f)
 		out = append(out, f)
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+// attachDownloadURL sets the DownloadURL for files backed by Storage.
+func (d *Deps) attachDownloadURL(f *models.File) {
+	if f.StorageKey == nil || *f.StorageKey == "" {
+		return
+	}
+	url := "/api/projects/" + f.ProjectID + "/files/" + f.ID + "/download"
+	f.DownloadURL = &url
 }
 
 type createFileReq struct {
@@ -84,13 +94,14 @@ func (d *Deps) CreateFile(w http.ResponseWriter, r *http.Request) {
 	err := d.Pool.QueryRow(r.Context(), `
 		insert into files(project_id, parent_id, name, kind, content)
 		values ($1,$2,$3,$4,$5)
-		returning id, project_id, parent_id, name, kind, content, created_at, updated_at
+		returning id, project_id, parent_id, name, kind, content, storage_key, mime_type, size, created_at, updated_at
 	`, pid, body.ParentID, body.Name, body.Kind, content).Scan(
-		&f.ID, &f.ProjectID, &f.ParentID, &f.Name, &f.Kind, &f.Content, &f.CreatedAt, &f.UpdatedAt)
+		&f.ID, &f.ProjectID, &f.ParentID, &f.Name, &f.Kind, &f.Content, &f.StorageKey, &f.MimeType, &f.Size, &f.CreatedAt, &f.UpdatedAt)
 	if err != nil {
 		genericServerError(w, err)
 		return
 	}
+	d.attachDownloadURL(&f)
 	writeJSON(w, http.StatusCreated, f)
 }
 
@@ -104,9 +115,9 @@ func (d *Deps) GetFile(w http.ResponseWriter, r *http.Request) {
 	}
 	var f models.File
 	err := d.Pool.QueryRow(r.Context(), `
-		select id, project_id, parent_id, name, kind, content, created_at, updated_at
+		select id, project_id, parent_id, name, kind, content, storage_key, mime_type, size, created_at, updated_at
 		from files where id = $1 and project_id = $2
-	`, fid, pid).Scan(&f.ID, &f.ProjectID, &f.ParentID, &f.Name, &f.Kind, &f.Content, &f.CreatedAt, &f.UpdatedAt)
+	`, fid, pid).Scan(&f.ID, &f.ProjectID, &f.ParentID, &f.Name, &f.Kind, &f.Content, &f.StorageKey, &f.MimeType, &f.Size, &f.CreatedAt, &f.UpdatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeError(w, http.StatusNotFound, "file not found")
@@ -115,6 +126,7 @@ func (d *Deps) GetFile(w http.ResponseWriter, r *http.Request) {
 		genericServerError(w, err)
 		return
 	}
+	d.attachDownloadURL(&f)
 	writeJSON(w, http.StatusOK, f)
 }
 
@@ -150,9 +162,9 @@ func (d *Deps) UpdateFile(w http.ResponseWriter, r *http.Request) {
 			parent_id = case when $5::boolean then $6 else parent_id end,
 			updated_at = now()
 		where id = $1 and project_id = $2
-		returning id, project_id, parent_id, name, kind, content, created_at, updated_at
+		returning id, project_id, parent_id, name, kind, content, storage_key, mime_type, size, created_at, updated_at
 	`, fid, pid, body.Name, body.Content, body.ParentID != nil, body.ParentID).Scan(
-		&f.ID, &f.ProjectID, &f.ParentID, &f.Name, &f.Kind, &f.Content, &f.CreatedAt, &f.UpdatedAt)
+		&f.ID, &f.ProjectID, &f.ParentID, &f.Name, &f.Kind, &f.Content, &f.StorageKey, &f.MimeType, &f.Size, &f.CreatedAt, &f.UpdatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeError(w, http.StatusNotFound, "file not found")
@@ -161,6 +173,7 @@ func (d *Deps) UpdateFile(w http.ResponseWriter, r *http.Request) {
 		genericServerError(w, err)
 		return
 	}
+	d.attachDownloadURL(&f)
 	writeJSON(w, http.StatusOK, f)
 }
 
@@ -177,10 +190,17 @@ func (d *Deps) DeleteFile(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusForbidden, "viewer cannot delete files")
 		return
 	}
+	// Capture storage_key (if any) before deleting so we can clean up the blob.
+	var storageKey *string
+	_ = d.Pool.QueryRow(r.Context(),
+		`select storage_key from files where id = $1 and project_id = $2`, fid, pid).Scan(&storageKey)
 	if _, err := d.Pool.Exec(r.Context(),
 		`delete from files where id = $1 and project_id = $2`, fid, pid); err != nil {
 		genericServerError(w, err)
 		return
+	}
+	if d.Storage != nil && storageKey != nil && *storageKey != "" {
+		_ = d.Storage.Delete(r.Context(), *storageKey)
 	}
 	w.WriteHeader(http.StatusNoContent)
 }

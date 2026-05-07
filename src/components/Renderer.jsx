@@ -7,7 +7,22 @@ const PALETTE = [0xc9a96b, 0x6b9bc9, 0xc96b89, 0x89c96b, 0xc9b86b, 0x9b6bc9]
 const HIGHLIGHT_EMISSIVE = 0x4d3c00 // kerf yellow tint
 const BG_COLOR = 0x0f1115 // ink-900
 
-export default function Renderer({ parts, selectedId, onPick, className = '' }) {
+// Resolve any of:
+//   - Three.js BufferGeometry (already tessellated, e.g. from STEP)
+//   - JSCAD Geom3 (polygon list, runJscad output)
+// → BufferGeometry. We never mutate the input — JSCAD path always creates new.
+function resolveGeometry(geom) {
+  if (!geom) return null
+  if (geom.isBufferGeometry) {
+    // Cache a clone on the geometry so repeated mounts share buffers but don't
+    // step on each other on dispose. We clone here, return the clone — the
+    // mesh group fully owns it and will dispose on unmount.
+    return geom.clone()
+  }
+  return geom3ToBufferGeometry(geom)
+}
+
+export default function Renderer({ parts, selectedId, hiddenIds, onPick, className = '' }) {
   const mountRef = useRef(null)
   const stateRef = useRef(null) // holds three.js objects across renders
   const [hudId, setHudId] = useState(null)
@@ -78,13 +93,14 @@ export default function Renderer({ parts, selectedId, onPick, className = '' }) 
     const ro = new ResizeObserver(applySize)
     ro.observe(mount)
 
-    // Click → raycast.
+    // Click → raycast (only against visible meshes).
     function onClick(ev) {
       const rect = renderer.domElement.getBoundingClientRect()
       pointer.x = ((ev.clientX - rect.left) / rect.width) * 2 - 1
       pointer.y = -((ev.clientY - rect.top) / rect.height) * 2 + 1
       raycaster.setFromCamera(pointer, camera)
-      const hits = raycaster.intersectObjects(meshGroup.children, false)
+      const visible = meshGroup.children.filter((m) => m.visible)
+      const hits = raycaster.intersectObjects(visible, false)
       if (hits.length > 0) {
         const id = hits[0].object.userData.id
         setHudId(id)
@@ -141,8 +157,9 @@ export default function Renderer({ parts, selectedId, onPick, className = '' }) 
     const entries = []
     ;(parts || []).forEach((part, i) => {
       if (!part?.geom) return
-      const geometry = geom3ToBufferGeometry(part.geom)
-      const color = PALETTE[i % PALETTE.length]
+      const geometry = resolveGeometry(part.geom)
+      if (!geometry) return
+      const color = part.color != null ? part.color : PALETTE[i % PALETTE.length]
       const material = new THREE.MeshStandardMaterial({
         color,
         metalness: 0.15,
@@ -177,6 +194,16 @@ export default function Renderer({ parts, selectedId, onPick, className = '' }) 
       s.lastPartsKey = key
     }
   }, [parts])
+
+  // ----- Visibility toggling -----
+  useEffect(() => {
+    const s = stateRef.current
+    if (!s) return
+    const hidden = hiddenIds || new Set()
+    s.meshGroup.children.forEach((m) => {
+      m.visible = !hidden.has(m.userData.id)
+    })
+  }, [hiddenIds, parts])
 
   // ----- Highlight selected -----
   useEffect(() => {

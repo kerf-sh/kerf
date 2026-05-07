@@ -4,11 +4,33 @@
 // Owns:
 //   - project metadata + file tree
 //   - currently-open file's content + dirty flag
-//   - chat threads + active thread + messages
+//   - chat threads + active thread + messages (incl. tool messages)
 //   - "picked part" state (renderer click) and pending part_refs queued for the
 //     next chat message.
+//   - per-file part visibility (hiddenPartIds), session-only.
+//   - the live `parts` array for the currently-open file (JSCAD or STEP).
 import { create } from 'zustand'
 import { api } from '../lib/api.js'
+import { runJscad } from '../lib/jscadRunner.js'
+import { loadStep } from '../lib/stepLoader.js'
+
+// Tool names whose effects mutate files; sendMessage() refetches the tree
+// and the open file's content when one of these shows up in the response.
+const FILE_MUTATING_TOOLS = new Set([
+  'write_file', 'edit_file', 'create_file', 'delete_file', 'import_step',
+])
+
+function fileKindFor(file) {
+  // Map a File row → {kind: 'jscad' | 'step' | 'assembly' | 'folder'} for the
+  // editor pipeline. We sniff by extension since the DB `kind` is the broader
+  // ('file', 'folder', 'assembly') taxonomy.
+  if (!file) return 'jscad'
+  if (file.kind === 'folder') return 'folder'
+  if (file.kind === 'assembly') return 'assembly'
+  const name = (file.name || '').toLowerCase()
+  if (name.endsWith('.step') || name.endsWith('.stp')) return 'step'
+  return 'jscad'
+}
 
 const initial = {
   projectId: null,
@@ -22,6 +44,11 @@ const initial = {
   loadingProject: false,
   loadError: null,
 
+  // Live parts for the currently-open file, regardless of source.
+  parts: [],
+  partsError: null,
+  loadingParts: false,
+
   threads: [],
   currentThreadId: null,
   messages: [],
@@ -30,6 +57,9 @@ const initial = {
 
   pickedPart: null,        // {file_id, part_id, label?} — last clicked
   pendingPartRefs: [],     // attached to next message
+
+  // Per-file visibility map: Map<file_id, Set<part_id>>. Session-only.
+  hiddenPartIds: new Map(),
 }
 
 export const useWorkspace = create((set, get) => ({
@@ -65,25 +95,87 @@ export const useWorkspace = create((set, get) => ({
   selectFile: async (fileId) => {
     if (!fileId) return
     set({ currentFileId: fileId, dirty: false })
+    await get().loadFileForEditor(fileId)
+  },
+
+  // Routes a file load to the JSCAD or STEP pipeline depending on extension.
+  // Sets currentFile, currentFileContent, parts, partsError as appropriate.
+  loadFileForEditor: async (fileId) => {
+    const { projectId } = get()
+    if (!projectId || !fileId) return
+    set({ loadingParts: true, partsError: null })
     try {
-      const file = await api.getFile(get().projectId, fileId)
+      const file = await api.getFile(projectId, fileId)
+      const kind = fileKindFor(file)
+      if (kind === 'step') {
+        // Binary asset; download via authed fetch + run through occt.
+        set({
+          currentFile: file,
+          currentFileContent: '',
+          dirty: false,
+          parts: [],
+        })
+        try {
+          const buf = await api.downloadFileURL(projectId, fileId)
+          const { parts } = await loadStep(buf)
+          // Only commit if this is still the open file.
+          if (get().currentFileId === fileId) {
+            set({ parts, loadingParts: false, partsError: null })
+          }
+        } catch (err) {
+          if (get().currentFileId === fileId) {
+            set({
+              loadingParts: false,
+              partsError: err?.message || 'Failed to load STEP',
+              parts: [],
+            })
+          }
+        }
+        return
+      }
+      // JSCAD / text path.
       set({
         currentFile: file,
         currentFileContent: file.content ?? '',
         dirty: false,
       })
+      // Run JSCAD immediately so parts populate even before any keystroke.
+      try {
+        const res = await runJscad(file.content ?? '')
+        if (get().currentFileId === fileId) {
+          if (res.error) {
+            set({ partsError: res.error, loadingParts: false })
+          } else {
+            set({ parts: res.parts || [], partsError: null, loadingParts: false })
+          }
+        }
+      } catch (err) {
+        if (get().currentFileId === fileId) {
+          set({ partsError: err?.message || String(err), loadingParts: false })
+        }
+      }
     } catch (err) {
-      set({ loadError: err?.message || String(err) })
+      set({ loadingParts: false, loadError: err?.message || String(err) })
     }
   },
+
+  // Setter used by the editor's debounced re-run — keeps parts in sync with
+  // the user's typing without re-fetching the file.
+  setLiveParts: (parts) => set({ parts: parts || [] }),
+  setPartsError: (msg) => set({ partsError: msg }),
 
   editContent: (text) => {
     set({ currentFileContent: text, dirty: true })
   },
 
   saveFile: async () => {
-    const { projectId, currentFileId, currentFileContent, dirty } = get()
+    const { projectId, currentFileId, currentFileContent, dirty, currentFile } = get()
     if (!projectId || !currentFileId || !dirty) return
+    // Don't try to save STEP files — they're binary.
+    if (fileKindFor(currentFile) === 'step') {
+      set({ dirty: false })
+      return
+    }
     set({ saving: true })
     try {
       const updated = await api.updateFile(projectId, currentFileId, { content: currentFileContent })
@@ -119,6 +211,22 @@ export const useWorkspace = create((set, get) => ({
       return created
     } catch (err) {
       set({ loadError: err?.message || String(err) })
+    }
+  },
+
+  // Upload a binary asset (currently STEP) to the project, add the resulting
+  // File row to the tree, and switch to it.
+  uploadAsset: async (browserFile, { kind = 'step', parent_id = null } = {}) => {
+    const { projectId } = get()
+    if (!projectId || !browserFile) return null
+    try {
+      const created = await api.uploadAsset(projectId, browserFile, { kind, parent_id })
+      set((s) => ({ files: [...s.files, { ...created, content: undefined }] }))
+      await get().selectFile(created.id)
+      return created
+    } catch (err) {
+      set({ loadError: err?.message || String(err) })
+      return null
     }
   },
 
@@ -204,6 +312,38 @@ export const useWorkspace = create((set, get) => ({
 
   clearPendingPartRefs: () => set({ pendingPartRefs: [] }),
 
+  // ---- Visibility ----
+  togglePartVisibility: (fileId, partId) => {
+    if (!fileId || !partId) return
+    set((s) => {
+      const next = new Map(s.hiddenPartIds)
+      const current = new Set(next.get(fileId) || [])
+      if (current.has(partId)) current.delete(partId)
+      else current.add(partId)
+      next.set(fileId, current)
+      return { hiddenPartIds: next }
+    })
+  },
+
+  isolatePart: (fileId, partId) => {
+    if (!fileId || !partId) return
+    set((s) => {
+      const next = new Map(s.hiddenPartIds)
+      const all = new Set(s.parts.map((p) => p.id).filter((id) => id !== partId))
+      next.set(fileId, all)
+      return { hiddenPartIds: next }
+    })
+  },
+
+  showAllParts: (fileId) => {
+    if (!fileId) return
+    set((s) => {
+      const next = new Map(s.hiddenPartIds)
+      next.set(fileId, new Set())
+      return { hiddenPartIds: next }
+    })
+  },
+
   // ---- Threads + messages ----
   selectThread: async (threadId) => {
     const { projectId } = get()
@@ -220,16 +360,27 @@ export const useWorkspace = create((set, get) => ({
     }
   },
 
-  createThread: async ({ title, file_id } = {}) => {
+  createThread: async ({ title, file_id, model } = {}) => {
     const { projectId } = get()
     if (!projectId) return
     try {
-      const t = await api.createThread(projectId, { title, file_id })
+      const t = await api.createThread(projectId, { title, file_id, model })
       set((s) => ({ threads: [t, ...s.threads] }))
       await get().selectThread(t.id)
       return t
     } catch (err) {
       set({ loadError: err?.message || String(err) })
+    }
+  },
+
+  setThreadModel: async (threadId, model) => {
+    const { projectId, threads } = get()
+    if (!projectId || !threadId) return
+    set({ threads: threads.map((t) => t.id === threadId ? { ...t, model } : t) })
+    try {
+      await api.updateThread(projectId, threadId, { model })
+    } catch {
+      // Server is the source of truth on next load; UI keeps optimistic value.
     }
   },
 
@@ -261,13 +412,14 @@ export const useWorkspace = create((set, get) => ({
     }
   },
 
-  sendMessage: async (content) => {
+  sendMessage: async (content, { model } = {}) => {
     const { projectId, currentThreadId, pendingPartRefs, currentFileId } = get()
     if (!projectId || !content.trim()) return
 
     let threadId = currentThreadId
     if (!threadId) {
-      const t = await get().createThread({ file_id: currentFileId })
+      const title = content.trim().slice(0, 60)
+      const t = await get().createThread({ title, file_id: currentFileId, model })
       threadId = t?.id
       if (!threadId) return
     }
@@ -291,12 +443,16 @@ export const useWorkspace = create((set, get) => ({
       const res = await api.sendMessage(projectId, threadId, {
         content,
         part_refs: optimistic.part_refs,
+        model,
       })
       set((s) => {
-        // Replace optimistic with server's user_message + assistant_message.
+        // Replace optimistic with server's user_message + tool_messages + assistant_message.
         const filtered = s.messages.filter((m) => m.id !== optimistic.id)
         const next = [...filtered]
         if (res?.user_message) next.push(res.user_message)
+        if (Array.isArray(res?.tool_messages)) {
+          for (const m of res.tool_messages) next.push(m)
+        }
         if (res?.assistant_message) next.push(res.assistant_message)
         // Bump thread last_message_at locally.
         const threads = s.threads.map((t) => t.id === threadId
@@ -304,6 +460,30 @@ export const useWorkspace = create((set, get) => ({
           : t)
         return { messages: next, sending: false, threads }
       })
+
+      // If any tool message used a file-mutating tool, refresh the tree and
+      // (if it's the open file) reload its content. Backend denormalizes
+      // tool_name onto each tool_messages row so we don't have to cross-walk
+      // back to the (unreturned) intermediate assistant messages.
+      const toolMsgs = res?.tool_messages || []
+      const mutated =
+        toolMsgs.some((m) => m?.tool_name && FILE_MUTATING_TOOLS.has(m.tool_name)) ||
+        (Array.isArray(res?.assistant_message?.tool_calls)
+          && res.assistant_message.tool_calls.some((c) => FILE_MUTATING_TOOLS.has(c.name))) ||
+        // Defensive fallback: if the backend forgets tool_name, refresh
+        // anytime we got tool messages back. Cheap (file list is small).
+        (toolMsgs.length > 0 && toolMsgs.every((m) => !m?.tool_name))
+
+      if (mutated) {
+        try {
+          const fresh = await api.listFiles(projectId)
+          set({ files: fresh })
+        } catch { /* tolerate */ }
+        const { currentFileId: openId } = get()
+        if (openId) {
+          await get().loadFileForEditor(openId)
+        }
+      }
     } catch (err) {
       set((s) => ({
         sending: false,
@@ -314,5 +494,5 @@ export const useWorkspace = create((set, get) => ({
     }
   },
 
-  reset: () => set({ ...initial }),
+  reset: () => set({ ...initial, hiddenPartIds: new Map() }),
 }))

@@ -1,35 +1,66 @@
 package llm
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"strings"
-	"time"
 )
 
-const SystemPrompt = "You are an expert JSCAD (@jscad/modeling) author helping a user iterate on a CAD model. When asked to modify a part, return the FULL updated file contents inside a ```jscad code block. Reference parts by their `id`."
+// SystemPrompt is the default system prompt sent with every LLM call.
+const SystemPrompt = "You are an expert JSCAD (@jscad/modeling) author helping a user iterate on a CAD model. " +
+	"You have file tools. Use them eagerly to inspect and modify the user's CAD files. " +
+	"Always read a file before editing it. After making changes, briefly summarize what you did. " +
+	"Don't quote the full file back unless asked. " +
+	"When asked to modify a part, prefer surgical edits via edit_file; only fall back to write_file if a wholesale rewrite is required. " +
+	"Reference parts by their `id`."
 
-// Client is a thin wrapper around the Anthropic Messages API. If APIKey is
-// empty, calls return a stub message so the rest of the system can run.
-type Client struct {
-	APIKey string
-	Model  string
-	HTTP   *http.Client
+// ToolCall is a single tool invocation requested by the assistant.
+type ToolCall struct {
+	ID            string // provider-issued (or synthesized) id
+	Name          string
+	ArgumentsJSON string // raw JSON object string
 }
 
-func New(apiKey, model string) *Client {
-	if model == "" {
-		model = "claude-opus-4-7"
-	}
-	return &Client{
-		APIKey: apiKey,
-		Model:  model,
-		HTTP:   &http.Client{Timeout: 60 * time.Second},
-	}
+// ToolSpec describes a tool the model may call.
+type ToolSpec struct {
+	Name        string
+	Description string
+	InputSchema map[string]any // JSON Schema (object)
+}
+
+// Message is a single chat message in a Complete request.
+type Message struct {
+	Role       string     // "user" | "assistant" | "system" | "tool"
+	Content    string     // for user/assistant/system; result JSON for "tool"
+	ToolCalls  []ToolCall // for assistant-with-tools
+	ToolCallID string     // for role="tool", the tool_use id this responds to
+}
+
+// CompleteRequest is the provider-agnostic request shape.
+type CompleteRequest struct {
+	Model       string
+	System      string
+	Messages    []Message
+	MaxTokens   int     // default 4096
+	Temperature float64 // default 0.7
+	Tools       []ToolSpec
+	ToolChoice  string // "auto" | "none" | a specific tool name; default "auto" when Tools non-empty
+}
+
+// CompleteResponse is the provider-agnostic response shape.
+type CompleteResponse struct {
+	Content      string
+	ToolCalls    []ToolCall
+	StopReason   string // "stop" | "tool_use" | "length" | ...
+	ModelUsed    string
+	InputTokens  int
+	OutputTokens int
+}
+
+// Provider is the interface every LLM backend implements.
+type Provider interface {
+	Complete(ctx context.Context, req CompleteRequest) (CompleteResponse, error)
+	Name() string
 }
 
 // PartContext is a single referenced part (file path + part id + file contents).
@@ -45,100 +76,9 @@ type HistoryMessage struct {
 	Content string
 }
 
-type apiMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
-}
-
-type apiRequest struct {
-	Model     string       `json:"model"`
-	System    string       `json:"system"`
-	MaxTokens int          `json:"max_tokens"`
-	Messages  []apiMessage `json:"messages"`
-}
-
-type apiResponse struct {
-	Content []struct {
-		Type string `json:"type"`
-		Text string `json:"text"`
-	} `json:"content"`
-	Error *struct {
-		Type    string `json:"type"`
-		Message string `json:"message"`
-	} `json:"error"`
-}
-
-// Complete asks the model to respond to the given user content + parts. The
-// thread history (previous user/assistant turns, EXCLUDING the new user message)
-// is provided so the model has context.
-func (c *Client) Complete(ctx context.Context, history []HistoryMessage, userContent string, parts []PartContext) (string, error) {
-	if c.APIKey == "" {
-		return "LLM not configured — set ANTHROPIC_API_KEY", nil
-	}
-
-	final := buildUserMessage(userContent, parts)
-
-	msgs := make([]apiMessage, 0, len(history)+1)
-	for _, m := range history {
-		role := m.Role
-		if role != "user" && role != "assistant" {
-			continue
-		}
-		msgs = append(msgs, apiMessage{Role: role, Content: m.Content})
-	}
-	msgs = append(msgs, apiMessage{Role: "user", Content: final})
-
-	body, err := json.Marshal(apiRequest{
-		Model:     c.Model,
-		System:    SystemPrompt,
-		MaxTokens: 4096,
-		Messages:  msgs,
-	})
-	if err != nil {
-		return "", err
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://api.anthropic.com/v1/messages", bytes.NewReader(body))
-	if err != nil {
-		return "", err
-	}
-	req.Header.Set("content-type", "application/json")
-	req.Header.Set("x-api-key", c.APIKey)
-	req.Header.Set("anthropic-version", "2023-06-01")
-
-	resp, err := c.HTTP.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("anthropic call: %w", err)
-	}
-	defer resp.Body.Close()
-	raw, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", err
-	}
-	if resp.StatusCode >= 400 {
-		return "", fmt.Errorf("anthropic %d: %s", resp.StatusCode, strings.TrimSpace(string(raw)))
-	}
-	var parsed apiResponse
-	if err := json.Unmarshal(raw, &parsed); err != nil {
-		return "", fmt.Errorf("decode anthropic response: %w", err)
-	}
-	if parsed.Error != nil {
-		return "", fmt.Errorf("anthropic error: %s", parsed.Error.Message)
-	}
-	var sb strings.Builder
-	for _, blk := range parsed.Content {
-		if blk.Type == "text" {
-			sb.WriteString(blk.Text)
-		}
-	}
-	out := sb.String()
-	if out == "" {
-		out = "(empty response)"
-	}
-	return out, nil
-}
-
-func buildUserMessage(userContent string, parts []PartContext) string {
+// BuildUserMessage formats the user's message together with any referenced
+// part contexts. Exported so handlers can reuse the same wrapping.
+func BuildUserMessage(userContent string, parts []PartContext) string {
 	if len(parts) == 0 {
 		return userContent
 	}

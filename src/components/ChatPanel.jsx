@@ -1,37 +1,597 @@
-import { forwardRef, useEffect, useMemo, useRef, useState } from 'react'
+import { forwardRef, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import {
   Send, Star, MessageSquarePlus, MessageSquare, Trash2, Plus,
-  ChevronUp, ChevronDown, Code as CodeIcon, FileDown,
+  Code as CodeIcon, ChevronDown, ChevronRight, Check, X, Sparkles,
+  FolderTree, FileText, FilePen, Pencil, FilePlus, FileX, Search,
+  Box, ShieldCheck, Wrench,
 } from 'lucide-react'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import PartChip from './PartChip.jsx'
+import { api } from '../lib/api.js'
+import { useWorkspace } from '../store/workspace.js'
 
-// Extract ```jscad fenced blocks; return [{type:'text'|'jscad', content}, ...].
-function parseMessage(text) {
-  if (!text) return []
-  const out = []
-  const re = /```(\w+)?\n([\s\S]*?)```/g
-  let lastIdx = 0
-  let m
-  while ((m = re.exec(text)) !== null) {
-    if (m.index > lastIdx) {
-      out.push({ type: 'text', content: text.slice(lastIdx, m.index) })
-    }
-    const lang = (m[1] || '').toLowerCase()
-    out.push({
-      type: (lang === 'jscad' || lang === 'js' || lang === 'javascript') ? 'jscad' : 'code',
-      lang,
-      content: m[2],
-    })
-    lastIdx = m.index + m[0].length
-  }
-  if (lastIdx < text.length) out.push({ type: 'text', content: text.slice(lastIdx) })
-  return out
+const PROVIDER_LABELS = {
+  anthropic: 'Anthropic',
+  openai: 'OpenAI',
+  moonshot: 'Moonshot',
+  gemini: 'Google',
 }
+
+// ---------- click-outside hook ----------
+
+function useClickOutside(ref, onOutside, enabled) {
+  useEffect(() => {
+    if (!enabled) return
+    function handle(e) {
+      if (ref.current && !ref.current.contains(e.target)) onOutside()
+    }
+    function escListener(e) { if (e.key === 'Escape') onOutside() }
+    document.addEventListener('mousedown', handle)
+    document.addEventListener('keydown', escListener)
+    return () => {
+      document.removeEventListener('mousedown', handle)
+      document.removeEventListener('keydown', escListener)
+    }
+  }, [ref, onOutside, enabled])
+}
+
+// ---------- model picker (popover) ----------
+
+function ModelPicker({ models, selectedId, onSelect, disabled }) {
+  const [open, setOpen] = useState(false)
+  const wrapRef = useRef(null)
+  useClickOutside(wrapRef, () => setOpen(false), open)
+
+  const current = useMemo(() => models.find((m) => m.id === selectedId), [models, selectedId])
+
+  const grouped = useMemo(() => {
+    const map = new Map()
+    for (const m of models) {
+      if (!map.has(m.provider)) map.set(m.provider, [])
+      map.get(m.provider).push(m)
+    }
+    return Array.from(map.entries())
+  }, [models])
+
+  if (!models.length) return null
+
+  return (
+    <div ref={wrapRef} className="relative">
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => setOpen((v) => !v)}
+        className="group inline-flex items-center gap-1.5 px-2 py-1 rounded-md border border-ink-700 bg-ink-900/80 text-[11px] font-mono text-ink-200 hover:bg-ink-800 hover:border-ink-600 disabled:opacity-50 transition-colors"
+        title="Pick model"
+      >
+        <Sparkles size={11} className="text-kerf-300" />
+        <span className="max-w-[140px] truncate">{current?.label || 'pick model'}</span>
+        <ChevronDown size={11} className="text-ink-400 group-hover:text-ink-200" />
+      </button>
+
+      {open && (
+        <div
+          className="absolute bottom-full left-0 mb-1.5 z-30 w-64 rounded-lg border border-ink-700 bg-ink-900 shadow-2xl shadow-black/50 overflow-hidden"
+          role="listbox"
+        >
+          <div className="max-h-[60vh] overflow-auto py-1">
+            {grouped.map(([provider, ms]) => (
+              <div key={provider} className="py-1">
+                <div className="px-3 py-1 text-[10px] uppercase tracking-wider text-ink-500 font-semibold">
+                  {PROVIDER_LABELS[provider] || provider}
+                </div>
+                {ms.map((m) => {
+                  const active = m.id === selectedId
+                  return (
+                    <button
+                      key={m.id}
+                      type="button"
+                      onClick={() => { onSelect(m.id); setOpen(false) }}
+                      className={`w-full flex items-center gap-2 px-3 py-1.5 text-left text-[12px] font-mono ${
+                        active ? 'bg-kerf-300/10 text-kerf-100' : 'text-ink-100 hover:bg-ink-800'
+                      }`}
+                    >
+                      <span className="flex-1 truncate">{m.label}</span>
+                      {m.is_default && !active && (
+                        <span className="text-[9px] uppercase tracking-wider text-ink-500">default</span>
+                      )}
+                      {active && <Check size={12} className="text-kerf-300" />}
+                    </button>
+                  )
+                })}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ---------- thread switcher (popover at top) ----------
+
+function ThreadSwitcher({ threads, currentThreadId, onSelect, onCreate, onToggleStar, onDelete }) {
+  const [open, setOpen] = useState(false)
+  const wrapRef = useRef(null)
+  useClickOutside(wrapRef, () => setOpen(false), open)
+
+  const sorted = useMemo(() => {
+    const ts = [...(threads || [])]
+    ts.sort((a, b) => {
+      if (a.is_starred !== b.is_starred) return a.is_starred ? -1 : 1
+      const at = new Date(a.last_message_at || a.created_at || 0).getTime()
+      const bt = new Date(b.last_message_at || b.created_at || 0).getTime()
+      return bt - at
+    })
+    return ts
+  }, [threads])
+
+  const current = sorted.find((t) => t.id === currentThreadId)
+
+  return (
+    <div ref={wrapRef} className="relative border-b border-ink-800 bg-ink-900">
+      <div className="flex items-stretch">
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          className="flex-1 flex items-center gap-2 px-3 py-2 text-left hover:bg-ink-800 transition-colors min-w-0"
+          title="Switch thread"
+        >
+          <MessageSquare size={13} className="text-ink-400 flex-shrink-0" />
+          <span className="text-sm text-ink-100 truncate flex-1">
+            {current?.title || (sorted.length === 0 ? 'No threads — start typing to begin' : 'Pick a thread')}
+          </span>
+          {current?.is_starred && (
+            <Star size={11} fill="currentColor" className="text-kerf-300 flex-shrink-0" />
+          )}
+          <span className="text-[10px] text-ink-500 font-mono flex-shrink-0">{sorted.length}</span>
+          <ChevronDown size={12} className={`text-ink-400 flex-shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} />
+        </button>
+        <button
+          type="button"
+          onClick={() => { onCreate(); setOpen(false) }}
+          className="px-3 border-l border-ink-800 text-ink-300 hover:bg-ink-800 hover:text-kerf-300 transition-colors"
+          title="New thread"
+        >
+          <MessageSquarePlus size={14} />
+        </button>
+      </div>
+
+      {open && (
+        <div className="absolute top-full left-0 right-0 z-30 max-h-80 overflow-auto border-t border-b border-ink-700 bg-ink-900 shadow-2xl shadow-black/50">
+          {sorted.length === 0 ? (
+            <div className="p-6 text-center text-xs text-ink-400">
+              <MessageSquare size={20} className="mx-auto mb-2 text-ink-600" />
+              No threads yet. Send a message to create one.
+            </div>
+          ) : sorted.map((t) => {
+            const active = t.id === currentThreadId
+            return (
+              <div
+                key={t.id}
+                onClick={() => { onSelect(t.id); setOpen(false) }}
+                className={`group flex items-center gap-2 px-3 py-2 cursor-pointer text-sm border-l-2 ${
+                  active
+                    ? 'bg-kerf-300/10 border-kerf-300 text-kerf-100'
+                    : 'border-transparent text-ink-100 hover:bg-ink-800'
+                }`}
+              >
+                <MessageSquare size={12} className="text-ink-500 flex-shrink-0" />
+                <span className="flex-1 truncate">{t.title || 'Untitled'}</span>
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); onToggleStar(t.id) }}
+                  className={`flex-shrink-0 p-1 rounded hover:bg-ink-700 ${
+                    t.is_starred ? 'text-kerf-300' : 'text-ink-500 opacity-0 group-hover:opacity-100 hover:text-kerf-300'
+                  }`}
+                  title={t.is_starred ? 'Unstar' : 'Star'}
+                >
+                  <Star size={11} fill={t.is_starred ? 'currentColor' : 'none'} />
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); if (confirm('Delete this thread?')) onDelete(t.id) }}
+                  className="flex-shrink-0 p-1 rounded text-ink-500 opacity-0 group-hover:opacity-100 hover:bg-ink-700 hover:text-red-400"
+                  title="Delete thread"
+                >
+                  <Trash2 size={11} />
+                </button>
+              </div>
+            )
+          })}
+          <button
+            type="button"
+            onClick={() => { onCreate(); setOpen(false) }}
+            className="w-full flex items-center gap-2 px-3 py-2 text-sm text-ink-300 hover:bg-ink-800 hover:text-kerf-300 border-t border-ink-800"
+          >
+            <Plus size={12} /> New thread
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ---------- markdown renderer ----------
+
+const MD_COMPONENTS = {
+  // ReactMarkdown 9+ tells us inline vs block by checking children for newlines
+  // / className. We detect block-ness by the presence of a `language-*` class.
+  code({ inline, className, children, ...rest }) {
+    const text = String(children || '').replace(/\n$/, '')
+    const langMatch = /language-([\w-]+)/.exec(className || '')
+    const lang = langMatch ? langMatch[1] : ''
+    const looksBlock = !inline && (lang || text.includes('\n'))
+    if (!looksBlock) {
+      return (
+        <code className="px-1 py-0.5 rounded bg-ink-800 text-ink-100 font-mono text-[12px]" {...rest}>
+          {children}
+        </code>
+      )
+    }
+    return (
+      <div className="my-2 first:mt-0 last:mb-0 -mx-1 rounded-md overflow-hidden border border-ink-700 bg-ink-950">
+        <div className="flex items-center justify-between px-2 py-1 bg-ink-900 border-b border-ink-700 text-[10px] uppercase tracking-wider text-ink-400">
+          <span className="flex items-center gap-1.5">
+            <CodeIcon size={10} />
+            {lang || 'code'}
+          </span>
+        </div>
+        <pre className="p-2 m-0 text-[12px] font-mono text-ink-100 overflow-x-auto whitespace-pre">
+          <code className="font-mono">{text}</code>
+        </pre>
+      </div>
+    )
+  },
+  // Skip the default <pre> wrapper — `code` above handles its own wrapper.
+  pre({ children }) { return <>{children}</> },
+  a({ href, children, ...rest }) {
+    return (
+      <a
+        href={href}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="text-kerf-300 underline underline-offset-2 hover:text-kerf-200"
+        {...rest}
+      >
+        {children}
+      </a>
+    )
+  },
+  p({ children }) {
+    return <p className="leading-relaxed my-1.5 first:mt-0 last:mb-0">{children}</p>
+  },
+  ul({ children }) {
+    return <ul className="list-disc pl-5 my-1.5 space-y-0.5 first:mt-0 last:mb-0">{children}</ul>
+  },
+  ol({ children }) {
+    return <ol className="list-decimal pl-5 my-1.5 space-y-0.5 first:mt-0 last:mb-0">{children}</ol>
+  },
+  li({ children }) {
+    return <li className="leading-relaxed">{children}</li>
+  },
+  h1({ children }) { return <h1 className="text-base font-semibold mt-2 mb-1.5 first:mt-0">{children}</h1> },
+  h2({ children }) { return <h2 className="text-sm font-semibold mt-2 mb-1.5 first:mt-0">{children}</h2> },
+  h3({ children }) { return <h3 className="text-[13px] font-mono font-semibold mt-2 mb-1 first:mt-0 text-kerf-100">{children}</h3> },
+  h4({ children }) { return <h4 className="text-[12px] font-mono font-semibold mt-1.5 mb-1 first:mt-0 text-kerf-100">{children}</h4> },
+  h5({ children }) { return <h5 className="text-[12px] font-mono font-semibold mt-1.5 mb-1 first:mt-0 uppercase tracking-wider text-ink-300">{children}</h5> },
+  h6({ children }) { return <h6 className="text-[11px] font-mono font-semibold mt-1.5 mb-1 first:mt-0 uppercase tracking-wider text-ink-400">{children}</h6> },
+  blockquote({ children }) {
+    return (
+      <blockquote className="border-l-2 border-kerf-300/60 pl-3 my-2 text-ink-300 italic">
+        {children}
+      </blockquote>
+    )
+  },
+  table({ children }) {
+    return (
+      <div className="my-2 overflow-x-auto -mx-1">
+        <table className="text-[12px] font-mono border-collapse">
+          {children}
+        </table>
+      </div>
+    )
+  },
+  thead({ children }) { return <thead className="text-ink-300 border-b border-ink-700">{children}</thead> },
+  tbody({ children }) { return <tbody>{children}</tbody> },
+  tr({ children }) { return <tr className="border-b border-ink-800/80 last:border-0">{children}</tr> },
+  th({ children }) { return <th className="text-left px-2 py-1 font-semibold">{children}</th> },
+  td({ children }) { return <td className="px-2 py-1 align-top">{children}</td> },
+  hr() { return <hr className="my-3 border-ink-700" /> },
+}
+
+function Markdown({ text }) {
+  if (!text) return null
+  return (
+    <ReactMarkdown remarkPlugins={[remarkGfm]} components={MD_COMPONENTS}>
+      {text}
+    </ReactMarkdown>
+  )
+}
+
+// ---------- tool-call chips ----------
+
+const TOOL_ICONS = {
+  list_files: FolderTree,
+  read_file: FileText,
+  write_file: FilePen,
+  edit_file: Pencil,
+  create_file: FilePlus,
+  delete_file: FileX,
+  search_code: Search,
+  import_step: Box,
+  validate_jscad: ShieldCheck,
+}
+
+function ToolIcon({ name, size = 13, className = 'text-kerf-300 flex-shrink-0' }) {
+  const Icon = TOOL_ICONS[name] || Wrench
+  return <Icon size={size} className={className} />
+}
+
+// Try to JSON.parse; if it fails, return the raw string.
+function parseMaybe(value) {
+  if (value == null) return null
+  if (typeof value !== 'string') return value
+  try { return JSON.parse(value) } catch { return value }
+}
+
+// Compact one-liner derived from the call's args + result.
+function toolSummary(name, args, parsedResult) {
+  const a = args || {}
+  switch (name) {
+    case 'read_file': return a.path || ''
+    case 'edit_file': return `${a.path || ''} · 1 edit`
+    case 'write_file': {
+      const bytes = typeof a.content === 'string'
+        ? new TextEncoder().encode(a.content).length
+        : (a.bytes || 0)
+      return `${a.path || ''}${bytes ? ` · ${bytes}B` : ''}`
+    }
+    case 'create_file': return a.path || a.name || ''
+    case 'delete_file': return a.path || ''
+    case 'search_code': {
+      const m = parsedResult && Array.isArray(parsedResult.matches)
+        ? parsedResult.matches.length
+        : (parsedResult && typeof parsedResult.count === 'number' ? parsedResult.count : null)
+      return `${a.query || ''}${m != null ? ` · ${m} matches` : ''}`
+    }
+    case 'list_files': {
+      const files = parsedResult && Array.isArray(parsedResult.files)
+        ? parsedResult.files.length
+        : (Array.isArray(parsedResult) ? parsedResult.length : null)
+      return files != null ? `${files} files` : (a.path || '/')
+    }
+    case 'import_step': return a.name || a.path || ''
+    case 'validate_jscad': return a.path || ''
+    default: {
+      // Generic: show the first short string-valued arg.
+      for (const [k, v] of Object.entries(a)) {
+        if (typeof v === 'string' && v.length < 80) return `${k}: ${v}`
+      }
+      return ''
+    }
+  }
+}
+
+// Naive but readable JSON pretty-printer with subtle syntax tinting.
+function PrettyJson({ value }) {
+  if (value === undefined) return null
+  let text
+  if (typeof value === 'string') text = value
+  else {
+    try { text = JSON.stringify(value, null, 2) }
+    catch { text = String(value) }
+  }
+  return (
+    <pre className="m-0 p-2 text-[11px] font-mono text-ink-100 leading-relaxed overflow-x-auto whitespace-pre-wrap break-words bg-ink-950 rounded border border-ink-800">
+      {text}
+    </pre>
+  )
+}
+
+function StatusDot({ state }) {
+  if (state === 'pending') {
+    return <span className="w-2 h-2 rounded-full bg-yellow-400 animate-pulse flex-shrink-0" title="Running" />
+  }
+  if (state === 'error') {
+    return <X size={12} className="text-red-400 flex-shrink-0" />
+  }
+  return <Check size={12} className="text-emerald-400 flex-shrink-0" />
+}
+
+function ToolCallChip({ call }) {
+  const [open, setOpen] = useState(false)
+  const args = call.arguments || {}
+  const parsedResult = parseMaybe(call.resultContent)
+  const isError = !!(parsedResult && typeof parsedResult === 'object' && parsedResult.error)
+  let state = 'success'
+  if (call.pending) state = 'pending'
+  else if (isError) state = 'error'
+  const summary = toolSummary(call.name, args, parsedResult)
+
+  return (
+    <div className="rounded-lg border border-ink-700 bg-ink-900/60 overflow-hidden">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center gap-2 px-2.5 py-1.5 text-left hover:bg-ink-800/60 transition-colors"
+      >
+        {open
+          ? <ChevronDown size={12} className="text-ink-500 flex-shrink-0" />
+          : <ChevronRight size={12} className="text-ink-500 flex-shrink-0" />}
+        <ToolIcon name={call.name} />
+        <span className="text-[12px] font-mono text-ink-100 flex-shrink-0">{call.name}</span>
+        {summary && (
+          <>
+            <span className="text-ink-600 flex-shrink-0">·</span>
+            <span className="text-[11px] font-mono text-ink-300 truncate min-w-0">{summary}</span>
+          </>
+        )}
+        <span className="flex-1" />
+        {call.durationMs != null && (
+          <span className="text-[10px] font-mono text-ink-500 flex-shrink-0">{call.durationMs}ms</span>
+        )}
+        <StatusDot state={state} />
+      </button>
+      {open && (
+        <div className="px-2.5 pb-2 pt-1 border-t border-ink-800 space-y-1.5">
+          <div>
+            <div className="text-[10px] uppercase tracking-wider text-ink-500 mb-1">args</div>
+            <PrettyJson value={args} />
+          </div>
+          {call.resultContent !== undefined && (
+            <div>
+              <div className="text-[10px] uppercase tracking-wider text-ink-500 mb-1">result</div>
+              <PrettyJson value={parsedResult} />
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ---------- assistant + tool pairing ----------
+//
+// The backend persists tool exchanges as separate rows:
+//   - `assistant` row may carry `tool_calls: [{id, name, arguments}]`
+//   - `tool` row carries `tool_call_id` linking back, `content` is JSON string.
+//
+// We collapse a stretch of [assistant(with tool_calls) + tool(s) + ...]
+// into "groups". Each group is rendered as: assistant-text bubble (if any)
+// followed by a stack of ToolCallChips.
+
+function buildRenderItems(messages) {
+  const items = []
+  const byCallId = new Map()
+  for (const m of messages || []) {
+    if (m.role === 'tool') {
+      byCallId.set(m.tool_call_id, m)
+    }
+  }
+  for (const m of messages || []) {
+    if (m.role === 'tool') {
+      // Already absorbed into the matching assistant group.
+      continue
+    }
+    if (m.role === 'assistant' && Array.isArray(m.tool_calls) && m.tool_calls.length) {
+      // First emit the assistant's text (if any) as a normal bubble.
+      if (m.content && m.content.trim()) {
+        items.push({ kind: 'message', message: { ...m, tool_calls: undefined } })
+      }
+      // Then emit a chip group.
+      const calls = m.tool_calls.map((c) => {
+        const toolMsg = byCallId.get(c.id)
+        const argsParsed = typeof c.arguments === 'string' ? parseMaybe(c.arguments) : c.arguments
+        return {
+          id: c.id,
+          name: c.name,
+          arguments: argsParsed && typeof argsParsed === 'object' ? argsParsed : {},
+          resultContent: toolMsg ? toolMsg.content : undefined,
+          durationMs: toolMsg?.duration_ms ?? c.duration_ms ?? null,
+          pending: !toolMsg && !!m._pending,
+        }
+      })
+      items.push({ kind: 'tool-group', id: m.id, calls, model: m.model })
+      continue
+    }
+    items.push({ kind: 'message', message: m })
+  }
+  return items
+}
+
+// ---------- message bubble ----------
+
+function MessageBlock({ message, modelLookup }) {
+  const isUser = message.role === 'user'
+  const showBadge = !isUser && message.model && message.model !== 'none'
+  const badgeProvider = showBadge ? (modelLookup?.[message.model]?.provider || '') : ''
+
+  return (
+    <div className={`flex flex-col gap-1.5 ${isUser ? 'items-end' : 'items-start'}`}>
+      {!isUser && (
+        <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-ink-500">
+          <Sparkles size={10} className="text-kerf-300" />
+          <span>Kerf</span>
+          {showBadge && (
+            <>
+              <span className="text-ink-600">·</span>
+              <span className="font-mono normal-case tracking-normal text-ink-400">
+                {message.model}{badgeProvider ? ` · ${PROVIDER_LABELS[badgeProvider] || badgeProvider}` : ''}
+              </span>
+            </>
+          )}
+        </div>
+      )}
+      {message.part_refs && message.part_refs.length > 0 && (
+        <div className="flex flex-wrap gap-1 max-w-[88%]">
+          {message.part_refs.map((r, i) => (
+            <PartChip key={i} partId={r.part_id} fileName={r.label} />
+          ))}
+        </div>
+      )}
+      <div className={`max-w-[88%] rounded-2xl px-3.5 py-2 text-sm leading-relaxed ${
+        isUser
+          ? 'bg-kerf-300/15 border border-kerf-300/30 text-ink-100 rounded-br-sm'
+          : 'bg-ink-800 border border-ink-700 text-ink-100 rounded-bl-sm'
+      }`}>
+        {isUser ? (
+          <div className="whitespace-pre-wrap break-words">{message.content}</div>
+        ) : (
+          <Markdown text={message.content || ''} />
+        )}
+      </div>
+      {message._pending && (
+        <div className="text-[10px] text-ink-500">sending…</div>
+      )}
+      {message._error && (
+        <div className="text-[10px] text-red-400">{message._error}</div>
+      )}
+    </div>
+  )
+}
+
+function ToolGroup({ calls, model, modelLookup }) {
+  const showBadge = model && model !== 'none'
+  const badgeProvider = showBadge ? (modelLookup?.[model]?.provider || '') : ''
+  return (
+    <div className="flex flex-col gap-1.5 items-start">
+      <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-ink-500">
+        <Wrench size={10} className="text-kerf-300" />
+        <span>Tools</span>
+        {showBadge && (
+          <>
+            <span className="text-ink-600">·</span>
+            <span className="font-mono normal-case tracking-normal text-ink-400">
+              {model}{badgeProvider ? ` · ${PROVIDER_LABELS[badgeProvider] || badgeProvider}` : ''}
+            </span>
+          </>
+        )}
+      </div>
+      <div className="flex flex-col gap-1.5 max-w-[92%] w-full">
+        {calls.map((c) => <ToolCallChip key={c.id} call={c} />)}
+      </div>
+    </div>
+  )
+}
+
+// ---------- input ----------
 
 const ChatInput = forwardRef(function ChatInput({
   pendingPartRefs, onRemoveRef, onSubmit, sending, disabled,
+  models, selectedModelId, onSelectModel,
 }, ref) {
   const [value, setValue] = useState('')
+  const internalRef = useRef(null)
+  const taRef = ref || internalRef
+
+  useLayoutEffect(() => {
+    const ta = taRef.current
+    if (!ta) return
+    ta.style.height = 'auto'
+    ta.style.height = Math.min(ta.scrollHeight, 240) + 'px'
+  }, [value, taRef])
 
   function submit() {
     const v = value.trim()
@@ -50,10 +610,12 @@ const ChatInput = forwardRef(function ChatInput({
     }
   }
 
+  const canSend = !!value.trim() && !sending && !disabled
+
   return (
-    <div className="border-t border-ink-800 bg-ink-900 p-2">
+    <div className="border-t border-ink-800 bg-ink-900 p-3">
       {pendingPartRefs.length > 0 && (
-        <div className="flex flex-wrap gap-1 px-1 pb-2">
+        <div className="flex flex-wrap gap-1 mb-2">
           {pendingPartRefs.map((r, i) => (
             <PartChip
               key={`${r.file_id}:${r.part_id}:${i}`}
@@ -64,221 +626,176 @@ const ChatInput = forwardRef(function ChatInput({
           ))}
         </div>
       )}
-      <div className="flex items-end gap-2 bg-ink-850 border border-ink-700 rounded-lg p-2 focus-within:border-kerf-300/60 transition-colors">
+      <div className="rounded-xl border border-ink-700 bg-ink-850 focus-within:border-kerf-300/50 transition-colors">
         <textarea
-          ref={ref}
+          ref={taRef}
           value={value}
           onChange={(e) => setValue(e.target.value)}
           onKeyDown={onKey}
           placeholder={disabled ? 'Loading…' : 'Ask Kerf to refine the model…'}
           rows={2}
           disabled={disabled}
-          className="flex-1 resize-none bg-transparent text-sm text-ink-100 placeholder:text-ink-400 outline-none font-sans leading-snug max-h-40"
+          className="w-full resize-none bg-transparent text-sm text-ink-100 placeholder:text-ink-500 outline-none font-sans leading-relaxed px-3 py-2.5"
         />
-        <button
-          type="button"
-          onClick={submit}
-          disabled={!value.trim() || sending || disabled}
-          className="p-1.5 rounded-md bg-kerf-300 text-ink-950 hover:bg-kerf-200 disabled:opacity-30 disabled:cursor-not-allowed flex-shrink-0"
-          title="Send (Enter)"
-        >
-          <Send size={14} />
-        </button>
+        <div className="flex items-center justify-between gap-2 px-2 py-1.5 border-t border-ink-800/80 bg-ink-900/40">
+          <div className="flex items-center gap-2 min-w-0">
+            <ModelPicker
+              models={models}
+              selectedId={selectedModelId}
+              onSelect={onSelectModel}
+              disabled={disabled}
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] text-ink-500 hidden sm:inline">
+              <kbd className="px-1 py-0.5 rounded bg-ink-800 border border-ink-700 font-mono text-[9px] text-ink-400">↵</kbd> send
+            </span>
+            <button
+              type="button"
+              onClick={submit}
+              disabled={!canSend}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-kerf-300 text-ink-950 text-xs font-semibold hover:bg-kerf-200 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              title="Send (Enter)"
+            >
+              <Send size={12} />
+              Send
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   )
 })
 
-function MessageBlock({ message, onApply }) {
-  const isUser = message.role === 'user'
-  const blocks = useMemo(() => parseMessage(message.content || ''), [message.content])
-  return (
-    <div className={`flex flex-col gap-1.5 ${isUser ? 'items-end' : 'items-start'}`}>
-      <div className={`text-[10px] uppercase tracking-wider ${isUser ? 'text-kerf-300' : 'text-ink-400'}`}>
-        {isUser ? 'You' : 'Kerf'}
-        {message._pending && ' · sending…'}
-        {message._error && <span className="text-red-400 normal-case"> · {message._error}</span>}
-      </div>
-      {message.part_refs && message.part_refs.length > 0 && (
-        <div className="flex flex-wrap gap-1 max-w-[88%]">
-          {message.part_refs.map((r, i) => (
-            <PartChip key={i} partId={r.part_id} fileName={r.label} />
-          ))}
-        </div>
-      )}
-      <div className={`max-w-[88%] rounded-lg px-3 py-2 text-sm ${
-        isUser
-          ? 'bg-kerf-300/15 border border-kerf-300/30 text-ink-100'
-          : 'bg-ink-800 border border-ink-700 text-ink-100'
-      }`}>
-        {blocks.map((b, i) => {
-          if (b.type === 'text') {
-            return <div key={i} className="whitespace-pre-wrap break-words leading-relaxed">{b.content}</div>
-          }
-          return (
-            <div key={i} className="my-2 first:mt-0 last:mb-0 rounded-md overflow-hidden border border-ink-700">
-              <div className="flex items-center justify-between px-2 py-1 bg-ink-900 border-b border-ink-700 text-[10px] uppercase tracking-wider text-ink-400">
-                <span className="flex items-center gap-1.5">
-                  <CodeIcon size={10} />
-                  {b.lang || 'code'}
-                </span>
-                {b.type === 'jscad' && onApply && (
-                  <button
-                    type="button"
-                    onClick={() => onApply(b.content)}
-                    className="flex items-center gap-1 px-2 py-0.5 rounded bg-kerf-300/20 text-kerf-200 hover:bg-kerf-300/30 normal-case text-[11px]"
-                    title="Apply to current file"
-                  >
-                    <FileDown size={10} />
-                    Apply to file
-                  </button>
-                )}
-              </div>
-              <pre className="p-2 m-0 text-xs font-mono text-ink-100 overflow-x-auto bg-ink-950 whitespace-pre">{b.content}</pre>
-            </div>
-          )
-        })}
-      </div>
-    </div>
-  )
-}
-
-function ThreadList({ threads, currentThreadId, onSelect, onCreate, onToggleStar, onDelete, collapsed, setCollapsed }) {
-  const sorted = useMemo(() => {
-    const ts = [...(threads || [])]
-    ts.sort((a, b) => {
-      if (a.is_starred !== b.is_starred) return a.is_starred ? -1 : 1
-      const at = new Date(a.last_message_at || a.created_at || 0).getTime()
-      const bt = new Date(b.last_message_at || b.created_at || 0).getTime()
-      return bt - at
-    })
-    return ts
-  }, [threads])
-
-  return (
-    <div className="border-b border-ink-800 bg-ink-900">
-      <div className="flex items-center justify-between px-3 py-2">
-        <button
-          type="button"
-          className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-ink-400 hover:text-ink-200"
-          onClick={() => setCollapsed((c) => !c)}
-        >
-          {collapsed ? <ChevronDown size={12} /> : <ChevronUp size={12} />}
-          Threads ({sorted.length})
-        </button>
-        <button
-          type="button"
-          onClick={onCreate}
-          className="p-1 rounded hover:bg-ink-700 text-ink-300 hover:text-kerf-300"
-          title="New thread"
-        >
-          <MessageSquarePlus size={13} />
-        </button>
-      </div>
-      {!collapsed && (
-        <div className="max-h-44 overflow-auto pb-1">
-          {sorted.length === 0 ? (
-            <div className="px-3 py-3 text-xs text-ink-400 text-center">
-              <button
-                type="button"
-                onClick={onCreate}
-                className="inline-flex items-center gap-1 text-kerf-300 hover:underline"
-              >
-                <Plus size={12} /> Start a thread
-              </button>
-            </div>
-          ) : sorted.map((t) => {
-            const active = t.id === currentThreadId
-            return (
-              <div
-                key={t.id}
-                onClick={() => onSelect(t.id)}
-                className={`group flex items-center gap-1.5 px-3 py-1.5 cursor-pointer text-xs ${
-                  active ? 'bg-kerf-300/10 text-kerf-100 border-l-2 border-kerf-300' : 'text-ink-200 hover:bg-ink-800 border-l-2 border-transparent'
-                }`}
-              >
-                <MessageSquare size={11} className="flex-shrink-0 text-ink-400" />
-                <span className="flex-1 truncate">{t.title || 'Untitled'}</span>
-                <button
-                  type="button"
-                  onClick={(e) => { e.stopPropagation(); onToggleStar(t.id) }}
-                  className={`flex-shrink-0 ${t.is_starred ? 'text-kerf-300' : 'text-ink-500 opacity-0 group-hover:opacity-100 hover:text-kerf-300'}`}
-                  title={t.is_starred ? 'Unstar' : 'Star'}
-                >
-                  <Star size={11} fill={t.is_starred ? 'currentColor' : 'none'} />
-                </button>
-                <button
-                  type="button"
-                  onClick={(e) => { e.stopPropagation(); onDelete(t.id) }}
-                  className="flex-shrink-0 text-ink-500 opacity-0 group-hover:opacity-100 hover:text-red-400"
-                  title="Delete thread"
-                >
-                  <Trash2 size={11} />
-                </button>
-              </div>
-            )
-          })}
-        </div>
-      )}
-    </div>
-  )
-}
+// ---------- root ----------
 
 const ChatPanel = forwardRef(function ChatPanel({
   threads, currentThreadId, messages, pendingPartRefs,
   onSelectThread, onCreateThread, onToggleStar, onDeleteThread,
-  onSend, onRemovePartRef, onApplyCode, sending, loadingMessages,
+  onSend, onRemovePartRef, sending, loadingMessages,
 }, inputRef) {
   const scrollRef = useRef(null)
-  const [collapsed, setCollapsed] = useState(false)
+  const [models, setModels] = useState([])
+  const setThreadModel = useWorkspace((s) => s.setThreadModel)
+  const [pendingModel, setPendingModel] = useState(null)
+
+  useEffect(() => {
+    let cancelled = false
+    api.listModels()
+      .then((list) => { if (!cancelled) setModels(Array.isArray(list) ? list : []) })
+      .catch(() => { if (!cancelled) setModels([]) })
+    return () => { cancelled = true }
+  }, [])
 
   useEffect(() => {
     const el = scrollRef.current
     if (el) el.scrollTop = el.scrollHeight
   }, [messages, sending])
 
+  const defaultModelId = useMemo(() => {
+    if (!models.length) return null
+    return (models.find((m) => m.is_default) || models[0]).id
+  }, [models])
+
+  const modelLookup = useMemo(() => {
+    const o = {}
+    for (const m of models) o[m.id] = m
+    return o
+  }, [models])
+
+  const currentThread = useMemo(
+    () => (threads || []).find((t) => t.id === currentThreadId) || null,
+    [threads, currentThreadId],
+  )
+
+  const selectedModelId = useMemo(() => {
+    if (!models.length) return null
+    if (currentThread?.model && modelLookup[currentThread.model]) return currentThread.model
+    if (pendingModel && modelLookup[pendingModel]) return pendingModel
+    return defaultModelId
+  }, [models, currentThread, pendingModel, modelLookup, defaultModelId])
+
+  const handleSelectModel = useCallback((modelId) => {
+    if (!modelId) return
+    if (currentThreadId) {
+      setThreadModel(currentThreadId, modelId)
+    } else {
+      setPendingModel(modelId)
+    }
+  }, [currentThreadId, setThreadModel])
+
+  const handleSend = useCallback((content) => {
+    onSend(content, { model: selectedModelId })
+  }, [onSend, selectedModelId])
+
+  const renderItems = useMemo(() => buildRenderItems(messages), [messages])
+
   return (
     <div className="h-full flex flex-col bg-ink-900 border-l border-ink-800 min-h-0">
-      <ThreadList
+      <ThreadSwitcher
         threads={threads}
         currentThreadId={currentThreadId}
         onSelect={onSelectThread}
         onCreate={onCreateThread}
         onToggleStar={onToggleStar}
         onDelete={onDeleteThread}
-        collapsed={collapsed}
-        setCollapsed={setCollapsed}
       />
-      <div ref={scrollRef} className="flex-1 overflow-auto p-3 flex flex-col gap-3 min-h-0">
+
+      <div ref={scrollRef} className="flex-1 overflow-auto px-3 py-4 flex flex-col gap-3 min-h-0">
         {loadingMessages ? (
           <div className="text-xs text-ink-400 text-center py-8">Loading messages…</div>
-        ) : messages.length === 0 ? (
-          <div className="text-center text-ink-400 text-xs py-12">
-            <MessageSquare size={20} className="mx-auto mb-2 text-ink-500" />
-            <div>No messages yet.</div>
-            <div className="mt-1 text-ink-500">
-              Click parts in the viewport to reference them in your message.
-            </div>
-          </div>
-        ) : messages.map((m) => (
-          <MessageBlock key={m.id} message={m} onApply={onApplyCode} />
-        ))}
+        ) : renderItems.length === 0 ? (
+          <EmptyState hasThreads={(threads || []).length > 0} />
+        ) : renderItems.map((item, i) => {
+          if (item.kind === 'tool-group') {
+            return <ToolGroup key={`tg-${item.id || i}`} calls={item.calls} model={item.model} modelLookup={modelLookup} />
+          }
+          return <MessageBlock key={item.message.id || i} message={item.message} modelLookup={modelLookup} />
+        })}
         {sending && (
-          <div className="text-[10px] uppercase tracking-wider text-ink-400 animate-pulse">
-            Kerf is thinking…
+          <div className="flex items-center gap-2 text-[11px] text-ink-400">
+            <Sparkles size={11} className="text-kerf-300 animate-pulse" />
+            <span className="animate-pulse">Kerf is thinking…</span>
           </div>
         )}
       </div>
+
       <ChatInput
         ref={inputRef}
         pendingPartRefs={pendingPartRefs}
         onRemoveRef={onRemovePartRef}
-        onSubmit={onSend}
+        onSubmit={handleSend}
         sending={sending}
         disabled={loadingMessages}
+        models={models}
+        selectedModelId={selectedModelId}
+        onSelectModel={handleSelectModel}
       />
     </div>
   )
 })
+
+function EmptyState({ hasThreads }) {
+  return (
+    <div className="m-auto max-w-xs text-center text-ink-400">
+      <div className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-kerf-300/10 border border-kerf-300/30 mb-3">
+        <Sparkles size={16} className="text-kerf-300" />
+      </div>
+      <div className="text-sm text-ink-200 mb-1.5 font-medium">
+        {hasThreads ? 'New conversation' : 'Start chatting with Kerf'}
+      </div>
+      <div className="text-xs text-ink-400 leading-relaxed">
+        Click parts in the 3D view to reference them, then describe what you want changed.
+      </div>
+      <div className="mt-4 text-[10px] uppercase tracking-wider text-ink-500">
+        Try
+      </div>
+      <div className="mt-1.5 flex flex-col gap-1 text-[11px] font-mono text-ink-300">
+        <div className="px-2 py-1 rounded bg-ink-800/60 border border-ink-700">make the base 6mm taller</div>
+        <div className="px-2 py-1 rounded bg-ink-800/60 border border-ink-700">add a 2mm fillet to the peg</div>
+      </div>
+    </div>
+  )
+}
 
 export default ChatPanel

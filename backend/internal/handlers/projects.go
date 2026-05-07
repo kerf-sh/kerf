@@ -12,12 +12,17 @@ import (
 	"github.com/imranp/kerf/backend/internal/models"
 )
 
-const defaultJSCAD = `import { primitives } from '@jscad/modeling'
-
-export default function () {
-  const base = primitives.cuboid({ size: [20, 20, 20] })
+// Mirrors src/lib/jscadRunner.js DEFAULT_JSCAD. The runner calls the default
+// export with the @jscad/modeling namespace, so the function destructures
+// what it needs from the argument — top-level imports are unnecessary
+// (and would be stripped by the runner anyway).
+const defaultJSCAD = `// Kerf: default export receives the @jscad/modeling module and returns parts.
+export default function ({ primitives, transforms, booleans }) {
+  const base = primitives.cuboid({ size: [40, 40, 10] })
+  const peg  = transforms.translate([0, 0, 10], primitives.cylinder({ radius: 6, height: 20 }))
   return [
     { id: 'base', geom: base },
+    { id: 'peg',  geom: peg  },
   ]
 }
 `

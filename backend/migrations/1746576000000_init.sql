@@ -66,13 +66,17 @@ create table if not exists files (
     project_id uuid not null references projects(id) on delete cascade,
     parent_id uuid references files(id) on delete cascade,
     name text not null,
-    kind text not null default 'file' check (kind in ('file','folder','assembly')),
+    kind text not null default 'file' check (kind in ('file','folder','assembly','step')),
     content text not null default '',
+    storage_key text,
+    mime_type text,
+    size bigint,
     created_at timestamptz not null default now(),
     updated_at timestamptz not null default now()
 );
 create index if not exists files_project_id_idx on files(project_id);
 create index if not exists files_parent_id_idx on files(parent_id);
+create index if not exists files_storage_key_idx on files(storage_key);
 
 create table if not exists chat_threads (
     id uuid primary key default gen_random_uuid(),
@@ -81,6 +85,7 @@ create table if not exists chat_threads (
     title text not null default '',
     is_starred boolean not null default false,
     last_message_at timestamptz,
+    model text,
     created_at timestamptz not null default now(),
     updated_at timestamptz not null default now()
 );
@@ -90,9 +95,12 @@ create index if not exists chat_threads_file_id_idx on chat_threads(file_id);
 create table if not exists chat_messages (
     id uuid primary key default gen_random_uuid(),
     thread_id uuid not null references chat_threads(id) on delete cascade,
-    role text not null check (role in ('user','assistant','system')),
+    role text not null check (role in ('user','assistant','system','tool')),
     content text not null default '',
     part_refs jsonb not null default '[]'::jsonb,
+    tool_calls jsonb not null default '[]'::jsonb,
+    tool_call_id text,
+    model text,
     created_at timestamptz not null default now()
 );
 create index if not exists chat_messages_thread_id_idx on chat_messages(thread_id);

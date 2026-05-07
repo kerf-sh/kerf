@@ -26,14 +26,14 @@ func (d *Deps) ListThreads(w http.ResponseWriter, r *http.Request) {
 	)
 	if fileID != "" {
 		rows, err = d.Pool.Query(r.Context(), `
-			select id, project_id, file_id, title, is_starred, last_message_at, created_at
+			select id, project_id, file_id, title, is_starred, last_message_at, model, created_at
 			from chat_threads
 			where project_id = $1 and file_id = $2
 			order by coalesce(last_message_at, created_at) desc
 		`, pid, fileID)
 	} else {
 		rows, err = d.Pool.Query(r.Context(), `
-			select id, project_id, file_id, title, is_starred, last_message_at, created_at
+			select id, project_id, file_id, title, is_starred, last_message_at, model, created_at
 			from chat_threads
 			where project_id = $1
 			order by coalesce(last_message_at, created_at) desc
@@ -47,7 +47,7 @@ func (d *Deps) ListThreads(w http.ResponseWriter, r *http.Request) {
 	out := []models.Thread{}
 	for rows.Next() {
 		var t models.Thread
-		if err := rows.Scan(&t.ID, &t.ProjectID, &t.FileID, &t.Title, &t.IsStarred, &t.LastMessageAt, &t.CreatedAt); err != nil {
+		if err := rows.Scan(&t.ID, &t.ProjectID, &t.FileID, &t.Title, &t.IsStarred, &t.LastMessageAt, &t.Model, &t.CreatedAt); err != nil {
 			genericServerError(w, err)
 			return
 		}
@@ -59,6 +59,7 @@ func (d *Deps) ListThreads(w http.ResponseWriter, r *http.Request) {
 type createThreadReq struct {
 	Title  string  `json:"title"`
 	FileID *string `json:"file_id"`
+	Model  *string `json:"model"`
 }
 
 // CreateThread creates a thread, then evicts oldest non-starred threads beyond the cap.
@@ -81,13 +82,21 @@ func (d *Deps) CreateThread(w http.ResponseWriter, r *http.Request) {
 	if body.Title == "" {
 		body.Title = "New chat"
 	}
+	if body.Model != nil && *body.Model != "" {
+		if _, _, err := d.LLM.Resolve(*body.Model); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+	} else {
+		body.Model = nil
+	}
 	var t models.Thread
 	err := d.Pool.QueryRow(r.Context(), `
-		insert into chat_threads(project_id, file_id, title)
-		values ($1,$2,$3)
-		returning id, project_id, file_id, title, is_starred, last_message_at, created_at
-	`, pid, body.FileID, body.Title).Scan(
-		&t.ID, &t.ProjectID, &t.FileID, &t.Title, &t.IsStarred, &t.LastMessageAt, &t.CreatedAt)
+		insert into chat_threads(project_id, file_id, title, model)
+		values ($1,$2,$3,$4)
+		returning id, project_id, file_id, title, is_starred, last_message_at, model, created_at
+	`, pid, body.FileID, body.Title, body.Model).Scan(
+		&t.ID, &t.ProjectID, &t.FileID, &t.Title, &t.IsStarred, &t.LastMessageAt, &t.Model, &t.CreatedAt)
 	if err != nil {
 		genericServerError(w, err)
 		return
@@ -115,9 +124,10 @@ func (d *Deps) evictOldThreads(r *http.Request, projectID string) {
 type updateThreadReq struct {
 	Title     *string `json:"title"`
 	IsStarred *bool   `json:"is_starred"`
+	Model     *string `json:"model"`
 }
 
-// UpdateThread patches the thread title or star state.
+// UpdateThread patches the thread title, star state, or model.
 func (d *Deps) UpdateThread(w http.ResponseWriter, r *http.Request) {
 	uid := middleware.UserID(r.Context())
 	pid := chi.URLParam(r, "pid")
@@ -135,16 +145,23 @@ func (d *Deps) UpdateThread(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid body")
 		return
 	}
+	if body.Model != nil && *body.Model != "" {
+		if _, _, err := d.LLM.Resolve(*body.Model); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+	}
 	var t models.Thread
 	err := d.Pool.QueryRow(r.Context(), `
 		update chat_threads set
 			title      = coalesce($3, title),
 			is_starred = coalesce($4, is_starred),
+			model      = coalesce($5, model),
 			updated_at = now()
 		where id = $1 and project_id = $2
-		returning id, project_id, file_id, title, is_starred, last_message_at, created_at
-	`, tid, pid, body.Title, body.IsStarred).Scan(
-		&t.ID, &t.ProjectID, &t.FileID, &t.Title, &t.IsStarred, &t.LastMessageAt, &t.CreatedAt)
+		returning id, project_id, file_id, title, is_starred, last_message_at, model, created_at
+	`, tid, pid, body.Title, body.IsStarred, body.Model).Scan(
+		&t.ID, &t.ProjectID, &t.FileID, &t.Title, &t.IsStarred, &t.LastMessageAt, &t.Model, &t.CreatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeError(w, http.StatusNotFound, "thread not found")

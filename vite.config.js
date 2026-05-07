@@ -6,7 +6,7 @@ import tailwindcss from '@tailwindcss/vite'
 // Run: `npm run dev` (local), `npm run dev:dev` (dev), `npm run build` (main).
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
-  const apiUrl = env.VITE_API_URL || 'http://localhost:8080'
+  const apiUrl = env.VITE_API_URL || 'http://localhost:8090'
 
   return {
     plugins: [react(), tailwindcss()],

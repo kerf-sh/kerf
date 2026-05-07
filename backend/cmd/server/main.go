@@ -20,6 +20,7 @@ import (
 	"github.com/imranp/kerf/backend/internal/handlers"
 	"github.com/imranp/kerf/backend/internal/llm"
 	kmw "github.com/imranp/kerf/backend/internal/middleware"
+	"github.com/imranp/kerf/backend/internal/storage"
 )
 
 func main() {
@@ -39,12 +40,23 @@ func main() {
 	defer pool.Close()
 
 	authSvc := auth.New(cfg, pool)
-	llmClient := llm.New(cfg.AnthropicAPIKey, cfg.AnthropicModel)
+	registry := llm.NewRegistry(llm.Config{
+		AnthropicAPIKey: cfg.AnthropicAPIKey,
+		OpenAIAPIKey:    cfg.OpenAIAPIKey,
+		MoonshotAPIKey:  cfg.MoonshotAPIKey,
+		GeminiAPIKey:    cfg.GeminiAPIKey,
+		DefaultModel:    cfg.DefaultModel,
+	})
+	store, err := storage.New(cfg)
+	if err != nil {
+		log.Fatalf("storage: %v", err)
+	}
 	deps := &handlers.Deps{
-		Cfg:  cfg,
-		Pool: pool,
-		Auth: authSvc,
-		LLM:  llmClient,
+		Cfg:     cfg,
+		Pool:    pool,
+		Auth:    authSvc,
+		LLM:     registry,
+		Storage: store,
 	}
 
 	r := chi.NewRouter()
@@ -81,7 +93,11 @@ func main() {
 			r.Use(kmw.RequireAuth(authSvc))
 
 			r.Get("/me", deps.Me)
+			r.Get("/models", deps.ListModels)
 			r.Post("/share/{token}/accept", deps.AcceptShare)
+
+			// Authenticated blob serving for the local storage backend.
+			r.Get("/blobs/*", deps.ServeBlob)
 
 			r.Route("/projects", func(r chi.Router) {
 				r.Get("/", deps.ListProjects)
@@ -98,6 +114,10 @@ func main() {
 					r.Get("/files/{fid}", deps.GetFile)
 					r.Patch("/files/{fid}", deps.UpdateFile)
 					r.Delete("/files/{fid}", deps.DeleteFile)
+					r.Get("/files/{fid}/download", deps.DownloadFile)
+
+					// Assets (binary uploads — STEP files etc.)
+					r.Post("/assets", deps.UploadAsset)
 
 					// Threads
 					r.Get("/threads", deps.ListThreads)

@@ -27,14 +27,18 @@ type Project struct {
 }
 
 type File struct {
-	ID        string    `json:"id"`
-	ProjectID string    `json:"project_id"`
-	ParentID  *string   `json:"parent_id"`
-	Name      string    `json:"name"`
-	Kind      string    `json:"kind"`
-	Content   *string   `json:"content,omitempty"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID          string    `json:"id"`
+	ProjectID   string    `json:"project_id"`
+	ParentID    *string   `json:"parent_id"`
+	Name        string    `json:"name"`
+	Kind        string    `json:"kind"`
+	Content     *string   `json:"content,omitempty"`
+	StorageKey  *string   `json:"storage_key,omitempty"`
+	MimeType    *string   `json:"mime_type,omitempty"`
+	Size        *int64    `json:"size,omitempty"`
+	DownloadURL *string   `json:"download_url,omitempty"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }
 
 type Thread struct {
@@ -44,6 +48,7 @@ type Thread struct {
 	Title         string     `json:"title"`
 	IsStarred     bool       `json:"is_starred"`
 	LastMessageAt *time.Time `json:"last_message_at"`
+	Model         *string    `json:"model"`
 	CreatedAt     time.Time  `json:"created_at"`
 }
 
@@ -53,13 +58,26 @@ type PartRef struct {
 	Label  string `json:"label,omitempty"`
 }
 
+type ToolCall struct {
+	ID            string `json:"id"`
+	Name          string `json:"name"`
+	ArgumentsJSON string `json:"arguments"`
+}
+
 type Message struct {
-	ID        string          `json:"id"`
-	ThreadID  string          `json:"thread_id"`
-	Role      string          `json:"role"`
-	Content   string          `json:"content"`
-	PartRefs  json.RawMessage `json:"part_refs"`
-	CreatedAt time.Time       `json:"created_at"`
+	ID         string          `json:"id"`
+	ThreadID   string          `json:"thread_id"`
+	Role       string          `json:"role"`
+	Content    string          `json:"content"`
+	PartRefs   json.RawMessage `json:"part_refs"`
+	ToolCalls  json.RawMessage `json:"tool_calls"`
+	ToolCallID *string         `json:"tool_call_id"`
+	// ToolName is denormalized for `role='tool'` rows so the client can render
+	// the chip and decide whether to refresh files without cross-referencing
+	// the originating assistant message. Not stored in DB; derived on read.
+	ToolName  *string   `json:"tool_name,omitempty"`
+	Model     *string   `json:"model"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 type Member struct {

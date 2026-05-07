@@ -13,14 +13,16 @@ import (
 	"github.com/imranp/kerf/backend/internal/auth"
 	"github.com/imranp/kerf/backend/internal/config"
 	"github.com/imranp/kerf/backend/internal/llm"
+	"github.com/imranp/kerf/backend/internal/storage"
 )
 
 // Deps bundles everything handlers need.
 type Deps struct {
-	Cfg  *config.Config
-	Pool *pgxpool.Pool
-	Auth *auth.Service
-	LLM  *llm.Client
+	Cfg     *config.Config
+	Pool    *pgxpool.Pool
+	Auth    *auth.Service
+	LLM     *llm.Registry
+	Storage storage.Storage
 }
 
 func writeJSON(w http.ResponseWriter, status int, body interface{}) {

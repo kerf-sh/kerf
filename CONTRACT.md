@@ -16,7 +16,7 @@ and backend agents stay in sync. **Do not change without updating both sides.**
 - **Editor**: `@monaco-editor/react`
 - **Backend**: Go (chi router, pgx, JWT, bcrypt, `golang.org/x/oauth2/google`, `joho/godotenv`)
 - **DB**: Postgres (Supabase-compatible)
-- **LLM**: Anthropic Claude (model `claude-opus-4-7`)
+- **LLM**: Multi-provider — Anthropic, OpenAI, Moonshot, Gemini. Default model is `claude-opus-4-7`. Per-thread/per-message override via `model`.
 
 ## Env loading
 
@@ -24,6 +24,14 @@ and backend agents stay in sync. **Do not change without updating both sides.**
 - Backend: `--env=local|dev|main`. `local` loads `.env`. `dev` loads `.env` then overlays `.env.dev`. `main` loads `.env` then overlays `.env.main`. Files live at the **repo root**.
 
 Required env keys: see `.env.example`.
+
+LLM-related env keys:
+- `ANTHROPIC_API_KEY` — enables the Anthropic provider.
+- `OPENAI_API_KEY` — enables the OpenAI provider.
+- `MOONSHOT_API_KEY` — enables the Moonshot provider.
+- `GEMINI_API_KEY` — enables the Gemini provider.
+- `DEFAULT_MODEL` — fallback model ID when neither the request nor the thread specifies one (default `claude-opus-4-7`).
+- `ANTHROPIC_MODEL` — **deprecated**. Replaced by per-thread/per-message `model` plus `DEFAULT_MODEL`. Still read for backward compatibility but unused at runtime.
 
 ---
 
@@ -55,18 +63,27 @@ share_links(id uuid pk, project_id uuid fk, token text unique,
             created_by uuid fk users, created_at)
 
 files(id uuid pk, project_id uuid fk, parent_id uuid null fk files,
-      name text, kind text check in ('file','folder','assembly') default 'file',
+      name text, kind text check in ('file','folder','assembly','step') default 'file',
       content text default '',
+      storage_key text null,    -- set for blob-backed kinds (currently 'step')
+      mime_type text null,
+      size bigint null,
       created_at, updated_at)
 -- assembly files store JSON describing referenced files + transforms in `content`.
+-- step files have an empty content; the binary lives in Storage (see Storage section).
 
 chat_threads(id uuid pk, project_id uuid fk, file_id uuid null fk files,
              title text, is_starred bool default false,
              last_message_at timestamptz null,
+             model text null,
              created_at, updated_at)
 
-chat_messages(id uuid pk, thread_id uuid fk, role text check in ('user','assistant','system'),
+chat_messages(id uuid pk, thread_id uuid fk,
+              role text check in ('user','assistant','system','tool'),
               content text, part_refs jsonb default '[]',
+              tool_calls jsonb default '[]',  -- assistant rows that requested tools
+              tool_call_id text null,         -- set on role='tool' rows linking back to assistant
+              model text null,
               created_at)
 
 schema_migrations(version text pk, applied_at timestamptz default now())
@@ -102,16 +119,36 @@ schema_migrations(version text pk, applied_at timestamptz default now())
 - `GET    /api/projects/:pid/files/:fid` → `File` (with content)
 - `PATCH  /api/projects/:pid/files/:fid` `{name?, content?, parent_id?}` → `File`
 - `DELETE /api/projects/:pid/files/:fid` → 204
+- `GET    /api/projects/:pid/files/:fid/download` → 200 streamed binary, or 302 to a presigned URL when storage supports it. Auth required (project membership). Used for kinds with a `storage_key` (e.g. `step`).
+
+### Assets (binary uploads)
+- `POST   /api/projects/:pid/assets` (multipart, editor+) → `File`
+  - `file` — the binary
+  - `kind` — must be `step` in v1
+  - `parent_id?` — optional parent folder UUID
+  - 413 if larger than 50MB; 400 for any kind other than `step`.
+
+### Blobs (local storage backend only)
+- `GET    /api/blobs/{key}` (auth required) — serves the binary backing a file row.
+  Authorization: the caller must be a member of the project that owns the file
+  whose `storage_key == {key}`. Used by the local storage backend; S3 backends
+  return presigned URLs from `download` instead.
 
 ### Chat
 - `GET  /api/projects/:pid/threads?file_id=` → `Thread[]`
-- `POST /api/projects/:pid/threads` `{title?, file_id?}` → `Thread`
-- `PATCH /api/projects/:pid/threads/:tid` `{title?, is_starred?}` → `Thread`
+- `POST /api/projects/:pid/threads` `{title?, file_id?, model?}` → `Thread`
+- `PATCH /api/projects/:pid/threads/:tid` `{title?, is_starred?, model?}` → `Thread`
 - `DELETE /api/projects/:pid/threads/:tid` → 204
 - `GET  /api/projects/:pid/threads/:tid/messages` → `Message[]`
-- `POST /api/projects/:pid/threads/:tid/messages` `{content, part_refs?}` → `{user_message, assistant_message}`
-  - Server calls Anthropic with: thread history + the JSCAD content of any referenced files + a system prompt explaining JSCAD authoring conventions.
+- `POST /api/projects/:pid/threads/:tid/messages` `{content, part_refs?, model?}` → `{user_message, assistant_message, tool_messages: Message[]}`
+  - Server calls the resolved provider with: thread history + the JSCAD content of any referenced files + a system prompt explaining JSCAD authoring conventions.
+  - Server runs the **agent loop** (see "Agent loop" below) — the model may issue tool calls, the server executes them, and feeds the results back until the model emits a non-tool turn or the iteration cap is hit.
+  - `assistant_message` is the **last** assistant turn. `tool_messages` is every `role='tool'` row created during the loop (in order).
+  - Model precedence per message: `body.model` → `thread.model` → `DEFAULT_MODEL`.
   - Streams optional (v2). v1 returns full assistant message.
+
+### Models
+- `GET /api/models` → `ModelInfo[]` (only models whose provider has an API key configured). Each item: `{id, provider, label, context_window?, is_default}`.
 
 ### Sharing
 - `POST   /api/projects/:pid/share/links` `{role, expires_at?, max_uses?}` → `ShareLink` (token only returned on create)
@@ -135,9 +172,20 @@ User    = {id, email, name, avatar_url, account_role, is_system, created_at}
 // account_role is the global role on the platform: 'user' | 'admin' | 'system'.
 // is_system is true only for the seeded system account.
 Project = {id, owner_id, name, description, visibility, my_role: 'owner'|'editor'|'viewer', created_at, updated_at}
-File    = {id, project_id, parent_id, name, kind, content?, created_at, updated_at}
-Thread  = {id, project_id, file_id, title, is_starred, last_message_at, created_at}
-Message = {id, thread_id, role, content, part_refs: PartRef[], created_at}
+File    = {id, project_id, parent_id, name, kind: 'file'|'folder'|'assembly'|'step',
+           content?, storage_key?, mime_type?, size?, download_url?,
+           created_at, updated_at}
+// storage_key/mime_type/size/download_url are only set for blob-backed kinds (e.g. 'step').
+// download_url is the relative path of the auth-protected download route.
+Thread  = {id, project_id, file_id, title, is_starred, last_message_at, model: string|null, created_at}
+Message = {id, thread_id, role: 'user'|'assistant'|'system'|'tool',
+           content, part_refs: PartRef[],
+           tool_calls: ToolCall[],     // assistant rows that requested tools
+           tool_call_id: string|null,  // set on role='tool' rows
+           model: string|null, created_at}
+ToolCall = {id, name, arguments: string /* raw JSON */}
+// Message.model is populated for assistant messages only (string), null for user/system messages.
+ModelInfo = {id, provider: 'anthropic'|'openai'|'moonshot'|'gemini', label, context_window?: number, is_default: boolean}
 PartRef = {file_id, part_id, label?}   // part_id is the JSCAD `id` field on a part
 Member  = {user_id, project_id, role, user: User, created_at}
 ShareLink = {id, project_id, token?, role, expires_at, revoked_at, max_uses, uses, created_at}
@@ -162,6 +210,86 @@ export default function () {
 ```
 
 Assembly files (`kind='assembly'`): `content` is JSON: `{children:[{file_id, transform:[16-numbers]}]}`.
+
+---
+
+## Agent loop
+
+`POST .../messages` is **not** a single LLM call. The server runs an agent loop:
+
+1. Insert the user message, build the LLM history (mapping assistant rows with
+   their `tool_calls` and `role='tool'` rows with their `tool_call_id`).
+2. Resolve the provider + model.
+3. Call the provider with the configured tools (filtered by the caller's role
+   — viewers cannot call write tools).
+4. Persist the assistant turn (with `tool_calls` populated if any).
+5. If `len(tool_calls) == 0` or `stop_reason == "stop"`: break.
+6. Otherwise execute every tool call **synchronously inside the request
+   handler** and persist a `role='tool'` row per result.
+7. Append the assistant + tool-result messages to the request and loop.
+8. Cap: **10 iterations** (`MaxAgentIterations`). On exhaustion, append a
+   final assistant message: `"(stopped: max tool iterations reached)"`.
+9. Update `chat_threads.last_message_at` once at the end of the request.
+
+Response: `{user_message, assistant_message, tool_messages}` where
+`assistant_message` is the final assistant turn and `tool_messages` is every
+tool result row created during the loop, in order.
+
+---
+
+## Tools
+
+Every tool returns a JSON string. Errors are returned as
+`{"error":"...","code":"NOT_FOUND|AMBIGUOUS|FORBIDDEN|...}` — the handler
+never 500s on a tool-level failure.
+
+Roles: **read** tools (no `*` below) require viewer+; **write** tools (marked
+`*`) require editor+ — viewers receive `FORBIDDEN`.
+
+| Tool | Args | Returns |
+|---|---|---|
+| `list_files` | `{}` | `{files:[{path, kind, size?}, …]}` |
+| `read_file` | `{path}` | `{path, content}` (errors on binary kinds like `step`) |
+| `write_file` * | `{path, content}` | `{path, bytes}` (auto-creates intermediate folders) |
+| `edit_file` * | `{path, old_string, new_string}` | `{path, replaced:1}` (error if old_string is missing or matches >1 time) |
+| `create_file` * | `{path, content?, kind?}` (`kind` ∈ file/folder/assembly) | `{path, id}` |
+| `delete_file` * | `{path}` | `{path}` |
+| `search_code` | `{query, max?}` | `{matches:[{path, line, preview}, …]}` |
+| `import_step` * | `{name, url, parent_path?}` | `{path, id, size}` (HTTPS only; 30s timeout; 50MB cap) |
+| `validate_jscad` | `{path}` | `{path, ok:true, checked:false, note:"client-side validation"}` |
+
+Path conventions: POSIX-like, leading `/`, no trailing `/`. Root is `/`.
+
+---
+
+## Storage
+
+Binary assets (currently STEP files) live behind a Storage abstraction with
+two backends:
+
+- **local** — writes to `LOCAL_STORAGE_PATH` (default `./.kerf-storage`).
+  `download` streams from disk; the auth-protected `/api/blobs/{key}` route
+  serves objects when a frontend needs a stable URL.
+- **s3** — uses AWS SDK v2 against S3 or an S3-compatible endpoint.
+  `download` returns a 302 to a presigned URL when the file is large.
+
+Selection rule: `STORAGE_BACKEND=s3` (or unset + `S3_BUCKET` populated) → S3.
+Otherwise → local.
+
+Env keys:
+
+```
+STORAGE_BACKEND       # "" | "local" | "s3" (auto-detect when blank)
+LOCAL_STORAGE_PATH    # default ./.kerf-storage
+S3_BUCKET
+S3_REGION
+S3_ACCESS_KEY_ID
+S3_SECRET_ACCESS_KEY
+S3_ENDPOINT           # for S3-compatible providers (R2, MinIO, etc.)
+S3_PUBLIC_URL_BASE    # e.g. https://cdn.kerf.app
+```
+
+Object keys are namespaced: `projects/<project_id>/assets/<uuid>-<filename>`.
 
 ---
 

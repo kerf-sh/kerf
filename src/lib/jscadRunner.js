@@ -58,12 +58,26 @@ function normalizeParts(out) {
   return [{ id: 'part-0', geom: out }]
 }
 
+// Submodules of @jscad/modeling exposed as locals to the user's code, so that
+// both styles work without an explicit import:
+//   - `export default function ({primitives}) { primitives.cuboid(...) }`   ← argument style
+//   - `import { primitives } from '@jscad/modeling'; primitives.cuboid(...)` ← stripped-import style
+// The second form is what older seeded files use; without injecting the names
+// into scope, stripping the import leaves `primitives` undefined.
+const SCOPE_KEYS = [
+  'primitives', 'transforms', 'booleans', 'extrusions', 'expansions',
+  'measurements', 'colors', 'utils', 'maths', 'curves', 'geometries',
+  'hulls', 'text',
+]
+
 export async function runJscad(code) {
   if (!code || !code.trim()) return { parts: [] }
   try {
     const body = transformSource(code)
-    const factory = new Function('modeling', body)
-    const exported = factory(modeling)
+    const args = ['modeling', ...SCOPE_KEYS]
+    const values = [modeling, ...SCOPE_KEYS.map((k) => modeling[k])]
+    const factory = new Function(...args, body)
+    const exported = factory(...values)
     let result = typeof exported === 'function' ? exported(modeling) : exported
     if (result && typeof result.then === 'function') result = await result
     const parts = normalizeParts(result)

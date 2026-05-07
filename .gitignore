@@ -35,5 +35,8 @@ backend/tmp/
 *.test
 *.out
 
+# Local storage backend (STEP files, uploads)
+.kerf-storage/
+
 # Misc
 .cache/

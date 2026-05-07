@@ -29,9 +29,24 @@ type Config struct {
 	CORSOrigin string
 
 	AnthropicAPIKey string
-	AnthropicModel  string
+	AnthropicModel  string // deprecated: kept for backward compat; use DefaultModel.
+
+	OpenAIAPIKey   string
+	MoonshotAPIKey string
+	GeminiAPIKey   string
+	DefaultModel   string
 
 	MaxThreadsPerProject int
+
+	// Storage — for binary assets (STEP files, etc.).
+	StorageBackend    string // "" | "local" | "s3"
+	LocalStoragePath  string
+	S3Bucket          string
+	S3Region          string
+	S3AccessKeyID     string
+	S3SecretAccessKey string
+	S3Endpoint        string
+	S3PublicURLBase   string
 
 	// System user — seeded by `cmd/migrate`. The password is hashed with the
 	// same pepper as normal users so the system account can log in via
@@ -92,7 +107,19 @@ func Load(env string) (*Config, error) {
 		CORSOrigin:           getenv("CORS_ORIGIN", "http://localhost:5173"),
 		AnthropicAPIKey:      os.Getenv("ANTHROPIC_API_KEY"),
 		AnthropicModel:       getenv("ANTHROPIC_MODEL", "claude-opus-4-7"),
+		OpenAIAPIKey:         os.Getenv("OPENAI_API_KEY"),
+		MoonshotAPIKey:       os.Getenv("MOONSHOT_API_KEY"),
+		GeminiAPIKey:         os.Getenv("GEMINI_API_KEY"),
+		DefaultModel:         getenv("DEFAULT_MODEL", "claude-opus-4-7"),
 		MaxThreadsPerProject: getenvInt("MAX_THREADS_PER_PROJECT", 50),
+		StorageBackend:       os.Getenv("STORAGE_BACKEND"),
+		LocalStoragePath:     getenv("LOCAL_STORAGE_PATH", "./.kerf-storage"),
+		S3Bucket:             os.Getenv("S3_BUCKET"),
+		S3Region:             os.Getenv("S3_REGION"),
+		S3AccessKeyID:        os.Getenv("S3_ACCESS_KEY_ID"),
+		S3SecretAccessKey:    os.Getenv("S3_SECRET_ACCESS_KEY"),
+		S3Endpoint:           os.Getenv("S3_ENDPOINT"),
+		S3PublicURLBase:      os.Getenv("S3_PUBLIC_URL_BASE"),
 		SystemUserEmail:      os.Getenv("SYSTEM_USER_EMAIL"),
 		SystemUserName:       os.Getenv("SYSTEM_USER_NAME"),
 		SystemUserPassword:   os.Getenv("SYSTEM_USER_PASSWORD"),

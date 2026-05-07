@@ -111,13 +111,64 @@ export const api = {
   deleteFile: (projectId, fileId) =>
     request(`/api/projects/${projectId}/files/${fileId}`, { method: 'DELETE' }),
 
+  // Upload a binary asset (e.g. STEP file). The backend should return a File row.
+  // We use multipart/form-data; do NOT set content-type — the browser will set
+  // the correct boundary header automatically.
+  uploadAsset: async (projectId, file, { kind = 'step', parent_id = null } = {}) => {
+    const fd = new FormData()
+    fd.append('file', file)
+    fd.append('name', file.name)
+    fd.append('kind', kind)
+    if (parent_id) fd.append('parent_id', parent_id)
+    const url = `${API_URL}/api/projects/${projectId}/assets`
+    const token = useAuth.getState().accessToken
+    const headers = {}
+    if (token) headers.authorization = `Bearer ${token}`
+    let res = await fetch(url, { method: 'POST', headers, body: fd })
+    if (res.status === 401 && useAuth.getState().refreshToken) {
+      try {
+        const newToken = await refreshAccessToken()
+        headers.authorization = `Bearer ${newToken}`
+        res = await fetch(url, { method: 'POST', headers, body: fd })
+      } catch { /* fall through */ }
+    }
+    if (!res.ok) {
+      const text = await res.text()
+      let msg = text
+      try { msg = JSON.parse(text).error || text } catch { /* ignore */ }
+      throw new ApiError(res.status, msg || res.statusText)
+    }
+    return res.json()
+  },
+
+  // Download a binary file. Returns an ArrayBuffer; uses bearer auth.
+  downloadFileURL: async (projectId, fileId) => {
+    const url = `${API_URL}/api/projects/${projectId}/files/${fileId}/download`
+    const token = useAuth.getState().accessToken
+    const headers = {}
+    if (token) headers.authorization = `Bearer ${token}`
+    let res = await fetch(url, { headers })
+    if (res.status === 401 && useAuth.getState().refreshToken) {
+      try {
+        const newToken = await refreshAccessToken()
+        headers.authorization = `Bearer ${newToken}`
+        res = await fetch(url, { headers })
+      } catch { /* fall through */ }
+    }
+    if (!res.ok) {
+      const text = await res.text().catch(() => '')
+      throw new ApiError(res.status, text || res.statusText)
+    }
+    return res.arrayBuffer()
+  },
+
   // ---- Chat ----
   listMessages: (projectId, threadId) =>
     request(`/api/projects/${projectId}/threads/${threadId}/messages`),
-  sendMessage: (projectId, threadId, { content, part_refs }) =>
+  sendMessage: (projectId, threadId, { content, part_refs, model }) =>
     request(`/api/projects/${projectId}/threads/${threadId}/messages`, {
       method: 'POST',
-      body: { content, part_refs },
+      body: { content, part_refs, model },
     }),
 
   // ---- Threads ----
@@ -125,10 +176,10 @@ export const api = {
     const q = fileId ? `?file_id=${fileId}` : ''
     return request(`/api/projects/${projectId}/threads${q}`)
   },
-  createThread: (projectId, { title, file_id } = {}) =>
+  createThread: (projectId, { title, file_id, model } = {}) =>
     request(`/api/projects/${projectId}/threads`, {
       method: 'POST',
-      body: { title, file_id },
+      body: { title, file_id, model },
     }),
   updateThread: (projectId, threadId, patch) =>
     request(`/api/projects/${projectId}/threads/${threadId}`, {
@@ -166,4 +217,7 @@ export const api = {
     request(`/api/share/${token}`, { auth: false }),
   acceptShareLink: (token) =>
     request(`/api/share/${token}/accept`, { method: 'POST' }),
+
+  // ---- Models ----
+  listModels: () => request('/api/models'),
 }
