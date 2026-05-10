@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "name": "AISI 1045 Steel",
+  "category": "metal/steel/carbon",
+  "common_names": ["medium-carbon steel", "1045"],
+  "color_hex": "#7d8088",
+  "mechanical": {
+    "E_GPa": 200,
+    "G_GPa": 80,
+    "nu": 0.29,
+    "yield_MPa": 530,
+    "ultimate_MPa": 625,
+    "elongation_pct": 12
+  },
+  "thermal": {
+    "alpha_per_K": 11.7e-6,
+    "k_W_mK": 49.8,
+    "cp_J_kgK": 486,
+    "T_min_C": -40,
+    "T_max_C": 425
+  },
+  "physical": {
+    "rho_kg_m3": 7850
+  },
+  "callout": "AISI 1045",
+  "notes": "Medium-carbon steel for shafts, gears, axles. Heat-treatable to higher strengths. Source: MatWeb (cold-drawn condition)."
+}

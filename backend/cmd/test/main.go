@@ -43,6 +43,7 @@ var allScenarios = []scenarioDef{
 	{Name: "sketcher", Opts: runner.BootOptions{}, Run: scenarios.Sketcher},
 	{Name: "drawings", Opts: runner.BootOptions{}, Run: scenarios.Drawings},
 	{Name: "feature_files", Opts: runner.BootOptions{}, Run: scenarios.FeatureFiles},
+	{Name: "probe_tool", Opts: runner.BootOptions{}, Run: scenarios.ProbeTool},
 	{Name: "activity", Opts: runner.BootOptions{}, Run: scenarios.Activity},
 	{Name: "avatars", Opts: runner.BootOptions{}, Run: scenarios.Avatars},
 	{Name: "bootstrap", Opts: runner.BootOptions{}, Run: scenarios.Bootstrap},
@@ -51,6 +52,7 @@ var allScenarios = []scenarioDef{
 	{Name: "equations", Opts: runner.BootOptions{}, Run: scenarios.Equations},
 	{Name: "configurations", Opts: runner.BootOptions{}, Run: scenarios.Configurations},
 	{Name: "local_mode", Opts: runner.BootOptions{}, Run: scenarios.LocalMode},
+	{Name: "derived_cache", Opts: runner.BootOptions{}, Run: scenarios.DerivedCache},
 }
 
 func main() {

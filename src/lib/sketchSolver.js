@@ -276,6 +276,15 @@ function estimateDof(sketch) {
       case 'symmetric':
         dof -= 2
         break
+      case 'midpoint':
+        // Two scalar conditions: on-line (1 DOF removed) + equidistant on
+        // perp-bisector (1 DOF removed). Together they pin P to one point on L.
+        dof -= 2
+        break
+      case 'fixed':
+        // Pins both x and y of a single point.
+        dof -= 2
+        break
       case 'block': {
         // Pin every coordinate of every referenced entity (rough estimate).
         const refs = Array.isArray(c.refs) ? c.refs : []
@@ -560,6 +569,44 @@ function buildPlanegcsPrimitives(sketch) {
           constraints.push({ id: nextId(), type: 'point_on_circle', p_id: resolve(c.point), c_id: c.arc })
         } else if (t?.type === 'arc') {
           constraints.push({ id: nextId(), type: 'point_on_arc', p_id: resolve(c.point), a_id: c.arc })
+        }
+        break
+      }
+      case 'midpoint': {
+        // Constrain point P to the midpoint of line L. planegcs doesn't have a
+        // single "midpoint of line" constraint exposed for the (P, L) signature
+        // (its midpoint_on_line_* variants relate two lines). We compose two
+        // primitives instead:
+        //   1. point_on_line_pl(P, L)               — P lies on L
+        //   2. point_on_perp_bisector_pl(P, L)      — P equidistant from L's endpoints
+        // The intersection of those two conditions is exactly the midpoint.
+        const lEnt = ent.find((x) => x.id === c.line)
+        if (c.point && lEnt?.type === 'line') {
+          constraints.push({
+            id: nextId(), type: 'point_on_line_pl',
+            p_id: resolve(c.point), l_id: c.line,
+          })
+          constraints.push({
+            id: nextId(), type: 'point_on_perp_bisector_pl',
+            p_id: resolve(c.point), l_id: c.line,
+          })
+        }
+        break
+      }
+      case 'fixed': {
+        // Lock point P to a captured (x, y). The captured coordinates are
+        // stored on the constraint at creation time (see SketchView's apply
+        // path) so subsequent solves never let P drift even if other DOF
+        // would otherwise pull it. We emit two coordinate constraints — the
+        // same primitive pair that `block` uses for points.
+        const pid = resolve(c.point)
+        const px = typeof c.x === 'number' ? c.x
+          : (ent.find((x) => x.id === c.point)?.x ?? 0)
+        const py = typeof c.y === 'number' ? c.y
+          : (ent.find((x) => x.id === c.point)?.y ?? 0)
+        if (c.point) {
+          constraints.push({ id: nextId(), type: 'coordinate_x', p_id: pid, x: Number(px) || 0 })
+          constraints.push({ id: nextId(), type: 'coordinate_y', p_id: pid, y: Number(py) || 0 })
         }
         break
       }

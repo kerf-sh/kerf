@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "name": "Aluminum 6061-T6",
+  "category": "metal/aluminum/wrought",
+  "common_names": ["6061", "6061-T6", "aircraft aluminum"],
+  "color_hex": "#cfd2d6",
+  "mechanical": {
+    "E_GPa": 68.9,
+    "G_GPa": 26,
+    "nu": 0.33,
+    "yield_MPa": 276,
+    "ultimate_MPa": 310,
+    "elongation_pct": 12
+  },
+  "thermal": {
+    "alpha_per_K": 23.6e-6,
+    "k_W_mK": 167,
+    "cp_J_kgK": 896,
+    "T_min_C": -196,
+    "T_max_C": 175
+  },
+  "physical": {
+    "rho_kg_m3": 2700
+  },
+  "callout": "Al 6061-T6",
+  "notes": "General-purpose aluminum alloy with magnesium + silicon. Excellent machinability and weldability. Source: MatWeb / ASM (T6 temper)."
+}

@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "description": "Curated engineering materials seed for the kerf-system/materials Library project. ~20 representative materials covering common steels, aluminums, plastics, brass, copper, titanium, and cast iron. Run via 'npm run seed:materials'. Idempotent: existing entries by name are skipped. Community can add more via PR to seed/materials/.",
+  "materials": [
+    { "path": "aisi-1018-steel.material",      "name": "AISI 1018 Steel",                "category": "metal/steel/carbon" },
+    { "path": "aisi-1045-steel.material",      "name": "AISI 1045 Steel",                "category": "metal/steel/carbon" },
+    { "path": "aisi-4140-steel.material",      "name": "AISI 4140 Steel",                "category": "metal/steel/alloy" },
+    { "path": "aisi-304-stainless.material",   "name": "AISI 304 Stainless Steel",       "category": "metal/stainless/austenitic" },
+    { "path": "aisi-316-stainless.material",   "name": "AISI 316 Stainless Steel",       "category": "metal/stainless/austenitic" },
+    { "path": "17-4ph-stainless.material",     "name": "17-4PH Stainless Steel",         "category": "metal/stainless/precipitation-hardening" },
+    { "path": "aluminum-6061-t6.material",     "name": "Aluminum 6061-T6",               "category": "metal/aluminum/wrought" },
+    { "path": "aluminum-7075-t6.material",     "name": "Aluminum 7075-T6",               "category": "metal/aluminum/wrought" },
+    { "path": "aluminum-5052-h32.material",    "name": "Aluminum 5052-H32",              "category": "metal/aluminum/wrought" },
+    { "path": "abs.material",                  "name": "ABS",                            "category": "polymer/thermoplastic/abs" },
+    { "path": "pla.material",                  "name": "PLA",                            "category": "polymer/thermoplastic/biodegradable" },
+    { "path": "petg.material",                 "name": "PETG",                           "category": "polymer/thermoplastic/polyester" },
+    { "path": "nylon-6-6.material",            "name": "Nylon 6/6",                      "category": "polymer/thermoplastic/polyamide" },
+    { "path": "polycarbonate.material",        "name": "Polycarbonate",                  "category": "polymer/thermoplastic/polycarbonate" },
+    { "path": "pom-acetal.material",           "name": "POM (Acetal)",                   "category": "polymer/thermoplastic/polyacetal" },
+    { "path": "peek.material",                 "name": "PEEK",                           "category": "polymer/thermoplastic/peek" },
+    { "path": "brass-c36000.material",         "name": "Brass C36000",                   "category": "metal/copper-alloy/brass" },
+    { "path": "copper-c110.material",          "name": "Copper C110",                    "category": "metal/copper-alloy/copper" },
+    { "path": "titanium-grade-5.material",     "name": "Titanium Grade 5 (Ti-6Al-4V)",   "category": "metal/titanium/alloy" },
+    { "path": "gray-cast-iron.material",       "name": "Gray Cast Iron (Class 30)",      "category": "metal/cast-iron/gray" }
+  ]
+}

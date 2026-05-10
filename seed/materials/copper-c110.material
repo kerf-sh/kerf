@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "name": "Copper C110",
+  "category": "metal/copper-alloy/copper",
+  "common_names": ["ETP copper", "electrolytic tough pitch copper", "C11000"],
+  "color_hex": "#b87333",
+  "mechanical": {
+    "E_GPa": 117,
+    "G_GPa": 44,
+    "nu": 0.34,
+    "yield_MPa": 70,
+    "ultimate_MPa": 220,
+    "elongation_pct": 45
+  },
+  "thermal": {
+    "alpha_per_K": 17.0e-6,
+    "k_W_mK": 391,
+    "cp_J_kgK": 385,
+    "T_min_C": -200,
+    "T_max_C": 200
+  },
+  "physical": {
+    "rho_kg_m3": 8940
+  },
+  "callout": "C11000",
+  "notes": "Pure copper, the workhorse electrical and thermal conductor. 99.9% Cu minimum. Annealed values shown; cold-worked tempers significantly stronger. Source: Copper Development Association / MatWeb (annealed)."
+}

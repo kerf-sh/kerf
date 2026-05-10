@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "name": "Aluminum 7075-T6",
+  "category": "metal/aluminum/wrought",
+  "common_names": ["7075", "7075-T6", "aerospace aluminum"],
+  "color_hex": "#c4c8cc",
+  "mechanical": {
+    "E_GPa": 71.7,
+    "G_GPa": 26.9,
+    "nu": 0.33,
+    "yield_MPa": 503,
+    "ultimate_MPa": 572,
+    "elongation_pct": 11
+  },
+  "thermal": {
+    "alpha_per_K": 23.4e-6,
+    "k_W_mK": 130,
+    "cp_J_kgK": 960,
+    "T_min_C": -196,
+    "T_max_C": 175
+  },
+  "physical": {
+    "rho_kg_m3": 2810
+  },
+  "callout": "Al 7075-T6",
+  "notes": "High-strength zinc-alloyed aluminum used in airframes, racing parts. Poor weldability; not corrosion-resistant compared to 6061. Source: MatWeb (T6 temper)."
+}

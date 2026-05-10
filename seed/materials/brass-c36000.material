@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "name": "Brass C36000",
+  "category": "metal/copper-alloy/brass",
+  "common_names": ["free-cutting brass", "C360", "leaded brass"],
+  "color_hex": "#c69b5c",
+  "mechanical": {
+    "E_GPa": 97,
+    "G_GPa": 37,
+    "nu": 0.31,
+    "yield_MPa": 310,
+    "ultimate_MPa": 380,
+    "elongation_pct": 25
+  },
+  "thermal": {
+    "alpha_per_K": 20.5e-6,
+    "k_W_mK": 115,
+    "cp_J_kgK": 380,
+    "T_min_C": -200,
+    "T_max_C": 200
+  },
+  "physical": {
+    "rho_kg_m3": 8500
+  },
+  "callout": "C36000",
+  "notes": "Free-cutting brass, the standard machinable brass alloy. Excellent for screw machine work; lead content aids chip-breaking. Source: Copper Development Association / MatWeb (H02 temper)."
+}

@@ -435,11 +435,16 @@ func (h *Handlers) Publish(w http.ResponseWriter, r *http.Request) {
 	// must own it, and visibility cannot be 'private' — public listing
 	// of a private project would be confusing UX (file fetches would
 	// 403 for visitors).
-	var ownerID, visibility, projectName string
+	var visibility, projectName string
+	var isOwner bool
 	err := h.Pool.QueryRow(r.Context(),
-		`select owner_id, visibility, name from projects where id = $1`,
-		body.ProjectID,
-	).Scan(&ownerID, &visibility, &projectName)
+		`select p.visibility, p.name,
+		        exists(select 1 from workspace_members
+		               where workspace_id = p.workspace_id
+		                 and user_id = $2 and role = 'owner') as is_owner
+		 from projects p where p.id = $1`,
+		body.ProjectID, uid,
+	).Scan(&visibility, &projectName, &isOwner)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeError(w, http.StatusNotFound, "project not found")
@@ -448,7 +453,7 @@ func (h *Handlers) Publish(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	if ownerID != uid {
+	if !isOwner {
 		writeError(w, http.StatusForbidden, "only the owner can publish")
 		return
 	}
@@ -739,20 +744,30 @@ func (h *Handlers) Fork(w http.ResponseWriter, r *http.Request) {
 		newName = listingTitle + " (fork)"
 	}
 
-	// Create the new project + owner membership row.
-	var newProjectID string
+	// Resolve caller's earliest owned/admin workspace — fork lands there.
+	// Post-workspaces migration (1746577400000) project_members is gone.
+	var workspaceID string
 	if err := tx.QueryRow(r.Context(), `
-        insert into projects(owner_id, name, description, visibility, tags)
-        values ($1, $2, $3, 'private', $4)
-        returning id
-    `, uid, newName, srcDesc, srcTags).Scan(&newProjectID); err != nil {
+        select w.id from workspaces w
+        join workspace_members m on m.workspace_id = w.id
+        where m.user_id = $1 and m.role in ('owner','admin')
+        order by w.created_at asc limit 1
+    `, uid).Scan(&workspaceID); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeError(w, http.StatusBadRequest, "no workspace available for fork")
+			return
+		}
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	if _, err := tx.Exec(r.Context(),
-		`insert into project_members(project_id, user_id, role) values ($1, $2, 'owner')`,
-		newProjectID, uid,
-	); err != nil {
+
+	// Create the new project in that workspace.
+	var newProjectID string
+	if err := tx.QueryRow(r.Context(), `
+        insert into projects(workspace_id, name, description, visibility, tags)
+        values ($1, $2, $3, 'private', $4)
+        returning id
+    `, workspaceID, newName, srcDesc, srcTags).Scan(&newProjectID); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -987,8 +1002,9 @@ func (h *Handlers) ListParts(w http.ResponseWriter, r *http.Request) {
 		    u.id, coalesce(u.name, ''), coalesce(u.is_verified_publisher, false),
 		    wl.slug
 		  from files f
-		  join projects p on p.id = f.project_id
-		  join users    u on u.id = p.owner_id
+		  join projects   p on p.id = f.project_id
+		  join workspaces w on w.id = p.workspace_id
+		  join users      u on u.id = w.created_by
 		  left join cloud_workshop_listings wl on wl.project_id = p.id
 		 where %s
 		 order by u.is_verified_publisher desc, f.updated_at desc
@@ -1048,6 +1064,148 @@ func (h *Handlers) ListParts(w http.ResponseWriter, r *http.Request) {
 		Limit: hardLimit,
 		Total: len(out),
 	})
+}
+
+// ListPartsAlias is the canonical /api/library/parts handler. It is a
+// pure forwarder to ListParts — same query params (`search`, `category`,
+// `verified_only`), same response shape, same auth gate (OptionalAuth).
+//
+// Why a method instead of mounting ListParts directly under /library?
+// Two reasons:
+//  1. It gives us a single grep-able symbol when we later split the
+//     library catalog into its own package — callers point at the alias,
+//     not at the workshop internals, so the eventual refactor is a
+//     find-and-replace inside this file rather than a router change.
+//  2. It documents the intent: /workshop/parts is the deprecated path,
+//     /library/parts is the canonical one. The alias is the contract.
+//
+// Phase 2 of the Library/Workshop split (ROADMAP row 74).
+func (h *Handlers) ListPartsAlias(w http.ResponseWriter, r *http.Request) {
+	h.ListParts(w, r)
+}
+
+// --- GET /library/parts/{slug} ---
+//
+// Single Part detail row, looked up by the workshop listing slug of the
+// part's containing project. Same visibility gates as ListParts:
+//   - project visibility != 'private'
+//   - file kind = 'part' and not soft-deleted
+//   - Part JSON's `visibility` field exactly 'public'
+//
+// The frontend (/library/:slug, see LibraryPart.jsx) accepts a flat row
+// shape — listing fields plus the raw JSON `content` so the page can
+// reach into distributors[], photos[], description, datasheet_url. We
+// also include `source_slug` so the "View source project" CTA can deep
+// link back to /workshop/{source_slug}.
+//
+// 404 when the slug doesn't match a listing OR the listing has no
+// public Part row inside it (the lookup is a single LEFT-style filter
+// — no public Part means no detail page).
+//
+// Phase 4 of the Library/Workshop split (ROADMAP row 74).
+
+type partDetailRow struct {
+	FileID          string         `json:"file_id"`
+	ID              string         `json:"id"`
+	ProjectID       string         `json:"project_id"`
+	Slug            string         `json:"slug"`
+	SourceSlug      string         `json:"source_slug,omitempty"`
+	Name            string         `json:"name"`
+	Manufacturer    string         `json:"manufacturer,omitempty"`
+	MPN             string         `json:"mpn,omitempty"`
+	Category        string         `json:"category,omitempty"`
+	Content         string         `json:"content"`
+	PrimaryPhotoURL string         `json:"primary_photo_url,omitempty"`
+	Author          partAuthorView `json:"author"`
+}
+
+func (h *Handlers) GetPart(w http.ResponseWriter, r *http.Request) {
+	slug := chi.URLParam(r, "slug")
+	if slug == "" {
+		writeError(w, http.StatusNotFound, "part not found")
+		return
+	}
+
+	// Mirror ListParts' filters but pin to a single row by slug. Order
+	// by updated_at desc so when a project happens to publish multiple
+	// public Parts we pick the freshest deterministically.
+	var (
+		fid, pid, name, manuf, mpn, cat, content, photoKey string
+		updatedAt                                          time.Time
+		authorID, authorName                               string
+		verified                                           bool
+	)
+	err := h.Pool.QueryRow(r.Context(), `
+		select
+		    f.id,
+		    f.project_id,
+		    coalesce(f.content::jsonb ->> 'name', '')         as name,
+		    coalesce(f.content::jsonb ->> 'manufacturer', '') as manufacturer,
+		    coalesce(f.content::jsonb ->> 'mpn', '')          as mpn,
+		    coalesce(f.content::jsonb ->> 'category', '')     as category,
+		    f.content,
+		    coalesce(
+		        (
+		            select photo ->> 'storage_key'
+		              from jsonb_array_elements(coalesce(f.content::jsonb -> 'photos', '[]'::jsonb)) photo
+		             where (photo ->> 'primary') = 'true'
+		             limit 1
+		        ),
+		        (
+		            select photo ->> 'storage_key'
+		              from jsonb_array_elements(coalesce(f.content::jsonb -> 'photos', '[]'::jsonb)) photo
+		             limit 1
+		        ),
+		        ''
+		    ) as primary_photo_key,
+		    f.updated_at,
+		    u.id, coalesce(u.name, ''), coalesce(u.is_verified_publisher, false)
+		  from cloud_workshop_listings wl
+		  join projects p on p.id = wl.project_id
+		  join files    f on f.project_id = p.id
+		  join users    u on u.id = wl.user_id
+		 where wl.slug = $1
+		   and f.kind = 'part'
+		   and f.deleted_at is null
+		   and p.visibility <> 'private'
+		   and (f.content::jsonb ->> 'visibility') = 'public'
+		 order by f.updated_at desc
+		 limit 1
+	`, slug).Scan(
+		&fid, &pid, &name, &manuf, &mpn, &cat, &content, &photoKey, &updatedAt,
+		&authorID, &authorName, &verified,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "part not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	row := partDetailRow{
+		FileID:       fid,
+		ID:           fid,
+		ProjectID:    pid,
+		Slug:         slug,
+		SourceSlug:   slug, // listing slug doubles as the source-project slug
+		Name:         name,
+		Manufacturer: manuf,
+		MPN:          mpn,
+		Category:     cat,
+		Content:      content,
+		Author: partAuthorView{
+			UserID:              authorID,
+			Name:                authorName,
+			IsVerifiedPublisher: verified,
+		},
+	}
+	if photoKey != "" {
+		row.PrimaryPhotoURL = h.publicBlobURL(photoKey, updatedAt)
+	}
+
+	writeJSON(w, http.StatusOK, row)
 }
 
 // publicBlobURL replicates Storage.PublicURL without taking a Storage dep.

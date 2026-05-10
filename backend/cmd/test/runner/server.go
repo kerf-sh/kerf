@@ -346,6 +346,11 @@ func buildRouter(cfg *config.Config, authSvc *auth.Service, deps *handlers.Deps)
 					r.Delete("/files/{fid}", deps.DeleteFile)
 					r.Get("/files/{fid}/download", deps.DownloadFile)
 
+					// Cross-project derived-artifact cache.
+					r.Post("/files/{fid}/derived", deps.LookupDerivedArtifact)
+					r.Post("/files/{fid}/derived/store", deps.StoreDerivedArtifact)
+					r.Delete("/files/{fid}/derived", deps.PurgeDerivedArtifacts)
+
 					r.Get("/files/{fid}/revisions", deps.ListRevisions)
 					r.Get("/files/{fid}/revisions/{rid}", deps.GetRevision)
 					r.Post("/files/{fid}/restore/{rid}", deps.RestoreRevision)

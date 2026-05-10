@@ -161,6 +161,11 @@ func main() {
 					r.Delete("/files/{fid}", deps.DeleteFile)
 					r.Get("/files/{fid}/download", deps.DownloadFile)
 
+					// Cross-project derived-artifact cache (ROADMAP row 67).
+					r.Post("/files/{fid}/derived", deps.LookupDerivedArtifact)
+					r.Post("/files/{fid}/derived/store", deps.StoreDerivedArtifact)
+					r.Delete("/files/{fid}/derived", deps.PurgeDerivedArtifacts)
+
 					// Assets (binary uploads — STEP files etc.)
 					r.Post("/assets", deps.UploadAsset)
 

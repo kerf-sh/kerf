@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "name": "AISI 1018 Steel",
+  "category": "metal/steel/carbon",
+  "common_names": ["mild steel", "low-carbon steel", "1018"],
+  "color_hex": "#7d8088",
+  "mechanical": {
+    "E_GPa": 205,
+    "G_GPa": 80,
+    "nu": 0.29,
+    "yield_MPa": 370,
+    "ultimate_MPa": 440,
+    "elongation_pct": 15
+  },
+  "thermal": {
+    "alpha_per_K": 11.7e-6,
+    "k_W_mK": 51.9,
+    "cp_J_kgK": 486,
+    "T_min_C": -40,
+    "T_max_C": 250
+  },
+  "physical": {
+    "rho_kg_m3": 7870
+  },
+  "callout": "AISI 1018",
+  "notes": "General-purpose mild steel. Cold-drawn for tighter tolerances. Good machinability. Source: MatWeb / ASM Handbook Vol 1."
+}

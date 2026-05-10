@@ -201,6 +201,131 @@ export const library = {
     const qs = q.toString()
     return request(`/api/library/parts${qs ? `?${qs}` : ''}`)
   },
+
+  // GET /api/library/parts/:slug — single Part detail row. Phase 3 of the
+  // Library split ships the route + frontend; the backend handler arrives
+  // in Phase 4. Until then this 404s and the `/library/:slug` route
+  // surfaces a "Part not found" empty state. The detail row is expected
+  // to be a superset of the listParts() row shape: same fields plus the
+  // parsed JSON `content` (description, datasheet_url, photos[],
+  // distributors[]) and the source project's slug for "view in workshop".
+  getPart(slug) {
+    return request(`/api/library/parts/${encodeURIComponent(slug)}`)
+  },
+
+  // POST /api/library/submissions — manufacturer-PR submission flow
+  // (Library Phase 3, ROADMAP row 73). Auth required (any role). The row
+  // lands in library_part_submissions.status='pending' and surfaces on the
+  // admin queue at /api/admin/library/submissions. `targetWorkspaceSlug`
+  // names the curated Library workspace the contribution targets (e.g.
+  // 'kerf-system'); `payload` is a Part-shape JSON object with at minimum
+  // {name, manufacturer, mpn, category, description}. Returns {id} on 201.
+  submitPart({ targetWorkspaceSlug, payload }) {
+    return request('/api/library/submissions', {
+      method: 'POST',
+      body: {
+        target_workspace_slug: targetWorkspaceSlug,
+        payload,
+      },
+    })
+  },
+
+  /** POST /api/projects/:pid/files/:fid/derived — derived-artifacts cache lookup
+   *  (ROADMAP row 67 Phase 2). Returns {cached, derivedKind, payload, error?}
+   *  where payload is a Uint8Array on hit, null otherwise. A 501 response is
+   *  the documented "compile-on-demand-not-yet-wired" miss and is mapped to
+   *  {cached:false, ...} (NOT thrown) so callers can fall through. Other
+   *  failures (network/auth/4xx) throw an ApiError. */
+  async lookupDerivedArtifact({ projectId, fileId, derivedKind }) {
+    let body
+    try {
+      body = await request(
+        `/api/projects/${encodeURIComponent(projectId)}/files/${encodeURIComponent(fileId)}/derived`,
+        { method: 'POST', body: { derived_kind: derivedKind } },
+      )
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 501) {
+        return { cached: false, derivedKind, payload: null, error: err.message }
+      }
+      throw err
+    }
+    const cached = !!(body && body.cached)
+    const kind = (body && body.derived_kind) || derivedKind
+    let payload = null
+    if (cached && body && typeof body.payload_b64 === 'string' && body.payload_b64) {
+      try {
+        const bin = atob(body.payload_b64)
+        const arr = new Uint8Array(bin.length)
+        for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i)
+        payload = arr
+      } catch {
+        return { cached: false, derivedKind: kind, payload: null, error: 'invalid base64' }
+      }
+    }
+    return { cached: cached && payload != null, derivedKind: kind, payload }
+  },
+
+  /** POST /api/projects/:pid/files/:fid/derived/store — derived-artifacts
+   *  cache populate (ROADMAP row 67 Phase 2, write-back half). Pairs with
+   *  `lookupDerivedArtifact`: after a successful local recompile of a
+   *  cross-project source, callers fire-and-forget this helper so the next
+   *  consumer skips the recompile cost. `payload` is a Uint8Array (raw
+   *  encoded artifact bytes); we base64-encode it inline. The backend caps
+   *  decoded payloads at 16 MiB and returns {stored:true, derived_kind,
+   *  payload_size_bytes} on 200; non-200s throw ApiError so the caller's
+   *  fire-and-forget try/catch can swallow them. */
+  async storeDerivedArtifact({ projectId, fileId, derivedKind, payload }) {
+    if (!(payload instanceof Uint8Array)) {
+      throw new TypeError('storeDerivedArtifact: payload must be a Uint8Array')
+    }
+    let payloadB64
+    if (typeof Buffer !== 'undefined') {
+      payloadB64 = Buffer.from(payload).toString('base64')
+    } else {
+      // Browser path: btoa over the byte string. Chunk to avoid blowing the
+      // call stack on multi-MB payloads (apply()'s arg limit is ~64k on V8).
+      let bin = ''
+      const CHUNK = 0x8000
+      for (let i = 0; i < payload.length; i += CHUNK) {
+        bin += String.fromCharCode.apply(null, payload.subarray(i, i + CHUNK))
+      }
+      payloadB64 = btoa(bin)
+    }
+    const body = await request(
+      `/api/projects/${encodeURIComponent(projectId)}/files/${encodeURIComponent(fileId)}/derived/store`,
+      { method: 'POST', body: { derived_kind: derivedKind, payload_b64: payloadB64 } },
+    )
+    return {
+      stored: !!(body && body.stored),
+      payloadSize: (body && Number(body.payload_size_bytes)) || 0,
+    }
+  },
+}
+
+// ---- Admin: Library submissions queue ----
+// Library Phase 3 (ROADMAP row 73). All routes require account_role='admin'
+// or 'system' — the backend re-checks on every endpoint, the frontend just
+// uses these helpers behind the AdminPublishers-style gate.
+export const adminLibrary = {
+  // GET /api/admin/library/submissions?status=pending&page=&page_size=
+  // → { submissions: [...], page, page_size, has_more }
+  listSubmissions: ({ status = 'pending', page = 1, pageSize } = {}) => {
+    const q = new URLSearchParams()
+    if (status) q.set('status', status)
+    if (page) q.set('page', String(page))
+    if (pageSize) q.set('page_size', String(pageSize))
+    const qs = q.toString()
+    return request(`/api/admin/library/submissions${qs ? `?${qs}` : ''}`)
+  },
+
+  // PUT /api/admin/library/submissions/:id { action, review_note }
+  // action ∈ 'approve'|'reject'. On approve, the payload is copied as a new
+  // kind='part' file in the target workspace's library project.
+  reviewSubmission: (id, { action, reviewNote }) =>
+    request(`/api/admin/library/submissions/${encodeURIComponent(id)}`, {
+      method: 'PUT',
+      body: { action, review_note: reviewNote || '' },
+    }),
 }
 
 // ---- Git ----

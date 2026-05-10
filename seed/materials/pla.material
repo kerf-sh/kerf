@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "name": "PLA",
+  "category": "polymer/thermoplastic/biodegradable",
+  "common_names": ["polylactic acid", "polylactide"],
+  "color_hex": "#d8e3cf",
+  "mechanical": {
+    "E_GPa": 3.5,
+    "G_GPa": 1.3,
+    "nu": 0.36,
+    "yield_MPa": 60,
+    "ultimate_MPa": 65,
+    "elongation_pct": 6
+  },
+  "thermal": {
+    "alpha_per_K": 68e-6,
+    "k_W_mK": 0.13,
+    "cp_J_kgK": 1800,
+    "T_min_C": -20,
+    "T_max_C": 50
+  },
+  "physical": {
+    "rho_kg_m3": 1240
+  },
+  "callout": "PLA",
+  "notes": "Stiff, easy-to-print biodegradable thermoplastic. Glass transition ~60°C limits service temperature; brittle compared to ABS / PETG. Source: MatWeb (extruded filament typical)."
+}

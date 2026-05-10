@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "name": "Gray Cast Iron (Class 30)",
+  "category": "metal/cast-iron/gray",
+  "common_names": ["gray iron", "ASTM A48 Class 30", "GG25"],
+  "color_hex": "#5a5d62",
+  "mechanical": {
+    "E_GPa": 110,
+    "G_GPa": 45,
+    "nu": 0.26,
+    "yield_MPa": null,
+    "ultimate_MPa": 207,
+    "elongation_pct": 0.5
+  },
+  "thermal": {
+    "alpha_per_K": 11.0e-6,
+    "k_W_mK": 46,
+    "cp_J_kgK": 460,
+    "T_min_C": -40,
+    "T_max_C": 480
+  },
+  "physical": {
+    "rho_kg_m3": 7200
+  },
+  "callout": "Cast Iron Class 30",
+  "notes": "Gray cast iron with graphite flakes. No defined yield point — ductility is essentially zero. Excellent vibration damping; common for machine bases, engine blocks, brake rotors. Source: MatWeb (Class 30 = 30 ksi UTS)."
+}

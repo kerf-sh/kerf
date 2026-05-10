@@ -223,6 +223,25 @@ export default function Layout({ children, wide = false, padded = true }) {
             )}
           </div>
           <div className="flex items-center gap-3">
+            {/* Cloud top-nav: Workshop hosts the project showcase, Library
+                hosts the parts catalog. Both are cloud-only — gated on
+                `cloudEnabled`. Hidden for signed-out and OSS callers. */}
+            {accessToken && cloudEnabled && (
+              <nav className="hidden sm:flex items-center gap-1 mr-1">
+                <Link
+                  to="/workshop"
+                  className="text-xs text-ink-300 hover:text-ink-100 px-2 py-1 rounded-md hover:bg-ink-800/80 transition-colors"
+                >
+                  Workshop
+                </Link>
+                <Link
+                  to="/library"
+                  className="text-xs text-ink-300 hover:text-ink-100 px-2 py-1 rounded-md hover:bg-ink-800/80 transition-colors"
+                >
+                  Library
+                </Link>
+              </nav>
+            )}
             {!user && accessToken && (
               <span className="text-xs text-ink-400 flex items-center gap-1.5">
                 <UserIcon size={12} />

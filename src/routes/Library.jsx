@@ -13,15 +13,17 @@
 // route still renders, but with an "available on cloud" notice.
 
 import { useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import {
-  AlertCircle, Loader2, Package, Search, Sparkles, Star,
+  AlertCircle, CheckCircle2, Loader2, Package, Plus, Search,
+  Sparkles, Star, X,
 } from 'lucide-react'
 import Layout from '../components/Layout.jsx'
 import Card from '../components/Card.jsx'
 import { ApiError } from '../lib/api.js'
 import { library } from '../cloud/api.js'
 import { useCloudConfig } from '../cloud/useCloudConfig.js'
+import { useAuth } from '../store/auth.js'
 
 // Categories surfaced in the filter chip strip. Keep this list short —
 // it's a quick-jump UX, not a full taxonomy. The "All" chip clears the
@@ -162,22 +164,252 @@ function DetailsPanel({ row, onClose }) {
   )
 }
 
+// SubmitPartModal — inline modal for the "Submit a Part" flow (Library
+// Phase 3, ROADMAP row 73). Anyone authenticated can submit; the row
+// lands as pending in library_part_submissions and surfaces on the
+// admin queue. Defensive: 4xx errors render inline, 2xx closes + emits
+// a success message via the parent toast slot.
+const DEFAULT_TARGET_WORKSPACE = 'kerf-system'
+
+function SubmitPartModal({ open, onClose, onSubmitted }) {
+  const [name, setName] = useState('')
+  const [manufacturer, setManufacturer] = useState('')
+  const [mpn, setMpn] = useState('')
+  const [category, setCategory] = useState('')
+  const [description, setDescription] = useState('')
+  const [photoUrl, setPhotoUrl] = useState('')
+  const [datasheetUrl, setDatasheetUrl] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState(null)
+
+  // Reset on open so a stale state from a previous submission doesn't
+  // bleed across modal opens.
+  useEffect(() => {
+    if (!open) return
+    setName('')
+    setManufacturer('')
+    setMpn('')
+    setCategory('')
+    setDescription('')
+    setPhotoUrl('')
+    setDatasheetUrl('')
+    setBusy(false)
+    setErr(null)
+  }, [open])
+
+  if (!open) return null
+
+  const submit = async (e) => {
+    e.preventDefault()
+    if (busy) return
+    setErr(null)
+    // Mirror server-side validation so the round-trip is rare. The
+    // backend enforces these too; this is just a UX shortcut.
+    const trim = (s) => (s || '').trim()
+    const fields = {
+      name: trim(name),
+      manufacturer: trim(manufacturer),
+      mpn: trim(mpn),
+      category: trim(category),
+      description: trim(description),
+    }
+    for (const [k, v] of Object.entries(fields)) {
+      if (!v) {
+        setErr(`${k} is required`)
+        return
+      }
+    }
+    const payload = {
+      version: 1,
+      visibility: 'public',
+      ...fields,
+    }
+    if (datasheetUrl.trim()) payload.datasheet_url = datasheetUrl.trim()
+    if (photoUrl.trim()) {
+      payload.photos = [{ storage_key: photoUrl.trim(), mime_type: '', primary: true }]
+    }
+    setBusy(true)
+    try {
+      await library.submitPart({
+        targetWorkspaceSlug: DEFAULT_TARGET_WORKSPACE,
+        payload,
+      })
+      onSubmitted?.(`Submission queued for review.`)
+      onClose?.()
+    } catch (e2) {
+      setErr(e2 instanceof ApiError ? (e2.message || `request failed (${e2.status})`)
+        : 'Submission failed.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-ink-950/80 backdrop-blur-sm">
+      <div
+        className="absolute inset-0"
+        onClick={() => !busy && onClose?.()}
+      />
+      <Card className="relative w-full max-w-md mx-4 p-5 max-h-[90vh] overflow-y-auto">
+        <div className="flex items-start justify-between gap-3 mb-4">
+          <div>
+            <p className="text-[10px] font-mono uppercase tracking-wider text-kerf-300">
+              Contribute
+            </p>
+            <h2 className="mt-1 font-display text-lg font-semibold tracking-tight text-ink-100">
+              Submit a Part
+            </h2>
+            <p className="mt-1 text-xs text-ink-400">
+              Queued for admin review. Approved Parts join the curated{' '}
+              <span className="font-mono">{DEFAULT_TARGET_WORKSPACE}</span> library.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => !busy && onClose?.()}
+            className="text-ink-400 hover:text-ink-100"
+            aria-label="Close"
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        <form onSubmit={submit} className="space-y-3">
+          <Field label="Name" value={name} onChange={setName} placeholder="e.g. 10kΩ resistor 0805" required />
+          <Field label="Manufacturer" value={manufacturer} onChange={setManufacturer} placeholder="e.g. Yageo" required />
+          <Field label="MPN" value={mpn} onChange={setMpn} placeholder="manufacturer part number" required />
+          <Field label="Category" value={category} onChange={setCategory} placeholder="resistor / capacitor / connector / …" required />
+          <div>
+            <label className="block text-[11px] font-medium text-ink-300 mb-1">
+              Description<span className="text-red-400 ml-0.5">*</span>
+            </label>
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              rows={3}
+              maxLength={4000}
+              required
+              className="w-full bg-ink-900 border border-ink-800 rounded-lg px-3 py-2 text-sm text-ink-100 placeholder:text-ink-500 outline-none focus:border-kerf-300/60"
+              placeholder="What is this part?"
+            />
+          </div>
+          <Field label="Datasheet URL (optional)" value={datasheetUrl} onChange={setDatasheetUrl} placeholder="https://…" />
+          <Field label="Photo URL (optional)" value={photoUrl} onChange={setPhotoUrl} placeholder="https://… or storage key" />
+
+          {err && (
+            <div className="flex items-start gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-200">
+              <AlertCircle size={14} className="mt-0.5 shrink-0" />
+              <span>{err}</span>
+            </div>
+          )}
+
+          <div className="flex items-center justify-end gap-2 pt-2">
+            <button
+              type="button"
+              onClick={() => !busy && onClose?.()}
+              className="h-9 px-3 rounded-lg text-xs text-ink-300 hover:text-ink-100"
+              disabled={busy}
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={busy}
+              className="h-9 px-4 rounded-lg text-xs font-medium bg-kerf-300 text-ink-950 hover:bg-kerf-200 disabled:opacity-60 inline-flex items-center gap-1.5"
+            >
+              {busy ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
+              Submit for review
+            </button>
+          </div>
+        </form>
+      </Card>
+    </div>
+  )
+}
+
+// Field — small reusable text-input row. Inline rather than a Card sub
+// so the modal stays self-contained.
+function Field({ label, value, onChange, placeholder, required }) {
+  return (
+    <div>
+      <label className="block text-[11px] font-medium text-ink-300 mb-1">
+        {label}{required && <span className="text-red-400 ml-0.5">*</span>}
+      </label>
+      <input
+        type="text"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        maxLength={200}
+        required={required}
+        className="w-full h-9 bg-ink-900 border border-ink-800 rounded-lg px-3 text-sm text-ink-100 placeholder:text-ink-500 outline-none focus:border-kerf-300/60"
+      />
+    </div>
+  )
+}
+
 export default function Library() {
   const { cloudEnabled, ready } = useCloudConfig()
-  const [search, setSearch] = useState('')
-  const [debouncedSearch, setDebouncedSearch] = useState('')
-  const [category, setCategory] = useState('all')
-  const [verifiedOnly, setVerifiedOnly] = useState(false)
+  const navigate = useNavigate()
+  const accessToken = useAuth((s) => s.accessToken)
+  // URL state — `?q=`, `?cat=`, `?verified=1` so links are shareable and
+  // refreshing preserves the user's filter set. The local form state
+  // (`search`) tracks the input box separately so we can debounce it
+  // before pushing the param back into the URL.
+  const [searchParams, setSearchParams] = useSearchParams()
+  const initialQ = searchParams.get('q') || ''
+  const initialCat = searchParams.get('cat') || 'all'
+  const initialVerified = searchParams.get('verified') === '1'
+  const [search, setSearch] = useState(initialQ)
+  const [debouncedSearch, setDebouncedSearch] = useState(initialQ.trim())
+  const category = initialCat
+  const verifiedOnly = initialVerified
   const [data, setData] = useState(null)
   const [error, setError] = useState(null)
   const [loading, setLoading] = useState(true)
   const [selected, setSelected] = useState(null)
+  // Library Phase 3: manufacturer-PR submission flow.
+  const [submitOpen, setSubmitOpen] = useState(false)
+  const [submitToast, setSubmitToast] = useState(null)
+
+  // Auto-dismiss the success toast after a few seconds. Failures stay
+  // until the user reopens the modal — they're surfaced inline there.
+  useEffect(() => {
+    if (!submitToast) return undefined
+    const t = setTimeout(() => setSubmitToast(null), 4500)
+    return () => clearTimeout(t)
+  }, [submitToast])
 
   // Debounce the search field so we don't fire a request per keystroke.
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(search.trim()), 250)
     return () => clearTimeout(t)
   }, [search])
+
+  // Reflect the debounced search into the URL so deep-links work. We use
+  // `replace` so typing doesn't fill the back-stack with intermediate states.
+  useEffect(() => {
+    const next = new URLSearchParams(searchParams)
+    if (debouncedSearch) next.set('q', debouncedSearch)
+    else next.delete('q')
+    if (next.toString() !== searchParams.toString()) {
+      setSearchParams(next, { replace: true })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [debouncedSearch])
+
+  const setCategory = (id) => {
+    const next = new URLSearchParams(searchParams)
+    if (id && id !== 'all') next.set('cat', id)
+    else next.delete('cat')
+    setSearchParams(next, { replace: true })
+  }
+  const setVerifiedOnly = (on) => {
+    const next = new URLSearchParams(searchParams)
+    if (on) next.set('verified', '1')
+    else next.delete('verified')
+    setSearchParams(next, { replace: true })
+  }
 
   useEffect(() => {
     if (!ready) return
@@ -187,6 +419,9 @@ export default function Library() {
     }
     let cancelled = false
     setLoading(true)
+    // Phase 2: hits the canonical /api/library/parts endpoint. The
+    // workshop.listParts helper is kept as a deprecated alias for one
+    // release while in-flight branches catch up.
     library
       .listParts({
         search: debouncedSearch || undefined,
@@ -195,6 +430,8 @@ export default function Library() {
       })
       .then((resp) => {
         if (cancelled) return
+        // Defensive: a successful 200 with no body should still render
+        // an empty state, not a crash.
         setData(resp || { rows: [], limit: 0, total: 0 })
         setError(null)
       })
@@ -244,7 +481,10 @@ export default function Library() {
           <h1 className="mt-2 font-display text-3xl sm:text-4xl font-semibold tracking-tight">
             Library
           </h1>
-          <p className="mt-1 text-sm text-ink-400">{headerSubtitle}</p>
+          <p className="mt-1 text-sm text-ink-400">
+            Curated and community parts. Verified publishers floated to top.
+          </p>
+          <p className="mt-1 text-xs text-ink-500">{headerSubtitle}</p>
         </div>
         <div className="flex items-center gap-3">
           <Link
@@ -262,6 +502,17 @@ export default function Library() {
             />
             Verified only
           </label>
+          {accessToken && (
+            <button
+              type="button"
+              onClick={() => setSubmitOpen(true)}
+              className="h-8 px-3 rounded-full text-xs font-medium border border-kerf-300/40 text-kerf-300 hover:bg-kerf-300/10 inline-flex items-center gap-1.5"
+              title="Submit a Part for review"
+            >
+              <Plus size={12} />
+              Submit a Part
+            </button>
+          )}
         </div>
       </div>
 
@@ -332,7 +583,17 @@ export default function Library() {
                 <PartCard
                   key={row.file_id}
                   row={row}
-                  onSelect={setSelected}
+                  onSelect={(r) => {
+                    // Phase 3: canonical click target is the dedicated
+                    // /library/:slug detail route. Rows without a slug
+                    // (e.g. legacy rows) fall back to the inline panel
+                    // so users still get something on click.
+                    if (r?.slug) {
+                      navigate(`/library/${encodeURIComponent(r.slug)}`)
+                    } else {
+                      setSelected(r)
+                    }
+                  }}
                   selected={selected?.file_id === row.file_id}
                 />
               ))}
@@ -346,6 +607,19 @@ export default function Library() {
           </div>
         )}
       </div>
+
+      <SubmitPartModal
+        open={submitOpen}
+        onClose={() => setSubmitOpen(false)}
+        onSubmitted={(msg) => setSubmitToast(msg)}
+      />
+
+      {submitToast && (
+        <div className="fixed bottom-4 right-4 z-40 flex items-center gap-2 rounded-lg border border-kerf-300/40 bg-ink-900 px-3 py-2 text-xs text-ink-100 shadow-lg">
+          <CheckCircle2 size={14} className="text-kerf-300" />
+          <span>{submitToast}</span>
+        </div>
+      )}
     </Layout>
   )
 }

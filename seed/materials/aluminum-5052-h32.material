@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "name": "Aluminum 5052-H32",
+  "category": "metal/aluminum/wrought",
+  "common_names": ["5052", "5052-H32", "marine aluminum"],
+  "color_hex": "#d3d6d9",
+  "mechanical": {
+    "E_GPa": 70.3,
+    "G_GPa": 25.9,
+    "nu": 0.33,
+    "yield_MPa": 195,
+    "ultimate_MPa": 230,
+    "elongation_pct": 12
+  },
+  "thermal": {
+    "alpha_per_K": 23.8e-6,
+    "k_W_mK": 138,
+    "cp_J_kgK": 880,
+    "T_min_C": -196,
+    "T_max_C": 175
+  },
+  "physical": {
+    "rho_kg_m3": 2680
+  },
+  "callout": "Al 5052-H32",
+  "notes": "Magnesium-alloyed aluminum, excellent corrosion resistance especially in marine environments. Standard sheet-metal fabrication grade. Source: MatWeb (H32 temper)."
+}

@@ -35,16 +35,17 @@ import (
 //   - extending Registry.buildService with a name-keyed branch,
 //   - adding a payload validator in validateCredentials.
 const (
-	ProviderDigiKey = "digikey"
-	ProviderMouser  = "mouser"
-	ProviderLCSC    = "lcsc"
+	ProviderDigiKey  = "digikey"
+	ProviderMouser   = "mouser"
+	ProviderLCSC     = "lcsc"
+	ProviderMcMaster = "mcmaster"
 )
 
 // AllProviders lists every supported distributor name. Used by the admin
 // handler to render an empty row for distributors the operator hasn't
 // configured yet.
 func AllProviders() []string {
-	return []string{ProviderDigiKey, ProviderMouser, ProviderLCSC}
+	return []string{ProviderDigiKey, ProviderMouser, ProviderLCSC, ProviderMcMaster}
 }
 
 // Credentials is the plaintext shape of the secret payload before
@@ -104,6 +105,18 @@ type Service interface {
 // price/stock untouched and bump fetched_at so the next sweep doesn't
 // keep retrying immediately.
 var ErrNotFound = errors.New("distributor: not found")
+
+// ErrNotSupported indicates a distributor that has no programmatic API.
+// Sticky: the refresh loop must NOT keep retrying — log once and skip.
+var ErrNotSupported = errors.New("distributor: provider has no programmatic API")
+
+// ErrAuth indicates an authentication failure (401/403). Operator must
+// fix credentials in the admin UI before refresh succeeds.
+var ErrAuth = errors.New("distributor: authentication failed")
+
+// ErrRateLimit indicates the provider returned 429 / equivalent. Caller
+// should back off and retry after a short delay.
+var ErrRateLimit = errors.New("distributor: rate limited")
 
 // ErrNotConfigured signals the Registry has no enabled service for a
 // given distributor name. The refresh path uses this to decide whether

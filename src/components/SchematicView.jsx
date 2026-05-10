@@ -23,8 +23,11 @@
 //     transforms compose cleanly.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Maximize2, RotateCcw, AlertTriangle } from 'lucide-react'
+import { Maximize2, RotateCcw, AlertTriangle, Activity } from 'lucide-react'
 import { convertCircuitJsonToSchematicSvg } from 'circuit-to-svg'
+import { parseProbes, appendProbe, removeProbe, renameProbe } from '../lib/circuitTSX.js'
+
+const PROBE_NAME_RE = /^[A-Za-z0-9_-]+$/
 
 // Parse the library's SVG string and return:
 //   { innerHTML: string, viewBox: [x,y,w,h] | null }
@@ -91,7 +94,15 @@ function safeRender(circuitJson) {
   }
 }
 
-export default function SchematicView({ circuitJson, highlightRefdes = null, onSelectRefdes }) {
+export default function SchematicView({
+  circuitJson,
+  highlightRefdes = null,
+  onSelectRefdes,
+  currentSource = '',
+  onEditSource = () => {},
+  selectedCircuitComponentId = null,
+  onSelectComponent = () => {},
+}) {
   const containerRef = useRef(null)
   const innerRef = useRef(null)
 
@@ -118,6 +129,81 @@ export default function SchematicView({ circuitJson, highlightRefdes = null, onS
     for (const [k, v] of refdesToSchId) m.set(v, k)
     return m
   }, [refdesToSchId])
+
+  // schematic_component_id → source_component_id (the canonical id used by
+  // selection state and I-probes).
+  const schIdToSrcCompId = useMemo(() => {
+    const m = new Map()
+    if (!Array.isArray(circuitJson)) return m
+    for (const e of circuitJson) {
+      if (e.type === 'schematic_component' && e.source_component_id) {
+        m.set(e.schematic_component_id, e.source_component_id)
+      }
+    }
+    return m
+  }, [circuitJson])
+  const srcCompIdToSchId = useMemo(() => {
+    const m = new Map()
+    for (const [k, v] of schIdToSrcCompId) m.set(v, k)
+    return m
+  }, [schIdToSrcCompId])
+
+  // Probe authoring state.
+  const [probeMode, setProbeMode] = useState(false)
+  const [probeKind, setProbeKind] = useState('V')
+  const [probeToast, setProbeToast] = useState(null)
+
+  // Memoised parse of `// @kerf-probe` lines for outline + duplicate detection.
+  const probes = useMemo(() => parseProbes(currentSource || ''), [currentSource])
+  const probedPortIds = useMemo(() => new Set(probes.filter((p) => p.kind === 'V').map((p) => p.portId)), [probes])
+  const probedSrcIds = useMemo(() => new Set(probes.filter((p) => p.kind === 'I').map((p) => p.portId)), [probes])
+
+  // Auto-dismiss toast.
+  useEffect(() => {
+    if (!probeToast) return undefined
+    const t = setTimeout(() => setProbeToast(null), 5000)
+    return () => clearTimeout(t)
+  }, [probeToast])
+
+  /** Push a transient amber pill above the schematic. */
+  const flashToast = useCallback((msg) => setProbeToast(msg), [])
+
+  /** Dispatch the rename-or-delete prompt chain for a duplicate probe name. */
+  const editExistingProbe = useCallback((existing) => {
+    if (typeof window === 'undefined') return false
+    const next = window.prompt(
+      `Probe "${existing.name}" is already on this point. Enter a new name to rename it, or leave blank to delete.`,
+      existing.name,
+    )
+    if (next === null) return false
+    const trimmed = (next || '').trim()
+    if (trimmed === '') {
+      const ok = window.confirm(`Delete probe "${existing.name}"?`)
+      if (!ok) return false
+      onEditSource(removeProbe(currentSource || '', existing.name))
+      return true
+    }
+    if (!PROBE_NAME_RE.test(trimmed)) {
+      flashToast(`Invalid probe name "${trimmed}". Use letters, numbers, _ or -.`)
+      return false
+    }
+    onEditSource(renameProbe(currentSource || '', existing.name, trimmed))
+    return true
+  }, [currentSource, onEditSource, flashToast])
+
+  /** Prompt the user for a fresh probe name, validate, and splice it in. */
+  const createProbe = useCallback((kind, portId) => {
+    if (typeof window === 'undefined') return false
+    const raw = window.prompt(`Name for ${kind === 'I' ? 'current' : 'voltage'} probe at ${portId}:`)
+    if (raw === null) return false
+    const trimmed = (raw || '').trim()
+    if (!PROBE_NAME_RE.test(trimmed)) {
+      flashToast(`Invalid probe name "${trimmed}". Use letters, numbers, _ or -.`)
+      return false
+    }
+    onEditSource(appendProbe(currentSource || '', { name: trimmed, kind, portId }))
+    return true
+  }, [currentSource, onEditSource, flashToast])
 
   // Pan + zoom state. We track translation in viewBox-space and a uniform
   // scale factor; the SVG inner group's transform = translate(tx,ty) scale(s).
@@ -177,27 +263,112 @@ export default function SchematicView({ circuitJson, highlightRefdes = null, onS
     innerRef.current.innerHTML = parsed.innerHTML || ''
   }, [parsed.innerHTML])
 
-  // Apply highlight after each (re)injection or selection change.
+  // Priority-driven outline pass — single walk over the schematic DOM.
+  // P4 selection > P3 already-probed > P2 legacy highlight > P1 probe halo > P0 clear.
   useEffect(() => {
     if (!innerRef.current) return
-    const targetId = highlightRefdes ? refdesToSchId.get(highlightRefdes) : null
-    const all = innerRef.current.querySelectorAll('[data-schematic-component-id]')
-    for (const el of all) {
-      const match = targetId && el.getAttribute('data-schematic-component-id') === targetId
-      el.style.outline = match ? '2px solid #ffd166' : ''
-      el.style.opacity = targetId && !match ? '0.35' : ''
+    const root = innerRef.current
+    const legacyTargetSchId = highlightRefdes ? refdesToSchId.get(highlightRefdes) : null
+    const selectedSchId = selectedCircuitComponentId ? srcCompIdToSchId.get(selectedCircuitComponentId) : null
+    const comps = root.querySelectorAll('[data-schematic-component-id]')
+    for (const el of comps) {
+      const schId = el.getAttribute('data-schematic-component-id')
+      const srcId = schIdToSrcCompId.get(schId)
+      let outline = ''
+      let opacity = ''
+      if (selectedSchId && schId === selectedSchId) {
+        outline = '2px solid #36e3a4'
+      } else if (srcId && probedSrcIds.has(srcId)) {
+        outline = '2px solid #f59e0b'
+      } else if (legacyTargetSchId) {
+        if (schId === legacyTargetSchId) outline = '2px solid #ffd166'
+        else opacity = '0.35'
+      } else if (probeMode && probeKind === 'I') {
+        outline = '1.5px solid rgba(54, 227, 164, 0.4)'
+      }
+      el.style.outline = outline
+      el.style.opacity = opacity
     }
-  }, [highlightRefdes, refdesToSchId, parsed.innerHTML])
+    const ports = root.querySelectorAll('[data-schematic-port-id]')
+    for (const el of ports) {
+      const portId = el.getAttribute('data-schematic-port-id')
+      let outline = ''
+      if (probedPortIds.has(portId)) {
+        outline = '2px solid #f59e0b'
+      } else if (probeMode && probeKind === 'V') {
+        outline = '1.5px solid rgba(54, 227, 164, 0.4)'
+      }
+      el.style.outline = outline
+    }
+  }, [
+    highlightRefdes,
+    refdesToSchId,
+    selectedCircuitComponentId,
+    srcCompIdToSchId,
+    schIdToSrcCompId,
+    probedPortIds,
+    probedSrcIds,
+    probeMode,
+    probeKind,
+    parsed.innerHTML,
+  ])
 
-  // Click → emit refdes upward.
+  // Click → either author a probe (probe mode) or drive selection (default).
   const handleSvgClick = useCallback((e) => {
-    if (!onSelectRefdes) return
+    if (probeMode) {
+      if (probeKind === 'V') {
+        const portEl = e.target.closest?.('[data-schematic-port-id]')
+        if (!portEl) return
+        const portId = portEl.getAttribute('data-schematic-port-id')
+        if (!portId) {
+          flashToast('Port ID not exposed on this schematic element.')
+          return
+        }
+        const existing = probes.find((p) => p.kind === 'V' && p.portId === portId)
+        const ok = existing ? editExistingProbe(existing) : createProbe('V', portId)
+        if (ok) setProbeMode(false)
+        return
+      }
+      // I-probe: target a component.
+      const compEl = e.target.closest?.('[data-schematic-component-id]')
+      if (!compEl) return
+      const schId = compEl.getAttribute('data-schematic-component-id')
+      const srcId = schIdToSrcCompId.get(schId)
+      if (!srcId) {
+        flashToast('Component has no source_component_id.')
+        return
+      }
+      const existing = probes.find((p) => p.kind === 'I' && p.portId === srcId)
+      const ok = existing ? editExistingProbe(existing) : createProbe('I', srcId)
+      if (ok) setProbeMode(false)
+      return
+    }
+    // Default: selection. Click on a component toggles; click on empty space clears.
     const el = e.target.closest?.('[data-schematic-component-id]')
-    if (!el) return
-    const id = el.getAttribute('data-schematic-component-id')
-    const name = schIdToRefdes.get(id)
-    if (name) onSelectRefdes(name)
-  }, [onSelectRefdes, schIdToRefdes])
+    if (!el) {
+      onSelectComponent(null)
+      return
+    }
+    const schId = el.getAttribute('data-schematic-component-id')
+    const srcId = schIdToSrcCompId.get(schId)
+    const refdes = schIdToRefdes.get(schId)
+    if (srcId) {
+      onSelectComponent(srcId === selectedCircuitComponentId ? null : srcId)
+    }
+    if (onSelectRefdes && refdes) onSelectRefdes(refdes)
+  }, [
+    probeMode,
+    probeKind,
+    probes,
+    schIdToSrcCompId,
+    schIdToRefdes,
+    selectedCircuitComponentId,
+    onSelectComponent,
+    onSelectRefdes,
+    editExistingProbe,
+    createProbe,
+    flashToast,
+  ])
 
   // ---- Pan + zoom event handlers --------------------------------------------
 
@@ -329,6 +500,44 @@ export default function SchematicView({ circuitJson, highlightRefdes = null, onS
         <div className="absolute top-2 left-2 right-2 px-3 py-2 rounded-md bg-red-950/80 border border-red-900/60 text-red-200 text-xs flex items-start gap-2">
           <AlertTriangle size={14} className="mt-0.5 flex-shrink-0" />
           <div className="min-w-0 break-words">{error}</div>
+        </div>
+      )}
+
+      {/* Probe authoring toolbar (top-left). Probe button + V/I mode switch. */}
+      <div className="absolute top-2 left-2 flex items-stretch gap-0 rounded-md bg-ink-900/90 border border-ink-800 backdrop-blur shadow-lg overflow-hidden">
+        <button
+          type="button"
+          onClick={() => setProbeMode((v) => !v)}
+          title={probeMode ? `Probe mode active (${probeKind}). Click to cancel.` : `Add ${probeKind === 'I' ? 'current' : 'voltage'} probe`}
+          className={`flex items-center gap-1.5 px-2 py-1.5 text-[11px] ${probeMode ? 'bg-kerf-300/15 text-kerf-300' : 'text-ink-300 hover:bg-ink-800 hover:text-kerf-300'}`}
+        >
+          <Activity size={13} />
+          <span>Probe</span>
+        </button>
+        <div className="flex flex-col border-l border-ink-800 select-none" onClick={(e) => e.stopPropagation()}>
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); setProbeKind('V') }}
+            title="Voltage probe (port)"
+            className={`px-1.5 leading-none font-mono text-[9px] flex-1 ${probeKind === 'V' ? 'bg-kerf-300/20 text-kerf-300' : 'text-ink-500 hover:text-ink-300'}`}
+          >
+            V
+          </button>
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); setProbeKind('I') }}
+            title="Current probe (component)"
+            className={`px-1.5 leading-none font-mono text-[9px] flex-1 border-t border-ink-800 ${probeKind === 'I' ? 'bg-kerf-300/20 text-kerf-300' : 'text-ink-500 hover:text-ink-300'}`}
+          >
+            I
+          </button>
+        </div>
+      </div>
+
+      {/* Probe toast (invalid name / defensive guards). */}
+      {probeToast && (
+        <div className="absolute top-12 left-2 px-2.5 py-1 rounded-full text-[11px] bg-amber-500/10 text-amber-300 border border-amber-500/40 shadow-lg pointer-events-none">
+          {probeToast}
         </div>
       )}
 

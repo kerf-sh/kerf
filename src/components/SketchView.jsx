@@ -18,7 +18,7 @@ import {
   Ruler, RotateCcw, Trash2, Lock, AlertTriangle, Check,
   Scissors, ArrowRightToLine, GitMerge, Hexagon, Waves,
   FlipHorizontal2, Grid3x3, RotateCw, Pin, Magnet, BookmarkPlus,
-  Unlock,
+  Unlock, Crosshair, CircleDashed, CircleDot,
 } from 'lucide-react'
 import * as THREE from 'three'
 import {
@@ -78,9 +78,13 @@ const CONSTRAINTS = [
   { id: 'equal_radius',  key: '',    icon: Equal,          label: 'Equal radius' },
   { id: 'symmetric',     key: '',    icon: FlipHorizontal2, label: 'Symmetric (2 pts + line)' },
   { id: 'block',         key: '',    icon: Pin,            label: 'Block (pin in place)' },
-  { id: 'point_on_line', key: '',    icon: Magnet,         label: 'Point on line' },
-  { id: 'point_on_arc',  key: '',    icon: BookmarkPlus,   label: 'Point on arc/circle' },
-  { id: 'distance',      key: 'D',   icon: Ruler,          label: 'Dimension (auto)' },
+  { id: 'point_on_line', key: '',          icon: Magnet,         label: 'Point on line' },
+  { id: 'point_on_arc',  key: '',          icon: BookmarkPlus,   label: 'Point on arc/circle' },
+  { id: 'midpoint',      key: 'shift+M',   icon: Crosshair,      label: 'Midpoint (point on line midpoint)' },
+  { id: 'fixed',         key: 'shift+F',   icon: Lock,           label: 'Fixed (lock point in place)' },
+  { id: 'radius',        key: 'shift+R',   icon: CircleDashed,   label: 'Radius (circle/arc)' },
+  { id: 'diameter',      key: 'shift+D',   icon: CircleDot,      label: 'Diameter (circle/arc)' },
+  { id: 'distance',      key: 'D',         icon: Ruler,          label: 'Dimension (auto)' },
 ]
 
 // ---------------------------------------------------------------------------
@@ -655,6 +659,51 @@ export default function SketchView({
       if (ps.length >= 1 && cs.length >= 1) {
         ;({ sketch: next } = addConstraint(sketch, 'point_on_arc', { point: ps[0], arc: cs[0] }))
       }
+    } else if (kind === 'midpoint') {
+      // Need 1 point + 1 line. The point is constrained to the midpoint
+      // of the line; on solve the point will move (or stay, if already at
+      // the midpoint).
+      const ps = sel.filter(isPoint)
+      const lns = sel.filter(isLine)
+      if (ps.length >= 1 && lns.length >= 1) {
+        ;({ sketch: next } = addConstraint(sketch, 'midpoint', { point: ps[0], line: lns[0] }))
+      }
+    } else if (kind === 'fixed') {
+      // Lock every selected point at its current (x, y). We capture the
+      // coords on the constraint itself so the solver pins the point even
+      // if some upstream code mutates the entity's stored x/y. Mirrors how
+      // `block` snapshots coordinates — but for a single point, with no
+      // need to enumerate refs.
+      const ps = sel.filter(isPoint)
+      if (ps.length >= 1) {
+        let acc = sketch
+        for (const pid of ps) {
+          const p = get(pid)
+          if (!p) continue
+          const px = typeof p.x === 'number' ? p.x : 0
+          const py = typeof p.y === 'number' ? p.y : 0
+          ;({ sketch: acc } = addConstraint(acc, 'fixed', { point: pid, x: px, y: py }))
+        }
+        next = acc
+      }
+    } else if (kind === 'radius') {
+      // Exactly 1 circle or arc; prompt for radius value.
+      const cs = sel.filter(isCircleArc)
+      if (cs.length === 1) {
+        const e = get(cs[0])
+        const v = e?.radius || 10
+        setDimensionPrompt({ kind: 'radius', refs: { circle: cs[0] }, defaultValue: round(v) })
+        return
+      }
+    } else if (kind === 'diameter') {
+      // Exactly 1 circle or arc; prompt for diameter value (= 2 × radius).
+      const cs = sel.filter(isCircleArc)
+      if (cs.length === 1) {
+        const e = get(cs[0])
+        const v = (e?.radius || 10) * 2
+        setDimensionPrompt({ kind: 'diameter', refs: { circle: cs[0] }, defaultValue: round(v) })
+        return
+      }
     } else if (kind === 'distance') {
       // Auto-pick by selection types.
       if (sel.length === 1 && isCircleArc(sel[0])) {
@@ -699,6 +748,8 @@ export default function SketchView({
       ;({ sketch: next } = addConstraint(sketch, 'angle', { ...dimensionPrompt.refs, value }))
     } else if (dimensionPrompt.kind === 'radius') {
       ;({ sketch: next } = addConstraint(sketch, 'radius', { ...dimensionPrompt.refs, value }))
+    } else if (dimensionPrompt.kind === 'diameter') {
+      ;({ sketch: next } = addConstraint(sketch, 'diameter', { ...dimensionPrompt.refs, value }))
     }
     if (next) commit(next)
     setDimensionPrompt(null)
@@ -902,6 +953,10 @@ export default function SketchView({
         if (k === 'e') { e.preventDefault(); setTool('ellipse'); setPendingPoints([]); return }
         if (k === 'l') { e.preventDefault(); openLinearPattern(); return }
         if (k === 'p') { e.preventDefault(); openPolarPattern(); return }
+        if (k === 'm') { e.preventDefault(); applyConstraint('midpoint'); return }
+        if (k === 'f') { e.preventDefault(); applyConstraint('fixed'); return }
+        if (k === 'r') { e.preventDefault(); applyConstraint('radius'); return }
+        if (k === 'd') { e.preventDefault(); applyConstraint('diameter'); return }
       }
       const tools = TOOLS.find((x) => x.key && !x.key.includes('shift+') && x.key.toLowerCase() === k)
       if (tools) { e.preventDefault(); setTool(tools.id); setPendingPoints([]); return }
@@ -1993,7 +2048,7 @@ function DimensionPrompt({ spec, onCommit, onCancel }) {
   return (
     <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-ink-900 border border-kerf-300/40 rounded-md p-3 shadow-2xl flex items-center gap-2">
       <span className="text-[11px] uppercase tracking-wider text-ink-400">
-        {spec.kind === 'angle' ? 'Angle (deg)' : spec.kind === 'radius' ? 'Radius (mm)' : 'Distance (mm)'}
+        {spec.kind === 'angle' ? 'Angle (deg)' : spec.kind === 'radius' ? 'Radius (mm)' : spec.kind === 'diameter' ? 'Diameter (mm)' : 'Distance (mm)'}
       </span>
       <input
         autoFocus

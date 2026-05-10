@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "name": "Capacitor 10µF 0805 X5R 16V",
+  "description": "Multi-layer ceramic chip capacitor, 10 µF, 16 V, X5R dielectric, ±20%, 0805 SMD package. Bulk-decoupling staple.",
+  "category": "Capacitors",
+  "manufacturer": "Murata",
+  "mpn": "GRM21BR61C106KE15L",
+  "value": "10u",
+  "distributors": [],
+  "visibility": "public",
+  "metadata": {
+    "package": "0805",
+    "dielectric": "X5R",
+    "voltage_v": 16,
+    "tolerance": "20%"
+  }
+}

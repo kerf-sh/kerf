@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "name": "Capacitor 100nF 0603 X7R 50V",
+  "description": "Multi-layer ceramic chip capacitor, 100 nF, 50 V, X7R dielectric, ±10%, 0603 SMD package. Standard supply-decoupling value.",
+  "category": "Capacitors",
+  "manufacturer": "Murata",
+  "mpn": "GRM188R71H104KA93D",
+  "value": "100n",
+  "distributors": [],
+  "visibility": "public",
+  "metadata": {
+    "package": "0603",
+    "dielectric": "X7R",
+    "voltage_v": 50,
+    "tolerance": "10%"
+  }
+}

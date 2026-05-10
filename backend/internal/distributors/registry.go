@@ -89,6 +89,16 @@ func New(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool, fx FXConve
 	return r
 }
 
+// SetHTTPClient swaps the registry's outbound HTTP client and rebuilds
+// the per-provider Service instances so each picks up the new client.
+// Used by the test runner to inject a mock RoundTripper.
+func (r *Registry) SetHTTPClient(ctx context.Context, c *http.Client) error {
+	r.mu.Lock()
+	r.client = c
+	r.mu.Unlock()
+	return r.Reload(ctx)
+}
+
 // Reload rebuilds the service + rate-limiter maps from the DB. Called
 // at boot and after every admin mutation. Holds the write lock for
 // the duration of the rebuild so concurrent readers always see a

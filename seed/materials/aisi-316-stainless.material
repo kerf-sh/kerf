@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "name": "AISI 316 Stainless Steel",
+  "category": "metal/stainless/austenitic",
+  "common_names": ["316 stainless", "marine-grade stainless", "A4 stainless"],
+  "color_hex": "#a8acb1",
+  "mechanical": {
+    "E_GPa": 193,
+    "G_GPa": 77,
+    "nu": 0.29,
+    "yield_MPa": 290,
+    "ultimate_MPa": 580,
+    "elongation_pct": 50
+  },
+  "thermal": {
+    "alpha_per_K": 16.0e-6,
+    "k_W_mK": 16.3,
+    "cp_J_kgK": 500,
+    "T_min_C": -196,
+    "T_max_C": 870
+  },
+  "physical": {
+    "rho_kg_m3": 8000
+  },
+  "callout": "SS 316",
+  "notes": "Molybdenum-bearing austenitic stainless; better pitting/crevice corrosion than 304 — preferred for marine and chloride exposure. Source: MatWeb (annealed)."
+}

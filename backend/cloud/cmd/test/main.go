@@ -39,12 +39,14 @@ type scenarioFunc func(ctx context.Context, env *testEnv, suite *Suite)
 // scenarios is the registry. Keys are the names accepted by --scenario.
 // Add new files under this directory and register them here.
 var scenarios = map[string]scenarioFunc{
-	"paystack_init":     runPaystackInit,
-	"paystack_webhook":  runPaystackWebhook,
-	"fx_refresh":        runFXRefresh,
-	"quota_gate":        runQuotaGate,
-	"workshop_parts":    runWorkshopParts,
-	"workshop_listings": runWorkshopListings,
+	"paystack_init":        runPaystackInit,
+	"paystack_webhook":     runPaystackWebhook,
+	"fx_refresh":           runFXRefresh,
+	"quota_gate":           runQuotaGate,
+	"workshop_parts":       runWorkshopParts,
+	"workshop_listings":    runWorkshopListings,
+	"library_part_detail":  runLibraryPartDetail,
+	"library_submissions":  runLibrarySubmissions,
 }
 
 func main() {
@@ -105,7 +107,8 @@ func main() {
 func selectScenarios(arg string) ([]string, error) {
 	if arg == "" || arg == "all" {
 		return []string{"fx_refresh", "paystack_init", "paystack_webhook", "quota_gate",
-			"workshop_parts", "workshop_listings"}, nil
+			"workshop_parts", "workshop_listings", "library_part_detail",
+			"library_submissions"}, nil
 	}
 	parts := strings.Split(arg, ",")
 	out := make([]string, 0, len(parts))

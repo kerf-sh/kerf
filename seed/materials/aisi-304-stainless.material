@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "name": "AISI 304 Stainless Steel",
+  "category": "metal/stainless/austenitic",
+  "common_names": ["304 stainless", "18-8 stainless", "A2 stainless"],
+  "color_hex": "#a8acb1",
+  "mechanical": {
+    "E_GPa": 193,
+    "G_GPa": 77,
+    "nu": 0.29,
+    "yield_MPa": 215,
+    "ultimate_MPa": 505,
+    "elongation_pct": 70
+  },
+  "thermal": {
+    "alpha_per_K": 17.3e-6,
+    "k_W_mK": 16.2,
+    "cp_J_kgK": 500,
+    "T_min_C": -196,
+    "T_max_C": 870
+  },
+  "physical": {
+    "rho_kg_m3": 8000
+  },
+  "callout": "SS 304",
+  "notes": "Austenitic stainless, the workhorse food-grade / general corrosion-resistant grade. Non-magnetic in annealed state. Source: MatWeb (annealed)."
+}

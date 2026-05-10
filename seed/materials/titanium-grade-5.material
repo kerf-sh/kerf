@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "name": "Titanium Grade 5 (Ti-6Al-4V)",
+  "category": "metal/titanium/alloy",
+  "common_names": ["Ti-6Al-4V", "Grade 5 titanium", "TC4"],
+  "color_hex": "#9b9da0",
+  "mechanical": {
+    "E_GPa": 113.8,
+    "G_GPa": 44,
+    "nu": 0.342,
+    "yield_MPa": 880,
+    "ultimate_MPa": 950,
+    "elongation_pct": 14
+  },
+  "thermal": {
+    "alpha_per_K": 8.6e-6,
+    "k_W_mK": 6.7,
+    "cp_J_kgK": 526,
+    "T_min_C": -253,
+    "T_max_C": 400
+  },
+  "physical": {
+    "rho_kg_m3": 4430
+  },
+  "callout": "Ti-6Al-4V",
+  "notes": "The dominant titanium alloy (≈50% of all Ti tonnage). Aerospace, medical implants, high-end fasteners. Excellent strength-to-weight; corrosion-immune. Source: MatWeb (annealed)."
+}

@@ -17,6 +17,7 @@ import (
 
 	"github.com/imranp/kerf/backend/cloud/billing"
 	cloudfx "github.com/imranp/kerf/backend/cloud/fx"
+	"github.com/imranp/kerf/backend/cloud/library"
 	"github.com/imranp/kerf/backend/cloud/workshop"
 	"github.com/imranp/kerf/backend/internal/auth"
 	"github.com/imranp/kerf/backend/internal/config"
@@ -170,6 +171,11 @@ func bootTestEnv(ctx context.Context) (*testEnv, error) {
 		Cfg:  cfg,
 	}
 
+	libH := &library.Handlers{
+		Pool: pool,
+		Cfg:  cfg,
+	}
+
 	r := chi.NewRouter()
 	r.Route("/api/billing", func(api chi.Router) {
 		api.Group(func(public chi.Router) { h.Mount(nil, public) })
@@ -184,6 +190,25 @@ func bootTestEnv(ctx context.Context) (*testEnv, error) {
 			authed.Use(injectTestUser)
 			wh.Mount(authed, nil)
 		})
+	})
+	// Mirror the cloud_enabled.go production wiring for /api/library so
+	// scenarios can hit the canonical Library routes (Phase 2 + 4 of the
+	// Library/Workshop split — ROADMAP row 74).
+	r.Route("/api/library", func(api chi.Router) {
+		api.Group(func(public chi.Router) {
+			public.Get("/parts", wh.ListPartsAlias)
+			public.Get("/parts/{slug}", wh.GetPart)
+		})
+		// Submission queue — Library Phase 3 (ROADMAP row 73). Auth
+		// required; injectTestUser stands in for the bearer-token flow.
+		api.Group(func(authed chi.Router) {
+			authed.Use(injectTestUser)
+			libH.MountSubmit(authed)
+		})
+	})
+	r.Route("/api/admin/library", func(api chi.Router) {
+		api.Use(injectTestUser)
+		libH.MountAdmin(api)
 	})
 
 	srv := httptest.NewServer(r)

@@ -13,6 +13,7 @@ import (
 	cloudemail "github.com/imranp/kerf/backend/cloud/email"
 	"github.com/imranp/kerf/backend/cloud/fx"
 	"github.com/imranp/kerf/backend/cloud/git"
+	"github.com/imranp/kerf/backend/cloud/library"
 	"github.com/imranp/kerf/backend/cloud/usage"
 	"github.com/imranp/kerf/backend/cloud/workshop"
 	"github.com/imranp/kerf/backend/internal/distributors"
@@ -137,14 +138,32 @@ func registerCloud(ctx context.Context, r chi.Router, deps *handlers.Deps) {
 	// top-level path so it can grow independently of the Workshop's
 	// project-listing surface (see ROADMAP "Library / Workshop split").
 	// /api/workshop/parts is kept as a deprecated alias.
+	libHandlers := &library.Handlers{Pool: deps.Pool, Cfg: deps.Cfg}
 	r.Route("/api/library", func(api chi.Router) {
 		api.Group(func(public chi.Router) {
 			public.Use(kmw.OptionalAuth(deps.Auth, deps.Pool))
-			public.Get("/parts", mp.ListParts)
+			public.Get("/parts", mp.ListPartsAlias)
+			public.Get("/parts/{slug}", mp.GetPart)
+		})
+		// /api/library/submissions — manufacturer-PR submission endpoint
+		// (Library Phase 3, ROADMAP row 73). Auth required (any role); the
+		// row lands in library_part_submissions.status='pending' until an
+		// admin reviews it via /api/admin/library/submissions/{id}.
+		api.Group(func(authed chi.Router) {
+			authed.Use(kmw.RequireAuth(deps.Auth, deps.Pool))
+			libHandlers.MountSubmit(authed)
 		})
 	})
 
-	log.Printf("cloud: mounted /api/library/parts")
+	log.Printf("cloud: mounted /api/library/parts, /api/library/parts/{slug}, /api/library/submissions")
+
+	// /api/admin/library — admin review queue. Admin role enforced
+	// inside each handler (mirrors /api/admin/distributors).
+	r.Route("/api/admin/library", func(api chi.Router) {
+		api.Use(kmw.RequireAuth(deps.Auth, deps.Pool))
+		libHandlers.MountAdmin(api)
+	})
+	log.Printf("cloud: mounted /api/admin/library/submissions[/{id}]")
 
 	// Real-git integration. Bare repos live on disk under
 	// cfg.Cloud.Git.Root; per-project routes mount under

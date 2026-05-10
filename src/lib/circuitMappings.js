@@ -82,3 +82,80 @@ export function setCircuitMapping(content, refdes, partFileId) {
   else delete cur[refdes]
   return { mappings: cur, content: writeLibraryMappings(content, cur) }
 }
+
+// resolveLibraryCadComponent looks up the Library Part file id for a given
+// refdes given an already-parsed mappings object. Returns the file id string
+// or null when no mapping exists (or the refdes / mappings argument is
+// malformed). Pure — no IO, no fetch — so the 3D path can call it inline.
+//
+// This is the seam the 3D tab uses to decide whether a `cad_component` box
+// should be visually flagged as "Library-linked" (and, in a future slice,
+// replaced with the Part's real STEP/JSCAD geometry).
+export function resolveLibraryCadComponent(refdes, mappings) {
+  if (typeof refdes !== 'string' || refdes.length === 0) return null
+  if (!mappings || typeof mappings !== 'object' || Array.isArray(mappings)) return null
+  const v = mappings[refdes]
+  return typeof v === 'string' && v.length > 0 ? v : null
+}
+
+// evalLibraryModel3D — parse a Library Part file's content and, if it carries
+// a JSCAD-source `model_3d` field, evaluate it via the standard jscadRunner
+// and return `{ parts: [{id, geom}, ...] }`. Returns null in every failure
+// mode so callers fall through to the teal box approximation:
+//   - empty / non-string content
+//   - JSON parse fails
+//   - no `model_3d` field, or the field isn't a non-empty string
+//   - JSCAD eval throws or comes back with an `error`
+//   - JSCAD eval comes back with zero parts
+//
+// We deliberately don't try to handle STEP / STL URLs here (a `model_3d`
+// that looks like a `/api/blobs/...` path) — those need an OCCT-side parser
+// and are a separate slice. The detection is "starts with `function`,
+// `export`, `(`, or `=>` *somewhere*" — a coarse heuristic that's good
+// enough to skip the obvious URL case without false-positives on real
+// JSCAD source.
+//
+// Async because runJscad is async (worker-driven, with a main-thread
+// fallback under vitest). Caller must await.
+export async function evalLibraryModel3D(content) {
+  if (typeof content !== 'string' || content.length === 0) return null
+  let raw = null
+  try { raw = JSON.parse(content) } catch { return null }
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null
+  const src = raw.model_3d
+  if (typeof src !== 'string' || src.length === 0) return null
+  // Skip URL-shaped values — STEP/STL substitution is out of scope here.
+  // A JSCAD source has executable JS (`function`, `=>`, or `export`); a
+  // URL/path doesn't. We accept anything that smells like JS source.
+  const looksLikeJs = /\bfunction\b|=>|\bexport\b/.test(src)
+  if (!looksLikeJs) return null
+  // Lazy import so this module stays tree-shakable for non-3D callers and
+  // tests that don't exercise the JSCAD path don't pay the import cost.
+  let runJscad
+  try {
+    ({ runJscad } = await import('./jscadRunner.js'))
+  } catch (err) {
+    if (typeof console !== 'undefined') {
+      console.warn('evalLibraryModel3D: failed to load jscadRunner:', err)
+    }
+    return null
+  }
+  let res
+  try {
+    res = await runJscad(src)
+  } catch (err) {
+    if (typeof console !== 'undefined') {
+      console.warn('evalLibraryModel3D: runJscad threw:', err)
+    }
+    return null
+  }
+  if (!res || res.error || res.stale) {
+    if (res && res.error && typeof console !== 'undefined') {
+      console.warn('evalLibraryModel3D: JSCAD eval error:', res.error)
+    }
+    return null
+  }
+  const parts = Array.isArray(res.parts) ? res.parts.filter((p) => p && p.geom) : []
+  if (parts.length === 0) return null
+  return { parts }
+}

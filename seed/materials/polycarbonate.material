@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "name": "Polycarbonate",
+  "category": "polymer/thermoplastic/polycarbonate",
+  "common_names": ["PC", "Lexan", "Makrolon"],
+  "color_hex": "#dde4e6",
+  "mechanical": {
+    "E_GPa": 2.4,
+    "G_GPa": 0.86,
+    "nu": 0.37,
+    "yield_MPa": 62,
+    "ultimate_MPa": 70,
+    "elongation_pct": 110
+  },
+  "thermal": {
+    "alpha_per_K": 67e-6,
+    "k_W_mK": 0.20,
+    "cp_J_kgK": 1170,
+    "T_min_C": -100,
+    "T_max_C": 130
+  },
+  "physical": {
+    "rho_kg_m3": 1200
+  },
+  "callout": "PC",
+  "notes": "Transparent, very high impact strength (~30x acrylic). Common for safety glazing, machine guards, electronic housings. Source: MatWeb (general-purpose grade)."
+}

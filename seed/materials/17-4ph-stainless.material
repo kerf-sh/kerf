@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "name": "17-4PH Stainless Steel",
+  "category": "metal/stainless/precipitation-hardening",
+  "common_names": ["17-4 PH", "AISI 630", "precipitation-hardened stainless"],
+  "color_hex": "#9da1a6",
+  "mechanical": {
+    "E_GPa": 196,
+    "G_GPa": 77,
+    "nu": 0.27,
+    "yield_MPa": 1170,
+    "ultimate_MPa": 1310,
+    "elongation_pct": 10
+  },
+  "thermal": {
+    "alpha_per_K": 10.8e-6,
+    "k_W_mK": 17.8,
+    "cp_J_kgK": 460,
+    "T_min_C": -73,
+    "T_max_C": 315
+  },
+  "physical": {
+    "rho_kg_m3": 7800
+  },
+  "callout": "17-4PH H900",
+  "notes": "Martensitic precipitation-hardening stainless. H900 condition: highest strength. Common in aerospace fittings, valve stems. Source: MatWeb (condition H900)."
+}

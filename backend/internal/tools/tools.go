@@ -75,6 +75,9 @@ var Registry = []Tool{
 	{Spec: createFeatureSpec, Write: true, Run: runCreateFeature},
 	{Spec: createPartSpec, Write: true, Run: runCreatePart},
 	{Spec: createCircuitSpec, Write: true, Run: runCreateCircuit},
+	{Spec: addProbeSpec, Write: true, Run: runAddProbe},
+	{Spec: removeProbeSpec, Write: true, Run: runRemoveProbe},
+	{Spec: renameProbeSpec, Write: true, Run: runRenameProbe},
 
 	// Equations: project-level named parameters.
 	{Spec: readEquationsSpec, Run: runReadEquations},
@@ -90,6 +93,11 @@ var Registry = []Tool{
 	// Revisions / undo.
 	{Spec: listRevisionsSpec, Run: runListRevisions},
 	{Spec: restoreRevisionSpec, Write: true, Run: runRestoreRevision},
+
+	// Phase 4a — surfacing feature ops the LLM can append to .feature files.
+	{Spec: featureSweep2Spec, Write: true, Run: runFeatureSweep2},
+	{Spec: featureNetworkSrfSpec, Write: true, Run: runFeatureNetworkSrf},
+	{Spec: featureBlendSrfSpec, Write: true, Run: runFeatureBlendSrf},
 }
 
 // Specs returns the JSON schemas of every tool a given role is allowed to use.

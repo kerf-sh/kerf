@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "name": "AISI 4140 Steel",
+  "category": "metal/steel/alloy",
+  "common_names": ["chromoly", "chrome-moly", "4140"],
+  "color_hex": "#6b6e74",
+  "mechanical": {
+    "E_GPa": 205,
+    "G_GPa": 80,
+    "nu": 0.29,
+    "yield_MPa": 655,
+    "ultimate_MPa": 1020,
+    "elongation_pct": 17
+  },
+  "thermal": {
+    "alpha_per_K": 12.2e-6,
+    "k_W_mK": 42.6,
+    "cp_J_kgK": 473,
+    "T_min_C": -40,
+    "T_max_C": 480
+  },
+  "physical": {
+    "rho_kg_m3": 7850
+  },
+  "callout": "AISI 4140",
+  "notes": "Chrome-molybdenum alloy steel, quenched and tempered. Common for fasteners, axles, high-stress shafts. Source: MatWeb (Q&T at 425°C)."
+}

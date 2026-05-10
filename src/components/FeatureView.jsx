@@ -225,6 +225,23 @@ const FEATURE_KINDS = [
     ],
   },
   {
+    op: 'sweep2',
+    label: 'Sweep2',
+    icon: Waves,
+    defaults: { profile_sketch_path: '', rail1_sketch_path: '', rail2_sketch_path: '', twist_deg: 0, scale_end: 1, mode: 'auto' },
+    fields: [
+      { key: 'profile_sketch_path', kind: 'sketch_picker', label: 'Profile sketch' },
+      { key: 'rail1_sketch_path', kind: 'sketch_picker', label: 'Rail 1 sketch' },
+      { key: 'rail2_sketch_path', kind: 'sketch_picker', label: 'Rail 2 sketch' },
+      { key: 'twist_deg', kind: 'number', label: 'Twist (°)', step: 1 },
+      { key: 'scale_end', kind: 'number', label: 'End scale', min: 0.001, step: 0.05 },
+      { key: 'mode', kind: 'select', label: 'Mode', options: [
+        { value: 'auto', label: 'Auto' },
+        { value: 'frenet', label: 'Frenet' },
+      ] },
+    ],
+  },
+  {
     op: 'loft',
     label: 'Loft',
     icon: Layers3,
@@ -250,6 +267,37 @@ const FEATURE_KINDS = [
       { key: 'edges', kind: 'edge_radius_list', label: 'Picked edges + radii' },
     ],
   },
+  {
+    op: 'network_srf',
+    label: 'NetworkSrf',
+    icon: Layers3,
+    defaults: { u_curves: [], v_curves: [], continuity: 'C1' },
+    fields: [
+      { key: 'u_curves', kind: 'sketch_path_list', label: 'U-direction sketches (≥2)' },
+      { key: 'v_curves', kind: 'sketch_path_list', label: 'V-direction sketches (≥2)' },
+      { key: 'continuity', kind: 'select', label: 'Continuity', options: [
+        { value: 'C0', label: 'C0 (position)' },
+        { value: 'C1', label: 'C1 (tangent)' },
+        { value: 'C2', label: 'C2 (curvature)' },
+      ] },
+    ],
+  },
+  {
+    op: 'blend_srf',
+    label: 'BlendSrf',
+    icon: Waves,
+    defaults: { target_id: '', edge1_id: -1, edge2_id: -1, continuity: 'G1' },
+    fields: [
+      { key: 'target_id', kind: 'feature_picker', label: 'Target body' },
+      { key: 'edge1_id', kind: 'number', label: 'Edge 1 id', step: 1 },
+      { key: 'edge2_id', kind: 'number', label: 'Edge 2 id', step: 1 },
+      { key: 'continuity', kind: 'select', label: 'Continuity', options: [
+        { value: 'G0', label: 'G0 (position)' },
+        { value: 'G1', label: 'G1 (tangent)' },
+        { value: 'G2', label: 'G2 (curvature)' },
+      ] },
+    ],
+  },
 ]
 
 const KIND_BY_OP = Object.fromEntries(FEATURE_KINDS.map((k) => [k.op, k]))
@@ -258,7 +306,7 @@ const FEATURE_CATEGORIES = [
   { id: 'sketch',   label: 'Sketch-based',  ops: ['pad', 'pocket', 'revolve', 'hole'] },
   { id: 'modify',   label: 'Modify',        ops: ['fillet', 'chamfer', 'shell', 'push_pull', 'variable_radius_fillet'] },
   { id: 'pattern',  label: 'Pattern',       ops: ['linear_pattern', 'polar_pattern', 'mirror_pattern'] },
-  { id: 'surface',  label: 'Surfacing',     ops: ['sweep1', 'loft'] },
+  { id: 'surface',  label: 'Surfacing',     ops: ['sweep1', 'sweep2', 'loft', 'network_srf', 'blend_srf'] },
 ]
 
 const DEBOUNCE_MS = 300

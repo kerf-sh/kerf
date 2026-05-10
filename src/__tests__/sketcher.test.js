@@ -45,7 +45,7 @@ import {
 } from '../lib/sketchSolver.js'
 
 import {
-  addPoint, addLine, addConstraint, ensurePointAt,
+  addPoint, addLine, addCircle, addConstraint, ensurePointAt,
 } from '../lib/sketchEdit.js'
 
 import { sketchToGeom2 } from '../lib/sketchGeom2.js'
@@ -388,4 +388,241 @@ describe('public planegcs.wasm asset presence', () => {
     // Should be hundreds of KB — a non-empty wasm binary, not a stub.
     expect(stats.size).toBeGreaterThan(50_000)
   })
+})
+
+// ---------------------------------------------------------------------------
+// New constraint types: midpoint + fixed.
+//
+// `midpoint` is composed at solve time from two planegcs primitives
+// (point_on_line_pl + point_on_perp_bisector_pl). The intersection of those
+// two conditions is exactly the midpoint of the line. We test that an
+// off-midpoint point is pulled to the midpoint, and that an already-aligned
+// configuration converges with no movement.
+//
+// `fixed` snapshots the captured (x, y) onto the constraint so the solver
+// pins the point regardless of subsequent edits. We test that the snapshot
+// round-trips through serialize/parse, and that a drag against another
+// point doesn't move a fixed point.
+
+describe('midpoint constraint', () => {
+  it('round-trips through serialize/parse with point + line refs', () => {
+    let s = defaultSketch('XY', 'mid-rt')
+    const a = addPoint(s, 0, 0); s = a.sketch
+    const b = addPoint(s, 10, 0); s = b.sketch
+    const ln = addLine(s, a.id, b.id); s = ln.sketch
+    const mid = addPoint(s, 7, 3); s = mid.sketch
+    s = addConstraint(s, 'midpoint', { point: mid.id, line: ln.id }).sketch
+    const parsed = parseSketch(serializeSketch(s))
+    const c = parsed.constraints.find((x) => x.type === 'midpoint')
+    expect(c).toBeTruthy()
+    expect(c.point).toBe(mid.id)
+    expect(c.line).toBe(ln.id)
+  })
+
+  it('pulls an off-midpoint point onto the midpoint of the line', async () => {
+    let s = defaultSketch('XY', 'mid-pull')
+    // Endpoints A=(0,0)=origin, B=(10,0). Midpoint should be at (5,0).
+    const b = addPoint(s, 10, 0); s = b.sketch
+    const ln = addLine(s, 'origin', b.id); s = ln.sketch
+    // Pin both endpoints so the solver can't move them to satisfy the new
+    // constraint by sliding A and B.
+    s = addConstraint(s, 'horizontal', { line: ln.id }).sketch
+    s = addConstraint(s, 'distance', { a: 'origin', b: b.id, value: 10 }).sketch
+    // Place the candidate midpoint somewhere clearly off — (7, 3).
+    const mid = addPoint(s, 7, 3); s = mid.sketch
+    s = addConstraint(s, 'midpoint', { point: mid.id, line: ln.id }).sketch
+    let result
+    try {
+      result = await solveSketch(s)
+    } catch (err) {
+      console.warn('[skip] planegcs wasm did not load in node:', err?.message)
+      return
+    }
+    const p = result.sketch.entities.find((e) => e.id === mid.id)
+    expect(p.x).toBeCloseTo(5, 4)
+    expect(p.y).toBeCloseTo(0, 4)
+  }, 30000)
+
+  it('is a no-op on an already-aligned input (point already at midpoint)', async () => {
+    let s = defaultSketch('XY', 'mid-noop')
+    const b = addPoint(s, 10, 0); s = b.sketch
+    const ln = addLine(s, 'origin', b.id); s = ln.sketch
+    s = addConstraint(s, 'horizontal', { line: ln.id }).sketch
+    s = addConstraint(s, 'distance', { a: 'origin', b: b.id, value: 10 }).sketch
+    const mid = addPoint(s, 5, 0); s = mid.sketch
+    s = addConstraint(s, 'midpoint', { point: mid.id, line: ln.id }).sketch
+    let result
+    try {
+      result = await solveSketch(s)
+    } catch (err) {
+      console.warn('[skip] planegcs wasm did not load in node:', err?.message)
+      return
+    }
+    const p = result.sketch.entities.find((e) => e.id === mid.id)
+    expect(p.x).toBeCloseTo(5, 4)
+    expect(p.y).toBeCloseTo(0, 4)
+    // Status should at minimum not be 'conflict'.
+    expect(result.status).not.toBe('conflict')
+  }, 30000)
+})
+
+describe('fixed constraint', () => {
+  it('captures and round-trips x/y on the constraint payload', () => {
+    let s = defaultSketch('XY', 'fix-rt')
+    const p = addPoint(s, 3, 7); s = p.sketch
+    s = addConstraint(s, 'fixed', { point: p.id, x: 3, y: 7 }).sketch
+    const parsed = parseSketch(serializeSketch(s))
+    const c = parsed.constraints.find((x) => x.type === 'fixed')
+    expect(c).toBeTruthy()
+    expect(c.point).toBe(p.id)
+    expect(c.x).toBe(3)
+    expect(c.y).toBe(7)
+  })
+
+  it('keeps a fixed point at its captured location after solve', async () => {
+    let s = defaultSketch('XY', 'fix-pin')
+    // Two free points; pin the first at (4, 2). After solve it must still be there.
+    const a = addPoint(s, 4, 2); s = a.sketch
+    const b = addPoint(s, 9, 9); s = b.sketch
+    s = addConstraint(s, 'fixed', { point: a.id, x: 4, y: 2 }).sketch
+    let result
+    try {
+      result = await solveSketch(s)
+    } catch (err) {
+      console.warn('[skip] planegcs wasm did not load in node:', err?.message)
+      return
+    }
+    const pa = result.sketch.entities.find((e) => e.id === a.id)
+    expect(pa.x).toBeCloseTo(4, 4)
+    expect(pa.y).toBeCloseTo(2, 4)
+    // The other point is untouched (no constraints reference it).
+    const pb = result.sketch.entities.find((e) => e.id === b.id)
+    expect(pb.x).toBeCloseTo(9, 4)
+    expect(pb.y).toBeCloseTo(9, 4)
+  }, 30000)
+
+  it('holds the fixed point even when a connected distance constraint would otherwise pull it', async () => {
+    // A distance constraint between origin and a fixed point A at (4, 0)
+    // matches the captured value exactly; the solver should converge with
+    // A still at (4, 0) and no conflict.
+    let s = defaultSketch('XY', 'fix-with-distance')
+    const a = addPoint(s, 4, 0); s = a.sketch
+    s = addConstraint(s, 'fixed', { point: a.id, x: 4, y: 0 }).sketch
+    s = addConstraint(s, 'distance', { a: 'origin', b: a.id, value: 4 }).sketch
+    let result
+    try {
+      result = await solveSketch(s)
+    } catch (err) {
+      console.warn('[skip] planegcs wasm did not load in node:', err?.message)
+      return
+    }
+    expect(result.status).not.toBe('conflict')
+    const pa = result.sketch.entities.find((e) => e.id === a.id)
+    expect(pa.x).toBeCloseTo(4, 4)
+    expect(pa.y).toBeCloseTo(0, 4)
+  }, 30000)
+
+  it('removes 2 DOF from the estimator (status reaches "fully" with one fixed point)', async () => {
+    // A bare point + a fixed constraint pinning its (x, y) → DOF = 0.
+    let s = defaultSketch('XY', 'fix-dof')
+    const a = addPoint(s, 1, 2); s = a.sketch
+    s = addConstraint(s, 'fixed', { point: a.id, x: 1, y: 2 }).sketch
+    let result
+    try {
+      result = await solveSketch(s)
+    } catch (err) {
+      console.warn('[skip] planegcs wasm did not load in node:', err?.message)
+      return
+    }
+    expect(result.dofCount).toBe(0)
+    expect(result.status).toBe('fully')
+  }, 30000)
+})
+
+// ---------------------------------------------------------------------------
+// New constraint types: radius + diameter.
+//
+// Both target a single circle/arc entity. `radius` pins the entity's radius
+// to the supplied value; `diameter` does the same with value/2 (planegcs has
+// dedicated `circle_radius` and `circle_diameter` primitives, used directly).
+// We test that:
+//   - The constraints round-trip through serialize/parse with the entity ref
+//     and value preserved.
+//   - The solver pulls a circle with a wrong starting radius to the supplied
+//     radius value.
+//   - The diameter constraint shrinks the radius to value/2.
+//   - Re-solving with a new value produces the new size.
+
+describe('radius constraint', () => {
+  it('round-trips through serialize/parse with circle ref + value', () => {
+    let s = defaultSketch('XY', 'rad-rt')
+    const c = addCircle(s, 'origin', 5); s = c.sketch
+    s = addConstraint(s, 'radius', { circle: c.id, value: 5 }).sketch
+    const parsed = parseSketch(serializeSketch(s))
+    const cn = parsed.constraints.find((x) => x.type === 'radius')
+    expect(cn).toBeTruthy()
+    expect(cn.circle).toBe(c.id)
+    expect(cn.value).toBe(5)
+  })
+
+  it('pulls a circle with wrong starting radius to the constrained value', async () => {
+    let s = defaultSketch('XY', 'rad-pull')
+    const c = addCircle(s, 'origin', 3); s = c.sketch
+    s = addConstraint(s, 'radius', { circle: c.id, value: 7 }).sketch
+    let result
+    try {
+      result = await solveSketch(s)
+    } catch (err) {
+      console.warn('[skip] planegcs wasm did not load in node:', err?.message)
+      return
+    }
+    const ce = result.sketch.entities.find((e) => e.id === c.id)
+    expect(ce.radius).toBeCloseTo(7, 4)
+    expect(result.status).not.toBe('conflict')
+  }, 30000)
+
+  it('re-solves to a new value when the constraint value changes', async () => {
+    let s = defaultSketch('XY', 'rad-resize')
+    const c = addCircle(s, 'origin', 4); s = c.sketch
+    s = addConstraint(s, 'radius', { circle: c.id, value: 12 }).sketch
+    let result
+    try {
+      result = await solveSketch(s)
+    } catch (err) {
+      console.warn('[skip] planegcs wasm did not load in node:', err?.message)
+      return
+    }
+    const ce = result.sketch.entities.find((e) => e.id === c.id)
+    expect(ce.radius).toBeCloseTo(12, 4)
+  }, 30000)
+})
+
+describe('diameter constraint', () => {
+  it('round-trips through serialize/parse with circle ref + value', () => {
+    let s = defaultSketch('XY', 'dia-rt')
+    const c = addCircle(s, 'origin', 5); s = c.sketch
+    s = addConstraint(s, 'diameter', { circle: c.id, value: 10 }).sketch
+    const parsed = parseSketch(serializeSketch(s))
+    const cn = parsed.constraints.find((x) => x.type === 'diameter')
+    expect(cn).toBeTruthy()
+    expect(cn.circle).toBe(c.id)
+    expect(cn.value).toBe(10)
+  })
+
+  it('shrinks a circle so its radius is value/2', async () => {
+    let s = defaultSketch('XY', 'dia-pull')
+    const c = addCircle(s, 'origin', 3); s = c.sketch
+    // Diameter = 14 → radius should land on 7.
+    s = addConstraint(s, 'diameter', { circle: c.id, value: 14 }).sketch
+    let result
+    try {
+      result = await solveSketch(s)
+    } catch (err) {
+      console.warn('[skip] planegcs wasm did not load in node:', err?.message)
+      return
+    }
+    const ce = result.sketch.entities.find((e) => e.id === c.id)
+    expect(ce.radius).toBeCloseTo(7, 4)
+    expect(result.status).not.toBe('conflict')
+  }, 30000)
 })

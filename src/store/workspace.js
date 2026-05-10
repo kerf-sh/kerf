@@ -25,6 +25,8 @@ import {
   parseFeature, serializeFeature, DEFAULT_FEATURE, cancelFeatures, destroyOcct,
 } from '../lib/occtRunner.js'
 import { runCircuit, cancelCircuit, DEFAULT_CIRCUIT } from '../lib/circuitRunner.js'
+import { extractBoardOutline } from '../lib/circuitOutline.js'
+import { sketchToGeom2 } from '../lib/sketchGeom2.js'
 import { meshCache } from '../lib/meshCache.js'
 import { git as gitApi } from '../cloud/api.js'
 
@@ -221,6 +223,7 @@ const initial = {
   // and consumed by CircuitEditor to highlight Schematic / PCB / 3D.
   selectedCircuitRefdes: null,
   selectedCircuitNet: null,
+  selectedCircuitComponentId: null,
 
   // BOM state (project-level, set on demand by loadBOM(projectId)):
   bomState: { rows: [], total: null, warnings: [], loading: false, error: null },
@@ -848,6 +851,9 @@ export const useWorkspace = create((set, get) => ({
   },
   selectCircuitNet: (name) => {
     set({ selectedCircuitNet: name || null, selectedCircuitRefdes: null })
+  },
+  selectCircuitComponent: (id) => {
+    set({ selectedCircuitComponentId: id || null })
   },
 
   // Library-mapping accessors for the active circuit file. The mapping lives
@@ -2575,6 +2581,14 @@ async function resolveAssemblyParts(_get, projectId, contentJson) {
   return resolveAssemblyPartsHelper({
     content: contentJson,
     loadParts: (fileId) => loadComponentParts(projectId, fileId),
+    // Cross-project external_ref dispatch (ROADMAP row 67 Phase 2). For
+    // `board_outline_2d` we fetch the source `.circuit.tsx`, compile it via
+    // the worker, run the resulting CircuitJSON through `extractBoardOutline`
+    // to get a `.sketch`-shape polygon, then hand it to `sketchToGeom2` so
+    // the host assembly receives a real 2D profile (not the old degenerate
+    // slab placeholder). Other ref kinds — `board_3d`, `mesh` — fall through
+    // to an empty-parts result here; they're wired in their own follow-ups.
+    loadExternalParts: (ref) => loadExternalComponentParts(ref),
     onMissing: (componentId, partId) => {
       // Best-effort UI surface; the renderer will simply skip the component.
       try {
@@ -2584,6 +2598,52 @@ async function resolveAssemblyParts(_get, projectId, contentJson) {
       } catch { /* ignore */ }
     },
   })
+}
+
+// Cross-project loader: turn an `external_ref` into the resolver's expected
+// `[{id, geom, color?}]` shape. Currently handles `board_outline_2d`; other
+// kinds return [] (assembly resolver gracefully skips). The compile path is
+// the source of truth — the derived-artifacts cache lookup (assembly.js
+// `loadExternalParts`) is a separate optimisation we'll wire when the
+// backend cache populator ships. Caches by (file_id, content-hash) so a
+// re-render of the same external source is free.
+async function loadExternalComponentParts(ref) {
+  if (!ref || !ref.kind) return []
+  if (ref.kind !== 'board_outline_2d') {
+    // Non-outline cross-project kinds aren't wired here yet. Returning []
+    // makes the resolver skip the component (graceful, no crash).
+    return []
+  }
+  let file
+  try {
+    file = await api.getFile(ref.project_id, ref.file_id)
+  } catch (err) {
+    console.warn(`board_outline_2d: failed to fetch ${ref.project_id}/${ref.file_id}:`, err)
+    return []
+  }
+  const sig = strHash(file?.content || '')
+  const k = cacheKey(ref.file_id, `bo2d::${sig}`)
+  const hit = componentResultCache.get(k)
+  if (hit) return hit.parts
+  // Compile the .circuit.tsx → CircuitJSON. The worker is the source of
+  // truth; we don't fall back to a main-thread compile (the dependency
+  // surface is too big). On compile failure we still emit the helper's
+  // fallback rectangle so the host assembly renders *something*.
+  const res = await runCircuit(file?.content || '')
+  if (res && res.error) {
+    console.warn(`board_outline_2d: compile failed for ${ref.project_id}/${ref.file_id}: ${res.error}`)
+  }
+  const sketchLike = extractBoardOutline(Array.isArray(res?.raw) ? res.raw : null)
+  let geom
+  try {
+    geom = sketchToGeom2(sketchLike)
+  } catch (err) {
+    console.warn(`board_outline_2d: sketchToGeom2 failed for ${ref.project_id}/${ref.file_id}:`, err)
+    return []
+  }
+  const parts = [{ id: '__board_outline__', geom }]
+  componentResultCache.set(k, { parts })
+  return parts
 }
 
 // loadComponentParts: fetch + run a referenced file. JSCAD or STEP or nested

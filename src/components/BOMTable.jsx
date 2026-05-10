@@ -65,6 +65,17 @@ export default function BOMTable({
           <Th className="text-right tabular-nums">Unit</Th>
           <Th className="text-right tabular-nums">Total</Th>
           <Th>Distributor</Th>
+          {/* Distributor metadata columns (BOM UX rework Phase 1) — pulled
+              from the part's distributors[] entry with the cheapest unit
+              price. Read-only; em-dash when the part hasn't been refreshed
+              by `distributors.RefreshPart` yet. */}
+          <Th className="text-right tabular-nums">MOQ</Th>
+          <Th className="text-right tabular-nums">Lead</Th>
+          <Th className="text-right tabular-nums">U.Price</Th>
+          {/* Alternates — non-cheapest distributor entries from the same
+              part. Compact pills, capped at 3 with `+N more` overflow.
+              Empty (em-dash) when the part has 0–1 distributors. */}
+          <Th>Alternates</Th>
           <Th>Note</Th>
         </tr>
       </thead>
@@ -96,6 +107,10 @@ function BOMRow({ row, editable, override, onChangeOverride, onOpen, compact }) 
   const nonStocked = override?.non_stocked === true || row.non_stocked === true
   const noteFromBackend = typeof row.note === 'string' ? row.note : ''
   const note = override?.note != null ? override.note : noteFromBackend
+  // Distributor metadata — picked once per row so the three new columns
+  // share the same entry (otherwise MOQ might come from one distributor
+  // and lead-time from another, which would mislead the user).
+  const distMeta = pickCheapestDistributor(part.distributors)
 
   return (
     <tr className={`border-b border-ink-850 hover:bg-ink-900/50 transition-colors ${nonStocked ? 'opacity-70' : ''}`}>
@@ -205,6 +220,37 @@ function BOMRow({ row, editable, override, onChangeOverride, onOpen, compact }) 
         ) : (
           <span className="text-ink-600">—</span>
         )}
+      </Td>
+      {/* MOQ / Lead / Unit-price — surfaced from the cheapest distributor
+          entry on the part. When the part has no refreshed distributor
+          data, all three render an em-dash. */}
+      <Td className="text-right tabular-nums text-ink-400">
+        {distMeta?.moq != null && Number.isFinite(Number(distMeta.moq))
+          ? Number(distMeta.moq).toLocaleString()
+          : <span className="text-ink-600">—</span>}
+      </Td>
+      <Td className="text-right tabular-nums text-ink-400">
+        {distMeta?.lead_time_days != null && Number.isFinite(Number(distMeta.lead_time_days))
+          ? <span title={`${distMeta.lead_time_days} day${Number(distMeta.lead_time_days) === 1 ? '' : 's'}`}>
+              {formatLeadTime(Number(distMeta.lead_time_days))}
+            </span>
+          : <span className="text-ink-600">—</span>}
+      </Td>
+      <Td className="text-right tabular-nums text-ink-300">
+        {distMeta && typeof distMeta.price_usd === 'number'
+          ? formatUSD(distMeta.price_usd)
+          : distMeta && typeof distMeta.price_min === 'number'
+            ? (typeof distMeta.price_max === 'number' && distMeta.price_max !== distMeta.price_min
+                ? <span title={`${formatUSD(distMeta.price_min)} – ${formatUSD(distMeta.price_max)}`}>{formatUSD(distMeta.price_min)}</span>
+                : formatUSD(distMeta.price_min))
+            : <span className="text-ink-600">—</span>}
+      </Td>
+      {/* Alternates — every distributor entry on the part except the
+          cheapest one shown in U.Price. Sorted by unit price asc so the
+          cheapest alternate leads. Capped at 3; remainder collapsed to
+          `+N more` (full list available in tooltip). */}
+      <Td>
+        <AlternateDistributors distributors={part.distributors} cheapest={distMeta} />
       </Td>
       <Td>
         {editable ? (
@@ -411,6 +457,108 @@ export function formatUSD(n) {
   if (typeof n !== 'number' || !Number.isFinite(n)) return '—'
   if (Math.abs(n) < 1) return `$${n.toFixed(4)}`
   return `$${n.toFixed(2)}`
+}
+
+// pickCheapestDistributor — among the part's distributor entries, return the
+// one with the lowest unit price (price_usd, falling back to price_min when
+// price_usd is absent). Returns null if the array is missing/empty or every
+// entry lacks a usable price. Used by the MOQ / Lead / U.Price columns to
+// expose the most relevant supply data without making the user click into
+// the part page.
+//
+// Tolerant on shape: backend `RefreshPart` (sync.go) only persists name/sku/
+// url/price_usd/stock/fetched_at today, but distributor providers may grow
+// `moq`, `lead_time_days`, `price_min`, `price_max` later — those are
+// passed through as-is when present.
+export function pickCheapestDistributor(distributors) {
+  if (!Array.isArray(distributors) || distributors.length === 0) return null
+  let best = null
+  let bestPrice = Infinity
+  for (const d of distributors) {
+    if (!d || typeof d !== 'object') continue
+    const candidate = typeof d.price_usd === 'number' && Number.isFinite(d.price_usd)
+      ? d.price_usd
+      : (typeof d.price_min === 'number' && Number.isFinite(d.price_min) ? d.price_min : null)
+    if (candidate == null) continue
+    if (candidate < bestPrice) {
+      best = d
+      bestPrice = candidate
+    }
+  }
+  // No prices anywhere — surface MOQ / lead-time from the first entry so the
+  // user still sees something useful when only metadata was scraped.
+  if (!best) return distributors[0] || null
+  return best
+}
+
+// pickAlternates — every distributor entry that has a usable unit price and
+// isn't the `cheapest` one (which is already surfaced in the U.Price column).
+// Returned sorted by unit price ascending so the next-cheapest alternate
+// leads the list. Defensive: empty array when `distributors` is missing /
+// empty / single-entry, or when no entry carries a numeric price.
+//
+// Pure (no React) so the BOM helpers test can exercise the ranking logic
+// directly without rendering.
+export function pickAlternates(distributors, cheapest) {
+  if (!Array.isArray(distributors) || distributors.length <= 1) return []
+  const out = []
+  for (const d of distributors) {
+    if (!d || typeof d !== 'object') continue
+    if (d === cheapest) continue
+    const price = typeof d.price_usd === 'number' && Number.isFinite(d.price_usd)
+      ? d.price_usd
+      : (typeof d.price_min === 'number' && Number.isFinite(d.price_min) ? d.price_min : null)
+    if (price == null) continue
+    out.push({ entry: d, price })
+  }
+  out.sort((a, b) => a.price - b.price)
+  return out
+}
+
+// AlternateDistributors — renders the row of pills for the Alternates column.
+// Kept as a tiny helper component so the row body stays readable. Visual
+// details:
+//   - First 3 alternates as `<name> <price>` separated by `•`.
+//   - 4+ collapses the tail to `+N more` with a tooltip listing the rest.
+//   - text-[10px] monospace, ink-500 muted palette.
+function AlternateDistributors({ distributors, cheapest }) {
+  const alternates = pickAlternates(distributors, cheapest)
+  if (alternates.length === 0) {
+    return <span className="text-ink-600">—</span>
+  }
+  const visible = alternates.slice(0, 3)
+  const overflow = alternates.slice(3)
+  const overflowTitle = overflow.length > 0
+    ? overflow.map(({ entry, price }) => `${entry.name || '?'} ${formatUSD(price)}`).join(' • ')
+    : ''
+  return (
+    <span className="font-mono text-[10px] text-ink-500 inline-flex flex-wrap items-center gap-x-1.5">
+      {visible.map(({ entry, price }, i) => (
+        <span key={`${entry?.name || '?'}::${i}`} className="whitespace-nowrap">
+          <span className="text-ink-400">{entry?.name || '?'}</span>{' '}
+          <span className="text-ink-300">{formatUSD(price)}</span>
+          {i < visible.length - 1 && <span className="text-ink-700"> {'•'}</span>}
+        </span>
+      ))}
+      {overflow.length > 0 && (
+        <span
+          className="text-ink-600 whitespace-nowrap"
+          title={overflowTitle}
+        >
+          {'•'} +{overflow.length} more
+        </span>
+      )}
+    </span>
+  )
+}
+
+// formatLeadTime — `5d` for ≤14 days, `12 wk` for longer periods. The cutoff
+// matches the canonical guidance in the task spec; weeks read better than
+// days once the lead time exceeds two-week supply windows.
+export function formatLeadTime(days) {
+  if (!Number.isFinite(days) || days < 0) return '—'
+  if (days <= 14) return `${Math.round(days)}d`
+  return `${Math.round(days / 7)} wk`
 }
 
 export function totalQty(rows) {

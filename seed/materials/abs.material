@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "name": "ABS",
+  "category": "polymer/thermoplastic/abs",
+  "common_names": ["acrylonitrile butadiene styrene"],
+  "color_hex": "#dcdcd2",
+  "mechanical": {
+    "E_GPa": 2.3,
+    "G_GPa": 0.85,
+    "nu": 0.35,
+    "yield_MPa": 41,
+    "ultimate_MPa": 44,
+    "elongation_pct": 25
+  },
+  "thermal": {
+    "alpha_per_K": 90e-6,
+    "k_W_mK": 0.17,
+    "cp_J_kgK": 1400,
+    "T_min_C": -40,
+    "T_max_C": 80
+  },
+  "physical": {
+    "rho_kg_m3": 1040
+  },
+  "callout": "ABS",
+  "notes": "Tough, impact-resistant thermoplastic. Common for injection-molded enclosures and FDM printing. Source: MatWeb (typical injection-molding grade)."
+}

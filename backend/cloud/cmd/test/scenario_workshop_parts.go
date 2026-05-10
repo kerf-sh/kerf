@@ -37,16 +37,37 @@ func runWorkshopParts(ctx context.Context, env *testEnv, suite *Suite) {
 		return
 	}
 
+	// --- Seed workspaces + memberships post-1746577400000. ---
+	verifiedWS := uuid.New().String()
+	regularWS := uuid.New().String()
+	if _, err := env.Pool.Exec(ctx, `
+		insert into workspaces(id, slug, name, created_by)
+		values
+		  ($1, $2, 'Verified WS', $3),
+		  ($4, $5, 'Regular WS',  $6)
+	`, verifiedWS, "verified-ws-"+verifiedWS[:8], verifiedID,
+		regularWS, "regular-ws-"+regularWS[:8], regularID,
+	); !suite.AssertNoError(sc, "seed workspaces", err) {
+		return
+	}
+	if _, err := env.Pool.Exec(ctx, `
+		insert into workspace_members(workspace_id, user_id, role)
+		values ($1, $2, 'owner'), ($3, $4, 'owner')
+	`, verifiedWS, verifiedID, regularWS, regularID,
+	); !suite.AssertNoError(sc, "seed workspace_members", err) {
+		return
+	}
+
 	// --- Seed two projects: one verified-owned (public), one regular-owned
 	//     (also public). Visibility column is the project-level filter. ---
 	verifiedProjID := uuid.New().String()
 	regularProjID := uuid.New().String()
 	if _, err := env.Pool.Exec(ctx, `
-		insert into projects(id, owner_id, name, description, visibility)
+		insert into projects(id, workspace_id, name, description, visibility)
 		values
 		  ($1, $2, 'Verified Library', '', 'public'),
 		  ($3, $4, 'Regular Library',  '', 'public')
-	`, verifiedProjID, verifiedID, regularProjID, regularID); !suite.AssertNoError(sc, "seed projects", err) {
+	`, verifiedProjID, verifiedWS, regularProjID, regularWS); !suite.AssertNoError(sc, "seed projects", err) {
 		return
 	}
 
@@ -54,9 +75,9 @@ func runWorkshopParts(ctx context.Context, env *testEnv, suite *Suite) {
 	// NOT appear (project visibility filter is the gate).
 	privateProjID := uuid.New().String()
 	if _, err := env.Pool.Exec(ctx, `
-		insert into projects(id, owner_id, name, visibility)
+		insert into projects(id, workspace_id, name, visibility)
 		values ($1, $2, 'Private Stash', 'private')
-	`, privateProjID, regularID); !suite.AssertNoError(sc, "seed private proj", err) {
+	`, privateProjID, regularWS); !suite.AssertNoError(sc, "seed private proj", err) {
 		return
 	}
 
@@ -223,13 +244,26 @@ func runWorkshopParts(ctx context.Context, env *testEnv, suite *Suite) {
 func runWorkshopListings(ctx context.Context, env *testEnv, suite *Suite) {
 	const sc = "workshop_listings"
 
-	// Seed a single user + public project.
+	// Seed a single user + workspace + public project.
 	userID := CloudTestUserID
+	wsID := uuid.New().String()
+	if _, err := env.Pool.Exec(ctx, `
+		insert into workspaces(id, slug, name, created_by)
+		values ($1, $2, 'Cool WS', $3)
+	`, wsID, "cool-ws-"+wsID[:8], userID); !suite.AssertNoError(sc, "seed workspace", err) {
+		return
+	}
+	if _, err := env.Pool.Exec(ctx, `
+		insert into workspace_members(workspace_id, user_id, role)
+		values ($1, $2, 'owner')
+	`, wsID, userID); !suite.AssertNoError(sc, "seed workspace_member", err) {
+		return
+	}
 	projID := uuid.New().String()
 	if _, err := env.Pool.Exec(ctx, `
-		insert into projects(id, owner_id, name, description, visibility)
+		insert into projects(id, workspace_id, name, description, visibility)
 		values ($1, $2, 'Cool Project', 'a project', 'public')
-	`, projID, userID); !suite.AssertNoError(sc, "seed project", err) {
+	`, projID, wsID); !suite.AssertNoError(sc, "seed project", err) {
 		return
 	}
 

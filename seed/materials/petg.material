@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "name": "PETG",
+  "category": "polymer/thermoplastic/polyester",
+  "common_names": ["polyethylene terephthalate glycol-modified"],
+  "color_hex": "#d6e1de",
+  "mechanical": {
+    "E_GPa": 2.1,
+    "G_GPa": 0.78,
+    "nu": 0.4,
+    "yield_MPa": 50,
+    "ultimate_MPa": 55,
+    "elongation_pct": 25
+  },
+  "thermal": {
+    "alpha_per_K": 60e-6,
+    "k_W_mK": 0.21,
+    "cp_J_kgK": 1300,
+    "T_min_C": -40,
+    "T_max_C": 70
+  },
+  "physical": {
+    "rho_kg_m3": 1270
+  },
+  "callout": "PETG",
+  "notes": "Tough, transparent thermoplastic. Good print quality and chemical resistance. Slightly higher heat tolerance than PLA. Source: MatWeb (typical extrusion grade)."
+}

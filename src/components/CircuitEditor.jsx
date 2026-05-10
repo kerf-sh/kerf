@@ -22,6 +22,12 @@
 //     The full 3D experience (per-component STEP / GLB models) is a Phase-2
 //     follow-up; v1 is the box approximation so the user gets a sense of
 //     placement without paying download costs.
+//   * When a refdes has a Library mapping (see circuitMappings.js), we tint
+//     the box with a "linked" hue and prefix the id with `lib:` so the
+//     user sees at a glance which components would resolve to a real
+//     Library Part. Real STEP/JSCAD substitution into the scene is a
+//     subsequent slice — the helper `resolveLibraryCadComponent` is the
+//     pure seam that follow-up uses.
 //   * Source tab reuses the existing CodeEditor — no special TSX intellisense
 //     is wired up beyond what Monaco infers from the `.tsx` extension. We
 //     could extend with the existing ambient-typedef trick but defer to
@@ -35,6 +41,8 @@ import Renderer from './Renderer.jsx'
 import SchematicView from './SchematicView.jsx'
 import PCBView from './PCBView.jsx'
 import { useWorkspace } from '../store/workspace.js'
+import { parseLibraryMappings, resolveLibraryCadComponent, evalLibraryModel3D } from '../lib/circuitMappings.js'
+import { api } from '../lib/api.js'
 
 const COMPILE_DEBOUNCE_MS = 500
 
@@ -49,8 +57,18 @@ const COMPILE_DEBOUNCE_MS = 500
 // The Renderer's part shape is `{ id, geom: Geom3, color?: [r,g,b] }`. We
 // build Geom3 via JSCAD primitives so the Renderer's existing pipeline
 // (geom3ToBufferGeometry) handles tessellation.
-function buildBoardParts(circuitJson) {
+//
+// `libraryGeoms` is an optional `Map<refdes, parts[]>` carrying the
+// resolved Library-Part JSCAD output for refdes whose `model_3d` we've
+// already evaluated. When present, the resolved parts are translated /
+// rotated to the cad_component's pose and emitted in place of the teal
+// box. Any refdes not in the map (still resolving, or fall-through to
+// box) keeps the existing teal-tinted cuboid.
+function buildBoardParts(circuitJson, mappings, libraryGeoms) {
   if (!Array.isArray(circuitJson)) return []
+  const safeMappings = mappings && typeof mappings === 'object' && !Array.isArray(mappings)
+    ? mappings
+    : {}
   const { primitives, transforms, colors } = JSCADModeling
   const parts = []
 
@@ -119,15 +137,56 @@ function buildBoardParts(circuitJson) {
     if (sy <= 0) sy = 1.0
     if (sz <= 0) sz = 0.5
 
+    const name = src?.name || `C${idx}`
+    // If this refdes is mapped to a Library Part with a JSCAD `model_3d`
+    // we already evaluated, splice the real geometry in (rotated +
+    // translated to the cad_component's pose). Falls through to the teal
+    // box if the model isn't ready yet, the eval failed, or the Part has
+    // no `model_3d` field.
+    const linkedFileId = resolveLibraryCadComponent(name, safeMappings)
+    const resolvedParts = (linkedFileId && libraryGeoms && libraryGeoms.get)
+      ? libraryGeoms.get(name)
+      : null
+    if (linkedFileId && Array.isArray(resolvedParts) && resolvedParts.length > 0) {
+      try {
+        let subIdx = 0
+        for (const rp of resolvedParts) {
+          if (!rp || !rp.geom) continue
+          let g = rp.geom
+          g = transforms.rotate([rx, ry, rz], g)
+          g = transforms.translate([px, py, pz], g)
+          // Multi-part Library models get suffixed ids so the Renderer can
+          // distinguish them; single-part keeps the bare `lib:<refdes>` id
+          // for parity with the existing selection contract.
+          const id = resolvedParts.length === 1
+            ? `lib:${name}`
+            : `lib:${name}:${rp.id ?? subIdx}`
+          parts.push({ id, geom: g })
+          subIdx++
+        }
+        idx++
+        continue
+      } catch (err) {
+        // Geom3 transform threw — fall through to the box approximation
+        // below so the user still sees something.
+        // eslint-disable-next-line no-console
+        console.warn(`CircuitEditor: failed to splice library geom for ${name}:`, err)
+      }
+    }
+
     let geom = primitives.cuboid({ size: [sx, sy, sz] })
     geom = transforms.rotate([rx, ry, rz], geom)
     geom = transforms.translate([px, py, pz + sz / 2], geom)
-    // Colour-code by component name's first character (R=red, C=blue, etc.)
-    // so the user can read placement at a glance. Subdued so it doesn't
-    // overpower the board.
-    const name = src?.name || `C${idx}`
-    geom = colors.colorize(componentColor(name), geom)
-    parts.push({ id: name, geom })
+    if (linkedFileId) {
+      geom = colors.colorize([0.30, 0.75, 0.70], geom)
+      parts.push({ id: `lib:${name}`, geom })
+    } else {
+      // Colour-code by component name's first character (R=red, C=blue, etc.)
+      // so the user can read placement at a glance. Subdued so it doesn't
+      // overpower the board.
+      geom = colors.colorize(componentColor(name), geom)
+      parts.push({ id: name, geom })
+    }
     idx++
   }
   return parts
@@ -176,19 +235,88 @@ export default function CircuitEditor() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [w.currentFileContent, w.currentFile?.id])
 
+  // Library mappings live in the source as a marker comment; parsing is
+  // cheap (regex scan over the first 32 lines) so we redo it whenever the
+  // source changes. The result is memoised so the 3D pipeline only rebuilds
+  // when mappings actually flip.
+  const libraryMappings = useMemo(
+    () => parseLibraryMappings(w.currentFileContent || ''),
+    [w.currentFileContent],
+  )
+
+  // Resolved Library-Part JSCAD geometries, keyed by refdes. Populated
+  // asynchronously by the effect below; consumed by buildBoardParts. The
+  // value at each refdes is the runJscad parts array (`[{id, geom}]`).
+  // Cache key is `${refdes}::${fileId}::${contentSig}` so re-renders don't
+  // refetch and Part edits invalidate cleanly. Stored as state so a
+  // resolution triggers a re-build.
+  const [libraryGeoms, setLibraryGeoms] = useState(() => new Map())
+  // Fetched-content cache — separate so a refdes pointing at an unchanged
+  // Part doesn't refetch. Keyed by fileId → { sig, parts | null }.
+  const fetchCacheRef = useRef(new Map())
+  // Project id is needed for api.getFile. It moves rarely.
+  const projectId = w.projectId
+
+  useEffect(() => {
+    // Skip on the source/schematic/PCB tabs — only the 3D tab needs the
+    // resolved geoms. We still resolve so flipping back is instant.
+    if (!projectId) return
+    const refdesList = Object.keys(libraryMappings || {}).filter((r) => libraryMappings[r])
+    if (refdesList.length === 0) return
+    let cancelled = false
+    ;(async () => {
+      const next = new Map(libraryGeoms)
+      let changed = false
+      for (const refdes of refdesList) {
+        const fileId = libraryMappings[refdes]
+        if (!fileId) continue
+        try {
+          let entry = fetchCacheRef.current.get(fileId)
+          if (!entry) {
+            const file = await api.getFile(projectId, fileId)
+            if (cancelled) return
+            const sig = String((file?.content || '').length) + ':' + (file?.updated_at || '')
+            const result = await evalLibraryModel3D(file?.content || '')
+            if (cancelled) return
+            entry = { sig, parts: result?.parts || null }
+            fetchCacheRef.current.set(fileId, entry)
+          }
+          const cur = next.get(refdes)
+          if (cur !== entry.parts) {
+            if (entry.parts) next.set(refdes, entry.parts)
+            else next.delete(refdes)
+            changed = true
+          }
+        } catch (err) {
+          // Fetch / eval failed — fall through to the teal box. We don't
+          // negative-cache aggressively (the user might fix the Part and
+          // we want to pick that up on the next mapping touch).
+          // eslint-disable-next-line no-console
+          console.warn(`CircuitEditor: library model resolve failed for ${refdes}:`, err)
+        }
+      }
+      if (!cancelled && changed) setLibraryGeoms(next)
+    })()
+    return () => { cancelled = true }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId, libraryMappings])
+
   // Compute 3D parts on demand when the 3D tab is active. Memoised on the
-  // raw circuit JSON identity so switching tabs back is instant.
+  // raw circuit JSON identity + library mappings + resolved geoms so
+  // switching tabs back is instant and toggling a mapping recolours
+  // immediately. When the async effect lands a resolved part, the geom map
+  // identity changes and the 3D scene re-builds with the real geometry.
   const threeDParts = useMemo(() => {
     if (!w.currentCircuit?.raw) return []
     try {
-      return buildBoardParts(w.currentCircuit.raw)
+      return buildBoardParts(w.currentCircuit.raw, libraryMappings, libraryGeoms)
     } catch (err) {
       // Degrade silently — the 3D view will show its empty state.
       // eslint-disable-next-line no-console
       console.warn('CircuitEditor: failed to build 3D parts:', err)
       return []
     }
-  }, [w.currentCircuit?.raw])
+  }, [w.currentCircuit?.raw, libraryMappings, libraryGeoms])
 
   const errors = useMemo(() => {
     const list = []
@@ -242,6 +370,10 @@ export default function CircuitEditor() {
             circuitJson={w.currentCircuit?.raw || []}
             highlightRefdes={w.selectedCircuitRefdes}
             onSelectRefdes={(r) => useWorkspace.getState().selectCircuitRefdes(r)}
+            currentSource={w.currentFileContent}
+            onEditSource={(next) => useWorkspace.getState().editContent(next)}
+            selectedCircuitComponentId={w.selectedCircuitComponentId || null}
+            onSelectComponent={(id) => useWorkspace.getState().selectCircuitComponent(id)}
           />
         )}
         {tab === 'pcb' && (
@@ -252,14 +384,22 @@ export default function CircuitEditor() {
           />
         )}
         {tab === '3d' && (
-          // TODO: resolve cad_component={fileId} via Library and pull real
-          // geometry instead of the box approximation in buildBoardParts.
-          // Depends on the Library agent's work landing first.
+          // Library-mapped refdes cad_components are tinted teal and id'd
+          // `lib:<refdes>` (see buildBoardParts). Real STEP/JSCAD splicing
+          // is a follow-up; resolveLibraryCadComponent in circuitMappings.js
+          // is the pure seam that follow-up will hang off.
           <Renderer
             parts={threeDParts}
-            selectedId={w.selectedCircuitRefdes}
+            selectedId={
+              w.selectedCircuitRefdes && libraryMappings[w.selectedCircuitRefdes]
+                ? `lib:${w.selectedCircuitRefdes}`
+                : w.selectedCircuitRefdes
+            }
             hiddenIds={new Set()}
-            onPick={(id) => useWorkspace.getState().selectCircuitRefdes(id)}
+            onPick={(id) => {
+              const r = typeof id === 'string' && id.startsWith('lib:') ? id.slice(4) : id
+              useWorkspace.getState().selectCircuitRefdes(r)
+            }}
             mode="object"
             selectedFeatures={[]}
             onPickFeature={() => {}}

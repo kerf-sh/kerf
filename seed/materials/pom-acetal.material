@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "name": "POM (Acetal)",
+  "category": "polymer/thermoplastic/polyacetal",
+  "common_names": ["acetal", "Delrin", "polyoxymethylene"],
+  "color_hex": "#e6e2db",
+  "mechanical": {
+    "E_GPa": 3.1,
+    "G_GPa": 1.1,
+    "nu": 0.35,
+    "yield_MPa": 67,
+    "ultimate_MPa": 75,
+    "elongation_pct": 25
+  },
+  "thermal": {
+    "alpha_per_K": 110e-6,
+    "k_W_mK": 0.31,
+    "cp_J_kgK": 1465,
+    "T_min_C": -40,
+    "T_max_C": 105
+  },
+  "physical": {
+    "rho_kg_m3": 1410
+  },
+  "callout": "POM",
+  "notes": "Stiff, low-friction engineering thermoplastic. Standard pick for gears, bushings, slide bearings. Excellent dimensional stability. Source: MatWeb (homopolymer / Delrin grade)."
+}

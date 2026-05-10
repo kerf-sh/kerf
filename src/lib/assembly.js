@@ -41,6 +41,7 @@
 
 import * as THREE from 'three'
 import { applyMatrixToGeom } from './geom3.js'
+import { library } from '../cloud/api.js'
 
 const DEG = Math.PI / 180
 
@@ -170,7 +171,10 @@ export function parseAssembly(jsonStr) {
   const seenIds = new Set()
   for (let i = 0; i < list.length; i++) {
     const c = list[i] || {}
-    if (!c.file_id) continue
+    const preRef = parseExternalRef(c.external_ref)
+    // External_ref components don't need a local `file_id`; the ref carries
+    // the cross-project pointer. Local components still require file_id.
+    if (!c.file_id && !preRef) continue
     let id = typeof c.id === 'string' && c.id.trim() ? c.id : `c${i}`
     // Force unique ids by suffixing on collision.
     let base = id
@@ -195,7 +199,7 @@ export function parseAssembly(jsonStr) {
 
     const out = {
       id,
-      file_id: String(c.file_id),
+      file_id: c.file_id ? String(c.file_id) : '',
       object_id: rawObj,
       transform,
     }
@@ -215,6 +219,12 @@ export function parseAssembly(jsonStr) {
     if (typeof c.config_id === 'string' && c.config_id.trim()) {
       out.config_id = c.config_id.trim()
     }
+    // Cross-project parts (ROADMAP row 68): a component may carry an
+    // `external_ref` pointing at a file in another project. When present and
+    // valid, the resolver dispatches via `loadExternalParts(ref)` instead of
+    // the local `loadParts(file_id)` path. Required ids are project_id +
+    // file_id; kind defaults to 'board_3d', pin to 'tracking_latest'.
+    if (preRef) out.external_ref = preRef
     components.push(out)
   }
 
@@ -242,6 +252,34 @@ export function parseAssembly(jsonStr) {
 function clamp01(n) {
   if (!Number.isFinite(n)) return 0
   return Math.max(0, Math.min(1, n))
+}
+
+const EXTERNAL_REF_KINDS = new Set(['board_3d', 'board_outline_2d'])
+
+// parseExternalRef: tolerant — returns null when project_id/file_id missing.
+// Unknown kinds collapse to 'board_3d'; missing/empty pin → 'tracking_latest'.
+//
+// `last_seen_updated_at` is an ISO8601 string captured by the editor the last
+// time the user viewed/consumed this cross-project source. The
+// `tracking_latest` freshness chip in AssemblyEditor compares it to the live
+// source's `updated_at`; when the live value is newer, the chip flips to
+// "source advanced". Optional — older data without the field is treated as
+// "never seen" (chip stays hidden until the first fetch records a baseline).
+function parseExternalRef(raw) {
+  if (!raw || typeof raw !== 'object') return null
+  const projectId = typeof raw.project_id === 'string' ? raw.project_id.trim() : ''
+  const fileId = typeof raw.file_id === 'string' ? raw.file_id.trim() : ''
+  if (!projectId || !fileId) return null
+  const rawKind = typeof raw.kind === 'string' ? raw.kind.trim() : ''
+  const kind = EXTERNAL_REF_KINDS.has(rawKind) ? rawKind : 'board_3d'
+  const rawPin = typeof raw.pin === 'string' ? raw.pin.trim() : ''
+  const pin = rawPin || 'tracking_latest'
+  const out = { project_id: projectId, file_id: fileId, kind, pin }
+  const lastSeen = typeof raw.last_seen_updated_at === 'string'
+    ? raw.last_seen_updated_at.trim()
+    : ''
+  if (lastSeen) out.last_seen_updated_at = lastSeen
+  return out
 }
 
 // serializeAssembly: produce stable, pretty JSON for storage. Always writes
@@ -273,6 +311,8 @@ export function serializeAssembly(obj) {
     if (typeof c.config_id === 'string' && c.config_id.trim()) {
       out.config_id = c.config_id.trim()
     }
+    const ref = parseExternalRef(c.external_ref)
+    if (ref) out.external_ref = ref
     return out
   })
   const overrides = (obj && Array.isArray(obj.overrides) ? obj.overrides : [])
@@ -302,6 +342,18 @@ export function serializeAssembly(obj) {
 }
 
 export const EMPTY_ASSEMBLY = EMPTY
+
+/** Restamp a row's external_ref.last_seen_updated_at; no-op if refId unmatched. */
+export function restampExternalRefSeen(rows, refId, newUpdatedAt) {
+  if (!Array.isArray(rows)) return rows
+  let hit = false
+  const next = rows.map((r) => {
+    if (!r || r.id !== refId || !r.external_ref) return r
+    hit = true
+    return { ...r, external_ref: { ...r.external_ref, last_seen_updated_at: newUpdatedAt } }
+  })
+  return hit ? next : rows
+}
 
 // ----- Wildcard expansion (legacy migration) -------------------------------
 //
@@ -409,6 +461,11 @@ export const radToDeg = (r) => Number(r) / DEG
 //     dependencies. `configId` is the component's pinned configuration (or
 //     undefined when the component doesn't pin one) — the loader should
 //     fall back to the file's `default_config` when this is empty.
+//   loadExternalParts?: async (ref) => Promise<[{id, geom, color?}]>
+//     Cross-project dispatch (ROADMAP row 68). When a component carries an
+//     `external_ref`, the resolver calls this loader instead of `loadParts`.
+//     Optional: when missing or throwing, the component falls through to
+//     `onMissing` and contributes zero parts (graceful, no crash).
 //   onMissing?: (componentId, objectId, fileId) => void   // optional warning hook
 //
 // Behaviour:
@@ -422,26 +479,51 @@ export const radToDeg = (r) => Number(r) / DEG
 //   - If the named Object isn't found in the source's output, call
 //     onMissing(componentId, objectId, fileId) and contribute zero parts for
 //     that component (don't crash).
-export async function resolveAssemblyParts({ content, loadParts, onMissing } = {}) {
+export async function resolveAssemblyParts({ content, loadParts, loadExternalParts, onMissing } = {}) {
   const parsed = parseAssembly(content)
   if (!parsed.components || parsed.components.length === 0) return []
   const out = []
   for (const c of parsed.components) {
     if (c.visible === false) continue
-    if (!c.file_id) continue
+    const isExternal = !!c.external_ref
+    if (!isExternal && !c.file_id) continue
+
+    // External_ref dispatch: route to `loadExternalParts(ref)`. When the
+    // loader is absent or throws, fall through to `onMissing` so the UI can
+    // render a placeholder instead of crashing.
     let baseParts
-    try {
-      baseParts = await loadParts(c.file_id, c.config_id || null)
-    } catch (err) {
-      console.warn(`assembly: failed to load component ${c.id}:`, err)
-      continue
+    if (isExternal) {
+      if (typeof loadExternalParts !== 'function') {
+        if (typeof onMissing === 'function') {
+          try { onMissing(c.id, c.object_id || '', c.external_ref.file_id) } catch { /* ignore */ }
+        }
+        continue
+      }
+      try {
+        baseParts = await loadExternalParts(c.external_ref)
+      } catch (err) {
+        console.warn(`assembly: external_ref load failed for ${c.id}:`, err)
+        if (typeof onMissing === 'function') {
+          try { onMissing(c.id, c.object_id || '', c.external_ref.file_id) } catch { /* ignore */ }
+        }
+        continue
+      }
+    } else {
+      try {
+        baseParts = await loadParts(c.file_id, c.config_id || null)
+      } catch (err) {
+        console.warn(`assembly: failed to load component ${c.id}:`, err)
+        continue
+      }
     }
     if (!Array.isArray(baseParts) || baseParts.length === 0) continue
 
-    // Filter by object_id when not "*".
+    // External_ref components forward every Object the loader returns
+    // (no object_id filter — the cross-project loader has already resolved
+    // the right part). Local components filter by object_id unless wildcard.
     const objectId = c.object_id || LEGACY_WILDCARD
     let selected
-    if (objectId === LEGACY_WILDCARD) {
+    if (isExternal || objectId === LEGACY_WILDCARD) {
       selected = baseParts
     } else {
       selected = baseParts.filter((p) => p && p.id === objectId)
@@ -461,7 +543,7 @@ export async function resolveAssemblyParts({ content, loadParts, onMissing } = {
          (Math.round(c.color[1] * 255) << 8) |
           Math.round(c.color[2] * 255))
       : null
-    const isSingle = objectId !== LEGACY_WILDCARD && selected.length === 1
+    const isSingle = !isExternal && objectId !== LEGACY_WILDCARD && selected.length === 1
     for (const p of selected) {
       const transformed = applyMatrixToGeom(p.geom, m)
       if (!transformed) continue
@@ -476,4 +558,145 @@ export async function resolveAssemblyParts({ content, loadParts, onMissing } = {
     }
   }
   return out
+}
+
+// ----- Cross-project derived-artifacts cache (ROADMAP row 67 Phase 2) ------
+//
+// The backend exposes a per-source cache of compiled artifacts at
+// `POST /api/projects/:pid/files/:fid/derived` so that consumers of a
+// cross-project ref can short-circuit the recompile when the source hasn't
+// changed. The on-disk cache layer just shipped (#86); the compile-on-demand
+// half is still pending — a miss returns 501 with `{cached:false}` and the
+// caller is expected to fall through to its own recompile path.
+//
+// `external_ref.kind` (the assembly-level vocab — what the consumer is asking
+// for) maps onto a `derived_kind` (the backend cache vocab — what the
+// producer stamps into the cache):
+//
+//   external_ref kind   →  derived_kind
+//   --------------------  --------------------
+//   board_3d            →  circuit_board_3d
+//   board_outline_2d    →  sketch_geom2
+//   mesh                →  jscad_mesh
+//
+// Unknown kinds → null (caller skips the cache and goes straight to recompile).
+const DERIVED_KIND_BY_REF_KIND = {
+  board_3d: 'circuit_board_3d',
+  board_outline_2d: 'sketch_geom2',
+  mesh: 'jscad_mesh',
+}
+
+/** Map an external_ref.kind onto its derived_kind. Returns null when unmapped. */
+export function derivedKindForRefKind(kind) {
+  if (!kind || typeof kind !== 'string') return null
+  return DERIVED_KIND_BY_REF_KIND[kind] || null
+}
+
+// loadExternalParts: cache-aware cross-project loader. Tries the derived
+// cache first (via `library.lookupDerivedArtifact`, #86) and on hit decodes
+// the payload via `decodePayload(kind, payload)` — a caller-supplied decoder
+// that knows how to turn the bytes into the resolver's `[{id, geom, color?}]`
+// shape. On any of:
+//
+//   - cache miss (501) / `cached:false`
+//   - decoder threw or returned an empty/invalid result
+//   - lookup itself threw (network, auth, unexpected 4xx/5xx)
+//
+// the loader falls through to the supplied `recompile(ref)` — the existing
+// fetch-source-and-run path. The cache is strictly an optimisation; the
+// recompile path remains the source of truth.
+//
+// `lookup` defaults to `library.lookupDerivedArtifact` but can be injected
+// for tests. `decodePayload` is optional: if missing or returns null/[] we
+// also fall through.
+//
+// Write-back: after a successful recompile, if `encodePayload(kind, parts)`
+// is supplied AND returns a non-null Uint8Array, we fire-and-forget call
+// `store({projectId, fileId, derivedKind, payload})` so the next consumer
+// skips the recompile cost. The encoder lives outside this module
+// (kernel-agnostic per the existing pattern); for v1 callers can omit it
+// (cache stays unpopulated until a downstream consumer wires the encoder).
+// Failures (encode returns null, store throws, network error) are swallowed
+// silently — the populate is a best-effort optimisation and MUST NOT block
+// or alter the resolver's return value.
+//
+// Contract:
+//   encodePayload(kind: string, parts: [{id, geom, color?}]) → Uint8Array | null
+//     - Synchronous or async; awaited inside a try/catch.
+//     - Return null (or throw) to skip the populate.
+//   store({projectId, fileId, derivedKind, payload: Uint8Array}) → Promise
+//     - Defaults to `library.storeDerivedArtifact`. Tests inject mocks.
+//     - Any rejection is swallowed (debug-logged only).
+export async function loadExternalParts({
+  ref,
+  recompile,
+  // Default to the cloud library helpers so callers in production paths get
+  // both the lookup and the populate for free. Tests inject mocks to keep
+  // the module pure.
+  lookup = library.lookupDerivedArtifact.bind(library),
+  decodePayload,
+  encodePayload,
+  store = library.storeDerivedArtifact.bind(library),
+} = {}) {
+  if (!ref || typeof recompile !== 'function') return []
+  const derivedKind = derivedKindForRefKind(ref.kind)
+  if (derivedKind && typeof lookup === 'function') {
+    let res = null
+    try {
+      res = await lookup({
+        projectId: ref.project_id,
+        fileId: ref.file_id,
+        derivedKind,
+      })
+    } catch (err) {
+      // Defensive: lookup failure must not break the resolver. Fall through.
+      console.debug(`derived-cache lookup failed for ${ref.project_id}/${ref.file_id} (${derivedKind}); falling through:`, err)
+      res = null
+    }
+    if (res && res.cached && res.payload && typeof decodePayload === 'function') {
+      try {
+        const parts = await decodePayload(res.derivedKind || derivedKind, res.payload)
+        if (Array.isArray(parts) && parts.length > 0) return parts
+        console.debug(`derived-cache decode produced empty parts for ${ref.project_id}/${ref.file_id} (${derivedKind}); falling through`)
+      } catch (err) {
+        console.debug(`derived-cache decode failed for ${ref.project_id}/${ref.file_id} (${derivedKind}); falling through:`, err)
+      }
+    } else if (res && !res.cached) {
+      console.debug(`derived-cache miss for ${ref.project_id}/${ref.file_id} (${derivedKind})${res.error ? `: ${res.error}` : ''}`)
+    }
+  }
+  const parts = await recompile(ref)
+  // Fire-and-forget cache populate. Strict best-effort: any failure (encoder
+  // returns null/throws, store throws, network error) is swallowed and never
+  // affects the returned `parts`.
+  if (
+    derivedKind &&
+    typeof encodePayload === 'function' &&
+    typeof store === 'function' &&
+    Array.isArray(parts) && parts.length > 0
+  ) {
+    Promise.resolve()
+      .then(async () => {
+        let payload
+        try {
+          payload = await encodePayload(derivedKind, parts)
+        } catch (err) {
+          console.debug(`derived-cache encode failed for ${ref.project_id}/${ref.file_id} (${derivedKind}); skipping populate:`, err)
+          return
+        }
+        if (!(payload instanceof Uint8Array) || payload.length === 0) return
+        try {
+          await store({
+            projectId: ref.project_id,
+            fileId: ref.file_id,
+            derivedKind,
+            payload,
+          })
+        } catch (err) {
+          console.debug(`derived-cache store failed for ${ref.project_id}/${ref.file_id} (${derivedKind}); ignoring:`, err)
+        }
+      })
+      .catch(() => { /* unreachable — inner handler swallows everything */ })
+  }
+  return parts
 }

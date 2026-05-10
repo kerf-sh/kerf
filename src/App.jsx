@@ -10,6 +10,7 @@ import AuthCallback from './routes/AuthCallback.jsx'
 import Projects from './routes/Projects.jsx'
 import Editor from './routes/Editor.jsx'
 import Library from './routes/Library.jsx'
+import LibraryPart from './routes/LibraryPart.jsx'
 import BOMPage from './routes/BOM.jsx'
 import Profile from './routes/Profile.jsx'
 import WorkspaceSettings from './routes/WorkspaceSettings.jsx'
@@ -129,6 +130,7 @@ export default function App() {
         <Route path="/projects/:projectId/files/:fileId" element={<Editor />} />
         <Route path="/projects/:projectId/bom" element={<BOMPage />} />
         {cloudEnabled && <Route path="/library" element={<Library />} />}
+        {cloudEnabled && <Route path="/library/:slug" element={<LibraryPart />} />}
         <Route path="/admin/distributors" element={<AdminDistributors />} />
         <Route path="/admin/publishers" element={<AdminPublishers />} />
         {cloudEnabled && <Route path="/admin/email" element={<AdminEmail />} />}

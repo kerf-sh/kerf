@@ -73,9 +73,11 @@ Geometric:
 - `tangent` — `{a, b}` (line ↔ arc/circle, or two arcs/circles)
 - `equal_length` — `{line1, line2}`
 - `equal_radius` — `{c1, c2}` (circles or arcs)
-- `point_on_line` — `{point, line}`
+- `point_on_line` — `{point, line}` point lies on the line (free to slide along)
 - `point_on_arc` — `{point, arc}`
+- `midpoint` — `{point, line}` point pinned to the line's midpoint
 - `symmetric` — `{p1, p2, axis}` axis is a line id
+- `block` — `{point}` lock the point at its current `(x, y)`; pair with `coordinate_x`/`coordinate_y` if you want a specific value
 
 Dimensional (carry `value`):
 - `distance` — `{p1, p2, value}` Euclidean distance

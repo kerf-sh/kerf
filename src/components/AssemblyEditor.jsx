@@ -26,14 +26,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Eye, EyeOff, GripVertical, Layers, Plus, Trash2, ChevronDown, ChevronRight,
-  Loader2, X, Check,
+  Loader2, X, Check, AlertTriangle, ExternalLink,
 } from 'lucide-react'
 import {
   composeMatrix, decomposeMatrix, identityMatrix, parseAssembly,
   serializeAssembly, cycleCheck, radToDeg, degToRad, expandWildcardComponents,
-  LEGACY_WILDCARD,
+  restampExternalRefSeen, LEGACY_WILDCARD,
 } from '../lib/assembly.js'
 import { loadFilePartsForProject } from '../store/workspace.js'
+import { api } from '../lib/api.js'
 import LibraryPicker from './LibraryPicker.jsx'
 import InlineBOMPanel from './InlineBOMPanel.jsx'
 
@@ -94,6 +95,11 @@ function deriveRows(assembly) {
     visible: c.visible !== false,
     color: c.color || null,
     params: c.params || null,
+    // Preserve cross-project external_ref so the row can show the freshness
+    // chip and the resolver can still dispatch via loadExternalParts. The
+    // editor doesn't expose an external_ref editor yet — we just round-trip
+    // the blob untouched.
+    external_ref: c.external_ref || null,
     ...fromTransform(c.transform),
   }))
 }
@@ -111,6 +117,7 @@ function rowsToAssembly(rows) {
       if (r.visible === false) out.visible = false
       if (r.color) out.color = r.color
       if (r.params) out.params = r.params
+      if (r.external_ref) out.external_ref = r.external_ref
       return out
     }),
   }
@@ -413,6 +420,18 @@ export default function AssemblyEditor({
     if (selectedComponentId === rows[idx]?.id) onSelectComponent?.(null)
   }
 
+  // Acknowledge "I've seen the latest" for a tracking_latest external_ref —
+  // restamps last_seen_updated_at so the amber "out of date" chip clears.
+  function restampSeen(refId, newUpdatedAt) {
+    if (!refId || !newUpdatedAt) return
+    setRows((rs) => {
+      const next = restampExternalRefSeen(rs, refId, newUpdatedAt)
+      if (next === rs) return rs
+      emit(next)
+      return next
+    })
+  }
+
   function moveRow(from, to) {
     if (from === to || from < 0 || to < 0 || to >= rows.length) return
     setRows((rs) => {
@@ -498,6 +517,7 @@ export default function AssemblyEditor({
                 onRename={(name) => rename(idx, name)}
                 onPatch={(p) => updateRow(idx, p)}
                 onDelete={() => deleteRow(idx)}
+                onRestampSeen={(updatedAt) => restampSeen(row.id, updatedAt)}
                 onDragStart={() => setDragIdx(idx)}
                 onDragEnd={() => { setDragIdx(null); setDragOverIdx(null) }}
                 onDragOver={(e) => { e.preventDefault(); setDragOverIdx(idx) }}
@@ -735,7 +755,7 @@ function InsertObjectsModal({ modal, eligibleFiles, allFiles, onPickFile, onCanc
 
 function ComponentRow({
   row, files, allFiles, projectId, selected, onSelect,
-  onChangeFileId, onChangeObjectId, onRename, onPatch, onDelete,
+  onChangeFileId, onChangeObjectId, onRename, onPatch, onDelete, onRestampSeen,
   onDragStart, onDragEnd, onDragOver, onDrop, isDragOver,
 }) {
   const [editingName, setEditingName] = useState(false)
@@ -815,6 +835,12 @@ function ComponentRow({
               <span className="text-amber-400/80"> · legacy *</span>
             )}
           </button>
+        )}
+        {row.external_ref && (
+          <ExternalRefChips
+            externalRef={row.external_ref}
+            onRecordSeen={onRestampSeen}
+          />
         )}
         <span className="flex-1" />
         <button
@@ -946,6 +972,93 @@ function ComponentRow({
         </div>
       )}
     </li>
+  )
+}
+
+// ExternalRefChips — shows the cross-project source as an emerald "↗ project"
+// pill, plus an amber "source advanced" warning when the live source's
+// updated_at is newer than the component's last_seen_updated_at.
+//
+// Strategy A from ROADMAP row 68 Phase 2: live-fetch comparison. We hit
+// `api.getProject(ref.project_id)` + `api.getFile(ref.project_id, ref.file_id)`
+// once on mount per ref change. If the fetch fails (auth, network, deleted
+// source), we render nothing — never break the row.
+//
+// On first sighting (no last_seen_updated_at recorded yet) we record the
+// current updated_at as the baseline so the chip stays clean until the
+// source actually advances. The "Update component" CTA is deferred — for v1
+// the warning chip just logs to the console on click.
+function ExternalRefChips({ externalRef, onRecordSeen }) {
+  const [projectName, setProjectName] = useState(null)
+  const [liveUpdatedAt, setLiveUpdatedAt] = useState(null)
+  const [fetchFailed, setFetchFailed] = useState(false)
+
+  const projectId = externalRef?.project_id
+  const fileId = externalRef?.file_id
+  const pin = externalRef?.pin
+  const lastSeen = externalRef?.last_seen_updated_at || ''
+
+  useEffect(() => {
+    if (!projectId || !fileId) return undefined
+    let cancelled = false
+    ;(async () => {
+      try {
+        const [project, file] = await Promise.all([
+          api.getProject(projectId).catch(() => null),
+          api.getFile(projectId, fileId),
+        ])
+        if (cancelled) return
+        if (project?.name) setProjectName(project.name)
+        const ua = file?.updated_at || null
+        setLiveUpdatedAt(ua)
+        // First sighting: record the baseline so we don't immediately flag the
+        // very first render as stale. Subsequent advances will surface.
+        if (ua && !lastSeen && typeof onRecordSeen === 'function') {
+          onRecordSeen(ua)
+        }
+      } catch (_err) {
+        if (!cancelled) setFetchFailed(true)
+      }
+    })()
+    return () => { cancelled = true }
+    // We deliberately omit lastSeen/onRecordSeen to avoid refiring on the
+    // baseline-write round-trip. The ref-id pair is the load key.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId, fileId])
+
+  if (fetchFailed) return null
+  // Only show chips for tracking_latest pins — pinned-revision refs by
+  // definition can't go stale.
+  const isTracking = pin === 'tracking_latest'
+  const stale = isTracking && lastSeen && liveUpdatedAt && liveUpdatedAt > lastSeen
+
+  return (
+    <span className="inline-flex items-center gap-1 ml-1" onClick={(e) => e.stopPropagation()}>
+      <span
+        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-950/40 border border-emerald-900/60 text-emerald-300 text-[10px] font-mono"
+        title={projectName ? `Cross-project source: ${projectName}` : 'Cross-project source'}
+      >
+        <ExternalLink size={9} />
+        {projectName || '…'}
+      </span>
+      {stale && (
+        <button
+          type="button"
+          onClick={() => {
+            // Acknowledge: restamp last_seen_updated_at to the live value so
+            // the chip clears. A future slice can layer in a richer diff view.
+            if (typeof onRecordSeen === 'function' && liveUpdatedAt) {
+              onRecordSeen(liveUpdatedAt)
+            }
+          }}
+          className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-950/40 border border-amber-900/60 text-amber-300 text-[10px] font-mono hover:bg-amber-900/40"
+          title={`Source advanced since you last viewed it (${lastSeen} → ${liveUpdatedAt}). Click to acknowledge.`}
+        >
+          <AlertTriangle size={9} />
+          out of date
+        </button>
+      )}
+    </span>
   )
 }
 
