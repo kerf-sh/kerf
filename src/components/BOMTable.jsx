@@ -60,6 +60,7 @@ export default function BOMTable({
           <Th>Category</Th>
           <Th>Manufacturer</Th>
           <Th>MPN</Th>
+          <Th>Material</Th>
           <Th className="text-right tabular-nums">Qty</Th>
           {editable && <Th className="w-12 text-center">Stock</Th>}
           <Th className="text-right tabular-nums">Unit</Th>
@@ -164,6 +165,15 @@ function BOMRow({ row, editable, override, onChangeOverride, onOpen, compact }) 
       <Td className="text-ink-400">{part.manufacturer || '—'}</Td>
       <Td className="font-mono text-[11px] text-ink-300">
         {part.mpn || <span className="italic text-ink-600">none</span>}
+      </Td>
+      <Td>
+        {row.material_path ? (
+          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-mono bg-kerf-300/10 text-kerf-300 border border-kerf-300/30">
+            {row.material_path.split('/').pop().replace('.material', '')}
+          </span>
+        ) : (
+          <span className="text-ink-600">—</span>
+        )}
       </Td>
       <Td className="text-right tabular-nums text-ink-100">
         {editable ? (
@@ -371,7 +381,11 @@ function StaleBadge({ distributor, part }) {
   if (!entry || !entry.fetched_at) return null
   const t = new Date(entry.fetched_at).getTime()
   if (Number.isNaN(t)) return null
-  const days = Math.floor((Date.now() - t) / (24 * 60 * 60 * 1000))
+  const nowRef = useRef(null)
+  if (nowRef.current === null) {
+    nowRef.current = Date.now()
+  }
+  const days = Math.floor((nowRef.current - t) / (24 * 60 * 60 * 1000))
   if (days < 7) return null
   let absolute
   try { absolute = new Date(entry.fetched_at).toLocaleString() } catch { absolute = entry.fetched_at }

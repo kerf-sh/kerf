@@ -10,12 +10,16 @@
 //     results: { waveforms: [{ name, kind, xUnit, yUnit, x:[], y:[] }],
 //                warnings: [], errors: [] } }
 //
-// Engine integration (ngspice-wasm) is still deferred; this view consumes
-// whatever waveform arrays a future engine slice writes into `results`.
+// Uses the run_simulation tool (via /api/projects/{pid}/files/{fid}/sim) to
+// enqueue ngspice batch jobs on the backend. Polls sim_job_status until
+// the job completes, then writes results back to the .simulation file.
 
 import { useEffect, useRef, useState } from 'react'
 import { Activity, AlertTriangle, BarChart3, Loader2, Play, TableProperties } from 'lucide-react'
 import { useWorkspace } from '../store/workspace.js'
+import { useAuth } from '../store/auth.js'
+
+const API_URL = import.meta.env.VITE_API_URL || ''
 
 const PALETTE = ['#f59e0b', '#22d3ee', '#a78bfa', '#34d399', '#f472b6']
 
@@ -144,15 +148,13 @@ export function normalizeWaveforms(waveforms) {
 }
 
 export default function SimulationView({ content, fileName }) {
+  const w = useWorkspace()
+  const { accessToken } = useAuth()
   const parsed = parseSimulation(content || '')
   const [running, setRunning] = useState(false)
+  const [jobStatus, setJobStatus] = useState(null)
+  const pollingRef = useRef(null)
 
-  // Disable the Run button when:
-  //   - a stub run is already in flight (`running`), or
-  //   - the parsed file isn't `ok` (covers 'invalid' / 'unsupported'), or
-  //   - the document lacks a circuit_file_id pointer (stub still mutates content,
-  //     but the hard contract from CONTRACT.md says a `.simulation` without a
-  //     circuit_file_id is non-runnable).
   const docCircuit = (() => {
     if (parsed.kind !== 'ok') return null
     try {
@@ -162,27 +164,82 @@ export default function SimulationView({ content, fileName }) {
       return null
     }
   })()
-  const runDisabled = running || parsed.kind !== 'ok' || !docCircuit
+  const runDisabled = running || parsed.kind !== 'ok' || !docCircuit || !w.projectId || !w.currentFileId
 
-  const onRun = () => {
+  useEffect(() => {
+    return () => {
+      if (pollingRef.current) clearInterval(pollingRef.current)
+    }
+  }, [])
+
+  const pollJobStatus = async (projectId, fileId) => {
+    try {
+      const token = useAuth.getState().accessToken
+      const res = await fetch(`${API_URL}/api/projects/${projectId}/files/${fileId}/sim/status`, {
+        headers: { authorization: `Bearer ${token}` },
+      })
+      if (!res.ok) throw new Error(`status poll failed: ${res.status}`)
+      const data = await res.json()
+      setJobStatus(data)
+      if (data.status === 'done' || data.status === 'error') {
+        if (pollingRef.current) clearInterval(pollingRef.current)
+        setRunning(false)
+        if (data.status === 'done' && data.result) {
+          const doc = JSON.parse(content || '{}')
+          const updated = {
+            ...doc,
+            results: {
+              waveforms: data.result.waveforms || [],
+              warnings: data.result.warnings || [],
+              errors: data.result.errors || [],
+            },
+          }
+          try {
+            w.editContent(JSON.stringify(updated, null, 2))
+          } catch (err) {
+            w.setState({ toast: err?.message || 'Failed to update simulation file' })
+          }
+        } else if (data.status === 'error') {
+          w.setState({ toast: data.error || 'Simulation failed' })
+        }
+      }
+    } catch (err) {
+      w.setState({ toast: err.message })
+      if (pollingRef.current) clearInterval(pollingRef.current)
+      setRunning(false)
+    }
+  }
+
+  const onRun = async () => {
     if (runDisabled) return
     let doc
     try {
       doc = JSON.parse(content || '{}')
     } catch (_e) {
-      useWorkspace.setState({ toast: 'Cannot run simulation: file is not valid JSON.' })
+      w.setState({ toast: 'Cannot run simulation: file is not valid JSON.' })
       return
     }
-    const updated = addEnginePendingWarning(doc)
     setRunning(true)
+    setJobStatus({ status: 'queued' })
     try {
-      useWorkspace.getState().editContent(JSON.stringify(updated, null, 2))
+      const token = useAuth.getState().accessToken
+      const res = await fetch(`${API_URL}/api/projects/${w.projectId}/files/${w.currentFileId}/sim`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(doc.analysis || { type: 'tran' }),
+      })
+      if (!res.ok) throw new Error(`failed to enqueue: ${res.status}`)
+      const data = await res.json()
+      setJobStatus({ status: 'queued', job_id: data.job_id })
+      pollingRef.current = setInterval(() => pollJobStatus(w.projectId, w.currentFileId), 2000)
     } catch (err) {
+      w.setState({ toast: err.message })
       setRunning(false)
-      useWorkspace.setState({ toast: err?.message || 'Failed to update simulation file' })
-      return
+      setJobStatus(null)
     }
-    setTimeout(() => setRunning(false), 500)
   }
 
   if (parsed.kind === 'invalid' || parsed.kind === 'unsupported') {
@@ -250,15 +307,15 @@ export default function SimulationView({ content, fileName }) {
             !docCircuit
               ? 'Link a circuit_file_id to enable Run'
               : running
-                ? 'Running…'
-                : 'Run simulation (stub)'
+                ? `Running… (${jobStatus?.status || 'queued'})`
+                : 'Run SPICE simulation'
           }
           className="ml-auto inline-flex items-center gap-1 px-2 py-1 rounded bg-kerf-300 text-ink-950 text-[11px] font-medium hover:bg-kerf-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-kerf-300"
         >
           {running ? (
             <>
               <Loader2 size={11} className="animate-spin" />
-              Running…
+              {jobStatus?.status === 'running' ? 'Running…' : 'Queued…'}
             </>
           ) : (
             <>

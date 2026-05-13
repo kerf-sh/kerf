@@ -67,6 +67,7 @@ type BOMRow struct {
 	Note               string      `json:"note,omitempty"`
 	ConfigID           string      `json:"config_id,omitempty"`
 	ConfigLabel        string      `json:"config_label,omitempty"`
+	MaterialPath       string      `json:"material_path,omitempty"`
 }
 
 type bomDistRef struct {
@@ -79,17 +80,17 @@ type bomDistRef struct {
 // Part JSON schema so we don't accidentally leak free-form `metadata` into a
 // field the client might trip over. Add fields here as the UI grows.
 type BOMPart struct {
-	Version         int        `json:"version"`
-	Name            string     `json:"name"`
-	Description     string     `json:"description,omitempty"`
-	Category        string     `json:"category,omitempty"`
-	Manufacturer    string     `json:"manufacturer,omitempty"`
-	MPN             string     `json:"mpn,omitempty"`
-	Value           string     `json:"value,omitempty"`
-	DatasheetURL    string     `json:"datasheet_url,omitempty"`
-	Distributors    []BOMDist  `json:"distributors"`
-	ModelStorageKey string     `json:"model_storage_key,omitempty"`
-	ModelMimeType   string     `json:"model_mime_type,omitempty"`
+	Version         int       `json:"version"`
+	Name            string    `json:"name"`
+	Description     string    `json:"description,omitempty"`
+	Category        string    `json:"category,omitempty"`
+	Manufacturer    string    `json:"manufacturer,omitempty"`
+	MPN             string    `json:"mpn,omitempty"`
+	Value           string    `json:"value,omitempty"`
+	DatasheetURL    string    `json:"datasheet_url,omitempty"`
+	Distributors    []BOMDist `json:"distributors"`
+	ModelStorageKey string    `json:"model_storage_key,omitempty"`
+	ModelMimeType   string    `json:"model_mime_type,omitempty"`
 }
 
 type BOMDist struct {
@@ -397,10 +398,11 @@ func bomCompute(ctx context.Context, pool *pgxpool.Pool, projectID string) ([]BO
 			count = *ov.QuantityOverride
 		}
 		row := BOMRow{
-			Part:   partDocToBOMPart(doc),
-			FileID: a.fileID,
-			Path:   paths[a.fileID],
-			Count:  count,
+			Part:         partDocToBOMPart(doc),
+			FileID:       a.fileID,
+			Path:         paths[a.fileID],
+			Count:        count,
+			MaterialPath: doc.MaterialPath,
 		}
 		// Configurations / variants — each row carries the active config's
 		// id + label so the frontend can render `<part name> (M3)` and the
@@ -598,22 +600,23 @@ type partDist struct {
 }
 
 type partDoc struct {
-	Version         int                `json:"version"`
-	Name            string             `json:"name"`
-	Description     string             `json:"description,omitempty"`
-	Category        string             `json:"category,omitempty"`
-	Manufacturer    string             `json:"manufacturer,omitempty"`
-	MPN             string             `json:"mpn,omitempty"`
-	Value           string             `json:"value,omitempty"`
-	DatasheetURL    string             `json:"datasheet_url,omitempty"`
-	Distributors    []partDist         `json:"distributors"`
-	ModelStorageKey string             `json:"model_storage_key,omitempty"`
-	ModelMimeType   string             `json:"model_mime_type,omitempty"`
-	SymbolFileID    string             `json:"symbol_file_id,omitempty"`
-	FootprintFileID string             `json:"footprint_file_id,omitempty"`
-	Metadata        map[string]any     `json:"metadata,omitempty"`
-	DefaultConfig   string             `json:"default_config,omitempty"`
+	Version         int                 `json:"version"`
+	Name            string              `json:"name"`
+	Description     string              `json:"description,omitempty"`
+	Category        string              `json:"category,omitempty"`
+	Manufacturer    string              `json:"manufacturer,omitempty"`
+	MPN             string              `json:"mpn,omitempty"`
+	Value           string              `json:"value,omitempty"`
+	DatasheetURL    string              `json:"datasheet_url,omitempty"`
+	Distributors    []partDist          `json:"distributors"`
+	ModelStorageKey string              `json:"model_storage_key,omitempty"`
+	ModelMimeType   string              `json:"model_mime_type,omitempty"`
+	SymbolFileID    string              `json:"symbol_file_id,omitempty"`
+	FootprintFileID string              `json:"footprint_file_id,omitempty"`
+	Metadata        map[string]any      `json:"metadata,omitempty"`
+	DefaultConfig   string              `json:"default_config,omitempty"`
 	Configurations  []partConfiguration `json:"configurations,omitempty"`
+	MaterialPath    string              `json:"material_path,omitempty"`
 }
 
 // partConfiguration mirrors the configurations / variants entry shape on a

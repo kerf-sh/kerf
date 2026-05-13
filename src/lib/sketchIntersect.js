@@ -105,6 +105,83 @@ export function circleCircle(c1, r1, c2, r2) {
   ]
 }
 
+// ---------- ellipse / bspline intersection ----------
+
+export function ellipseLine(cx, cy, rx, ry, rotation, x1, y1, x2, y2) {
+  const cs = Math.cos(-rotation), sn = Math.sin(-rotation)
+  const dx = x2 - x1, dy = y2 - y1
+  const ux = dx * cs - dy * sn
+  const uy = dx * sn + dy * cs
+  const vx = (x1 - cx) * cs - (y1 - cy) * sn
+  const vy = (x1 - cx) * sn + (y1 - cy) * cs
+  const a = ux * ux + uy * uy
+  const b = 2 * (ux * vx + uy * vy)
+  const c = vx * vx + vy * vy - rx * rx
+  const disc = b * b - 4 * a * c
+  if (disc < 0) return []
+  const sq = Math.sqrt(disc)
+  const out = []
+  for (const sign of [-1, +1]) {
+    const t = (-b + sign * sq) / (2 * a)
+    if (t < -EPS || t > 1 + EPS) continue
+    const wx = x1 + t * dx, wy = y1 + t * dy
+    const lx = wx - cx, ly = wy - cy
+    const theta = Math.atan2(ly * cs + lx * sn, lx * cs - ly * sn)
+    out.push({ x: wx, y: wy, t1: Math.max(0, Math.min(1, t)), t2: theta })
+  }
+  if (out.length === 2 && Math.hypot(out[0].x - out[1].x, out[0].y - out[1].y) < EPS) return [out[0]]
+  return out
+}
+
+export function ellipseEllipse(cx1, cy1, rx1, ry1, rot1, cx2, cy2, rx2, ry2, rot2) {
+  const steps = 128
+  const cs1 = Math.cos(rot1), sn1 = Math.sin(rot1)
+  const cs2 = Math.cos(rot2), sn2 = Math.sin(rot2)
+  const pts1 = [], pts2 = []
+  for (let i = 0; i < steps; i++) {
+    const t = (i / steps) * Math.PI * 2
+    const lx1 = rx1 * Math.cos(t), ly1 = ry1 * Math.sin(t)
+    pts1.push({ x: cx1 + lx1 * cs1 - ly1 * sn1, y: cy1 + lx1 * sn1 + ly1 * cs1, theta: t })
+    const lx2 = rx2 * Math.cos(t), ly2 = ry2 * Math.sin(t)
+    pts2.push({ x: cx2 + lx2 * cs2 - ly2 * sn2, y: cy2 + lx2 * sn2 + ly2 * cs2, theta: t })
+  }
+  const hits = []
+  for (let i = 0; i < steps; i++) {
+    const a1 = pts1[i], b1 = pts1[(i + 1) % steps]
+    for (let j = 0; j < steps; j++) {
+      const a2 = pts2[j], b2 = pts2[(j + 1) % steps]
+      const r = segSeg(a1, b1, a2, b2)
+      for (const h of r) hits.push(h)
+    }
+  }
+  return hits
+}
+
+export function bsplineLine(controlPoints, x1, y1, x2, y2) {
+  const cp = controlPoints.map((p) => [p.x ?? p[0], p.y ?? p[1]])
+  if (cp.length < 2) return []
+  const segHits = []
+  for (let i = 0; i < cp.length - 1; i++) {
+    const hits = segSeg(cp[i], cp[i + 1], { x: x1, y: y1 }, { x: x2, y: y2 })
+    for (const h of hits) segHits.push({ x: h.x, y: h.y, t1: h.t2, t2: h.t1 })
+  }
+  return segHits
+}
+
+export function bsplineArc(controlPoints, cx, cy, radius, startAngle, endAngle, ccw) {
+  const cp = controlPoints.map((p) => [p.x ?? p[0], p.y ?? p[1]])
+  if (cp.length < 2) return []
+  const segHits = []
+  for (let i = 0; i < cp.length - 1; i++) {
+    const hits = segCircle(cp[i], cp[i + 1], { x: cx, y: cy }, radius)
+    for (const h of hits) {
+      if (!angleOnArc(h.t2, startAngle, endAngle, ccw)) continue
+      segHits.push({ x: h.x, y: h.y, t1: h.t2, t2: h.t1 })
+    }
+  }
+  return segHits
+}
+
 // Arc-aware filter: keep an angle if it lies in [startAngle, endAngle] sweep.
 export function angleOnArc(theta, startAngle, endAngle, ccw) {
   // Normalize to [0, 2π].

@@ -13,23 +13,36 @@ import (
 type ctxKey string
 
 const userIDKey ctxKey = "userID"
+const workspaceIDKey ctxKey = "workspaceID"
+const tokenScopeKey ctxKey = "tokenScope"
 
-// RequireAuth validates the bearer token, confirms the user still exists in
-// the DB (so a JWT issued for a since-deleted user is rejected — this would
-// otherwise surface much later as a foreign-key error), and sets the user id
-// in the request context. Rejects with 401 on any of: missing token, invalid
-// signature, expired token, user no longer exists.
 func RequireAuth(svc *auth.Service, pool *pgxpool.Pool) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			h := r.Header.Get("Authorization")
-			if !strings.HasPrefix(h, "Bearer ") {
-				http.Error(w, "unauthorized", http.StatusUnauthorized)
-				return
-			}
-			tok := strings.TrimSpace(strings.TrimPrefix(h, "Bearer "))
-			uid, err := svc.ParseAccessToken(tok)
-			if err != nil {
+			var uid string
+			var err error
+			if strings.HasPrefix(h, "Bearer ") {
+				tok := strings.TrimSpace(strings.TrimPrefix(h, "Bearer "))
+				if strings.HasPrefix(tok, "kerf_sk_") {
+					meta, err := svc.ValidateAPIToken(r.Context(), tok)
+					if err != nil {
+						http.Error(w, "unauthorized", http.StatusUnauthorized)
+						return
+					}
+					uid = meta.UserID
+					ctx := context.WithValue(r.Context(), userIDKey, uid)
+					ctx = context.WithValue(ctx, workspaceIDKey, meta.WorkspaceID)
+					ctx = context.WithValue(ctx, tokenScopeKey, meta.Scopes)
+					next.ServeHTTP(w, r.WithContext(ctx))
+					return
+				}
+				uid, err = svc.ParseAccessToken(tok)
+				if err != nil {
+					http.Error(w, "unauthorized", http.StatusUnauthorized)
+					return
+				}
+			} else {
 				http.Error(w, "unauthorized", http.StatusUnauthorized)
 				return
 			}
@@ -82,4 +95,23 @@ func UserID(ctx context.Context) string {
 // through RequireAuth or OptionalAuth.
 func WithUserID(ctx context.Context, uid string) context.Context {
 	return context.WithValue(ctx, userIDKey, uid)
+}
+
+func WorkspaceID(ctx context.Context) string {
+	v, _ := ctx.Value(workspaceIDKey).(string)
+	return v
+}
+
+func TokenScopes(ctx context.Context) []string {
+	v, _ := ctx.Value(tokenScopeKey).([]string)
+	return v
+}
+
+func HasScope(ctx context.Context, required string) bool {
+	for _, s := range TokenScopes(ctx) {
+		if s == required {
+			return true
+		}
+	}
+	return false
 }

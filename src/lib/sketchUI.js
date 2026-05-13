@@ -74,7 +74,11 @@ export function friendlyConstraintLabel(c) {
     case 'symmetric': return 'Symmetric about line'
     case 'block': return 'Locked in place'
     case 'point_on_line': return 'Point on line'
+    case 'point_on_circle': return 'Point on circle'
     case 'point_on_arc': return 'Point on arc'
+    case 'arc_on_circle': return 'Arc on circle'
+    case 'arc_on_arc': return 'Arc on arc'
+    case 'intersection_point': return 'Intersection point'
     default: return c?.type || 'Constraint'
   }
 }
@@ -110,7 +114,11 @@ export function constraintEntityRefs(c) {
     case 'symmetric': return [c.a, c.b, c.line]
     case 'block': return c.refs || []
     case 'point_on_line': return [c.point, c.line]
+    case 'point_on_circle': return [c.point, c.circle]
     case 'point_on_arc': return [c.point, c.arc]
+    case 'arc_on_circle': return [c.arc, c.circle]
+    case 'arc_on_arc': return [c.arc, c.otherArc]
+    case 'intersection_point': return [c.point, c.line1, c.line2]
     default: return []
   }
 }

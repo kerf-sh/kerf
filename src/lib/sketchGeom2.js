@@ -14,6 +14,7 @@
 // rings; for v1 we emit one outer + N inner holes (CW rings = holes).
 
 import { geometries, booleans } from '@jscad/modeling'
+import { ellipseLine, ellipseEllipse, bsplineLine, bsplineArc, angleOnArc } from './sketchIntersect.js'
 
 const ARC_SEG_PER_RADIAN = 12 // ~5° per segment — matches FreeCAD's default
 const BSPLINE_SAMPLES_PER_SEGMENT = 16
@@ -48,6 +49,13 @@ function buildAdjacency(sketch) {
     if (!adj.has(p)) adj.set(p, [])
     adj.get(p).push(e)
   }
+  const vpts = new Map()
+  function vkey(x, y) { return `${Math.round(x * 1e6)},${Math.round(y * 1e6)}` }
+  function getVpt(x, y) {
+    const k = vkey(x, y)
+    if (!vpts.has(k)) vpts.set(k, { x, y })
+    return k
+  }
   for (const e of ent) {
     if (e.construction) continue
     if (e.type === 'line') {
@@ -56,6 +64,101 @@ function buildAdjacency(sketch) {
     } else if (e.type === 'arc') {
       addEdge(e.start, { edgeId: e.id, otherId: e.end, kind: 'arc', e, fromStart: true })
       addEdge(e.end, { edgeId: e.id, otherId: e.start, kind: 'arc', e, fromStart: false })
+    }
+  }
+  for (const e of ent) {
+    if (e.construction) continue
+    if (e.type === 'ellipse') {
+      const c = points.get(e.center)
+      if (!c) continue
+      const cx = c.x, cy = c.y, rx = e.rx || 1, ry = e.ry || 1, rot = e.rotation || 0
+      const hits = []
+      for (const f of ent) {
+        if (f.construction || f.id === e.id) continue
+        if (f.type === 'line') {
+          const p1 = points.get(f.p1), p2 = points.get(f.p2)
+          if (!p1 || !p2) continue
+          const h = ellipseLine(cx, cy, rx, ry, rot, p1.x, p1.y, p2.x, p2.y)
+          for (const ih of h) hits.push({ x: ih.x, y: ih.y, t2: ih.t2, src: f })
+        } else if (f.type === 'arc') {
+          const c2 = points.get(f.center), s = points.get(f.start), en = points.get(f.end)
+          if (!c2 || !s || !en) continue
+          const r = Math.hypot(s.x - c2.x, s.y - c2.y)
+          const sa = Math.atan2(s.y - c2.y, s.x - c2.x)
+          const ea = Math.atan2(en.y - c2.y, en.x - c2.x)
+          const h2 = ellipseEllipse(cx, cy, rx, ry, rot, c2.x, c2.y, r, r, 0)
+          for (const ih of h2) {
+            const theta = Math.atan2(ih.y - c2.y, ih.x - c2.x)
+            if (!angleOnArc(theta, sa, ea, !!f.sweep_ccw)) continue
+            hits.push({ x: ih.x, y: ih.y, t2: ih.t2, src: f })
+          }
+        } else if (f.type === 'ellipse' && f.id !== e.id) {
+          const c2 = points.get(f.center)
+          if (!c2) continue
+          const h = ellipseEllipse(cx, cy, rx, ry, rot, c2.x, c2.y, f.rx || 1, f.ry || 1, f.rotation || 0)
+          for (const ih of h) hits.push({ x: ih.x, y: ih.y, t2: ih.t2, src: f })
+        }
+      }
+      if (hits.length === 0) {
+        const seg = tessellateEllipse(cx, cy, rx, ry, rot, 64)
+        for (let i = 0; i < seg.length; i++) {
+          const a = seg[i], b = seg[(i + 1) % seg.length]
+          const ka = getVpt(a[0], a[1]), kb = getVpt(b[0], b[1])
+          addEdge(ka, { edgeId: e.id + '_' + i, otherId: kb, kind: 'ellipse', e, fromAngle: (i / seg.length) * Math.PI * 2, toAngle: ((i + 1) / seg.length) * Math.PI * 2 })
+          addEdge(kb, { edgeId: e.id + '_' + i, otherId: ka, kind: 'ellipse', e, fromAngle: ((i + 1) / seg.length) * Math.PI * 2, toAngle: (i / seg.length) * Math.PI * 2 })
+        }
+        vpts.forEach((pt, k) => { if (!points.has(k)) points.set(k, pt) })
+      } else {
+        hits.sort((a, b) => a.t2 - b.t2)
+        const n = hits.length
+        for (let i = 0; i < n; i++) {
+          const a = hits[i], b = hits[(i + 1) % n]
+          const ka = getVpt(a.x, a.y), kb = getVpt(b.x, b.y)
+          addEdge(ka, { edgeId: e.id + '_' + i, otherId: kb, kind: 'ellipse', e, fromAngle: a.t2, toAngle: b.t2 })
+          addEdge(kb, { edgeId: e.id + '_' + i, otherId: ka, kind: 'ellipse', e, fromAngle: b.t2, toAngle: a.t2 })
+        }
+        vpts.forEach((pt, k) => { if (!points.has(k)) points.set(k, pt) })
+      }
+    } else if (e.type === 'bspline') {
+      const cps = (e.controls || []).map((id) => points.get(id)).filter(Boolean)
+      if (cps.length < 4) continue
+      const hits = []
+      for (const f of ent) {
+        if (f.construction || f.id === e.id) continue
+        if (f.type === 'line') {
+          const p1 = points.get(f.p1), p2 = points.get(f.p2)
+          if (!p1 || !p2) continue
+          const h = bsplineLine(cps, p1.x, p1.y, p2.x, p2.y)
+          for (const ih of h) hits.push({ x: ih.x, y: ih.y, t2: ih.t2, src: f })
+        } else if (f.type === 'arc') {
+          const c = points.get(f.center), s = points.get(f.start), en = points.get(f.end)
+          if (!c || !s || !en) continue
+          const r = Math.hypot(s.x - c.x, s.y - c.y)
+          const h = bsplineArc(cps, c.x, c.y, r, Math.atan2(s.y - c.y, s.x - c.x), Math.atan2(en.y - c.y, en.x - c.x), !!f.sweep_ccw)
+          for (const ih of h) hits.push({ x: ih.x, y: ih.y, t2: ih.t2, src: f })
+        }
+      }
+      const seg = tessellateBspline(cps, BSPLINE_SAMPLES_PER_SEGMENT)
+      if (hits.length === 0) {
+        for (let i = 0; i < seg.length - 1; i++) {
+          const ka = getVpt(seg[i][0], seg[i][1]), kb = getVpt(seg[i + 1][0], seg[i + 1][1])
+          addEdge(ka, { edgeId: e.id + '_' + i, otherId: kb, kind: 'bspline', e, fromIdx: i, toIdx: i + 1 })
+          addEdge(kb, { edgeId: e.id + '_' + i, otherId: ka, kind: 'bspline', e, fromIdx: i + 1, toIdx: i })
+        }
+        vpts.forEach((pt, k) => { if (!points.has(k)) points.set(k, pt) })
+      } else {
+        const tValues = hits.map((h) => h.t2).filter((t) => t >= 0 && t <= 1)
+        tValues.sort((a, b) => a - b)
+        const n = tValues.length
+        for (let i = 0; i < n; i++) {
+          const tA = tValues[i], tB = tValues[(i + 1) % n]
+          const idxA = Math.round(tA * (seg.length - 1)), idxB = Math.round(tB * (seg.length - 1))
+          const ka = getVpt(seg[idxA][0], seg[idxA][1]), kb = getVpt(seg[idxB][0], seg[idxB][1])
+          addEdge(ka, { edgeId: e.id + '_' + i, otherId: kb, kind: 'bspline', e, fromIdx: idxA, toIdx: idxB })
+          addEdge(kb, { edgeId: e.id + '_' + i, otherId: ka, kind: 'bspline', e, fromIdx: idxB, toIdx: idxA })
+        }
+        vpts.forEach((pt, k) => { if (!points.has(k)) points.set(k, pt) })
+      }
     }
   }
   return { points, adj }
@@ -94,6 +197,37 @@ function walkLoop(startPid, points, adj, usedEdges) {
             const seg = tessellateArc(c.x, c.y, r, closing.fromStart ? sa : ea, closing.fromStart ? ea : sa, !!arc.sweep_ccw)
             for (const [px, py] of seg.slice(0, -1)) ring.push([px, py])
           }
+        } else if (closing.kind === 'ellipse') {
+          const el = closing.e
+          const c = points.get(el.center)
+          if (c) {
+            const rx = el.rx || 1, ry = el.ry || 1, rot = el.rotation || 0
+            const cs = Math.cos(rot), sn = Math.sin(rot)
+            let a1 = closing.fromAngle, a2 = closing.toAngle
+            let sweep = a2 - a1
+            if (sweep > Math.PI) sweep -= Math.PI * 2
+            else if (sweep < -Math.PI) sweep += Math.PI * 2
+            const n = Math.max(2, Math.ceil(Math.abs(sweep) * ARC_SEG_PER_RADIAN))
+            for (let i = 1; i <= n; i++) {
+              const t = i / n
+              const a = a1 + sweep * t
+              const lx = rx * Math.cos(a), ly = ry * Math.sin(a)
+              ring.push([c.x + lx * cs - ly * sn, c.y + lx * sn + ly * cs])
+            }
+          }
+        } else if (closing.kind === 'bspline') {
+          const bs = closing.e
+          const cps = (bs.controls || []).map((id) => points.get(id)).filter(Boolean)
+          if (cps.length >= 4) {
+            const seg = tessellateBspline(cps, BSPLINE_SAMPLES_PER_SEGMENT)
+            let i1 = closing.fromIdx, i2 = closing.toIdx
+            if (i1 < i2) {
+              for (let i = i1 + 1; i <= i2; i++) ring.push(seg[i])
+            } else {
+              for (let i = i1 + 1; i < seg.length; i++) ring.push(seg[i])
+              for (let i = 0; i <= i2; i++) ring.push(seg[i])
+            }
+          }
         }
         return ring
       }
@@ -114,8 +248,38 @@ function walkLoop(startPid, points, adj, usedEdges) {
         const ea = Math.atan2(e.y - c.y, e.x - c.x)
         const fromStart = pick.fromStart
         const seg = tessellateArc(c.x, c.y, r, fromStart ? sa : ea, fromStart ? ea : sa, !!arc.sweep_ccw)
-        // Drop last point — we'll emit the next vertex on the next loop iter.
         for (const [px, py] of seg.slice(0, -1)) ring.push([px, py])
+      }
+    } else if (pick.kind === 'ellipse') {
+      const el = pick.e
+      const c = points.get(el.center)
+      if (c) {
+        const rx = el.rx || 1, ry = el.ry || 1, rot = el.rotation || 0
+        const cs = Math.cos(rot), sn = Math.sin(rot)
+        let a1 = pick.fromAngle, a2 = pick.toAngle
+        let sweep = a2 - a1
+        if (sweep > Math.PI) sweep -= Math.PI * 2
+        else if (sweep < -Math.PI) sweep += Math.PI * 2
+        const n = Math.max(2, Math.ceil(Math.abs(sweep) * ARC_SEG_PER_RADIAN))
+        for (let i = 1; i <= n; i++) {
+          const t = i / n
+          const a = a1 + sweep * t
+          const lx = rx * Math.cos(a), ly = ry * Math.sin(a)
+          ring.push([c.x + lx * cs - ly * sn, c.y + lx * sn + ly * cs])
+        }
+      }
+    } else if (pick.kind === 'bspline') {
+      const bs = pick.e
+      const cps = (bs.controls || []).map((id) => points.get(id)).filter(Boolean)
+      if (cps.length >= 4) {
+        const seg = tessellateBspline(cps, BSPLINE_SAMPLES_PER_SEGMENT)
+        let i1 = pick.fromIdx, i2 = pick.toIdx
+        if (i1 < i2) {
+          for (let i = i1 + 1; i <= i2; i++) ring.push(seg[i])
+        } else {
+          for (let i = i1 + 1; i < seg.length; i++) ring.push(seg[i])
+          for (let i = 0; i <= i2; i++) ring.push(seg[i])
+        }
       }
     }
     prevPid = current
@@ -143,9 +307,13 @@ function findLoops(sketch) {
   const { points, adj } = buildAdjacency(sketch)
   const usedEdges = new Set()
   const loops = []
-  // Total edges
   const ent = sketch.entities || []
-  const totalEdges = ent.filter((e) => !e.construction && (e.type === 'line' || e.type === 'arc')).length
+  let totalEdges = ent.filter((e) => !e.construction && (e.type === 'line' || e.type === 'arc')).length
+  for (const e of ent) {
+    if (e.construction) continue
+    if (e.type === 'ellipse') totalEdges += 64
+    else if (e.type === 'bspline') totalEdges += BSPLINE_SAMPLES_PER_SEGMENT
+  }
   if (totalEdges === 0) return loops
 
   // Strategy: pick any vertex with at least 2 unused incident edges and walk.

@@ -26,17 +26,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Eye, EyeOff, GripVertical, Layers, Plus, Trash2, ChevronDown, ChevronRight,
-  Loader2, X, Check, AlertTriangle, ExternalLink,
+  Loader2, X, Check, AlertTriangle, ExternalLink, Link2, Link2Off,
 } from 'lucide-react'
 import {
   composeMatrix, decomposeMatrix, identityMatrix, parseAssembly,
   serializeAssembly, cycleCheck, radToDeg, degToRad, expandWildcardComponents,
-  restampExternalRefSeen, LEGACY_WILDCARD,
+  restampExternalRefSeen, LEGACY_WILDCARD, addMate, removeMate,
 } from '../lib/assembly.js'
 import { loadFilePartsForProject } from '../store/workspace.js'
 import { api } from '../lib/api.js'
 import LibraryPicker from './LibraryPicker.jsx'
 import InlineBOMPanel from './InlineBOMPanel.jsx'
+import MatesPanel from './MatesPanel.jsx'
 
 // Module-scoped cache of file_id → Promise<string[]> of object ids. Re-used
 // across rows so opening the same source twice doesn't re-run JSCAD.
@@ -143,6 +144,8 @@ export default function AssemblyEditor({
   // serializeAssembly. Authored by the inline BOM panel and serialized
   // alongside components — see emit() below.
   const [overrides, setOverrides] = useState(() => parsed.overrides || [])
+  const [mates, setMates] = useState(() => parsed.mates || [])
+  const [matesOpen, setMatesOpen] = useState(false)
   const [showJson, setShowJson] = useState(false)
   const [jsonDraft, setJsonDraft] = useState(content)
   const [jsonErr, setJsonErr] = useState(null)
@@ -154,14 +157,18 @@ export default function AssemblyEditor({
   // tick as an override change still emits the right combined doc. Updated
   // on every setOverrides via emitOverrides.
   const overridesRef = useRef(overrides)
+  const matesRef = useRef(mates)
   useEffect(() => { overridesRef.current = overrides }, [overrides])
+  useEffect(() => { matesRef.current = mates }, [mates])
   useEffect(() => {
     // Upstream changed under us (e.g. LLM tool, undo). Reset local state.
     if (content !== lastEmittedRef.current) {
       const reparsed = parseAssembly(content)
       setRows(deriveRows(reparsed))
       setOverrides(reparsed.overrides || [])
+      setMates(reparsed.mates || [])
       overridesRef.current = reparsed.overrides || []
+      matesRef.current = reparsed.mates || []
       setJsonDraft(content)
       setJsonErr(null)
     }
@@ -171,12 +178,14 @@ export default function AssemblyEditor({
   // onChange after 350ms of quiet. The overrides snapshot is pulled from a
   // ref so callers don't need to thread it through.
   const emitTimerRef = useRef(null)
-  const emit = useCallback((nextRows, nextOverrides) => {
+  const emit = useCallback((nextRows, nextOverrides, nextMates) => {
     if (emitTimerRef.current) clearTimeout(emitTimerRef.current)
     const ov = nextOverrides !== undefined ? nextOverrides : overridesRef.current
+    const ms = nextMates !== undefined ? nextMates : matesRef.current
     emitTimerRef.current = setTimeout(() => {
       const obj = rowsToAssembly(nextRows)
       obj.overrides = ov
+      obj.mates = ms
       const json = serializeAssembly(obj)
       lastEmittedRef.current = json
       setJsonDraft(json)
@@ -192,9 +201,17 @@ export default function AssemblyEditor({
     overridesRef.current = nextOverrides
     setOverrides(nextOverrides)
     setRows((rs) => {
-      emit(rs, nextOverrides)
+      emit(rs, nextOverrides, matesRef.current)
       return rs
     })
+  }, [emit])
+
+  // Mate edits are authored by the MatesPanel — replace the whole mates list,
+  // update the ref so a concurrent row edit picks it up, and re-emit.
+  const onChangeMates = useCallback((nextMates) => {
+    matesRef.current = nextMates
+    setMates(nextMates)
+    emit(rows, overridesRef.current, nextMates)
   }, [emit])
 
   // Auto-expand any legacy `*` components once the source's Object list is
@@ -531,6 +548,14 @@ export default function AssemblyEditor({
           </ul>
         )}
       </div>
+
+      {/* Mates panel — collapsible region for 3D assembly mates (SolveSpace solver). */}
+      <MatesPanel
+        mates={mates}
+        components={rows}
+        onChangeMates={onChangeMates}
+        onToast={onToast}
+      />
 
       {/* Inline BOM panel — collapsible region. Lazy-loads on first expand
           and refetches whenever this assembly is saved (so the rolled-up

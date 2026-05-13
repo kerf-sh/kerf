@@ -423,7 +423,7 @@ function RecentlyShipped() {
 
 const ROADMAP = [
   { title: 'NURBS surfacing', body: 'sweep2 · networkSrf · blendSrf for jewelry & freeform.' },
-  { title: 'SPICE simulation', body: 'ngspice-wasm in a Worker. Probe pins, get plots.' },
+  { title: 'SPICE simulation', body: 'Python scripting via kerf-sdk. Probe pins, get plots.' },
   { title: 'FEM analysis', body: 'CalculiX + Gmsh. Linear static, modal, bonded contact.' },
   { title: 'Direct face manipulation', body: 'Gumball on faces, parametric timeline intact.' },
 ]

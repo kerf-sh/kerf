@@ -11,10 +11,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
 	"golang.org/x/oauth2"
 	googleoauth "golang.org/x/oauth2/google"
 
+	"github.com/imranp/kerf/backend/internal/middleware"
 	"github.com/imranp/kerf/backend/internal/models"
 )
 
@@ -463,6 +465,90 @@ func (d *Deps) upsertGoogleUser(ctx context.Context, sub, email, name, picture s
 	}
 	_, _ = createPersonalWorkspace(ctx, d.Pool, u.ID, display)
 	return u, nil
+}
+
+type apiTokenResponse struct {
+	ID        string    `json:"id"`
+	Name      string    `json:"name"`
+	Token     string    `json:"token,omitempty"`
+	Scopes    []string  `json:"scopes"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+type createTokenReq struct {
+	Name string `json:"name"`
+}
+
+func (d *Deps) CreateAPIToken(w http.ResponseWriter, r *http.Request) {
+	var body createTokenReq
+	if err := decodeJSON(r, &body); err != nil || body.Name == "" {
+		writeError(w, http.StatusBadRequest, "name is required")
+		return
+	}
+	ctx := r.Context()
+	uid := middleware.UserID(ctx)
+	wid := middleware.WorkspaceID(ctx)
+	if wid == "" {
+		writeError(w, http.StatusBadRequest, "workspace context required")
+		return
+	}
+	token, err := d.Auth.CreateAPIToken(ctx, wid, uid, body.Name)
+	if err != nil {
+		genericServerError(w, err)
+		return
+	}
+	meta, err := d.Auth.ValidateAPIToken(ctx, token)
+	if err != nil {
+		genericServerError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, apiTokenResponse{
+		ID:        meta.ID,
+		Name:      meta.Name,
+		Token:     token,
+		Scopes:    meta.Scopes,
+		CreatedAt: meta.CreatedAt,
+	})
+}
+
+func (d *Deps) ListAPITokens(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	uid := middleware.UserID(ctx)
+	wid := middleware.WorkspaceID(ctx)
+	if wid == "" {
+		writeError(w, http.StatusBadRequest, "workspace context required")
+		return
+	}
+	tokens, err := d.Auth.ListAPITokens(ctx, wid, uid)
+	if err != nil {
+		genericServerError(w, err)
+		return
+	}
+	out := make([]apiTokenResponse, len(tokens))
+	for i, t := range tokens {
+		out[i] = apiTokenResponse{ID: t.ID, Name: t.Name, Scopes: t.Scopes, CreatedAt: t.CreatedAt}
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+func (d *Deps) RevokeAPIToken(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	uid := middleware.UserID(ctx)
+	wid := middleware.WorkspaceID(ctx)
+	if wid == "" {
+		writeError(w, http.StatusBadRequest, "workspace context required")
+		return
+	}
+	tokenID := chi.URLParam(r, "token_id")
+	if tokenID == "" {
+		writeError(w, http.StatusBadRequest, "token_id required")
+		return
+	}
+	if err := d.Auth.RevokeAPIToken(ctx, tokenID, wid, uid); err != nil {
+		genericServerError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func randomNonce() string {

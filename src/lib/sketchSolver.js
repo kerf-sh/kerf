@@ -271,6 +271,7 @@ function estimateDof(sketch) {
       case 'diameter':
       case 'point_on_line':
       case 'point_on_arc':
+      case 'point_on_circle':
         dof -= 1
         break
       case 'symmetric':
@@ -291,6 +292,12 @@ function estimateDof(sketch) {
         dof -= refs.length * 2
         break
       }
+      case 'arc_on_circle':
+      case 'arc_on_arc':
+      case 'intersection_point':
+        // Composed of two primitive constraints, removes 2 DOFs.
+        dof -= 2
+        break
       default:
         break
     }
@@ -607,6 +614,48 @@ function buildPlanegcsPrimitives(sketch) {
         if (c.point) {
           constraints.push({ id: nextId(), type: 'coordinate_x', p_id: pid, x: Number(px) || 0 })
           constraints.push({ id: nextId(), type: 'coordinate_y', p_id: pid, y: Number(py) || 0 })
+        }
+        break
+      }
+      case 'point_on_circle': {
+        const t = ent.find((x) => x.id === c.circle)
+        if (t?.type === 'circle') {
+          constraints.push({ id: nextId(), type: 'point_on_circle', p_id: resolve(c.point), c_id: c.circle })
+        }
+        break
+      }
+      case 'arc_on_circle': {
+        // Arc must lie on a circle: arc's center must be on the circle
+        // AND arc's radius must equal the circle's radius.
+        const arcEnt = ent.find((x) => x.id === c.arc)
+        const circEnt = ent.find((x) => x.id === c.circle)
+        if (arcEnt?.type === 'arc' && circEnt?.type === 'circle') {
+          // Arc center on circle.
+          constraints.push({ id: nextId(), type: 'point_on_circle', p_id: resolve(arcEnt.center), c_id: c.circle })
+          // Arc radius = circle radius.
+          constraints.push({ id: nextId(), type: 'equal_radius_cc', c1_id: c.arc, c2_id: c.circle })
+        }
+        break
+      }
+      case 'arc_on_arc': {
+        // Arc must lie on another arc: arc's center must be on the other arc's
+        // circle AND arc's radius must equal the other arc's radius.
+        const arcEnt = ent.find((x) => x.id === c.arc)
+        const otherArcEnt = ent.find((x) => x.id === c.otherArc)
+        if (arcEnt?.type === 'arc' && otherArcEnt?.type === 'arc') {
+          // Arc center on other arc's circle.
+          constraints.push({ id: nextId(), type: 'point_on_circle', p_id: resolve(arcEnt.center), c_id: c.otherArc })
+          // Arc radius = other arc radius.
+          constraints.push({ id: nextId(), type: 'equal_radius_aa', a1_id: c.arc, a2_id: c.otherArc })
+        }
+        break
+      }
+      case 'intersection_point': {
+        // Point must be at the intersection of two lines: point lies on line1
+        // AND point lies on line2.
+        if (c.point && c.line1 && c.line2) {
+          constraints.push({ id: nextId(), type: 'point_on_line_pl', p_id: resolve(c.point), l_id: c.line1 })
+          constraints.push({ id: nextId(), type: 'point_on_line_pl', p_id: resolve(c.point), l_id: c.line2 })
         }
         break
       }

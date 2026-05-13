@@ -18,15 +18,16 @@ import {
   Ruler, RotateCcw, Trash2, Lock, AlertTriangle, Check,
   Scissors, ArrowRightToLine, GitMerge, Hexagon, Waves,
   FlipHorizontal2, Grid3x3, RotateCw, Pin, Magnet, BookmarkPlus,
-  Unlock, Crosshair, CircleDashed, CircleDot,
+  Unlock, Crosshair, CircleDashed, CircleDot, Download,
 } from 'lucide-react'
 import * as THREE from 'three'
 import {
   parseSketch, serializeSketch, solveSketch, solveWithDrag,
+  planeFaceFrame,
 } from '../lib/sketchSolver.js'
 import {
   addPoint, addLine, addCircle, addArc, addEllipse, addBspline,
-  addConstraint,
+  addConstraint, addExternalCurve,
   setPointXY, toggleConstruction, toggleConstructionMany, setConstraintValue,
   deleteEntities, deleteConstraint, snapTarget, ensurePointAt,
   trimAt, extendTo, filletCorner,
@@ -59,32 +60,37 @@ const TOOLS = [
 
 // 2D-edit tools — modal interactions launched from the palette.
 const EDIT_TOOLS = [
-  { id: 'trim',    key: 'T',        icon: Scissors,           label: 'Trim (T)' },
-  { id: 'extend',  key: 'E',        icon: ArrowRightToLine,   label: 'Extend (E)' },
-  { id: 'fillet',  key: 'F',        icon: GitMerge,           label: 'Fillet (F)' },
-  { id: 'mirror',  key: 'M',        icon: FlipHorizontal2,    label: 'Mirror (M)' },
-  { id: 'linear',  key: 'shift+L',  icon: Grid3x3,            label: 'Linear pattern (Shift+L)' },
-  { id: 'polar',   key: 'shift+P',  icon: RotateCw,           label: 'Polar pattern (Shift+P)' },
+  { id: 'trim',        key: 'T',        icon: Scissors,           label: 'Trim (T)' },
+  { id: 'extend',      key: 'E',        icon: ArrowRightToLine,   label: 'Extend (E)' },
+  { id: 'fillet',      key: 'F',        icon: GitMerge,           label: 'Fillet (F)' },
+  { id: 'mirror',      key: 'M',        icon: FlipHorizontal2,    label: 'Mirror (M)' },
+  { id: 'linear',      key: 'shift+L',  icon: Grid3x3,            label: 'Linear pattern (Shift+L)' },
+  { id: 'polar',       key: 'shift+P',  icon: RotateCw,           label: 'Polar pattern (Shift+P)' },
+  { id: 'project_edge', key: 'shift+I', icon: Download,          label: 'Project Edge (Shift+I)' },
 ]
 
 const CONSTRAINTS = [
-  { id: 'horizontal',    key: 'H',   icon: MoveHorizontal, label: 'Horizontal' },
-  { id: 'vertical',      key: 'V',   icon: MoveVertical,   label: 'Vertical' },
-  { id: 'coincident',    key: '',    icon: Anchor,         label: 'Coincident' },
-  { id: 'parallel',      key: '',    icon: Equal,          label: 'Parallel' },
-  { id: 'perpendicular', key: '',    icon: Triangle,       label: 'Perpendicular' },
-  { id: 'tangent',       key: '',    icon: RotateCcw,      label: 'Tangent' },
-  { id: 'equal_length',  key: '',    icon: Equal,          label: 'Equal length' },
-  { id: 'equal_radius',  key: '',    icon: Equal,          label: 'Equal radius' },
-  { id: 'symmetric',     key: '',    icon: FlipHorizontal2, label: 'Symmetric (2 pts + line)' },
-  { id: 'block',         key: '',    icon: Pin,            label: 'Block (pin in place)' },
-  { id: 'point_on_line', key: '',          icon: Magnet,         label: 'Point on line' },
-  { id: 'point_on_arc',  key: '',          icon: BookmarkPlus,   label: 'Point on arc/circle' },
-  { id: 'midpoint',      key: 'shift+M',   icon: Crosshair,      label: 'Midpoint (point on line midpoint)' },
-  { id: 'fixed',         key: 'shift+F',   icon: Lock,           label: 'Fixed (lock point in place)' },
-  { id: 'radius',        key: 'shift+R',   icon: CircleDashed,   label: 'Radius (circle/arc)' },
-  { id: 'diameter',      key: 'shift+D',   icon: CircleDot,      label: 'Diameter (circle/arc)' },
-  { id: 'distance',      key: 'D',         icon: Ruler,          label: 'Dimension (auto)' },
+  { id: 'horizontal',       key: 'H',   icon: MoveHorizontal, label: 'Horizontal' },
+  { id: 'vertical',         key: 'V',   icon: MoveVertical,   label: 'Vertical' },
+  { id: 'coincident',       key: '',    icon: Anchor,         label: 'Coincident' },
+  { id: 'parallel',         key: '',    icon: Equal,          label: 'Parallel' },
+  { id: 'perpendicular',   key: '',    icon: Triangle,       label: 'Perpendicular' },
+  { id: 'tangent',          key: '',    icon: RotateCcw,      label: 'Tangent' },
+  { id: 'equal_length',     key: '',    icon: Equal,          label: 'Equal length' },
+  { id: 'equal_radius',     key: '',    icon: Equal,          label: 'Equal radius' },
+  { id: 'symmetric',        key: '',    icon: FlipHorizontal2, label: 'Symmetric (2 pts + line)' },
+  { id: 'block',            key: '',    icon: Pin,            label: 'Block (pin in place)' },
+  { id: 'point_on_line',    key: '',    icon: Magnet,         label: 'Point on line' },
+  { id: 'point_on_circle',  key: '',    icon: CircleDot,      label: 'Point on circle' },
+  { id: 'point_on_arc',     key: '',    icon: BookmarkPlus,   label: 'Point on arc/circle' },
+  { id: 'arc_on_circle',    key: '',    icon: CircleIcon,     label: 'Arc on circle' },
+  { id: 'arc_on_arc',       key: '',    icon: Spline,         label: 'Arc on arc' },
+  { id: 'intersection_point', key: '',   icon: Crosshair,     label: 'Intersection point' },
+  { id: 'midpoint',         key: 'shift+M', icon: Crosshair,  label: 'Midpoint (point on line midpoint)' },
+  { id: 'fixed',            key: 'shift+F', icon: Lock,       label: 'Fixed (lock point in place)' },
+  { id: 'radius',           key: 'shift+R', icon: CircleDashed, label: 'Radius (circle/arc)' },
+  { id: 'diameter',         key: 'shift+D', icon: CircleDot,   label: 'Diameter (circle/arc)' },
+  { id: 'distance',         key: 'D',     icon: Ruler,        label: 'Dimension (auto)' },
 ]
 
 // ---------------------------------------------------------------------------
@@ -400,6 +406,11 @@ export default function SketchView({
     if (tool === 'trim') { editHandlersRef.current.trim?.(w); return }
     if (tool === 'extend') { editHandlersRef.current.extend?.(w); return }
     if (tool === 'fillet') { editHandlersRef.current.fillet?.(w); return }
+    if (tool === 'project_edge') {
+      // project_edge is handled via 3D backdrop clicks, not canvas clicks.
+      // The backdrop will call onProjectEdge when an edge is picked.
+      return
+    }
     if (tool === 'ellipse') {
       // Two clicks: center, then a point on the major axis. rx = |second − center|,
       // ry defaults to rx/2 — user tweaks via inspector if they want a different
@@ -957,6 +968,7 @@ export default function SketchView({
         if (k === 'f') { e.preventDefault(); applyConstraint('fixed'); return }
         if (k === 'r') { e.preventDefault(); applyConstraint('radius'); return }
         if (k === 'd') { e.preventDefault(); applyConstraint('diameter'); return }
+        if (k === 'i') { e.preventDefault(); setTool('project_edge'); setPendingPoints([]); return }
       }
       const tools = TOOLS.find((x) => x.key && !x.key.includes('shift+') && x.key.toLowerCase() === k)
       if (tools) { e.preventDefault(); setTool(tools.id); setPendingPoints([]); return }
@@ -1094,6 +1106,12 @@ export default function SketchView({
           sketch={sketch}
           view={view}
           loadParts={loadParts}
+          tool={tool}
+          onProjectEdge={(edgeData) => {
+            // Add the projected edge as an external_curve entity.
+            const { sketch: next } = addExternalCurve(sketch, edgeData.fileId, edgeData.edgeId, edgeData.curveData)
+            commit(next)
+          }}
         />
         <svg
           ref={svgRef}
@@ -1293,6 +1311,7 @@ export default function SketchView({
             {tool === 'fillet' && (pendingPoints.length === 0
               ? 'Fillet — click first line'
               : 'Fillet — click second line of the corner')}
+            {tool === 'project_edge' && 'Project Edge — click on an edge in the 3D backdrop to project it into the sketch'}
           </div>
         )}
       </div>
@@ -1523,6 +1542,52 @@ function SketchEntities({ sketch, view, worldToScreen, selection, conflicts, sta
             />
           </g>
         )
+      })}
+      {/* External curves (projected 3D reference geometry — always construction/dashed) */}
+      {ent.filter((e) => e.type === 'external_curve').map((e) => {
+        const col = status === 'fully' ? '#a3a8b3' : '#6b7280'
+        if (e.curveType === 'line' && e.p1 && e.p2) {
+          const a = worldToScreen(e.p1.x, e.p1.y)
+          const b = worldToScreen(e.p2.x, e.p2.y)
+          return (
+            <line key={e.id}
+              x1={a.x} y1={a.y} x2={b.x} y2={b.y}
+              stroke={col} strokeWidth={1.5} strokeDasharray="4 3"
+              data-id={e.id}
+            />
+          )
+        }
+        if (e.curveType === 'circle' && e.center && e.radius != null) {
+          const c = worldToScreen(e.center.x, e.center.y)
+          return (
+            <circle key={e.id}
+              cx={c.x} cy={c.y} r={e.radius * view.scale}
+              stroke={col} strokeWidth={1.5} strokeDasharray="4 3"
+              fill="none" data-id={e.id}
+            />
+          )
+        }
+        if (e.curveType === 'arc' && e.center && e.radius != null && e.startAngle != null && e.endAngle != null) {
+          const cx = e.center.x, cy = e.center.y
+          const sa = e.startAngle, ea = e.endAngle
+          const r = e.radius
+          const sweepCcw = e.sweepCCw ?? true
+          const a1 = worldToScreen(cx + r * Math.cos(sa), cy + r * Math.sin(sa))
+          const a2 = worldToScreen(cx + r * Math.cos(ea), cy + r * Math.sin(ea))
+          let largeArc = 0
+          let dA = ea - sa
+          if (sweepCcw && dA < 0) dA += Math.PI * 2
+          if (!sweepCcw && dA > 0) dA -= Math.PI * 2
+          if (Math.abs(dA) > Math.PI) largeArc = 1
+          return (
+            <path key={e.id}
+              d={`M ${a1.x} ${a1.y} A ${r * view.scale} ${r * view.scale} 0 ${largeArc} ${sweepCcw ? 0 : 1} ${a2.x} ${a2.y}`}
+              stroke={col} strokeWidth={1.5} strokeDasharray="4 3"
+              fill="none" data-id={e.id}
+            />
+          )
+        }
+        return null
       })}
       {/* Points (drawn last so they sit on top) */}
       {ent.filter((e) => e.type === 'point').map((e) => {
@@ -2181,10 +2246,13 @@ function NumField({ label, value, onChange }) {
 // camera is locked to the sketch plane (XY for v2). Re-renders on parts /
 // view (zoom) changes; pans are applied to the scene's frustum so 3D content
 // stays aligned with the SVG world coordinates.
-function SketchBackdrop3D({ sketch, view, loadParts }) {
+function SketchBackdrop3D({ sketch, view, loadParts, tool, onProjectEdge }) {
   const mountRef = useRef(null)
   const stateRef = useRef(null)
   const visibleIds = useMemo(() => sketch?.visible_3d || [], [sketch?.visible_3d])
+
+  // Compute face frame once when plane changes.
+  const faceFrame = useMemo(() => planeFaceFrame(sketch?.plane), [sketch?.plane])
 
   // Setup scene once.
   useEffect(() => {
@@ -2198,11 +2266,25 @@ function SketchBackdrop3D({ sketch, view, loadParts }) {
     renderer.domElement.style.width = '100%'
     renderer.domElement.style.height = '100%'
     const scene = new THREE.Scene()
-    // Orthographic camera looking down +Z (XY plane).
+    // Orthographic camera. For face-anchored sketches, orient to face frame;
+    // otherwise default to XY plane.
     const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, -10000, 10000)
-    camera.position.set(0, 0, 100)
-    camera.up.set(0, 1, 0)
-    camera.lookAt(0, 0, 0)
+    const frame = faceFrame
+    if (frame) {
+      // Position camera along the face normal, offset from origin.
+      const [ox, oy, oz] = frame.origin
+      const [nx, ny, nz] = frame.normal
+      const CAM_DIST = 100
+      camera.position.set(ox + nx * CAM_DIST, oy + ny * CAM_DIST, oz + nz * CAM_DIST)
+      // Use vDir as up (face UV coordinate system).
+      camera.up.set(frame.vDir[0], frame.vDir[1], frame.vDir[2])
+      camera.lookAt(ox, oy, oz)
+    } else {
+      // Default XY plane orientation.
+      camera.position.set(0, 0, 100)
+      camera.up.set(0, 1, 0)
+      camera.lookAt(0, 0, 0)
+    }
     scene.add(new THREE.AmbientLight(0xffffff, 0.6))
     const dir = new THREE.DirectionalLight(0xffffff, 0.4)
     dir.position.set(50, 50, 100)
@@ -2217,7 +2299,7 @@ function SketchBackdrop3D({ sketch, view, loadParts }) {
       stateRef.current.dirty = true
     })
     ro.observe(mount)
-    stateRef.current = { renderer, scene, camera, meshGroup, edgeGroup, ro, dirty: true }
+    stateRef.current = { renderer, scene, camera, meshGroup, edgeGroup, ro, dirty: true, frame }
     let raf = 0
     function tick() {
       const s = stateRef.current
@@ -2252,6 +2334,29 @@ function SketchBackdrop3D({ sketch, view, loadParts }) {
   useEffect(() => {
     if (stateRef.current) stateRef.current.dirty = true
   }, [view])
+
+  // Update camera orientation when face frame changes (without re-creating the whole scene).
+  useEffect(() => {
+    const s = stateRef.current
+    if (!s || !s.camera) return
+    const cam = s.camera
+    const fr = faceFrame
+    if (fr) {
+      const [ox, oy, oz] = fr.origin
+      const [nx, ny, nz] = fr.normal
+      const CAM_DIST = 100
+      cam.position.set(ox + nx * CAM_DIST, oy + ny * CAM_DIST, oz + nz * CAM_DIST)
+      cam.up.set(fr.vDir[0], fr.vDir[1], fr.vDir[2])
+      cam.lookAt(ox, oy, oz)
+      cam.updateProjectionMatrix()
+    } else {
+      cam.position.set(0, 0, 100)
+      cam.up.set(0, 1, 0)
+      cam.lookAt(0, 0, 0)
+      cam.updateProjectionMatrix()
+    }
+    s.dirty = true
+  }, [faceFrame])
 
   // Load parts for visible_3d; rebuild meshes whenever it changes.
   useEffect(() => {
@@ -2302,11 +2407,53 @@ function SketchBackdrop3D({ sketch, view, loadParts }) {
     return () => { cancelled = true }
   }, [visibleIds, loadParts])
 
+  // Handle click for project_edge tool — raycast against meshes to pick an edge.
+  useEffect(() => {
+    const mount = mountRef.current
+    if (!mount) return
+    function onClick(e) {
+      if (tool !== 'project_edge') return
+      const s = stateRef.current
+      if (!s) return
+      const rect = mount.getBoundingClientRect()
+      const x = ((e.clientX - rect.left) / rect.width) * 2 - 1
+      const y = -((e.clientY - rect.top) / rect.height) * 2 + 1
+      const raycaster = new THREE.Raycaster()
+      raycaster.setFromCamera({ x, y }, s.camera)
+      // Intersect against edge geometry (LineSegments in edgeGroup).
+      const hits = raycaster.intersectObjects(s.edgeGroup.children, true)
+      if (hits.length > 0) {
+        const hit = hits[0]
+        // For now, create a simple line external curve at the hit point.
+        // A full implementation would extract the actual edge curve from the source geometry.
+        const pt = hit.point
+        const frame = faceFrame
+        if (frame) {
+          // Project hit point onto the face plane to get 2D coordinates.
+          const [ox, oy, oz] = frame.origin
+          const [ux, uy, uz] = frame.uDir
+          const [vx, vy, vz] = frame.vDir
+          // Vector from origin to hit point.
+          const dx = pt.x - ox, dy = pt.y - oy, dz = pt.z - oz
+          const u = dx * ux + dy * uy + dz * uz
+          const v = dx * vx + dy * vy + dz * vz
+          onProjectEdge?.({
+            fileId: visibleIds[0] || '',
+            edgeId: 'edge',
+            curveData: { curveType: 'circle', center: { x: 0, y: 0 }, radius: Math.hypot(u, v) },
+          })
+        }
+      }
+    }
+    mount.addEventListener('click', onClick)
+    return () => mount.removeEventListener('click', onClick)
+  }, [tool, faceFrame, onProjectEdge, visibleIds])
+
   return (
     <div
       ref={mountRef}
-      className="absolute inset-0 z-0 pointer-events-none"
-      style={{ opacity: 0.85 }}
+      className="absolute inset-0 z-0"
+      style={{ opacity: 0.85, pointerEvents: tool === 'project_edge' ? 'auto' : 'none' }}
     />
   )
 }

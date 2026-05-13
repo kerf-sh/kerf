@@ -98,6 +98,26 @@ var Registry = []Tool{
 	{Spec: featureSweep2Spec, Write: true, Run: runFeatureSweep2},
 	{Spec: featureNetworkSrfSpec, Write: true, Run: runFeatureNetworkSrf},
 	{Spec: featureBlendSrfSpec, Write: true, Run: runFeatureBlendSrf},
+
+	// FEM analysis.
+	{Spec: femRunSpec, Write: true, Run: runFEMRun},
+	{Spec: femJobStatusSpec, Run: runFEMJobStatus},
+
+	// SPICE simulation.
+	{Spec: runSimulationSpec, Write: true, Run: runSimulation},
+	{Spec: simJobStatusSpec, Run: runSimJobStatus},
+
+	// Topology optimization (SIMP via FEniCSx).
+	{Spec: topoRunSpec, Write: true, Run: runTopoRun},
+
+	// 3D assembly mates (SolveSpace solver).
+	{Spec: addMateSpec, Write: true, Run: runAddMate},
+	{Spec: deleteMateSpec, Write: true, Run: runDeleteMate},
+	{Spec: listMatesSpec, Run: runListMates},
+
+	// Tolerance stack-up (1D worst-case + RSS, Monte-Carlo).
+	{Spec: toleranceStackSpec, Run: runToleranceStack},
+	{Spec: toleranceMonteCarloSpec, Run: runToleranceMonteCarlo},
 }
 
 // Specs returns the JSON schemas of every tool a given role is allowed to use.

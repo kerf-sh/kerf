@@ -1,0 +1,15 @@
+fastapi
+uvicorn
+numpy
+scipy
+meshio
+gmsh
+PyCubes
+dolfinx @ git+https://github.com/FEniCS/dolfinx.git@main
+slepc4py
+petsc4py
+opencamlib
+ifcopenshell
+scikit-rf
+kiutils
+pythonocc-core

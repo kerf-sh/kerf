@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { AlertCircle, Loader2, Save, Settings, Trash2, Upload, X } from 'lucide-react'
+import { AlertCircle, Copy, Loader2, Save, Settings, Trash2, Upload, X } from 'lucide-react'
 import Layout from '../components/Layout.jsx'
 import Card from '../components/Card.jsx'
 import Button from '../components/Button.jsx'
@@ -21,6 +21,11 @@ export default function WorkspaceSettings() {
   const [err, setErr] = useState(null)
   const [deleting, setDeleting] = useState(false)
   const [avatarBusy, setAvatarBusy] = useState(false)
+  const [tokens, setTokens] = useState([])
+  const [tokensLoading, setTokensLoading] = useState(true)
+  const [newTokenName, setNewTokenName] = useState('')
+  const [tokenCreating, setTokenCreating] = useState(false)
+  const [newCreatedToken, setNewCreatedToken] = useState(null)
   const fileRef = useRef(null)
 
   const onPickAvatar = async (e) => {
@@ -54,6 +59,39 @@ export default function WorkspaceSettings() {
     }
   }
 
+  const loadTokens = () => {
+    setTokensLoading(true)
+    api.listAPITokens()
+      .then(setTokens)
+      .catch(() => {})
+      .finally(() => setTokensLoading(false))
+  }
+
+  const createToken = async (e) => {
+    e?.preventDefault()
+    if (!newTokenName.trim() || tokenCreating) return
+    setTokenCreating(true)
+    try {
+      const created = await api.createAPIToken(newTokenName.trim())
+      setNewCreatedToken(created.token)
+      setNewTokenName('')
+      loadTokens()
+    } catch (e) {
+      setErr(e instanceof ApiError ? e.message : 'Could not create token.')
+    } finally {
+      setTokenCreating(false)
+    }
+  }
+
+  const revokeToken = async (tokenID) => {
+    try {
+      await api.revokeAPIToken(tokenID)
+      loadTokens()
+    } catch (e) {
+      setErr(e instanceof ApiError ? e.message : 'Could not revoke token.')
+    }
+  }
+
   useEffect(() => {
     let cancelled = false
     api.getWorkspace(workspaceSlug)
@@ -64,6 +102,15 @@ export default function WorkspaceSettings() {
       .catch((e) => { if (!cancelled) setErr(e instanceof ApiError ? e.message : 'Could not load workspace.') })
     return () => { cancelled = true }
   }, [workspaceSlug])
+
+  useEffect(() => {
+    let cancelled = false
+    api.listAPITokens()
+      .then((data) => { if (!cancelled) setTokens(data) })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setTokensLoading(false) })
+    return () => { cancelled = true }
+  }, [])
 
   const save = async (e) => {
     e?.preventDefault?.()
@@ -208,6 +255,80 @@ export default function WorkspaceSettings() {
               </Button>
             </div>
           </form>
+        </Card>
+
+        <Card className="p-6 mb-6">
+          <h3 className="font-display text-base font-semibold tracking-tight mb-1">API Tokens</h3>
+          <p className="text-xs text-ink-400 mb-4">
+            Tokens are shown only once at creation. Store them securely.
+          </p>
+
+          {newCreatedToken && (
+            <div className="mb-4 p-3 rounded-lg border border-kerf-300/30 bg-kerf-300/10">
+              <p className="text-xs text-kerf-300 mb-2 font-medium">Token created — copy it now, it won&apos;t be shown again.</p>
+              <div className="flex items-center gap-2">
+                <code className="flex-1 text-xs font-mono text-ink-100 bg-ink-950 px-2 py-1.5 rounded overflow-x-auto">{newCreatedToken}</code>
+                <Button variant="ghost" size="sm" onClick={() => navigator.clipboard.writeText(newCreatedToken)}>
+                  <Copy size={12} />
+                </Button>
+              </div>
+              <button
+                type="button"
+                className="mt-2 text-xs text-ink-500 hover:text-ink-300 transition-colors"
+                onClick={() => setNewCreatedToken(null)}
+              >
+                Done
+              </button>
+            </div>
+          )}
+
+          <form className="flex items-center gap-2 mb-6" onSubmit={createToken}>
+            <Input
+              placeholder="Token name"
+              value={newTokenName}
+              onChange={(e) => setNewTokenName(e.target.value)}
+              className="flex-1"
+            />
+            <Button type="submit" variant="primary" size="md" disabled={tokenCreating || !newTokenName.trim()}>
+              {tokenCreating ? <Loader2 size={13} className="animate-spin" /> : null}
+              Generate
+            </Button>
+          </form>
+
+          {tokensLoading ? (
+            <div className="text-center text-xs text-ink-500 py-4">
+              <Loader2 size={14} className="animate-spin inline-block mr-2" /> Loading…
+            </div>
+          ) : tokens.length === 0 ? (
+            <p className="text-xs text-ink-500 text-center py-4">No API tokens yet.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b border-ink-800">
+                    <th className="text-left pb-2 text-[11px] font-medium text-ink-400 uppercase tracking-wider">Name</th>
+                    <th className="text-left pb-2 text-[11px] font-medium text-ink-400 uppercase tracking-wider">Created</th>
+                    <th className="text-left pb-2 text-[11px] font-medium text-ink-400 uppercase tracking-wider">Last used</th>
+                    <th className="pb-2 w-8"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {tokens.map((token) => (
+                    <tr key={token.id} className="border-b border-ink-800/50 last:border-0">
+                      <td className="py-2.5 font-mono text-ink-100">{token.name}</td>
+                      <td className="py-2.5 text-ink-400">{token.created_at ? new Date(token.created_at).toLocaleDateString() : '—'}</td>
+                      <td className="py-2.5 text-ink-400">{token.last_used_at ? new Date(token.last_used_at).toLocaleDateString() : 'Never'}</td>
+                      <td className="py-2.5 text-right">
+                        <Button variant="ghost" size="sm" onClick={() => revokeToken(token.id)}>
+                          <Trash2 size={12} />
+                        </Button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </Card>
 
         <Card className="p-6 border-red-500/20">

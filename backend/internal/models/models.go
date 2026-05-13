@@ -77,6 +77,7 @@ type File struct {
 	ParentID           *string   `json:"parent_id"`
 	Name               string    `json:"name"`
 	Kind               string    `json:"kind"`
+	Extension          *string   `json:"extension,omitempty"`
 	Content            *string   `json:"content,omitempty"`
 	StorageKey         *string   `json:"storage_key,omitempty"`
 	MimeType           *string   `json:"mime_type,omitempty"`

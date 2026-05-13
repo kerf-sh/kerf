@@ -23,6 +23,7 @@ import (
 	"github.com/imranp/kerf/backend/internal/llm"
 	kmw "github.com/imranp/kerf/backend/internal/middleware"
 	"github.com/imranp/kerf/backend/internal/storage"
+	"github.com/imranp/kerf/backend/internal/tools"
 	"github.com/imranp/kerf/backend/internal/web"
 )
 
@@ -123,6 +124,11 @@ func main() {
 			r.Get("/models", deps.ListModels)
 			r.Post("/share/{token}/accept", deps.AcceptShare)
 
+			// API tokens (workspace-scoped).
+			r.Post("/api-tokens", deps.CreateAPIToken)
+			r.Get("/api-tokens", deps.ListAPITokens)
+			r.Delete("/api-tokens/{token_id}", deps.RevokeAPIToken)
+
 			// Authenticated blob serving for the local storage backend.
 			r.Get("/blobs/*", deps.ServeBlob)
 
@@ -163,6 +169,11 @@ func main() {
 					r.Patch("/files/{fid}", deps.UpdateFile)
 					r.Delete("/files/{fid}", deps.DeleteFile)
 					r.Get("/files/{fid}/download", deps.DownloadFile)
+					r.Post("/files/{fid}/tessellate", deps.Tessellate)
+					r.Delete("/files/{fid}/tessellate", deps.PurgeTessellation)
+					r.Post("/files/{fid}/fem", deps.RunFEM)
+					r.Post("/files/{fid}/sim", deps.RunSim)
+					r.Get("/files/{fid}/sim/status", deps.SimJobStatus)
 
 					// Cross-project derived-artifact cache (ROADMAP row 67).
 					r.Post("/files/{fid}/derived", deps.LookupDerivedArtifact)
@@ -194,6 +205,22 @@ func main() {
 					r.Delete("/members/{uid}", deps.RemoveMember)
 				})
 			})
+		})
+	})
+
+	// /v1/rpc — JSON-RPC 2.0 endpoint for kerf-sdk (Python package).
+	// Accepts {"jsonrpc": "2.0", "method": "files.read", "params": {"project_id": "..."}, "id": 1}
+	// and maps method names to the agent tool registry.
+	r.Route("/v1", func(r chi.Router) {
+		r.Use(kmw.RequireAuth(authSvc, pool))
+		r.Post("/rpc", deps.HandleRPC)
+
+		// /tools — tool registry for kerf-sdk consumers.
+		// Returns the full tool list regardless of auth (SDKs filter per-token).
+		r.Get("/tools", func(w http.ResponseWriter, r *http.Request) {
+			specs := tools.Specs("editor")
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{"tools": specs})
 		})
 	})
 
@@ -237,6 +264,10 @@ func main() {
 			log.Fatalf("listen: %v", err)
 		}
 	}()
+
+	startTessWorker(ctx, cfg, pool, store)
+	startFEMWorker(ctx, cfg, pool, store)
+	startSIMWorker(ctx, cfg, pool, store)
 
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)

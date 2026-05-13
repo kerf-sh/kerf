@@ -97,6 +97,14 @@ type Config struct {
 	// Empty → "./scripts/step-tessellate.mjs" relative to cwd.
 	StepTessellateScript string
 
+	// FEM workers (cloud build only). Same pattern as StepTessellate*.
+	FEMWorkers    int
+	FEMTimeoutSec int
+
+	// SIM workers (cloud build only). ngspice batch simulation.
+	SIMWorkers    int
+	SIMTimeoutSec int
+
 	// System user (seeded by `kerf migrate`).
 	SystemUserEmail    string
 	SystemUserName     string
@@ -242,6 +250,10 @@ type tomlConfig struct {
 		StepTessellateTimeoutSec int    `toml:"step_tessellate_timeout_sec"`
 		StepTessellateNodeBin    string `toml:"step_tessellate_node_bin"`
 		StepTessellateScript     string `toml:"step_tessellate_script"`
+		FEMWorkers              int    `toml:"fem_workers"`
+		FEMTimeoutSec           int    `toml:"fem_timeout_sec"`
+		SIMWorkers              int    `toml:"sim_workers"`
+		SIMTimeoutSec           int    `toml:"sim_timeout_sec"`
 	} `toml:"limits"`
 
 	SystemUser struct {
@@ -421,6 +433,10 @@ func fromTOML(t *tomlConfig) *Config {
 		StepTessellateTimeoutSec: defaultInt(t.Limits.StepTessellateTimeoutSec, 300),
 		StepTessellateNodeBin:    t.Limits.StepTessellateNodeBin,
 		StepTessellateScript:     t.Limits.StepTessellateScript,
+		FEMWorkers:              defaultIntAllowNegativeAsZero(t.Limits.FEMWorkers, 2),
+		FEMTimeoutSec:           defaultInt(t.Limits.FEMTimeoutSec, 600),
+		SIMWorkers:              defaultIntAllowNegativeAsZero(t.Limits.SIMWorkers, 2),
+		SIMTimeoutSec:           defaultInt(t.Limits.SIMTimeoutSec, 600),
 
 		SystemUserEmail:    t.SystemUser.Email,
 		SystemUserName:     t.SystemUser.Name,

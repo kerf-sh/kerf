@@ -61,6 +61,25 @@ export default function LibraryEditor() {
     return validatePart(currentPart)
   }, [currentPart])
 
+  // Material files with computed full paths for the material_path field.
+  const materialFilesWithPaths = useMemo(() => {
+    if (!files.length) return []
+    const byId = new Map(files.map((f) => [f.id, f]))
+    return files
+      .filter((f) => f?.kind === 'material')
+      .map((f) => {
+        const parts = [f.name]
+        let cur = f
+        for (let i = 0; i < 64 && cur?.parent_id; i++) {
+          const p = byId.get(cur.parent_id)
+          if (!p) break
+          parts.unshift(p.name)
+          cur = p
+        }
+        return { ...f, materialPath: '/' + parts.join('/') }
+      })
+  }, [files])
+
   if (!currentPart || !currentFile) {
     return (
       <div className="h-full flex items-center justify-center text-xs text-ink-500">
@@ -80,6 +99,7 @@ export default function LibraryEditor() {
             part={currentPart}
             onChange={updatePart}
             errors={validation.ok ? [] : validation.errors}
+            materialFiles={materialFilesWithPaths}
           />
         </aside>
 
@@ -172,7 +192,7 @@ function VisibilityBadge({ value }) {
 
 // -- Metadata form -------------------------------------------------------
 
-function MetadataForm({ part, onChange, errors }) {
+function MetadataForm({ part, onChange, errors, materialFiles = [] }) {
   return (
     <div className="px-4 py-4 space-y-4">
       <div className="text-[10px] uppercase tracking-wider text-ink-500 font-medium">
@@ -264,6 +284,24 @@ function MetadataForm({ part, onChange, errors }) {
         </select>
         <p className="mt-1 text-[10px] text-ink-500">
           Public Parts in published projects appear in /workshop/parts.
+        </p>
+      </Field>
+
+      <Field label="Default Material">
+        <select
+          value={part.material_path || ''}
+          onChange={(e) => onChange({ material_path: e.target.value || undefined })}
+          className="w-full bg-ink-900 border border-ink-800 rounded px-2 py-1.5 text-xs text-ink-100 outline-none focus:border-kerf-300/60"
+        >
+          <option value="">— none —</option>
+          {materialFiles.map((f) => (
+            <option key={f.id} value={f.materialPath || `/${f.name}`}>
+              {f.name?.replace(/\.material$/, '') || f.id}
+            </option>
+          ))}
+        </select>
+        <p className="mt-1 text-[10px] text-ink-500">
+          Material used for BOM and drawing callouts.
         </p>
       </Field>
 

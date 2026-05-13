@@ -111,7 +111,7 @@ func (d *Deps) ListFiles(w http.ResponseWriter, r *http.Request) {
 	// only care about the most-recent job per file (uniqueness is enforced
 	// by step_tessellation_jobs_file_id_unique, so the join is 1:1).
 	rows, err := d.Pool.Query(r.Context(), `
-		select f.id, f.project_id, f.parent_id, f.name, f.kind,
+		select f.id, f.project_id, f.parent_id, f.name, f.kind, f.extension,
 		       f.storage_key, f.mime_type, f.size, f.mesh_storage_key,
 		       j.status,
 		       f.created_at, f.updated_at
@@ -129,7 +129,7 @@ func (d *Deps) ListFiles(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var f models.File
 		if err := rows.Scan(
-			&f.ID, &f.ProjectID, &f.ParentID, &f.Name, &f.Kind,
+			&f.ID, &f.ProjectID, &f.ParentID, &f.Name, &f.Kind, &f.Extension,
 			&f.StorageKey, &f.MimeType, &f.Size, &f.MeshStorageKey,
 			&f.TessellationStatus,
 			&f.CreatedAt, &f.UpdatedAt,
@@ -169,10 +169,11 @@ func (d *Deps) attachMeshURL(f *models.File) {
 }
 
 type createFileReq struct {
-	Name     string  `json:"name"`
-	Kind     string  `json:"kind"`
-	ParentID *string `json:"parent_id"`
-	Content  *string `json:"content"`
+	Name      string  `json:"name"`
+	Kind      string  `json:"kind"`
+	Extension *string `json:"extension"`
+	ParentID  *string `json:"parent_id"`
+	Content   *string `json:"content"`
 }
 
 // CreateFile creates a file or folder.
@@ -215,11 +216,11 @@ func (d *Deps) CreateFile(w http.ResponseWriter, r *http.Request) {
 	}
 	var f models.File
 	err := d.Pool.QueryRow(r.Context(), `
-		insert into files(project_id, parent_id, name, kind, content)
-		values ($1,$2,$3,$4,$5)
-		returning id, project_id, parent_id, name, kind, content, storage_key, mime_type, size, mesh_storage_key, created_at, updated_at
-	`, pid, body.ParentID, body.Name, body.Kind, content).Scan(
-		&f.ID, &f.ProjectID, &f.ParentID, &f.Name, &f.Kind, &f.Content, &f.StorageKey, &f.MimeType, &f.Size, &f.MeshStorageKey, &f.CreatedAt, &f.UpdatedAt)
+		insert into files(project_id, parent_id, name, kind, extension, content)
+		values ($1,$2,$3,$4,$5,$6)
+		returning id, project_id, parent_id, name, kind, extension, content, storage_key, mime_type, size, mesh_storage_key, created_at, updated_at
+	`, pid, body.ParentID, body.Name, body.Kind, body.Extension, content).Scan(
+		&f.ID, &f.ProjectID, &f.ParentID, &f.Name, &f.Kind, &f.Extension, &f.Content, &f.StorageKey, &f.MimeType, &f.Size, &f.MeshStorageKey, &f.CreatedAt, &f.UpdatedAt)
 	if err != nil {
 		genericServerError(w, err)
 		return
@@ -263,7 +264,7 @@ func (d *Deps) GetFile(w http.ResponseWriter, r *http.Request) {
 	}
 	var f models.File
 	err := d.Pool.QueryRow(r.Context(), `
-		select f.id, f.project_id, f.parent_id, f.name, f.kind, f.content,
+		select f.id, f.project_id, f.parent_id, f.name, f.kind, f.extension, f.content,
 		       f.storage_key, f.mime_type, f.size, f.mesh_storage_key,
 		       j.status,
 		       f.created_at, f.updated_at
@@ -271,7 +272,7 @@ func (d *Deps) GetFile(w http.ResponseWriter, r *http.Request) {
 		left join step_tessellation_jobs j on j.file_id = f.id
 		where f.id = $1 and f.project_id = $2 and f.deleted_at is null
 	`, fid, pid).Scan(
-		&f.ID, &f.ProjectID, &f.ParentID, &f.Name, &f.Kind, &f.Content,
+		&f.ID, &f.ProjectID, &f.ParentID, &f.Name, &f.Kind, &f.Extension, &f.Content,
 		&f.StorageKey, &f.MimeType, &f.Size, &f.MeshStorageKey,
 		&f.TessellationStatus,
 		&f.CreatedAt, &f.UpdatedAt,
@@ -299,9 +300,10 @@ func (d *Deps) GetFile(w http.ResponseWriter, r *http.Request) {
 }
 
 type updateFileReq struct {
-	Name     *string `json:"name"`
-	Content  *string `json:"content"`
-	ParentID *string `json:"parent_id"`
+	Name      *string `json:"name"`
+	Extension *string `json:"extension"`
+	Content   *string `json:"content"`
+	ParentID  *string `json:"parent_id"`
 }
 
 // UpdateFile patches a file's name/content/parent.
@@ -326,13 +328,14 @@ func (d *Deps) UpdateFile(w http.ResponseWriter, r *http.Request) {
 	err := d.Pool.QueryRow(r.Context(), `
 		update files set
 			name      = coalesce($3, name),
-			content   = coalesce($4, content),
-			parent_id = case when $5::boolean then $6 else parent_id end,
+			extension = coalesce($4, extension),
+			content   = coalesce($5, content),
+			parent_id = case when $6::boolean then $7 else parent_id end,
 			updated_at = now()
 		where id = $1 and project_id = $2 and deleted_at is null
-		returning id, project_id, parent_id, name, kind, content, storage_key, mime_type, size, mesh_storage_key, created_at, updated_at
-	`, fid, pid, body.Name, body.Content, body.ParentID != nil, body.ParentID).Scan(
-		&f.ID, &f.ProjectID, &f.ParentID, &f.Name, &f.Kind, &f.Content, &f.StorageKey, &f.MimeType, &f.Size, &f.MeshStorageKey, &f.CreatedAt, &f.UpdatedAt)
+		returning id, project_id, parent_id, name, kind, extension, content, storage_key, mime_type, size, mesh_storage_key, created_at, updated_at
+	`, fid, pid, body.Name, body.Extension, body.Content, body.ParentID != nil, body.ParentID).Scan(
+		&f.ID, &f.ProjectID, &f.ParentID, &f.Name, &f.Kind, &f.Extension, &f.Content, &f.StorageKey, &f.MimeType, &f.Size, &f.MeshStorageKey, &f.CreatedAt, &f.UpdatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeError(w, http.StatusNotFound, "file not found")
@@ -610,6 +613,60 @@ func (d *Deps) RestoreFile(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	d.getFileForResponse(w, r, pid, fid)
+}
+
+// Tessellate enqueues a file for tessellation (re-queue if already queued/running/done).
+func (d *Deps) Tessellate(w http.ResponseWriter, r *http.Request) {
+	uid := middleware.UserID(r.Context())
+	pid := chi.URLParam(r, "pid")
+	fid := chi.URLParam(r, "fid")
+	if requireMember(w, r, d.Pool, pid, uid) == "" {
+		return
+	}
+	_, err := d.Pool.Exec(r.Context(),
+		`insert into step_tessellation_jobs (file_id) values ($1)
+		 on conflict (file_id) do update set status='queued', error=null, started_at=null, finished_at=null`,
+		fid)
+	if err != nil {
+		genericServerError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusAccepted, map[string]string{"status": "queued"})
+}
+
+// PurgeTessellation invalidates the cached mesh for a file (deletes the .glb
+// and resets the job row so the next worker pick-up enqueues a fresh run).
+func (d *Deps) PurgeTessellation(w http.ResponseWriter, r *http.Request) {
+	uid := middleware.UserID(r.Context())
+	pid := chi.URLParam(r, "pid")
+	fid := chi.URLParam(r, "fid")
+	if requireMember(w, r, d.Pool, pid, uid) == "" {
+		return
+	}
+	var meshKey *string
+	if err := d.Pool.QueryRow(r.Context(),
+		`select mesh_storage_key from files where id=$1 and project_id=$2 and deleted_at is null`,
+		fid, pid).Scan(&meshKey); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "file not found")
+			return
+		}
+		genericServerError(w, err)
+		return
+	}
+	if meshKey != nil && *meshKey != "" {
+		if d.Storage != nil {
+			_ = d.Storage.Delete(r.Context(), *meshKey)
+		}
+	}
+	_, err := d.Pool.Exec(r.Context(),
+		`update step_tessellation_jobs set status='queued', error=null, mesh_storage_key=null, started_at=null, finished_at=null where file_id=$1`,
+		fid)
+	if err != nil {
+		genericServerError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "purged"})
 }
 
 // EmptyTrash permanently deletes soft-deleted files older than 30 days.

@@ -1,34 +1,20 @@
-// ScriptEditor — read-only viewer for `.script.ts` files (the Phase 1 stub
-// of the Scripting automation kind).
+// ScriptEditor — editable viewer for `.script.ts` and `.script.py` files.
 //
-// File shape (mirrors the backend constraint shipped in
-// 1746578200000_kind_script.sql): plain TypeScript source. The eventual
-// engine (esbuild-wasm bundler in a Web Worker, typed `kerf.*` API, fixed-
-// RPC backend ops) is deferred — this v1 only confirms the kind round-trips
-// end-to-end so a future engine slice has a stable shape to write to.
+// File shape: kind='script' with an extension field (.ts or .py). The TypeScript
+// variant (Phase 1 stub) runs in the browser via esbuild-wasm. The Python
+// variant (.script.py) is server-side — the editor is editable and content
+// is saved via the normal file patch endpoint; the user interacts with the
+// running workspace via `pip install kerf-sdk`.
 //
-// Mirrors SimulationView.jsx's "engine pending" pattern: a header strip, a
-// monospace body, and an inline banner that names the missing runtime so a
-// reader of the editor knows nothing is broken — the runtime just hasn't
-// landed yet.
-//
-// Intentionally NOT wired:
-//   - editContent path (read-only stub; bytes flow via the backend only)
-//   - any TypeScript parsing beyond Monaco's built-in highlighting
-//
-// The Monaco binding here is intentionally minimal: read-only, TypeScript
-// language, no extraLibs / compiler config. We don't reuse CodeEditor.jsx
-// because that wrapper hard-codes `language="javascript"` and is tuned for
-// the .jscad runtime; coupling the script viewer to it would force unrelated
-// changes in a parallel slice. ~15 extra lines of @monaco-editor/react is
-// the lighter contract.
+// Wired:
+//   - editContent path (writable editor; changes persist via saveFile)
+//   - Monaco language mode based on file extension (typescript | python)
 
 import Editor from '@monaco-editor/react'
-import { AlertTriangle, Code } from 'lucide-react'
+import { AlertTriangle, Code, Terminal } from 'lucide-react'
 
 const MONACO_OPTIONS = {
-  readOnly: true,
-  domReadOnly: true,
+  readOnly: false,
   minimap: { enabled: false },
   fontFamily: 'JetBrains Mono, Geist Mono, ui-monospace, SF Mono, Menlo, monospace',
   fontSize: 12,
@@ -41,8 +27,23 @@ const MONACO_OPTIONS = {
   automaticLayout: true,
 }
 
-export default function ScriptEditor({ content, fileName }) {
+function scriptExtension(file) {
+  if (!file) return 'ts'
+  if (file.extension) return file.extension
+  const n = (file.name || '').toLowerCase()
+  if (n.endsWith('.script.py')) return 'py'
+  return 'ts'
+}
+
+function languageFor(ext) {
+  return ext === 'py' ? 'python' : 'typescript'
+}
+
+export default function ScriptEditor({ content, fileName, file, onChange }) {
   const src = typeof content === 'string' ? content : ''
+  const ext = scriptExtension(file)
+  const lang = languageFor(ext)
+  const isPython = ext === 'py'
 
   return (
     <div className="h-full flex flex-col bg-ink-950 text-ink-100 min-h-0">
@@ -55,33 +56,52 @@ export default function ScriptEditor({ content, fileName }) {
           {fileName || ''}
         </span>
         <span className="ml-2 text-[10px] uppercase tracking-wider text-kerf-300 border border-kerf-300/40 rounded px-1.5 py-0.5">
-          .script.ts
+          .script.{isPython ? 'py' : 'ts'}
         </span>
       </div>
 
-      <div className="px-4 py-3 border-b border-ink-800 bg-amber-950/20 flex-shrink-0">
-        <div className="flex items-start gap-2 text-[11px] text-amber-200">
-          <AlertTriangle size={12} className="text-amber-400 shrink-0 mt-0.5" />
-          <div>
-            <div className="font-medium text-amber-300">
-              Engine pending — esbuild-wasm runtime not yet wired
-            </div>
-            <div className="text-amber-200/70 mt-0.5">
-              The script kind round-trips today but is read-only in the
-              editor. Bundler, typed <span className="font-mono">kerf.*</span> API,
-              and backend RPC ops land in a follow-up slice.
+      {isPython ? (
+        <div className="px-4 py-3 border-b border-ink-800 bg-cyan-950/20 flex-shrink-0">
+          <div className="flex items-start gap-2 text-[11px] text-cyan-200">
+            <Terminal size={12} className="text-cyan-400 shrink-0 mt-0.5" />
+            <div>
+              <div className="font-medium text-cyan-300">
+                Python scripting — server-side execution
+              </div>
+              <div className="text-cyan-200/70 mt-0.5">
+                Use <code className="font-mono text-cyan-100">pip install kerf-sdk</code> to
+                interact with this workspace. The server executes Python scripts
+                on demand via the JSON-RPC endpoint.
+              </div>
             </div>
           </div>
         </div>
-      </div>
+      ) : (
+        <div className="px-4 py-3 border-b border-ink-800 bg-amber-950/20 flex-shrink-0">
+          <div className="flex items-start gap-2 text-[11px] text-amber-200">
+            <AlertTriangle size={12} className="text-amber-400 shrink-0 mt-0.5" />
+            <div>
+              <div className="font-medium text-amber-300">
+                Engine pending — TypeScript runtime not yet wired
+              </div>
+              <div className="text-amber-200/70 mt-0.5">
+                The script kind round-trips today but is read-only in the
+                editor. Bundler, typed <span className="font-mono">kerf.*</span> API,
+                and backend RPC ops land in a follow-up slice.
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="flex-1 min-h-0">
         <Editor
           height="100%"
           theme="vs-dark"
-          language="typescript"
+          language={lang}
           value={src}
           options={MONACO_OPTIONS}
+          onChange={onChange}
         />
       </div>
     </div>

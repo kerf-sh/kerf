@@ -92,6 +92,7 @@ type partDoc struct {
 	// "no variants" and the file behaves like every other Part.
 	DefaultConfig  string              `json:"default_config,omitempty"`
 	Configurations []partConfiguration `json:"configurations,omitempty"`
+	MaterialPath   string              `json:"material_path,omitempty"`
 }
 
 // partConfiguration mirrors the configurations / variants entry shape on a
@@ -160,7 +161,7 @@ func validatePartURL(u string) error {
 // ----- create_part ----------------------------------------------------------
 
 var createPartSpec = llm.ToolSpec{
-	Name: "create_part",
+	Name:        "create_part",
 	Description: "Create a new Part file (kind='part') in the library. The Part stores manufacturer/MPN/distributor metadata as JSON; assemblies reference parts as Components and the BOM endpoint rolls them up. `name` is required; everything else can be filled in later by editing the file via write_file / edit_file (see docs/llm/part.md).",
 	InputSchema: map[string]any{
 		"type": "object",
@@ -286,8 +287,9 @@ type bomRow struct {
 	PrimaryDistributor *bomDistRef `json:"primary_distributor,omitempty"`
 	// Configurations / variants — populated when the rolled-up component
 	// pinned a specific configuration (M3 vs M4 of one screw Part).
-	ConfigID    string `json:"config_id,omitempty"`
-	ConfigLabel string `json:"config_label,omitempty"`
+	ConfigID     string `json:"config_id,omitempty"`
+	ConfigLabel  string `json:"config_label,omitempty"`
+	MaterialPath string `json:"material_path,omitempty"`
 }
 
 // bomFileRow is the slice of `files` we need to walk.
@@ -478,10 +480,11 @@ func computeBOMTool(ctx context.Context, pc ProjectCtx) ([]bomRow, *float64, []s
 	for _, a := range aggregates {
 		doc := parsePartContent(a.fileRow.Content)
 		row := bomRow{
-			Part:   doc,
-			FileID: a.fileID.String(),
-			Path:   paths[a.fileID],
-			Count:  a.count,
+			Part:         doc,
+			FileID:       a.fileID.String(),
+			Path:         paths[a.fileID],
+			Count:        a.count,
+			MaterialPath: doc.MaterialPath,
 		}
 		if a.configID != "" {
 			row.ConfigID = a.configID

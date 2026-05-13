@@ -16,7 +16,8 @@ import { setEquationsResolver as setOcctEquationsResolver, setActiveConfigResolv
 import { loadStep } from '../lib/stepLoader.js'
 import { loadMeshFromURL } from '../lib/meshLoader.js'
 import { withColorizedPart, withTranslatedPart } from '../lib/sourceEdit.js'
-import { parseAssembly, resolveAssemblyParts as resolveAssemblyPartsHelper } from '../lib/assembly.js'
+import { parseAssembly, resolveAssemblyParts as resolveAssemblyPartsHelper, loadExternalParts } from '../lib/assembly.js'
+import { encodePayload, decodePayload } from '../lib/derivedPayload.js'
 import { parseSketch, serializeSketch, defaultSketch, setSketchEquationsResolverSync } from '../lib/sketchSolver.js'
 import { mergeEquationFiles } from '../lib/equations.js'
 import { parsePart, serializePart, defaultPart, getActiveConfig } from '../lib/part.js'
@@ -25,6 +26,7 @@ import {
   parseFeature, serializeFeature, DEFAULT_FEATURE, cancelFeatures, destroyOcct,
 } from '../lib/occtRunner.js'
 import { runCircuit, cancelCircuit, DEFAULT_CIRCUIT } from '../lib/circuitRunner.js'
+import * as JSCADModeling from '@jscad/modeling'
 import { extractBoardOutline } from '../lib/circuitOutline.js'
 import { sketchToGeom2 } from '../lib/sketchGeom2.js'
 import { meshCache } from '../lib/meshCache.js'
@@ -2585,14 +2587,15 @@ async function resolveAssemblyParts(_get, projectId, contentJson) {
   return resolveAssemblyPartsHelper({
     content: contentJson,
     loadParts: (fileId) => loadComponentParts(projectId, fileId),
-    // Cross-project external_ref dispatch (ROADMAP row 67 Phase 2). For
-    // `board_outline_2d` we fetch the source `.circuit.tsx`, compile it via
-    // the worker, run the resulting CircuitJSON through `extractBoardOutline`
-    // to get a `.sketch`-shape polygon, then hand it to `sketchToGeom2` so
-    // the host assembly receives a real 2D profile (not the old degenerate
-    // slab placeholder). Other ref kinds — `board_3d`, `mesh` — fall through
-    // to an empty-parts result here; they're wired in their own follow-ups.
-    loadExternalParts: (ref) => loadExternalComponentParts(ref),
+    // Cross-project external_ref dispatch (ROADMAP row 67 Phase 2/3). The
+    // cache-aware wrapper (loadExternalParts from assembly.js) handles
+    // lookup/encode/decode; loadExternalComponentParts is the recompile fn.
+    loadExternalParts: (ref) => loadExternalParts({
+      ref,
+      recompile: loadExternalComponentParts,
+      encodePayload,
+      decodePayload,
+    }),
     onMissing: (componentId, partId) => {
       // Best-effort UI surface; the renderer will simply skip the component.
       try {
@@ -2605,49 +2608,157 @@ async function resolveAssemblyParts(_get, projectId, contentJson) {
 }
 
 // Cross-project loader: turn an `external_ref` into the resolver's expected
-// `[{id, geom, color?}]` shape. Currently handles `board_outline_2d`; other
-// kinds return [] (assembly resolver gracefully skips). The compile path is
-// the source of truth — the derived-artifacts cache lookup (assembly.js
-// `loadExternalParts`) is a separate optimisation we'll wire when the
-// backend cache populator ships. Caches by (file_id, content-hash) so a
-// re-render of the same external source is free.
+// `[{id, geom, color?}]` shape. Handles board_outline_2d, board_3d, and mesh.
+// Caches by (file_id, content-hash) so a re-render of the same external source
+// is free. The derived-artifacts cache (assembly.js loadExternalParts) handles
+// the server-side encode/decode round-trip for cross-session caching.
 async function loadExternalComponentParts(ref) {
   if (!ref || !ref.kind) return []
-  if (ref.kind !== 'board_outline_2d') {
-    // Non-outline cross-project kinds aren't wired here yet. Returning []
-    // makes the resolver skip the component (graceful, no crash).
-    return []
-  }
   let file
   try {
     file = await api.getFile(ref.project_id, ref.file_id)
   } catch (err) {
-    console.warn(`board_outline_2d: failed to fetch ${ref.project_id}/${ref.file_id}:`, err)
+    console.warn(`${ref.kind}: failed to fetch ${ref.project_id}/${ref.file_id}:`, err)
     return []
   }
   const sig = strHash(file?.content || '')
-  const k = cacheKey(ref.file_id, `bo2d::${sig}`)
+  const cachePrefix = ref.kind === 'board_outline_2d' ? 'bo2d' : ref.kind === 'board_3d' ? 'b3d' : ref.kind === 'mesh' ? 'mesh' : 'unk'
+  const k = cacheKey(ref.file_id, `${cachePrefix}::${sig}`)
   const hit = componentResultCache.get(k)
   if (hit) return hit.parts
-  // Compile the .circuit.tsx → CircuitJSON. The worker is the source of
-  // truth; we don't fall back to a main-thread compile (the dependency
-  // surface is too big). On compile failure we still emit the helper's
-  // fallback rectangle so the host assembly renders *something*.
+
+  let parts = []
+  if (ref.kind === 'board_outline_2d') {
+    parts = await loadBoardOutlineParts(file)
+  } else if (ref.kind === 'board_3d') {
+    parts = await loadBoard3DParts(file)
+  } else if (ref.kind === 'mesh') {
+    parts = await loadMeshParts(file)
+  }
+
+  componentResultCache.set(k, { parts })
+  return parts
+}
+
+async function loadBoardOutlineParts(file) {
   const res = await runCircuit(file?.content || '')
   if (res && res.error) {
-    console.warn(`board_outline_2d: compile failed for ${ref.project_id}/${ref.file_id}: ${res.error}`)
+    console.warn(`board_outline_2d: compile failed for ${file.id}: ${res.error}`)
   }
   const sketchLike = extractBoardOutline(Array.isArray(res?.raw) ? res.raw : null)
   let geom
   try {
     geom = sketchToGeom2(sketchLike)
   } catch (err) {
-    console.warn(`board_outline_2d: sketchToGeom2 failed for ${ref.project_id}/${ref.file_id}:`, err)
+    console.warn(`board_outline_2d: sketchToGeom2 failed for ${file.id}:`, err)
     return []
   }
-  const parts = [{ id: '__board_outline__', geom }]
-  componentResultCache.set(k, { parts })
+  return [{ id: '__board_outline__', geom }]
+}
+
+async function loadBoard3DParts(file) {
+  const res = await runCircuit(file?.content || '')
+  if (res && res.error) {
+    console.warn(`board_3d: compile failed for ${file.id}: ${res.error}`)
+  }
+  return buildCircuitBoardParts(Array.isArray(res?.raw) ? res.raw : [])
+}
+
+async function loadMeshParts(file) {
+  if (!file.mesh_url) return []
+  try {
+    const out = await loadMeshFromURL(file.mesh_url)
+    return out?.parts || []
+  } catch (err) {
+    console.warn(`mesh: load failed for ${file.id}:`, err)
+    return []
+  }
+}
+
+function buildCircuitBoardParts(circuitJson) {
+  if (!Array.isArray(circuitJson)) return []
+  const { primitives, transforms, colors } = JSCADModeling
+  const parts = []
+
+  const board = circuitJson.find((e) => e && e.type === 'pcb_board')
+  const thickness = (board && Number(board.thickness)) > 0 ? Number(board.thickness) : 1.6
+  if (board) {
+    const cx = Number(board.center?.x) || 0
+    const cy = Number(board.center?.y) || 0
+    let boardGeom = null
+    if (Array.isArray(board.outline) && board.outline.length >= 3) {
+      try {
+        const points = board.outline.map((p) => [Number(p.x) || 0, Number(p.y) || 0])
+        const poly = primitives.polygon({ points })
+        boardGeom = JSCADModeling.extrusions.extrudeLinear({ height: thickness }, poly)
+      } catch {
+        boardGeom = null
+      }
+    }
+    if (!boardGeom) {
+      const w = Number(board.width) || 50
+      const h = Number(board.height) || 50
+      boardGeom = primitives.cuboid({ size: [w, h, thickness], center: [cx, cy, thickness / 2] })
+    }
+    boardGeom = colors.colorize([0.62, 0.49, 0.27], boardGeom)
+    parts.push({ id: '__board__', geom: boardGeom })
+  } else {
+    const fallback = primitives.cuboid({ size: [50, 50, thickness], center: [0, 0, thickness / 2] })
+    parts.push({ id: '__board__', geom: colors.colorize([0.62, 0.49, 0.27], fallback) })
+  }
+
+  const pcbComponentById = new Map()
+  for (const e of circuitJson) {
+    if (e && e.type === 'pcb_component') pcbComponentById.set(e.pcb_component_id, e)
+  }
+  const sourceById = new Map()
+  for (const e of circuitJson) {
+    if (e && e.type === 'source_component') sourceById.set(e.source_component_id, e)
+  }
+
+  let idx = 0
+  for (const e of circuitJson) {
+    if (!e || e.type !== 'cad_component') continue
+    const pcbC = pcbComponentById.get(e.pcb_component_id)
+    const src = sourceById.get(e.source_component_id)
+    const px = Number(e.position?.x) || 0
+    const py = Number(e.position?.y) || 0
+    const pz = Number(e.position?.z) || thickness
+    const rx = (Number(e.rotation?.x) || 0) * Math.PI / 180
+    const ry = (Number(e.rotation?.y) || 0) * Math.PI / 180
+    const rz = (Number(e.rotation?.z) || 0) * Math.PI / 180
+
+    let sx = Number(e.size?.x) || Number(pcbC?.width) || 2.0
+    let sy = Number(e.size?.y) || Number(pcbC?.height) || 1.2
+    let sz = Number(e.size?.z) || 0.6
+    if (sx <= 0) sx = 1.0
+    if (sy <= 0) sy = 1.0
+    if (sz <= 0) sz = 0.5
+
+    const name = src?.name || `C${idx}`
+    let geom = primitives.cuboid({ size: [sx, sy, sz] })
+    geom = transforms.rotate([rx, ry, rz], geom)
+    geom = transforms.translate([px, py, pz + sz / 2], geom)
+    geom = colors.colorize(componentColor(name), geom)
+    parts.push({ id: name, geom })
+    idx++
+  }
   return parts
+}
+
+function componentColor(name) {
+  const c = String(name || '').charAt(0).toUpperCase()
+  switch (c) {
+    case 'R': return [0.85, 0.30, 0.30]
+    case 'C': return [0.30, 0.55, 0.85]
+    case 'L': return [0.85, 0.65, 0.30]
+    case 'D': return [0.55, 0.85, 0.30]
+    case 'U': return [0.50, 0.40, 0.65]
+    case 'Q': return [0.85, 0.50, 0.65]
+    case 'J': return [0.65, 0.65, 0.65]
+    case 'S': return [0.80, 0.55, 0.40]
+    default:  return [0.55, 0.60, 0.65]
+  }
 }
 
 // loadComponentParts: fetch + run a referenced file. JSCAD or STEP or nested

@@ -20,6 +20,7 @@ import SketchView from '../components/SketchView.jsx'
 import FeatureView from '../components/FeatureView.jsx'
 import CircuitEditor from '../components/CircuitEditor.jsx'
 import LibraryEditor from '../components/LibraryEditor.jsx'
+import MaterialEditor from '../components/MaterialEditor.jsx'
 import EquationsEditor from '../components/EquationsEditor.jsx'
 import ScriptEditor from '../components/ScriptEditor.jsx'
 import ConfigurationsPanel from '../components/ConfigurationsPanel.jsx'
@@ -103,6 +104,13 @@ function isPartFile(file) {
   return n.endsWith('.part')
 }
 
+function isMaterialFile(file) {
+  if (!file) return false
+  if (file.kind === 'material') return true
+  const n = (file.name || '').toLowerCase()
+  return n.endsWith('.material')
+}
+
 function isEquationsFile(file) {
   if (!file) return false
   if (file.kind === 'equations') return true
@@ -114,7 +122,7 @@ function isScriptFile(file) {
   if (!file) return false
   if (file.kind === 'script') return true
   const n = (file.name || '').toLowerCase()
-  return n.endsWith('.script.ts')
+  return n.endsWith('.script.ts') || n.endsWith('.script.py')
 }
 
 export default function Editor() {
@@ -426,6 +434,7 @@ export default function Editor() {
   const featureFile = isFeatureFile(w.currentFile)
   const circuitFile = isCircuitFile(w.currentFile)
   const partFile = isPartFile(w.currentFile)
+  const materialFile = isMaterialFile(w.currentFile)
   const equationsFile = isEquationsFile(w.currentFile)
   const scriptFile = isScriptFile(w.currentFile)
   // Resolver used by FeatureView to fetch sketch contents on demand. We
@@ -802,6 +811,16 @@ export default function Editor() {
                 </div>
               )}
             </div>
+          ) : materialFile ? (
+            <div className="flex-1 min-h-0 relative">
+              <MaterialEditor />
+              {w.toast && (
+                <div className="absolute bottom-3 right-3 z-20 px-3 py-2 rounded-md bg-ink-900 border border-kerf-300/60 text-kerf-300 text-xs shadow-xl"
+                  onClick={() => w.dismissToast()}>
+                  {w.toast}
+                </div>
+              )}
+            </div>
           ) : equationsFile ? (
             <div className="flex-1 min-h-0 relative">
               <EquationsEditor />
@@ -817,6 +836,8 @@ export default function Editor() {
               <ScriptEditor
                 content={w.currentFileContent}
                 fileName={w.currentFile?.name}
+                file={w.currentFile}
+                onChange={(v) => w.editContent(v)}
               />
               {w.toast && (
                 <div className="absolute bottom-3 right-3 z-20 px-3 py-2 rounded-md bg-ink-900 border border-kerf-300/60 text-kerf-300 text-xs shadow-xl"

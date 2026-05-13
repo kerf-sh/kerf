@@ -51,6 +51,24 @@ export function addArc(sketch, centerId, startId, endId, sweepCcw = true, opts =
   return { sketch: { ...sketch, entities: [...(sketch.entities || []), ent] }, id }
 }
 
+// external_curve — a projection of a 3D edge/curve into the sketch as construction
+// (dotted) reference geometry. `curveData` varies by the 3D edge's type:
+//   line:     { curveType: 'line', p1: {x,y}, p2: {x,y} }
+//   circle:   { curveType: 'circle', center: {x,y}, radius }
+//   arc:      { curveType: 'arc', center: {x,y}, radius, startAngle, endAngle }
+export function addExternalCurve(sketch, sourceFileId, sourceEdgeId, curveData, opts = {}) {
+  const id = opts.id || shortId('ec')
+  const ent = {
+    id,
+    type: 'external_curve',
+    construction: true,
+    source_file_id: sourceFileId,
+    source_edge_id: sourceEdgeId,
+    ...curveData,
+  }
+  return { sketch: { ...sketch, entities: [...(sketch.entities || []), ent] }, id }
+}
+
 // ---------- constraint creation ----------
 
 export function addConstraint(sketch, type, fields) {
@@ -150,7 +168,11 @@ function constraintRefs(c) {
     case 'symmetric': return [c.a, c.b, c.line]
     case 'block': return c.refs || []
     case 'point_on_line': return [c.point, c.line]
+    case 'point_on_circle': return [c.point, c.circle]
     case 'point_on_arc': return [c.point, c.arc]
+    case 'arc_on_circle': return [c.arc, c.circle]
+    case 'arc_on_arc': return [c.arc, c.otherArc]
+    case 'intersection_point': return [c.point, c.line1, c.line2]
     default: return []
   }
 }

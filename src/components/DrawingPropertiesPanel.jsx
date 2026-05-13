@@ -64,8 +64,11 @@ export default function DrawingPropertiesPanel({
   const sourceFiles = (files || []).filter(
     (f) => f.kind === 'file' || f.kind === 'step',
   )
+  const allFiles = useWorkspace((s) => s.files)
   const projectId = useWorkspace((s) => s.projectId)
   const addViews = useWorkspace((s) => s.addViews)
+
+  const materialFiles = allFiles?.filter((f) => f?.kind === 'material') || []
 
   return (
     <div className="absolute top-3 right-3 z-10 w-72 rounded-md bg-ink-900/95 border border-ink-700 backdrop-blur shadow-xl text-ink-100 overflow-hidden">
@@ -184,6 +187,20 @@ export default function DrawingPropertiesPanel({
                 onChange={(e) => onUpdateFrame?.({ notes: e.target.value })}
                 className="flex-1 bg-ink-950 border border-ink-700 rounded px-1.5 py-0.5 text-xs text-ink-100"
               />
+            </Row>
+            <Row label="Material">
+              <select
+                value={frame.material || ''}
+                onChange={(e) => onUpdateFrame?.({ material: e.target.value || undefined })}
+                className="flex-1 bg-ink-950 border border-ink-700 rounded px-1.5 py-0.5 text-xs text-ink-100"
+              >
+                <option value="">— none —</option>
+                {materialFiles.map((f) => (
+                  <option key={f.id} value={f.name?.replace(/\.material$/, '') || f.id}>
+                    {f.name?.replace(/\.material$/, '') || f.id}
+                  </option>
+                ))}
+              </select>
             </Row>
           </Section>
 

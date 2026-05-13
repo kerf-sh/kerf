@@ -423,6 +423,11 @@ export const api = {
   },
   deleteAvatar: () => request('/api/me/avatar', { method: 'DELETE' }),
 
+  // ---- API Tokens ----
+  createAPIToken: (name) => request('/api-tokens', { method: 'POST', body: { name } }),
+  listAPITokens: () => request('/api-tokens'),
+  revokeAPIToken: (tokenID) => request(`/api-tokens/${encodeURIComponent(tokenID)}`, { method: 'DELETE' }),
+
   // ---- Admin: distributor credentials (Library Phase 2) ----
   // All admin-only (account_role='admin'). The list endpoint returns
   // unconfigured rows too, so the UI can render a stub "configure"

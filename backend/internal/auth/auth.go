@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -171,4 +172,102 @@ func IssueShareToken() (string, error) {
 		return "", err
 	}
 	return base64.RawURLEncoding.EncodeToString(raw), nil
+}
+
+const apiTokenPrefix = "kerf_sk_"
+const apiTokenRandomLen = 32
+
+func GenerateAPIToken() (string, error) {
+	raw := make([]byte, apiTokenRandomLen)
+	if _, err := rand.Read(raw); err != nil {
+		return "", err
+	}
+	return apiTokenPrefix + base64.RawURLEncoding.EncodeToString(raw), nil
+}
+
+func HashAPIToken(token string) string {
+	sum := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(sum[:])
+}
+
+type APITokenMeta struct {
+	ID          string
+	WorkspaceID string
+	UserID      string
+	Name        string
+	Scopes      []string
+	LastUsedAt  *time.Time
+	RevokedAt   *time.Time
+	CreatedAt   time.Time
+}
+
+func (s *Service) CreateAPIToken(ctx context.Context, workspaceID, userID, name string) (token string, err error) {
+	token, err = GenerateAPIToken()
+	if err != nil {
+		return "", err
+	}
+	hash := HashAPIToken(token)
+	_, err = s.pool.Exec(ctx,
+		`insert into api_tokens(workspace_id, user_id, token_hash, name) values ($1,$2,$3,$4)`,
+		workspaceID, userID, hash, name)
+	if err != nil {
+		return "", err
+	}
+	return token, nil
+}
+
+func (s *Service) ValidateAPIToken(ctx context.Context, rawToken string) (*APITokenMeta, error) {
+	hash := HashAPIToken(rawToken)
+	var meta APITokenMeta
+	var scopes []byte
+	err := s.pool.QueryRow(ctx,
+		`select id, workspace_id, user_id, name, scopes, last_used_at, revoked_at, created_at
+		   from api_tokens where token_hash = $1`,
+		hash).Scan(&meta.ID, &meta.WorkspaceID, &meta.UserID, &meta.Name, &scopes, &meta.LastUsedAt, &meta.RevokedAt, &meta.CreatedAt)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, errors.New("invalid token")
+		}
+		return nil, err
+	}
+	if meta.RevokedAt != nil {
+		return nil, errors.New("token revoked")
+	}
+	if err := json.Unmarshal(scopes, &meta.Scopes); err != nil {
+		return nil, err
+	}
+	s.pool.Exec(ctx, `update api_tokens set last_used_at = now() where id = $1`, meta.ID)
+	return &meta, nil
+}
+
+func (s *Service) ListAPITokens(ctx context.Context, workspaceID, userID string) ([]APITokenMeta, error) {
+	rows, err := s.pool.Query(ctx,
+		`select id, workspace_id, user_id, name, scopes, last_used_at, revoked_at, created_at
+		   from api_tokens where workspace_id = $1 and user_id = $2 and revoked_at is null
+		   order by created_at desc`,
+		workspaceID, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var tokens []APITokenMeta
+	for rows.Next() {
+		var m APITokenMeta
+		var scopes []byte
+		if err := rows.Scan(&m.ID, &m.WorkspaceID, &m.UserID, &m.Name, &scopes, &m.LastUsedAt, &m.RevokedAt, &m.CreatedAt); err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal(scopes, &m.Scopes); err != nil {
+			return nil, err
+		}
+		tokens = append(tokens, m)
+	}
+	return tokens, rows.Err()
+}
+
+func (s *Service) RevokeAPIToken(ctx context.Context, tokenID, workspaceID, userID string) error {
+	_, err := s.pool.Exec(ctx,
+		`update api_tokens set revoked_at = now() where id = $1 and workspace_id = $2 and user_id = $3 and revoked_at is null`,
+		tokenID, workspaceID, userID)
+	return err
 }
