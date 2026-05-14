@@ -1,0 +1,34 @@
+# fly.io worker app config.
+#
+# Deploy via `flyctl deploy --config fly.worker.toml --app kerf-workers`.
+# No public HTTP service; fly manages lifecycle via internal health
+# probes. The image is the same one built from the root Dockerfile.
+
+app = "kerf-workers"
+primary_region = "jnb"
+
+[build]
+  dockerfile = "Dockerfile"
+  [build.args]
+    KERF_PERSONA = "compute-only"
+
+[env]
+  KERF_PORT = "8080"
+  STORAGE_BACKEND = "s3"
+  KERF_STORAGE_S3_ENDPOINT = "https://fly.storage.tigris.dev"
+  KERF_STORAGE_S3_REGION = "auto"
+  CLOUD_ENABLED = "true"
+  KERF_WORKERS_ONLY = "true"   # picks the worker entry-point at boot
+
+# Secrets are shared with the main `kerf` app — set via:
+#   flyctl secrets set --app kerf-workers DATABASE_URL=... etc.
+
+[processes]
+  worker = "kerf-server --host 0.0.0.0 --port 8080 --workers-only"
+
+[[vm]]
+  size = "performance-2x"
+  memory = "4gb"
+  cpu_kind = "performance"
+  cpus = 2
+  processes = ["worker"]

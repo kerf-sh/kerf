@@ -1,0 +1,72 @@
+# fly.io app config — single-image app (frontend + API + light workers).
+#
+# For heavy worker isolation (FEM, topo, autoroute), see fly.worker.toml
+# which deploys a separate `kerf-worker` fly app sharing the same image
+# but running with --workers-only and no public HTTP service.
+#
+# Primary: jnb (Johannesburg)  ·  Secondary: fra (Frankfurt).
+# Deploy: `fly deploy --config fly.toml`
+
+app = "kerf"
+primary_region = "jnb"
+
+[build]
+  dockerfile = "Dockerfile"
+  [build.args]
+    KERF_PERSONA = "full"
+
+[env]
+  KERF_PORT = "8080"
+  KERF_FRONTEND_DIST = "/app/dist"
+  STORAGE_BACKEND = "s3"
+  # Tigris S3-compatible endpoint (set by `flyctl storage create`).
+  KERF_STORAGE_S3_ENDPOINT = "https://fly.storage.tigris.dev"
+  KERF_STORAGE_S3_REGION = "auto"
+  CLOUD_ENABLED = "true"
+  # Postgres (Neon or fly.io managed) — set DATABASE_URL via secret.
+
+# Secrets to set (via `flyctl secrets set KEY=value`):
+#   DATABASE_URL                       Postgres connection string
+#   KERF_STORAGE_S3_BUCKET             Tigris bucket name
+#   KERF_STORAGE_S3_ACCESS_KEY         Tigris access key
+#   KERF_STORAGE_S3_SECRET_KEY         Tigris secret key
+#   CLOUD_PAYSTACK_SECRET_KEY          Paystack live key
+#   CLOUD_PAYSTACK_PUBLIC_KEY          Paystack public key
+#   LLM_ANTHROPIC_API_KEY              Anthropic key (or whichever providers)
+#   LLM_OPENAI_API_KEY                 OpenAI key
+#   LLM_GOOGLE_API_KEY                 Google key
+#   LLM_DEEPSEEK_API_KEY               DeepSeek key
+#   LLM_MINIMAX_API_KEY                MiniMax key
+#   JWT_SECRET                         Session signing
+#   KERF_LOCAL_MODE                    "false" for hosted (default true in code)
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 1
+  processes = ["app"]
+
+  [http_service.concurrency]
+    type = "requests"
+    soft_limit = 200
+    hard_limit = 250
+
+[[http_service.checks]]
+  grace_period = "10s"
+  interval = "30s"
+  timeout = "5s"
+  method = "GET"
+  path = "/healthz"
+
+[[vm]]
+  size = "performance-2x"
+  memory = "4gb"
+  cpu_kind = "performance"
+  cpus = 2
+
+# Secondary region replicas — uncomment when traffic justifies.
+# [[vm]]
+#   region = "fra"
+#   size = "performance-2x"

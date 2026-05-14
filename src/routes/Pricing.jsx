@@ -1,91 +1,51 @@
 /**
- * Pricing page (full marketing page).
+ * Pricing page.
  *
- * Three plans: Local install (free, MIT, BYO Postgres + LLM key), Hosted
- * Free (50MB free, no card), Hosted Pay-as-you-go (USD displayed, ZAR
- * settled, $0.20/GB-month, per-token LLM rates).
+ * Three public tiers (Free / Studio $9 / Pro $29) priced as
+ * operations-as-a-service: subscription fee bundles a monthly LLM
+ * credit allowance at COST (no markup); overage debits a wallet
+ * balance topped up via Paystack (same shape as Anthropic Console /
+ * OpenAI billing).
  *
- * The token rate card is fetched live from /api/billing/pricing when
- * cloud is enabled; otherwise we display fallback rates that mirror
- * `backend/cloud/pricing/pricing.go` exactly. We deliberately avoid
- * hardcoding stale numbers — if the backend disagrees, we annotate.
+ * Storage overage $0.30/GB-mo. Worker overage $0.10/min (anti-abuse).
+ * Enterprise = contact-only, no public price.
+ *
+ * The codebase is MIT — every feature self-hosts free. The tiers
+ * here are paying for hosting, not for code.
  */
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   ArrowRight,
   Check,
   Cpu,
-  HardDrive,
   Github,
   Server,
   Zap,
   Wallet,
   ChevronDown,
-  Info,
+  Mail,
 } from 'lucide-react'
 import Header from '../components/Header.jsx'
 import Footer from '../components/Footer.jsx'
 import Button from '../components/Button.jsx'
-import { useCloudConfig, billingApi } from '../cloud/index.js'
 
 const GITHUB_URL = 'https://github.com/kerf-sh/kerf'
+const ENTERPRISE_EMAIL = 'hello@kerf.sh'
 
-// Fallback rates mirror backend/cloud/pricing/pricing.go (the on-disk
-// list-price table). USD per million tokens, raw — markup applied by
-// backend. We display the markup-inclusive view in the FAQ.
-const FALLBACK_PRICING = {
-  storage_usd_per_gb_month: 0.2,
-  free_tier_storage_mb: 50,
-  markup_pct: 20,
-  models: [
-    { id: 'claude-opus-4-7', label: 'Claude Opus 4.7', input_per_mtok_usd: 15.0, output_per_mtok_usd: 75.0 },
-    { id: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6', input_per_mtok_usd: 3.0, output_per_mtok_usd: 15.0 },
-    { id: 'claude-haiku-4-5', label: 'Claude Haiku 4.5', input_per_mtok_usd: 1.0, output_per_mtok_usd: 5.0 },
-    { id: 'gpt-4o', label: 'GPT-4o', input_per_mtok_usd: 2.5, output_per_mtok_usd: 10.0 },
-    { id: 'gpt-4o-mini', label: 'GPT-4o mini', input_per_mtok_usd: 0.15, output_per_mtok_usd: 0.6 },
-    { id: 'o3-mini', label: 'OpenAI o3-mini', input_per_mtok_usd: 1.1, output_per_mtok_usd: 4.4 },
-    { id: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro', input_per_mtok_usd: 1.25, output_per_mtok_usd: 5.0 },
-    { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash', input_per_mtok_usd: 0.075, output_per_mtok_usd: 0.3 },
-    { id: 'kimi-k2-0905-preview', label: 'Kimi K2 (Moonshot)', input_per_mtok_usd: 0.6, output_per_mtok_usd: 2.5 },
-  ],
-}
-
-function fmtUSD(n) {
-  const v = Number(n)
-  if (!Number.isFinite(v)) return '—'
-  if (v >= 1) return `$${v.toFixed(2)}`
-  if (v >= 0.1) return `$${v.toFixed(2)}`
-  return `$${v.toFixed(3)}`
-}
+const FREE_TOKENS_IN_K = 100
+const FREE_TOKENS_OUT_K = 20
+const FREE_STORAGE_MB = 50
+const STUDIO_PRICE = 9
+const STUDIO_CREDITS = 8
+const STUDIO_STORAGE_GB = 5
+const PRO_PRICE = 29
+const PRO_CREDITS = 20
+const PRO_STORAGE_GB = 20
+const STORAGE_OVERAGE = 0.3       // USD per GB-mo past included
+const WORKER_OVERAGE = 0.1        // USD per worker-minute past free
 
 export default function Pricing() {
-  const { cloudEnabled } = useCloudConfig()
-  const [pricing, setPricing] = useState(FALLBACK_PRICING)
-  const [usingFallback, setUsingFallback] = useState(true)
-
-  useEffect(() => {
-    let cancelled = false
-    if (!cloudEnabled) return undefined
-    billingApi.getPricing()
-      .then((p) => {
-        if (cancelled || !p) return
-        setPricing({ ...FALLBACK_PRICING, ...p })
-        setUsingFallback(false)
-      })
-      .catch(() => {
-        /* keep fallback */
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [cloudEnabled])
-
-  const storage = Number(pricing.storage_usd_per_gb_month) || 0.2
-  const freeMB = Number(pricing.free_tier_storage_mb) || 50
-  const markup = Number(pricing.markup_pct) || 20
-  const models = pricing.models || []
-
   return (
     <div className="min-h-screen bg-ink-950 text-ink-100">
       <Header />
@@ -103,15 +63,16 @@ export default function Pricing() {
         <div className="relative mx-auto max-w-5xl px-6 pt-14 pb-8 lg:pt-20 text-center">
           <span className="inline-flex items-center gap-2 rounded-full border border-ink-800 bg-ink-900/70 backdrop-blur px-3 py-1 text-xs text-ink-300 font-mono">
             <Wallet size={11} className="text-kerf-300" />
-            transparent, metered pricing
+            at-cost LLM · no markup
           </span>
           <h1 className="mt-4 font-display text-4xl sm:text-5xl lg:text-6xl font-semibold tracking-[-0.02em] leading-[1.05]">
-            Free locally. Pay-as-you-go in the cloud.
+            Pay for hosting, not for tokens.
           </h1>
           <p className="mt-3 text-lg text-ink-300 leading-relaxed max-w-2xl mx-auto">
-            Self-host the open-source binary forever for free, or let us run
-            it for you with metered LLM and storage billing. No seats, no
-            project caps, no tiers to compare.
+            Free locally under MIT. Hosted plans bundle storage + LLM
+            credits at the raw provider price — we don&apos;t mark up your
+            tokens. Top up your wallet for overage the same way you do
+            with the Anthropic Console.
           </p>
         </div>
       </section>
@@ -121,172 +82,136 @@ export default function Pricing() {
         <div className="mx-auto max-w-7xl px-6 pb-10">
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
             <PlanCard
-              icon={<Server size={16} />}
-              name="Local install"
-              tagline="Self-host. Forever free."
-              price="$0"
-              priceSub="MIT licensed"
-              cta={
-                <Button as="a" href={GITHUB_URL} target="_blank" rel="noreferrer" variant="outline" size="md" className="w-full">
-                  <Github size={14} />
-                  Get on GitHub
-                </Button>
-              }
-              features={[
-                'Single Go binary, ~32 MB',
-                'Embedded frontend, no Node runtime',
-                'Brew formula + curl install',
-                'You provide Postgres + LLM API key',
-                'Filesystem storage, mirror to git',
-                'Test runner, OSS scenarios',
-                'Same code as hosted — every feature',
-              ]}
-            />
-
-            <PlanCard
-              highlighted
               icon={<Zap size={16} />}
-              name="Hosted Free"
-              tagline="No card, just sign up."
+              name="Free"
+              tagline="Public projects. No card."
               price="$0"
-              priceSub={`+ ${freeMB} MB free storage`}
+              priceSub="forever"
               cta={
-                <Button as={Link} to="/signup" variant="primary" size="md" className="w-full">
+                <Button as={Link} to="/signup" variant="outline" size="md" className="w-full">
                   Sign up free
                   <ArrowRight size={14} />
                 </Button>
               }
               features={[
-                `${freeMB} MB project storage included`,
-                'Workspaces with member sharing',
-                'Workshop public sharing + fork',
-                'Daily backups + revision history',
-                'Pay metered when you exceed free tier',
-                'BYO LLM key OR pay-as-you-go',
-                'Top up in $5 increments',
+                `${FREE_STORAGE_MB} MB project storage`,
+                `${FREE_TOKENS_IN_K}k in + ${FREE_TOKENS_OUT_K}k out free tokens/mo`,
+                'Cheap-tier models: Sonnet 4.7, Gemini 3 Flash, DeepSeek, MiniMax',
+                'Workshop publish · all projects public',
+                'Email support',
               ]}
             />
 
             <PlanCard
+              highlighted
               icon={<Cpu size={16} />}
-              name="Hosted Pay-as-you-go"
-              tagline="Metered, no commitment."
-              price={`${fmtUSD(storage)}`}
-              priceSub="per GB-month + LLM tokens"
+              name="Studio"
+              tagline="Private projects. Any model."
+              price={`$${STUDIO_PRICE}`}
+              priceSub="/ month"
               cta={
-                <Button as={Link} to="/signup" variant="outline" size="md" className="w-full">
-                  Start with $20
+                <Button as={Link} to="/signup" variant="primary" size="md" className="w-full">
+                  Start Studio
                   <ArrowRight size={14} />
                 </Button>
               }
               features={[
-                'Live distributor pricing (DigiKey/Mouser/LCSC)',
-                'Git: branches, merge, GitHub sync',
-                'Multi-member workspaces + roles',
-                'Workshop, library, BOM, drawings',
-                `Storage at ${fmtUSD(storage)}/GB-month, prorated daily`,
-                `LLM tokens at list +${markup}% margin`,
-                'USD displayed, ZAR settled (Paystack)',
+                `${STUDIO_STORAGE_GB} GB project storage`,
+                `$${STUDIO_CREDITS}/mo LLM credits at cost — any model`,
+                'Workshop publish · private projects',
+                'Wallet top-up for overage',
+                'Email support',
+              ]}
+            />
+
+            <PlanCard
+              icon={<Server size={16} />}
+              name="Pro"
+              tagline="Heavy users. Higher caps."
+              price={`$${PRO_PRICE}`}
+              priceSub="/ month"
+              cta={
+                <Button as={Link} to="/signup" variant="outline" size="md" className="w-full">
+                  Start Pro
+                  <ArrowRight size={14} />
+                </Button>
+              }
+              features={[
+                `${PRO_STORAGE_GB} GB project storage`,
+                `$${PRO_CREDITS}/mo LLM credits at cost`,
+                'Higher worker concurrency',
+                'Wallet top-up for overage',
+                'Email support',
               ]}
             />
           </div>
         </div>
       </section>
 
-      {/* RATE CARD */}
+      {/* HONEST BILLING */}
       <section className="relative border-t border-ink-900 bg-gradient-to-b from-ink-950 to-ink-900/40">
-        <div className="mx-auto max-w-6xl px-6 py-12 lg:py-14">
-          <div className="max-w-2xl mb-5">
+        <div className="mx-auto max-w-5xl px-6 py-12 lg:py-14">
+          <div className="max-w-2xl mb-6">
             <p className="font-mono text-xs uppercase tracking-[0.2em] text-kerf-300">
-              Detailed pricing table
+              How billing actually works
             </p>
             <h2 className="mt-2 font-display text-3xl sm:text-4xl font-semibold tracking-tight">
-              Per-million-token pricing.
+              Honest, metered, predictable.
             </h2>
-            <p className="mt-2 text-ink-300 leading-relaxed">
-              List provider price + a flat {markup}% margin. No per-seat add-ons,
-              no minimum spend. Bring your own API key on either tier and pay
-              zero LLM markup.
-              {usingFallback && (
-                <span className="ml-2 text-ink-500">
-                  (Showing reference rates — live values pulled when cloud is reachable.)
-                </span>
-              )}
+            <p className="mt-3 text-ink-300 leading-relaxed">
+              We charge for the operations layer — hosting, storage,
+              compute headroom. LLM tokens are pure pass-through at
+              the raw provider rate, no markup.
             </p>
           </div>
 
-          {/* FX disclaimer */}
-          <div className="mb-5 rounded-xl border border-kerf-300/30 bg-kerf-300/10 px-4 py-3 flex gap-3 items-start">
-            <Info size={16} className="text-kerf-300 mt-0.5 shrink-0" />
-            <p className="text-sm text-ink-200 leading-relaxed">
-              <span className="font-semibold text-ink-100">About displayed prices.</span>{' '}
-              Kerf bills in South African Rand (ZAR) via Paystack. Prices on
-              this page are shown in USD for clarity, but your card will be
-              charged in ZAR at the prevailing exchange rate. We refresh the
-              FX rate <span className="text-kerf-300 font-medium">multiple times per day</span>{' '}
-              to keep the converted amount stable, so what you see in USD is
-              close to what you'll be charged — but the exact ZAR figure
-              depends on the rate at billing time. Your invoice always shows
-              both the USD list price and the ZAR amount actually charged.
-            </p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <Note title="LLM credits at cost">
+              Every tier bundles a monthly credit allowance. We bill
+              the raw provider rate — Anthropic, OpenAI, Google,
+              DeepSeek, MiniMax — pulled live from our pricing table.
+              You see the same per-token cost the providers publish.
+              No markup, no opaque conversion.
+            </Note>
+            <Note title="Wallet top-up for overage">
+              Used your monthly credits? Top up the wallet via Paystack
+              for any amount. Each chat turn debits the wallet at the
+              raw provider rate plus a 5% card-processing fee — the
+              only margin we take on tokens, and only on the overage.
+              We email you when the balance falls below $5.
+            </Note>
+            <Note title="Storage overage">
+              ${STORAGE_OVERAGE.toFixed(2)} per GB-month past your tier&apos;s included
+              storage. Pro-rated daily so a brief spike doesn&apos;t
+              double-bill you. Cancel and your data exports cleanly.
+            </Note>
+            <Note title="Worker overage">
+              ${WORKER_OVERAGE.toFixed(2)} per worker-minute past free quota — FEM,
+              topo opt, autoroute, etc. Anti-abuse tariff that
+              discourages spam against heavy endpoints; not where we
+              make money. Bound the most we can charge you here.
+            </Note>
           </div>
 
-          <div className="rounded-2xl border border-ink-800 bg-ink-900/40 backdrop-blur overflow-hidden">
-            <div className="grid grid-cols-12 gap-2 px-6 py-3 border-b border-ink-800 text-[10px] uppercase tracking-[0.18em] font-mono text-ink-400 bg-ink-900/60">
-              <span className="col-span-6 sm:col-span-7">Model</span>
-              <span className="col-span-3 sm:col-span-2 text-right">Input / Mtok</span>
-              <span className="col-span-3 text-right">Output / Mtok</span>
-            </div>
-            <ul className="divide-y divide-ink-800">
-              {models.map((m) => (
-                <li
-                  key={m.id}
-                  className="grid grid-cols-12 gap-2 items-center px-6 py-3.5 hover:bg-ink-900/40 transition-colors"
-                >
-                  <span className="col-span-6 sm:col-span-7 text-ink-100 text-sm">
-                    {m.label || m.id}
-                    <span className="ml-2 text-[10px] font-mono text-ink-500">
-                      {m.id}
-                    </span>
-                  </span>
-                  <span className="col-span-3 sm:col-span-2 text-right font-mono text-sm text-ink-200">
-                    {fmtUSD(m.input_per_mtok_usd)}
-                  </span>
-                  <span className="col-span-3 text-right font-mono text-sm text-ink-200">
-                    {fmtUSD(m.output_per_mtok_usd)}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </div>
-
-          <div className="mt-4 grid sm:grid-cols-2 gap-4">
-            <div className="rounded-xl border border-ink-800 bg-ink-900/40 p-4">
-              <div className="flex items-center gap-2 text-ink-300">
-                <HardDrive size={14} className="text-kerf-300" />
-                <span className="text-[10px] font-mono uppercase tracking-[0.18em] text-ink-400">
-                  Storage
-                </span>
-              </div>
-              <p className="mt-2 text-sm text-ink-200 leading-relaxed">
-                <span className="font-mono text-ink-100">{fmtUSD(storage)}</span>
-                {' '}per GB-month above the free {freeMB} MB. Pro-rated daily,
-                charged from your prepaid balance at end of day.
+          {/* Enterprise footer note */}
+          <div className="mt-10 rounded-2xl border border-ink-800 bg-ink-900/40 p-5 flex flex-col sm:flex-row gap-5 items-start sm:items-center justify-between">
+            <div>
+              <h3 className="font-display text-lg font-semibold tracking-tight text-ink-100">
+                Need SLA, SSO, on-prem, or custom plugins?
+              </h3>
+              <p className="mt-1 text-sm text-ink-300 leading-relaxed max-w-xl">
+                Enterprise arrangements are by-arrangement. Drop us a
+                note about scope, region, compliance needs and we&apos;ll
+                come back with options. No standard tier, no SDR funnel.
               </p>
             </div>
-            <div className="rounded-xl border border-ink-800 bg-ink-900/40 p-4">
-              <div className="flex items-center gap-2 text-ink-300">
-                <Wallet size={14} className="text-kerf-300" />
-                <span className="text-[10px] font-mono uppercase tracking-[0.18em] text-ink-400">
-                  Settlement
-                </span>
-              </div>
-              <p className="mt-2 text-sm text-ink-200 leading-relaxed">
-                Prices displayed in USD; payments settled in ZAR via Paystack.
-                FX refreshed multiple times per day — see the disclaimer above
-                for how the converted amount is calculated.
-              </p>
-            </div>
+            <a
+              href={`mailto:${ENTERPRISE_EMAIL}?subject=Kerf%20Enterprise`}
+              className="inline-flex items-center gap-2 rounded-md border border-kerf-300/40 bg-kerf-300/10 px-4 py-2 text-sm text-kerf-300 hover:bg-kerf-300/20 transition-colors"
+            >
+              <Mail size={14} />
+              {ENTERPRISE_EMAIL}
+            </a>
           </div>
         </div>
       </section>
@@ -305,86 +230,105 @@ export default function Pricing() {
 
           <div className="flex flex-col gap-2">
             <FAQItem
-              q="How is the local install different from the hosted tier?"
+              q="Why no markup on tokens?"
               a={
                 <>
-                  It isn't, code-wise. Both run the exact same Go binary from
-                  the same MIT-licensed repo — the cloud bundle just adds
-                  billing, GitHub OAuth, and Workshop tables on top. Locally
-                  you bring Postgres and an LLM API key; in the hosted tier we
-                  manage both for you.
+                  Token markup is a tax on a commodity that gets
+                  cheaper every quarter. Charging for it pits us
+                  against every other &quot;LLM wrapper&quot; in a race to the
+                  bottom. Charging for the workspace + hosting we
+                  actually built is honest and durable.
                 </>
               }
             />
             <FAQItem
-              q="Can I bring my own LLM API key?"
+              q="Which models can I use on the Free tier?"
               a={
                 <>
-                  Yes — on either tier. Local install always uses your key;
-                  hosted users can paste a key in Settings to bypass our
-                  metered billing for tokens. Storage and bandwidth still
-                  meter as normal in the cloud.
+                  Free-tier tokens are redeemable against the cheap-tier
+                  pool: Claude Sonnet 4.7, Google Gemini 3 Flash
+                  Preview, DeepSeek V3, MiniMax. These models cost
+                  about 10-30× less than premium models so we can
+                  give a meaningful free quota without losing money.
+                  Paid tiers unlock any model including Claude Opus
+                  and GPT-4.
                 </>
               }
             />
             <FAQItem
-              q="Why isn't the USD figure exact?"
+              q="What happens when my wallet runs out?"
               a={
                 <>
-                  Kerf bills in South African rand via Paystack — the USD
-                  numbers on this page are for clarity, not the literal
-                  charge. We refresh our FX rate multiple times per day to
-                  keep the converted amount stable, so what you see in USD is
-                  very close to what hits your card. The exact ZAR figure
-                  depends on the rate at billing time, and your invoice
-                  always shows both the USD list price and the ZAR amount
-                  actually charged.
+                  Your monthly credit allowance refills with the
+                  subscription. Past that, you draw from the wallet
+                  top-up balance. When the wallet hits zero, chat is
+                  paused until you top up; we email you at $5
+                  remaining and again at zero. You don&apos;t get
+                  surprise charges — you get a clear pause.
                 </>
               }
             />
             <FAQItem
-              q="Why ZAR settlement?"
+              q="Can I switch model providers?"
               a={
                 <>
-                  We're based in Durban and our payment processor
-                  (Paystack) settles in South African rand. Prices are quoted
-                  in USD so you can compare apples to apples — see{' '}
-                  <em>Why isn't the USD figure exact?</em> above for how the
-                  converted amount is calculated.
+                  Yes. Pick at chat time from any supported provider
+                  (Anthropic, OpenAI, Google, DeepSeek, MiniMax, more).
+                  Pricing comes from our LiteLLM-fed live rate table
+                  refreshed daily — when providers cut prices, you see
+                  the new rate immediately.
                 </>
               }
             />
             <FAQItem
-              q="Are there minimums or commitments?"
+              q="Can I bring my own API key?"
               a={
                 <>
-                  No. Top up your balance whenever it's low (default $20
-                  buttons; any custom amount works). Stop using the product
-                  and you stop paying. There are no per-seat fees, no project
-                  caps, no annual contracts.
+                  Not in the current UI. At-cost pricing makes BYO
+                  mostly redundant — you&apos;d pay the same per-token rate
+                  either way. If you have a specific privacy,
+                  compliance, or data-residency requirement (we want
+                  to keep all chat data in our Anthropic account), get
+                  in touch — there&apos;s a path for that.
                 </>
               }
             />
             <FAQItem
-              q="GDPR / data residency?"
+              q="Self-hosted?"
               a={
                 <>
-                  Hosted data lives in EU and US regions of our object-storage
-                  provider. Workshop downloads, project files, file revisions,
-                  and BOM data are all exportable from the API at any time.
-                  Self-hosting puts everything on your own infrastructure.
+                  Always free under MIT. The codebase is the same one
+                  that runs on kerf.sh — clone it, run{' '}
+                  <span className="font-mono text-ink-100">
+                    pip install -e .[full]
+                  </span>{' '}
+                  and{' '}
+                  <span className="font-mono text-ink-100">kerf-server</span>,
+                  bring your own Postgres + LLM API key. Every feature
+                  lives in the open-source build.
                 </>
               }
             />
             <FAQItem
-              q="Is the cloud code open-source too?"
+              q="Are there seat or project caps?"
               a={
                 <>
-                  Yes. Everything Kerf ships — including the billing,
-                  Workshop, git sync, and Workspaces code — is in the same
-                  MIT-licensed repository on GitHub. The hosted tier exists
-                  because most users prefer not to operate Postgres and a Go
-                  binary themselves; if you do, clone the repo and run it.
+                  No per-seat fees. No per-project caps. The only caps
+                  are capacity — storage GB, worker-minutes, monthly
+                  credit allowance. Hit a wall and you can buy more
+                  without leaving the page.
+                </>
+              }
+            />
+            <FAQItem
+              q="USD displayed — what about my currency?"
+              a={
+                <>
+                  Paystack handles settlement in your card&apos;s native
+                  currency. Prices on this page are quoted in USD for
+                  clarity; the exact charge depends on the exchange
+                  rate at billing time. Your invoice shows both the
+                  USD list price and the charged amount.
                 </>
               }
             />
@@ -403,20 +347,22 @@ export default function Pricing() {
             <div className="relative flex flex-col lg:flex-row lg:items-center lg:justify-between gap-5">
               <div>
                 <h2 className="font-display text-3xl sm:text-4xl font-semibold tracking-tight">
-                  Top up with $20.
+                  Start free. Upgrade when you hit the wall.
                 </h2>
                 <p className="mt-2 text-ink-300 max-w-xl">
-                  Enough for thousands of LLM turns and a year of moderate
-                  storage. We'll email you when your balance crosses $5.
+                  No card to sign up. Studio is $9 when you outgrow the
+                  free tier. The whole thing is also MIT — clone and
+                  self-host any time.
                 </p>
               </div>
               <div className="flex flex-wrap gap-3">
-                <Button as={Link} to="/billing" variant="primary" size="lg">
-                  Top up $20
+                <Button as={Link} to="/signup" variant="primary" size="lg">
+                  Sign up free
                   <ArrowRight size={16} />
                 </Button>
-                <Button as={Link} to="/signup" variant="outline" size="lg">
-                  Sign up free
+                <Button as="a" href={GITHUB_URL} target="_blank" rel="noreferrer" variant="outline" size="lg">
+                  <Github size={16} />
+                  Self-host
                 </Button>
               </div>
             </div>
@@ -474,6 +420,15 @@ function PlanCard({ icon, name, tagline, price, priceSub, features, cta, highlig
       </ul>
 
       <div className="mt-auto pt-1">{cta}</div>
+    </div>
+  )
+}
+
+function Note({ title, children }) {
+  return (
+    <div className="rounded-xl border border-ink-800 bg-ink-900/40 p-4">
+      <h3 className="text-sm font-semibold text-ink-100">{title}</h3>
+      <p className="mt-2 text-sm text-ink-300 leading-relaxed">{children}</p>
     </div>
   )
 }

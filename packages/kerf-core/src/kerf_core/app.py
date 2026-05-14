@@ -21,9 +21,13 @@ from contextlib import asynccontextmanager
 from typing import Any
 
 import structlog
+import os
+from pathlib import Path
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from kerf_core.config import Config
 from kerf_core.plugin import (
@@ -87,8 +91,36 @@ def create_app(config: Config | None = None, config_path: str = "") -> FastAPI:
     app.state.loaded_plugins: list[PluginManifest] = []
 
     _mount_health(app)
+    _mount_frontend(app)
 
     return app
+
+
+def _mount_frontend(app: FastAPI) -> None:
+    """Serve the built Vite SPA from /app/dist (or KERF_FRONTEND_DIST).
+
+    Skipped when the directory is missing (dev runs Vite separately on :5173;
+    Docker builds embed dist/ at /app/dist).
+    """
+    dist_dir = os.environ.get("KERF_FRONTEND_DIST", "/app/dist")
+    dist_path = Path(dist_dir)
+    if not dist_path.is_dir() or not (dist_path / "index.html").exists():
+        return
+
+    # Static assets at /assets/, /favicon.svg, etc.
+    app.mount("/assets", StaticFiles(directory=dist_path / "assets"), name="assets")
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    async def spa_fallback(full_path: str):
+        # API routes are matched first by FastAPI's router; this catches
+        # everything else and serves the SPA shell so React Router can
+        # handle client-side routes.
+        if full_path.startswith(("api/", "auth/", "v1/", "health", "healthz")):
+            return JSONResponse({"detail": "Not Found"}, status_code=404)
+        target = dist_path / full_path
+        if full_path and target.is_file():
+            return FileResponse(target)
+        return FileResponse(dist_path / "index.html")
 
 
 async def _load_plugins(app: FastAPI, config: Config) -> None:

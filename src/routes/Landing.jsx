@@ -1094,34 +1094,34 @@ function PricingTeaser() {
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <TeaserPlan
-            label="Free local install"
+            label="Free"
             price="$0"
-            note="MIT · forever"
-            bullets={['pip install -e .[mech]', 'Bring your own LLM key', 'Bring your own Postgres']}
-            ctaTo="/docs/getting-started"
-            ctaText="Install"
-          />
-          <TeaserPlan
-            highlighted
-            label="Hosted Free"
-            price="$0"
-            note="50 MB free"
-            bullets={['No card required', 'Workspaces + sharing', 'Metered when you exceed free tier']}
+            note="forever"
+            bullets={['50 MB · public projects', '100k in + 20k out free tokens/mo', 'Cheap-tier models · Workshop publish']}
             ctaTo="/signup"
             ctaText="Sign up"
           />
           <TeaserPlan
-            label="Pay-as-you-go"
-            price="$0.20"
-            note="per GB-month + LLM"
-            bullets={['USD displayed, ZAR settled', 'Top up in $5 increments', 'Stop anytime']}
+            highlighted
+            label="Studio"
+            price="$9"
+            note="per month"
+            bullets={['5 GB · private projects', '$8/mo LLM credits at cost · any model', 'Wallet top-up for overage']}
+            ctaTo="/signup"
+            ctaText="Start Studio"
+          />
+          <TeaserPlan
+            label="Pro"
+            price="$29"
+            note="per month"
+            bullets={['20 GB · higher worker concurrency', '$20/mo LLM credits at cost', 'Same wallet · same at-cost overage']}
             ctaTo="/pricing"
-            ctaText="See rates"
+            ctaText="See pricing"
           />
         </div>
 
         <p className="mt-4 text-center text-xs text-ink-500 font-mono">
-          USD displayed · ZAR settled · 20% margin over provider list price
+          At-cost LLM pricing · live provider rates · MIT self-host always free
         </p>
       </div>
     </section>
