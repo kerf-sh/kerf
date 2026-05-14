@@ -1,5 +1,12 @@
 # fly.io deployment
 
+> **This is the production deployment.** `kerf.sh` runs on fly.io using
+> the configuration in this guide — primary region JNB (Johannesburg),
+> Tigris for object storage, Neon for Postgres. The numbers in
+> [`billingmodel/projections.py`](../billingmodel/projections.py) are
+> based on this stack's real costs. Other deployment guides in this
+> directory are reference configurations for self-hosters.
+
 Kerf deploys to fly.io as a **single image** containing the compiled
 Vite SPA + FastAPI + the chosen plugin persona. The app machine serves
 both the frontend (StaticFiles at `/`) and the API (everything under

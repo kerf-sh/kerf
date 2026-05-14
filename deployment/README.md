@@ -2,9 +2,15 @@
 
 Kerf ships as a **single Docker image** — the compiled Vite SPA plus
 FastAPI backend plus the chosen plugin persona — built from the root
-`Dockerfile`. The same image runs everywhere. Pick a provider based on
-your constraints; if you do not have a strong reason to pick otherwise,
-use fly.io.
+`Dockerfile`. The same image runs everywhere.
+
+> **Production runs on fly.io.** That's what powers `kerf.sh`. The other
+> guides in this directory (GCP, AWS, Azure, DigitalOcean) are **reference
+> configurations** for users self-hosting Kerf on a cloud they already
+> use. We don't operate Kerf on those platforms — but the Docker image
+> + env-var contract is identical everywhere, so the configurations are
+> known-working starting points. If you don't have a strong reason to
+> pick something else, use [fly.md](./fly.md).
 
 ## Provider comparison
 
