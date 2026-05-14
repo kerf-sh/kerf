@@ -3,7 +3,7 @@ import {
   ChevronDown, ChevronRight,
   FileCode, Folder, FolderOpen, Layers,
   FilePlus, FolderPlus, Plus, Trash2, Box, Upload, Ruler, PenTool, X, RefreshCw,
-  Package, Cylinder, CircuitBoard, Loader2, AlertCircle, Variable, FileBox, Cable,
+  Package, Cylinder, CircuitBoard, Loader2, AlertCircle, Variable, FileBox, Cable, Scissors,
 } from 'lucide-react'
 import { useWorkspace } from '../store/workspace.js'
 import { FreeCADImportDialog, isFCStdFile } from './FreeCADImport.jsx'
@@ -40,6 +40,7 @@ function KindIcon({ kind, name, open }) {
   if (kind === 'circuit') return <CircuitBoard size={14} className={`${cls} text-cyan-edge`} />
   if (kind === 'equations') return <Variable size={14} className={`${cls} text-kerf-300`} />
   if (kind === 'wiring') return <Cable size={14} className={`${cls} text-orange-300`} />
+  if (kind === 'section') return <Scissors size={14} className={`${cls} text-violet-300`} />
   if (kind === 'step-ref') return (
     <span className="relative flex-shrink-0 inline-flex items-center">
       <Box size={14} className="text-cyan-edge" />
@@ -70,6 +71,9 @@ function KindIcon({ kind, name, open }) {
   }
   if (lower.endsWith('.wiring')) {
     return <Cable size={14} className={`${cls} text-orange-300`} />
+  }
+  if (lower.endsWith('.section')) {
+    return <Scissors size={14} className={`${cls} text-violet-300`} />
   }
   if (lower.endsWith('.fcstd')) {
     return <FileBox size={14} className={`${cls} text-orange-300`} />
@@ -249,6 +253,7 @@ function Node({ file, depth, byParent, expanded, toggle, currentFileId, onSelect
           onNewDrawing={isFolder ? () => { onCreate?.(file.id, 'drawing'); setMenu(null) } : null}
           onNewSketch={isFolder ? () => { onCreate?.(file.id, 'sketch'); setMenu(null) } : null}
           onNewFeature={isFolder ? () => { onCreate?.(file.id, 'feature'); setMenu(null) } : null}
+          onNewSection={isFolder ? () => { onCreate?.(file.id, 'section'); setMenu(null) } : null}
           onNewCircuit={isFolder ? () => { onCreate?.(file.id, 'circuit'); setMenu(null) } : null}
           onNewPart={isFolder ? () => { onCreate?.(file.id, 'part'); setMenu(null) } : null}
           onImportStep={isFolder ? () => { onImportStep?.(file.id); setMenu(null) } : null}
@@ -361,13 +366,14 @@ const KIND_ROWS = {
   circuit:   { icon: CircuitBoard, label: 'Circuit',   hint: 'tscircuit electronics (.circuit.tsx)',      color: 'text-cyan-edge' },
   equations: { icon: Variable,     label: 'Equations', hint: 'Project-level named parameters (.equations)', color: 'text-kerf-300' },
   wiring:    { icon: Cable,        label: 'Wiring',    hint: 'Cable harness / wiring diagram (.wiring)',  color: 'text-orange-300' },
+  section:   { icon: Scissors,    label: 'Section',   hint: 'Plane cross-section outline (.section)',    color: 'text-violet-300' },
 }
 
 // Canonical menu order: folder + generic file first (basic primitives),
 // followed by domain-specific kinds in roughly mechanical → drawings →
 // library → electronics order. The `step` and `jscad` aliases are
 // import-only / synthetic and intentionally absent here.
-const KIND_ORDER = ['folder', 'file', 'sketch', 'assembly', 'drawing', 'feature', 'part', 'circuit', 'equations', 'wiring']
+const KIND_ORDER = ['folder', 'file', 'sketch', 'assembly', 'drawing', 'feature', 'section', 'part', 'circuit', 'equations', 'wiring']
 
 // CreateMenu — single "+ New" dropdown that replaces the row of icon
 // buttons in the FileTree header. Shows the full union of canonical
@@ -465,7 +471,7 @@ function CreateRow({ icon: Icon, label, hint, color = 'text-ink-200', onClick })
   )
 }
 
-function ContextMenu({ x, y, onClose, onRename, onDelete, onNewFile, onNewFolder, onNewAssembly, onNewDrawing, onNewSketch, onNewPart, onNewFeature, onNewCircuit, onImportStep }) {
+function ContextMenu({ x, y, onClose, onRename, onDelete, onNewFile, onNewFolder, onNewAssembly, onNewDrawing, onNewSketch, onNewPart, onNewFeature, onNewSection, onNewCircuit, onImportStep }) {
   useEffect(() => {
     const close = () => onClose()
     window.addEventListener('click', close)
@@ -489,6 +495,7 @@ function ContextMenu({ x, y, onClose, onRename, onDelete, onNewFile, onNewFolder
       <MenuItem icon={Ruler} label="New drawing" action={onNewDrawing} />
       <MenuItem icon={PenTool} label="New sketch" action={onNewSketch} />
       <MenuItem icon={Cylinder} label="New feature" action={onNewFeature} />
+      <MenuItem icon={Scissors} label="New section" action={onNewSection} />
       <MenuItem icon={CircuitBoard} label="New circuit" action={onNewCircuit} />
       <MenuItem icon={Package} label="New part" action={onNewPart} />
       <MenuItem icon={Box} label="Import .step…" action={onImportStep} />
