@@ -45,6 +45,7 @@ import { meshCache } from '../lib/meshCache.js'
 import { distance, formatDistance } from '../lib/measure.js'
 import { exportSvg, exportPng, exportPdf } from '../lib/svgExport.js'
 import { api } from '../lib/api.js'
+import { mateRefFromPick } from '../lib/assembly.js'
 
 const AUTOSAVE_MS = 500
 // Re-eval debounce, scaled by file size. Small files feel snappy at 250ms;
@@ -411,7 +412,15 @@ export default function Editor() {
         else if (e.key === '2') { e.preventDefault(); useWorkspace.getState().setMeasureMode('face') }
         else if (e.key === '3') { e.preventDefault(); useWorkspace.getState().setMeasureMode('edge') }
         else if (e.key === '4') { e.preventDefault(); useWorkspace.getState().setMeasureMode('vertex') }
-        else if (e.key === 'Escape') { useWorkspace.getState().clearSelectedFeatures() }
+        else if (e.key === 'Escape') {
+          useWorkspace.getState().clearSelectedFeatures()
+          if (assemblyPickSideRef.current) {
+            setAssemblyPickSideRef.current(null)
+            setMatePickResultRef.current(null)
+            assemblyPickSideRef.current = null
+            useWorkspace.getState().setMeasureMode('object')
+          }
+        }
       }
     }
     window.addEventListener('keydown', onKey)
@@ -434,8 +443,32 @@ export default function Editor() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Renderer feature click → store. shift adds; non-shift swaps.
+  // ----- Assembly mate pick state -----
+  // assemblyPickSide: 'a' | 'b' | null — which ref slot is waiting for a click.
+  // matePickResult: { side, ref } resolved and handed to AssemblyEditor.
+  // We keep assemblyPickSideRef so the keydown closure (mounted once) can read it.
+  const [assemblyPickSide, setAssemblyPickSide] = useState(null)
+  const [matePickResult, setMatePickResult] = useState(null)
+  const assemblyPickSideRef = useRef(null)
+  useEffect(() => { assemblyPickSideRef.current = assemblyPickSide }, [assemblyPickSide])
+  // Stable setter refs so the once-mounted keydown handler can call them.
+  const setAssemblyPickSideRef = useRef(setAssemblyPickSide)
+  const setMatePickResultRef = useRef(setMatePickResult)
+
+  // Renderer feature click → store. When assemblyPickSide is active, intercept
+  // and convert to a mate ref instead of the normal measure-feature flow.
   const handlePickFeature = useCallback((partId, kind, featureId, shift) => {
+    const side = assemblyPickSideRef.current
+    if (side) {
+      const ref = mateRefFromPick(partId, kind, featureId)
+      if (ref) {
+        setMatePickResultRef.current({ side, ref })
+        setAssemblyPickSideRef.current(null)
+        assemblyPickSideRef.current = null
+        useWorkspace.getState().setMeasureMode('object')
+      }
+      return
+    }
     useWorkspace.getState().pickFeature(partId, kind, featureId, shift)
   }, [])
 
@@ -1239,6 +1272,25 @@ export default function Editor() {
               onPickFeature={handlePickFeature}
               className="w-full h-full"
             />
+            {assemblyPickSide && (
+              <div className="pointer-events-none absolute inset-x-0 top-2 flex justify-center z-20">
+                <div className="pointer-events-auto flex items-center gap-2 px-3 py-1.5 rounded-lg bg-amber-950/90 border border-amber-700/70 text-amber-300 text-[11px] shadow-lg">
+                  <span>Click a face or edge on ref {assemblyPickSide.toUpperCase()}…</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      assemblyPickSideRef.current = null
+                      setAssemblyPickSide(null)
+                      setMatePickResult(null)
+                      useWorkspace.getState().setMeasureMode('object')
+                    }}
+                    className="text-amber-400 hover:text-amber-200 ml-1 text-[10px] underline"
+                  >
+                    Cancel (Esc)
+                  </button>
+                </div>
+              </div>
+            )}
             <MeasureToolbar
               mode={w.measureMode}
               onMode={(m) => w.setMeasureMode(m)}
@@ -1295,6 +1347,13 @@ export default function Editor() {
                   onSelectComponent={(id) => w.selectComponent(id)}
                   onChange={(next) => w.editAssemblyContent(next)}
                   onToast={(msg) => useWorkspace.setState({ toast: msg })}
+                  onRequestMatePick={(side) => {
+                    assemblyPickSideRef.current = side
+                    setAssemblyPickSide(side)
+                    useWorkspace.getState().setMeasureMode('face')
+                  }}
+                  matePickResult={matePickResult}
+                  onMatePickConsumed={() => setMatePickResult(null)}
                 />
               ) : (
                 <CodeEditor

@@ -1,6 +1,6 @@
 // AssemblyEditor — visual editor for an assembly file's components.
 //
-// Vocabulary (docs/architecture.md): a Part is a whole .jscad file; an Object is one
+// Vocabulary (CONTRACT.md): a Part is a whole .jscad file; an Object is one
 // entry in its exported array; a Component is an Assembly's instance of a
 // single Object placed at a transform.
 //
@@ -133,6 +133,9 @@ export default function AssemblyEditor({
   onSelectComponent,
   onChange,                 // (nextContentString) => void (debounced upstream OK; we debounce ourselves)
   onToast,                  // (msg) => void
+  onRequestMatePick,        // (side: 'a'|'b') => void — tells parent to enter pick mode
+  matePickResult,           // { side, ref } | null — delivered by parent after viewport pick
+  onMatePickConsumed,       // () => void — called after we've applied the pick result
 }) {
   const parsed = useMemo(() => parseAssembly(content), [content])
 
@@ -146,6 +149,8 @@ export default function AssemblyEditor({
   const [overrides, setOverrides] = useState(() => parsed.overrides || [])
   const [mates, setMates] = useState(() => parsed.mates || [])
   const [matesOpen, setMatesOpen] = useState(false)
+  const [pickingFor, setPickingFor] = useState(null)
+  const [pendingPickForm, setPendingPickForm] = useState(null)
   const [showJson, setShowJson] = useState(false)
   const [jsonDraft, setJsonDraft] = useState(content)
   const [jsonErr, setJsonErr] = useState(null)
@@ -160,6 +165,23 @@ export default function AssemblyEditor({
   const matesRef = useRef(mates)
   useEffect(() => { overridesRef.current = overrides }, [overrides])
   useEffect(() => { matesRef.current = mates }, [mates])
+
+  // Apply a viewport-pick result from the parent into our pending form fields.
+  useEffect(() => {
+    if (!matePickResult) return
+    const { side, ref } = matePickResult
+    if (!side || !ref) return
+    setPendingPickForm((prev) => ({
+      ...(prev || {}),
+      [`${side}_component_id`]: ref.component_id,
+      [`${side}_feature`]: ref.feature,
+      [`${side}_feature_id`]: ref.feature_id,
+    }))
+    setPickingFor(null)
+    onMatePickConsumed?.()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [matePickResult])
+
   useEffect(() => {
     // Upstream changed under us (e.g. LLM tool, undo). Reset local state.
     if (content !== lastEmittedRef.current) {
@@ -399,10 +421,10 @@ export default function AssemblyEditor({
       // tuple — they decompose to identity now, but since we share the object
       // reference, edits to one will propagate. We don't actually share state
       // across rows (that would be confusing for editing); we just start them
-      // all at identity. The "rigid" affordance is documented in docs/architecture.md
+      // all at identity. The "rigid" affordance is documented in CONTRACT.md
       // and is implemented by giving every row an identical transform JSON.
       // Drag-to-move on one component still moves only that one — to keep
-      // them locked, the user composes a parent assembly. (See docs/architecture.md.)
+      // them locked, the user composes a parent assembly. (See CONTRACT.md.)
       const sharedTransform = rigid ? { position: [0, 0, 0], rotationDeg: [0, 0, 0], scale: 1 } : null
       for (const oid of objectIds) {
         let id = `${baseName}-${oid}`
@@ -549,7 +571,7 @@ export default function AssemblyEditor({
         )}
       </div>
 
-      {/* Mates panel — collapsible region for 3D assembly mates (SolveSpace solver). */}
+      {/* Mates panel — collapsible region for 3D assembly mates. */}
       <MatesPanel
         mates={mates}
         components={rows}
@@ -557,6 +579,17 @@ export default function AssemblyEditor({
         onToast={onToast}
         projectId={projectId}
         fileId={currentFileId}
+        pickingFor={pickingFor}
+        pendingPickForm={pendingPickForm}
+        onRequestPick={onRequestMatePick ? (side) => {
+          setPickingFor(side)
+          onRequestMatePick(side)
+        } : null}
+        onPickCancel={() => {
+          setPickingFor(null)
+          onMatePickConsumed?.()
+        }}
+        onPendingPickFormConsumed={() => setPendingPickForm(null)}
       />
 
       {/* Inline BOM panel — collapsible region. Lazy-loads on first expand

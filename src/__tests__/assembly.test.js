@@ -29,6 +29,7 @@ import {
   derivedKindForRefKind,
   addMate,
   removeMate,
+  mateRefFromPick,
 } from '../lib/assembly.js'
 
 describe('parseAssembly / serializeAssembly — external_ref round-trip', () => {
@@ -699,5 +700,52 @@ describe('mates — schema-only round-trip (ROADMAP row 49)', () => {
     // Unknown id → returns new array containing all rows.
     const same = removeMate(rows, 'nope')
     expect(same).toHaveLength(2)
+  })
+})
+
+describe('mateRefFromPick — viewport pick → mate ref (Phase 2 face picker)', () => {
+  it('single-object component: partId is the componentId', () => {
+    const ref = mateRefFromPick('body-1', 'face', 'face-3')
+    expect(ref).toEqual({ component_id: 'body-1', feature: 'face', feature_id: 'face-3' })
+  })
+
+  it('multi-object component: strips the /origPartId suffix', () => {
+    const ref = mateRefFromPick('assembly-cap/cap-body', 'face', 'face-0')
+    expect(ref).toEqual({ component_id: 'assembly-cap', feature: 'face', feature_id: 'face-0' })
+  })
+
+  it('edge kind maps to "edge"', () => {
+    const ref = mateRefFromPick('shaft', 'edge', 'edge-12')
+    expect(ref).toEqual({ component_id: 'shaft', feature: 'edge', feature_id: 'edge-12' })
+  })
+
+  it('vertex kind maps to "vertex"', () => {
+    const ref = mateRefFromPick('pin', 'vertex', 'vertex-2')
+    expect(ref).toEqual({ component_id: 'pin', feature: 'vertex', feature_id: 'vertex-2' })
+  })
+
+  it('unsupported kinds and null inputs return null', () => {
+    expect(mateRefFromPick('part', 'pushpull', 'face-1')).toBeNull()
+    expect(mateRefFromPick('part', null, 'face-1')).toBeNull()
+    expect(mateRefFromPick(null, 'face', 'face-1')).toBeNull()
+    expect(mateRefFromPick('', 'face', 'face-1')).toBeNull()
+    expect(mateRefFromPick('part', 'face', '')).toBeNull()
+    expect(mateRefFromPick('part', 'face', null)).toBeNull()
+  })
+
+  it('addMate round-trip: pick result produces a valid parseable mate', () => {
+    const ref = mateRefFromPick('comp-a', 'face', 'face-5')
+    const refB = mateRefFromPick('comp-b', 'face', 'face-2')
+    expect(ref).not.toBeNull()
+    expect(refB).not.toBeNull()
+    const next = addMate([], {
+      type: 'coincident',
+      a: ref,
+      b: refB,
+    })
+    expect(next).toHaveLength(1)
+    expect(next[0].a.component_id).toBe('comp-a')
+    expect(next[0].b.component_id).toBe('comp-b')
+    expect(next[0].a.feature).toBe('face')
   })
 })

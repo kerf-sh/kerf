@@ -408,6 +408,23 @@ export function removeMate(rows, mateId) {
   return list.filter((m) => m && m.id !== mateId)
 }
 
+// mateRefFromPick: convert a Renderer onPickFeature hit to a mate ref.
+//
+// The Renderer's partId is `componentId` for single-object components or
+// `componentId/origPartId` for multi-object ones (the suffix is the source
+// Object's id). We want only the componentId for the constraint. Renderer kind
+// 'face' | 'edge' | 'vertex' maps directly onto MATE_FEATURES.
+//
+// Returns { component_id, feature, feature_id } or null when the pick is
+// unusable (null/empty partId or featureId, unsupported kind such as 'axis').
+export function mateRefFromPick(partId, kind, featureId) {
+  if (!partId || !featureId) return null
+  const feature = kind === 'face' ? 'face' : kind === 'edge' ? 'edge' : kind === 'vertex' ? 'vertex' : null
+  if (!feature) return null
+  const component_id = partId.includes('/') ? partId.split('/')[0] : partId
+  return { component_id, feature, feature_id: String(featureId) }
+}
+
 export const EMPTY_ASSEMBLY = EMPTY
 
 /** Restamp a row's external_ref.last_seen_updated_at; no-op if refId unmatched. */
