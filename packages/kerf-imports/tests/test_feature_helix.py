@@ -14,7 +14,7 @@ import importlib.util
 
 # Load modules directly to avoid tools/__init__.py triggering the db chain.
 # backend/ for registry, context, surfacing; plugin src/ for moved tools
-_BACKEND = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "backend")
+_BACKEND = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))), "backend")
 _PLUGIN_TOOLS = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src", "kerf_imports", "tools")
 
 

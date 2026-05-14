@@ -24,7 +24,7 @@ def _load_module(name: str, rel_path: str):
 # module that a preceding test already loaded.
 import types, importlib
 
-_base = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "backend")
+_base = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))), "backend")
 _tools_dir = os.path.join(_base, "tools")
 _plugin_tools = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src", "kerf_bim", "tools")
 
