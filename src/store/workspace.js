@@ -11,7 +11,7 @@
 //   - the live `parts` array for the currently-open file (JSCAD or STEP).
 import { create } from 'zustand'
 import { api, ApiError } from '../lib/api.js'
-import { runJscad, setSketchResolver, setSketchLister, setEquationsResolver as setJscadEquationsResolver } from '../lib/jscadRunner.js'
+import { runJscad, setSketchResolver, setSketchLister, setEquationsResolver as setJscadEquationsResolver, SKETCH_IMPORT_RE } from '../lib/jscadRunner.js'
 import { setEquationsResolver as setOcctEquationsResolver, setActiveConfigResolver as setOcctActiveConfigResolver } from '../lib/occtRunner.js'
 import { loadStep } from '../lib/stepLoader.js'
 import { loadMeshFromURL } from '../lib/meshLoader.js'
@@ -53,6 +53,10 @@ const FILE_MUTATING_TOOLS = new Set([
   'assembly_remove_component',
   'duplicate_object', 'delete_object',
   'create_sketch',
+  // sketch_* mutation tools — these modify .sketch files and must trigger
+  // a JSCAD re-eval if the open file imports the mutated sketch.
+  'sketch_add_entity', 'sketch_add_constraint', 'sketch_set_constraint_value',
+  'sketch_delete_entity', 'sketch_carbon_copy',
   'create_part', 'set_part_metadata', 'add_distributor_link',
   'create_feature', 'feature_pad', 'feature_pocket', 'feature_revolve',
   'feature_fillet', 'feature_chamfer', 'feature_shell', 'feature_hole',
@@ -455,6 +459,46 @@ function strHash(s) {
   let h = 5381
   for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0
   return String(h >>> 0)
+}
+
+// Compute the absolute path (leading '/') for a file in the project tree by
+// walking its parent_id chain. Returns '' if the file is not found.
+export function fileAbsPath(files, fileId) {
+  if (!Array.isArray(files) || !fileId) return ''
+  const byId = new Map(files.map((f) => [f.id, f]))
+  const file = byId.get(fileId)
+  if (!file) return ''
+  const segs = []
+  let cur = file
+  let safety = 0
+  while (cur && safety++ < 64) {
+    segs.unshift(cur.name)
+    if (!cur.parent_id) break
+    cur = byId.get(cur.parent_id)
+  }
+  return '/' + segs.join('/')
+}
+
+// Return true if `jscadSource` contains an `import X from '...path'` line
+// whose path matches `sketchAbsPath`. The regex is reset before each use
+// because it's a stateful `/gm` pattern exported from jscadRunner.
+export function jscadImportsSketch(jscadSource, sketchAbsPath) {
+  if (!jscadSource || !sketchAbsPath) return false
+  // Build a fresh copy of the regex to avoid stateful lastIndex issues.
+  const re = new RegExp(SKETCH_IMPORT_RE.source, SKETCH_IMPORT_RE.flags)
+  let match
+  while ((match = re.exec(jscadSource)) !== null) {
+    const importedPath = match[2]
+    // Normalise: strip a leading './' so './foo.sketch' and '/foo.sketch' don't
+    // mismatch; the resolver accepts both forms.
+    const norm = importedPath.startsWith('./')
+      ? importedPath.slice(1)     // './foo.sketch' → '/foo.sketch'
+      : importedPath.startsWith('/')
+        ? importedPath            // '/foo.sketch' unchanged
+        : '/' + importedPath      // 'foo.sketch' → '/foo.sketch'
+    if (norm === sketchAbsPath) return true
+  }
+  return false
 }
 
 export const useWorkspace = create((set, get) => ({
@@ -2011,8 +2055,40 @@ export const useWorkspace = create((set, get) => ({
         currentFile: updated,
         files: s.files.map((f) => f.id === updated.id ? { ...f, ...updated, content: undefined } : f),
       }))
+      // Reactive re-eval: if a JSCAD file is currently open and its source
+      // imports the sketch we just saved, re-run it so the 3D viewport stays
+      // in sync without requiring a manual refresh.
+      // Scope (v1): only the currently-open file. Cross-file graph invalidation
+      // (assembly C → jscad B → sketch A) is deferred — see ROADMAP.
+      const sketchPath = fileAbsPath(get().files, currentFileId)
+      await get()._reEvalJscadForSketch(sketchPath)
     } catch (err) {
       set({ saving: false, toast: err?.message || 'Failed to save sketch' })
+    }
+  },
+
+  // Internal helper: if the currently-open file is a .jscad that imports the
+  // sketch at `sketchAbsPath`, re-run it and update parts / partsError.
+  // Called by updateSketch after a sketch is saved, and indirectly by
+  // sendMessage after LLM sketch_* tool calls trigger loadFileForEditor
+  // (which already re-runs runJscad via the standard JSCAD branch — so the
+  // LLM path is fully covered once sketch_* tools are in FILE_MUTATING_TOOLS).
+  _reEvalJscadForSketch: async (sketchAbsPath) => {
+    const state = get()
+    const { currentFile, currentFileContent, currentFileId } = state
+    if (!currentFile || !currentFileId) return
+    if (fileKindFor(currentFile) !== 'jscad') return
+    if (!jscadImportsSketch(currentFileContent, sketchAbsPath)) return
+    // The sketch content changed; re-resolve sketch imports and re-eval.
+    const cfgParams = state.getActiveConfigParams ? state.getActiveConfigParams(currentFileId) : null
+    const res = await runJscad(currentFileContent, cfgParams)
+    // Guard: user may have navigated away while JSCAD was running.
+    if (get().currentFileId !== currentFileId) return
+    if (res?.stale) return
+    if (res.error) {
+      set({ partsError: res.error, loadingParts: false })
+    } else {
+      set({ parts: res.parts || [], partsError: null, loadingParts: false })
     }
   },
 

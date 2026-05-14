@@ -61,7 +61,7 @@ async function resolveEquationsScope() {
 //   Matches: import foo from "/path.sketch"
 //            import foo from '/path.sketch'
 //            import foo from "./path.sketch"  (resolved later)
-const SKETCH_IMPORT_RE = /^[ \t]*import\s+([A-Za-z_$][\w$]*)\s+from\s+['"]([^'"\n]+\.sketch)['"];?[ \t]*$/gm
+export const SKETCH_IMPORT_RE = /^[ \t]*import\s+([A-Za-z_$][\w$]*)\s+from\s+['"]([^'"\n]+\.sketch)['"];?[ \t]*$/gm
 
 function extractSketchImports(code) {
   const imports = []
