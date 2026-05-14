@@ -42,7 +42,7 @@ local install, optional hosted tier with billing + workshop sharing + git.
 | **Feature panel: Pad / Pocket / Revolve** | ✅ shipped | OCCT Phase 2/3 complete: `feature_pad` / `feature_pocket` / `feature_revolve` LLM tools + `feature_*` toolbar in `FeatureView.jsx`; full B-rep ops (Hole, Fillet, Chamfer, Shell, Sweep1/2, NetworkSrf, BlendSrf, RotateFace, Push-Pull, LinearPattern, PolarPattern, MirrorPattern); face/edge gumball direct-modeling; integration scenarios in `feature_files.go`. |
 | **Cloud git → object-storage Storer** | ✅ shipped | `packages/kerf-core/src/kerf_core/storage/git_storer.py::S3GitStorer` — pygit2-based bulk-sync storer for bare repos on R2/S3. Stateless serverless deploys, no local persistent disk required. Pack/loose objects uploaded **before** refs for crash-consistency; sentinel `_marker` object provides ETag-based optimistic concurrency (concurrent pushers get `StorerConcurrencyError`); orphans batch-deleted via `delete_objects`. OSS/local-install keeps the on-disk pygit2 path — the Storer is only constructed when `STORAGE_BACKEND=s3`. 6 hermetic moto integration tests in `packages/kerf-core/tests/test_git_storer.py` (round-trip, empty bootstrap, multi-commit + repack + orphan cleanup, race detection, batch delete, force-replace). |
 | **Large-file handling for git sync (STEP / binary imports)** | ✅ shipped | **Phase 1 shipped**: migration `033_step_ref_kind.sql` adds the `.step-ref` pointer kind; files ≥ 5 MB are committed as a small JSON pointer (`{hash, size, original_name}`) content-addressed into object storage. Kerf's import path resolves the pointer transparently via CDN. Git history stays lean. **Phase 2 (only if clone-outside-Kerf demand emerges):** Git LFS via direct Batch API — implement the 3-line pointer format + ~2 HTTP endpoints in the go-git sync path. |
-| **Test scenarios: assembly + sketcher + drawing** | ✅ shipped | `backend/cmd/test/scenarios/{sketcher,drawings,cross_project_parts}.go` cover OSS integration; cloud-side `scenario_workshop_{parts,listings,verified_filter}.go` + `scenario_library_part_detail.go` round out the picture. |
+| **Test scenarios: assembly + sketcher + drawing** | ✅ shipped | Per-plugin pytest suites in `packages/kerf-*/tests/` cover OSS integration (sketcher, drawings, cross-project parts); cloud-side workshop + library scenarios in `packages/kerf-cloud/tests/` round out the picture. |
 | **Sketcher v2 improvements** | ✅ shipped | Trim, extend, ellipse, B-spline (cubic), fillet (2-line corner UI), mirror, linear pattern, polar pattern; 6 new constraints (horizontal distance, vertical distance, symmetric, block, equal angle, parallel lines); arc/circle edge projection for external geometry; multi-loop holes in extrude pockets; 3D backdrop overlay. Pure helpers in `src/lib/sketchOps.js` / `sketchGeom2.js`, canvas tools wired in `SketchView.jsx`, LLM tools `sketch_trim` / `sketch_extend`, vitest + integration coverage. |
 | **Sketcher v1 fixes** | ✅ shipped | Live-tooling regression (line tool wiping `pendingPoints` on every solver round-trip, breaking the sketch→Pad/Pocket/Hole handoff) fixed in `6dc18ee` via the `lastSketchRef` pattern in `SketchView.jsx`: every locally-produced sketch reference is stashed before `onChange`/`onSolved` calls, and the resync `useEffect` only clears pending state when the incoming prop is a true external replacement (LLM restore / undo), not a self-write bounce-back. 757/757 vitest pass; `sketcher.test.js` covers solver integration + multi-click data flow + JSON round-trips; `sketchGeom2.test.js` covers the Pad handoff path. Follow-on `ac8d9e9` adds further tooling. Remaining nit: an OCCT end-to-end "line draw → solve → Pad → expected vertex count" integration test is still missing — moved to the [Sketcher v2 row]/test-coverage backlog. |
 | **Equations / global parameters** | ✅ shipped | `.equations` JSON kind; mathjs evaluator (`src/lib/equations.js`); EquationsEditor (full-bleed table); injected into JSCAD as `params` arg, `.feature` + `.sketch` via `${name}` placeholders; backend `read_equations` / `set_equation` LLM tools + `docs/llm/equations.md`. Multi-file merge with last-loaded-wins. |
@@ -58,7 +58,7 @@ local install, optional hosted tier with billing + workshop sharing + git.
 | **CAM toolpath generation** | ✅ shipped | OpenCAMlib (LGPL 2.1) + pythonOCC, all try/except gated with mock fallback. 2.5D ops (face/contour/pocket/drill/profile) + 3D parallel/waterline + lathe (X-Z plane, G18/G96, multi-pass roughing from profile) + 5-axis stub. B-rep wire extraction via `TopExp_Explorer` → planar Z-normal face selection → `BRepTools.OuterWire` + inner-wire walk → `GCPnts_QuasiUniformDeflection` discretisation replaces bbox fallback for contour/pocket. STEP→STL via `STEPControl_Reader` + `BRepMesh_IncrementalMesh` (0.1 mm linear deflection). G-code post-processors: LinuxCNC / GRBL / Mach3 / Fanuc. `.cam` file kind wired: `POST/GET /api/.../cam` + `/cam/status`, `cam_run` / `cam_job_status` LLM tools, `CAMView.jsx`, `llm_docs/cam.md`. Tests: `test_cam_step.py` (STEP→STL) + `test_cam_advanced.py` (16 cases covering wire extraction, parallel_3d, waterline, lathe, 5-axis stub). Caveats: lathe emits plain G1 moves (no G71/G72 canned cycles); `ocl.AdaptiveWaterline` requires OCL built with Boost.Polygon, falls back to perimeter-at-Z when absent. |
 | **Topology optimization** | ✅ shipped | Density-field SIMP via FEniCSx; `dolfinx`/`gmsh`/pythonOCC imports gated with try/except so pyworker boots without them. `.topo` file kind wired; `topo_run` LLM tool; pyworker `POST /run-topo` — when dolfinx+gmsh are available meshes the real `.feature` STEP via `gmsh.model.occ.importShapes` + `dolfinx.io.gmshio.read_from_msh`, runs full SIMP loop (Heaviside filter, OC update, Heaviside projection) with loads/BCs from `.topo` spec (face_tag-indexed Dirichlet + Neumann); when Gmsh absent falls back to unit-cube mesh; marching-cubes (skimage) + Laplacian smoothing (`smoothing_iterations`, default 3) + NURBS surface fitting per connected component (`GeomAPI_PointsToBSplineSurface`, PCA-plane projection, scipy cKDTree grid sampling) with per-component faceted fallback + pythonOCC BRep sewing exports STEP stored as new `kind='step'` file with `output_mesh_file_id` populated; multi-body optimization via `occ.fragment()` conformal mesh + per-body `volume_fraction`/`filter_radius_mm` arrays + independent OC updates sharing interface displacement DOFs; when not available returns `ENGINE_PENDING_WARNING` sentinel. `TopoView.jsx` renders spec params, results, `DensityFieldHeatmap` (SVG X-Y projection of density field), `DensityMeshViewer` (GLB when output_mesh_file_id is set); wired in `Editor.jsx` for `.topo` kind. `llm_docs/topo.md` documents full schema + BC/load spec + face_tag convention + multi-body fields. `packages/kerf-topo/tests/test_topo_phase2.py` + `test_topo_polish.py` cover Gmsh meshing, SIMP non-triviality, NURBS round-trip, smoothing RMS reduction, multi-body per-body density divergence (all skipped without deps). |
 | **Architecture: IFC + text-DSL** | ✅ shipped | `.bim` text-DSL (or JSON) → IfcOpenShell IFC4 compiler → `.ifc` artifact → web-ifc/Three.js viewer (`BIMView.jsx`). Supports walls/slabs/spaces/openings/levels/site. pyworker `POST /compile-ifc` + `POST /compile-bim`. Backend tools: `create_bim`, `read_bim`, `compile_bim_to_ifc`, `read_ifc`. IfcOpenShell import gated with try/except — server boots without it. LLM doc page at `packages/kerf-bim/llm_docs/bim.md`. |
-| **NURBS surfacing (Phase 4)** | ✅ shipped | sweep1/sweep2/networkSrf/blendSrf surface creation tools + display. Python NurbsSurface layer (`backend/geom/`). LLM tools `feature_sweep1/2/network_srf/blend_srf` + `surface_continuity` query/enforce tool (C0/C1/C2 for sweeps/network; G0/G1/G2 for blend). `.surf` file kind documented. NURBS tessellated for display by OCCT worker. **Scope intentionally bounded**: surface creation + display only. NURBS trimming/booleans (deep OCCT kernel work) is multi-year and deliberately out of scope — for that depth of CAD, full Rhino-tier requires a multi-year kernel project tracked separately. |
+| **NURBS surfacing (Phase 4)** | ✅ shipped | sweep1/sweep2/networkSrf/blendSrf surface creation tools + display. Python NurbsSurface layer (`packages/kerf-cad-core/src/kerf_cad_core/geom/`). LLM tools `feature_sweep1/2/network_srf/blend_srf` + `surface_continuity` query/enforce tool (C0/C1/C2 for sweeps/network; G0/G1/G2 for blend). `.surf` file kind documented. NURBS tessellated for display by OCCT worker. **Scope intentionally bounded**: surface creation + display only. NURBS trimming/booleans (deep OCCT kernel work) is multi-year and deliberately out of scope — for that depth of CAD, full Rhino-tier requires a multi-year kernel project tracked separately. |
 | **Phase 4a: jewelry-priority surfacing** | ✅ shipped | All three ops live in `src/lib/occtWorker.js`: `opSweep2` wraps `BRepOffsetAPI_MakePipeShell` with rail2 as auxiliary spine (Frenet fallback); `opNetworkSrf` tries `GeomFill_BSplineCurves` first, falls back to `BRepOffsetAPI_ThruSections` over U-curves with V-curves advisory; `opBlendSrf` uses `BRepFill_Filling` with two edge constraints, returns the blend face only. Continuity args: `C0/C1/C2` for networkSrf (default C1), `G0/G1/G2` for blendSrf (default G1). LLM tools `feature_sweep2` / `feature_network_srf` / `feature_blend_srf` registered in `surfacing_tools.go`. FeatureView toolbar entries under "Surfacing". `feature_files.go` scenario covers all three end-to-end (89 assertions total). |
 | **Phase 4b: direct face manipulation (gumball)** | ✅ shipped | Face gumball: 3 translate arrows + 3 rotate rings, anchored at face centroid; drag commits `push_pull` (translate) or `rotate_face` (rotation) feature nodes. Edge gumball: 1D radial handle perpendicular to selected edge; drag commits `feature_fillet` with dragged radius. Per-frame re-orient on camera orbit (rAF self-host). 7 vitest covering centroid/projection math; 8 backend assertions for `rotate_face` round-trip. |
 | **Auth-optional removal** | ✅ shipped | Local-mode-only: `[server].local_mode = true` (the OSS default) gates a new `POST /auth/bootstrap-local` endpoint that auto-creates a singleton user + workspace and returns a session, idempotent on subsequent calls. Frontend's `useCloudConfig` surfaces the flag; `App.jsx` calls `tryBootstrapLocal()` after the existing `/api/bootstrap` probe and redirects `/`, `/login`, `/signup` to `/projects` once authed. Cloud builds force `local_mode=false` and `/auth/bootstrap-local` returns 404 — multi-user signup/login is unchanged. Override at runtime via `KERF_LOCAL_MODE`. |
@@ -107,13 +107,13 @@ local install, optional hosted tier with billing + workshop sharing + git.
 | **Schematic + PCB editor depth** | ✅ shipped | Manual trace routing + copper pours + layer stack + LayersPanel + DRC overlay all shipped + wired into PCBView. |
 | **FreeCAD parity: PartDesign feature depth** | ✅ shipped | feature_helix.py, feature_draft.py, feature_mirror.py, feature_multi_transform.py, feature_rib.py all shipped. |
 | **FreeCAD parity: Sketcher constraint depth** | ✅ shipped | `src/lib/sketchCarbonCopy.js` + `sketchValidate.js` + `packages/kerf-cad-core/src/kerf_cad_core/sketch.py` extensions shipped. |
-| **FreeCAD parity: sketch → 3D shortcuts** | 🔮 planned | Sketch-based features that take an in-place sketch and a body and apply an op in one step (FreeCAD's "active body" model). Full design doc: [`docs/plans/freecad-sketch-shortcuts.md`](./docs/plans/freecad-sketch-shortcuts.md). Five sub-tasks split out below (3 new LLM tools + 2 flag extensions on existing tools); est. ≈4 sonnet-agent-days total, parallelisable. |
+| **FreeCAD parity: sketch → 3D shortcuts** | ✅ shipped | All 5 sub-tasks landed: `feature_boss_with_draft` (Pad + draft in one node), `feature_cut_from_sketch` (face-normal pocket), `feature_hole_pattern_from_sketch` (sketch-point–driven hole array), Loft `symmetric` mid-plane flag, and Sweep1 `mode` flag (`frenet`/`corrected_frenet`). FreeCAD's "active body" one-step sketch→op model is now fully covered. Design doc: [`docs/plans/freecad-sketch-shortcuts.md`](./docs/plans/freecad-sketch-shortcuts.md). |
 | ↳ **`feature_boss_with_draft`** | ✅ shipped | Pad + draft in one node. OCCT: `BRepPrimAPI_MakePrism` then per-side-face `BRepOffsetAPI_DraftAngle` with neutral plane = sketch plane. Schema: `{sketch_path, height, direction, draft_angle_deg ∈ [-30,30], draft_direction}`. Worker handler `opBossWithDraft` + `walkSideFaces` helper wired in both dispatch switches. Frontend: `boss_with_draft` entry in `FEATURE_KINDS` slotted after `pad` in the `sketch` category. LLM doc at `kerf-chat/llm_docs/feature_boss_with_draft.md`. |
 | ↳ **`feature_cut_from_sketch`** | ✅ shipped | Subtract a sketched region from any planar face of a target body, normal to that face (unlike `pocket` which cuts normal to the sketch plane). OCCT: `faceById` + `faceFrame` → `placeFaceOnPlane(face-anchored)` → `BRepPrimAPI_MakePrism(-normal*depth)` → `BRepAlgoAPI_Cut_3`. Schema: `{target_id, target_face_id, sketch_path, depth, reverse}`. Worker handler `opCutFromSketch` wired in both dispatch switches. Shares `push_pull`'s face-id stability caveat (Phase 4 persistent-naming fixes). LLM doc at `kerf-chat/llm_docs/feature_cut_from_sketch.md`. |
 | ↳ **`feature_hole_pattern_from_sketch`** | ✅ shipped | Parametric `hole_pattern` op references a sketch carrying point entities; worker iterates at eval time and runs N cylinder cuts via shared `cutCylinderAtPoint` helper (refactored out of `opHole`). Schema: `{target_id, sketch_path, diameter, depth}`. Non-point entities silently ignored. `opHolePattern` + `parseSketchPoints` wired in both dispatch switches. FeatureView entry after `hole`. 47 pytest + 28 vitest pass. LLM doc at `kerf-chat/llm_docs/feature_hole_pattern_from_sketch.md`. |
 | ↳ **Loft `symmetric` flag (mid-plane)** | ✅ shipped | Extend `feature_loft` with `symmetric: true` — `opLoft` mirrors both profiles across the mid-plane and feeds `[p1, p2, p2', p1']` to `BRepOffsetAPI_ThruSections` for a thin-walled symmetric body. Limited to exactly 2 input profiles; non-parallel sketch planes (dot < cos 5°) → error. `sketchPlaneFrame()` helper extracts world-space plane from sketch JSON. `symmetric + closed → error`. New Python tool `feature_loft` in `kerf-cad-core/feature_loft.py`. FeatureView `symmetric` bool field slotted before `closed`. LLM doc in `kerf-chat/llm_docs/surfacing.md`. 25 pytest + 35 vitest pass. |
 | ↳ **Sweep1 `mode` flag (tangent-locked)** | ✅ shipped | `mode: "auto"\|"frenet"\|"corrected_frenet"` added to `feature_sweep1` schema + handler; worker `SetMode_5` path confirmed; FeatureView inspector already had the select; LLM doc + pytest schema tests + vitest coil-path frame-orientation tests landed. |
-| **Sketch → JSCAD workflow (mesh-side analog of `.feature`)** | 🔮 planned | Constrained 2D `.sketch` with dimensions → AI-generated `.jscad` 3D part. Sketch stays the source of truth — editing a sketch dimension reflows the 3D. JSCAD route picked when STEP/BRep/fillets aren't required (no OCCT WASM, infinite programmability, mesh-cheap booleans). New `extrude_sketch_to_jscad` LLM tool scaffolds the file with the canonical `import profile from '/x.sketch'` shape (already wired in `jscadRunner.js`). See [docs/plans/sketch-to-jscad.md](docs/plans/sketch-to-jscad.md) for full design + 5-task breakout. |
+| **Sketch → JSCAD workflow (mesh-side analog of `.feature`)** | 🚧 in flight | Constrained 2D `.sketch` with dimensions → AI-generated `.jscad` 3D part. Sketch stays the source of truth — editing a sketch dimension reflows the 3D. JSCAD route picked when STEP/BRep/fillets aren't required (no OCCT WASM, infinite programmability, mesh-cheap booleans). 4 of 5 sub-tasks shipped (jscad.md doc rewrite, `extrude_sketch_to_jscad` tool, error surfacing, reactive re-eval). Remaining: "Build 3D" SketchView affordance + file-tree backlink. See [docs/plans/sketch-to-jscad.md](docs/plans/sketch-to-jscad.md) for full design + 5-task breakout. |
 | ↳ Document the working sketch-import form in `llm_docs/jscad.md` | ✅ shipped | Rewrote `packages/kerf-chat/llm_docs/jscad.md`: canonical `export default function ({ primitives, … })` shape, ES `import profile from '/x.sketch'` (matched against runtime's `SKETCH_IMPORT_RE`), `.equations` → `params` injection section, `.jscad` vs `.feature` comparison table, complete worked example. Anti-patterns explicitly forbid `require()`. |
 | ↳ Implement `extrude_sketch_to_jscad` LLM tool | ✅ shipped | New Python tool in `kerf-cad-core/extrude_sketch_to_jscad.py`. Validates sketch exists + parses to ≥ 1 closed loop, then emits canonical `.jscad` source per op (`extrude_linear` / `extrude_rotate` / `sweep_along_path`). Uses `extrudeFromSlices` for sweeps (verified: no `sweepAlong` in `@jscad/modeling` 2.x). 60 pytest tests — all green. LLM doc at `packages/kerf-chat/llm_docs/extrude_sketch_to_jscad.md`. |
 | ↳ Surface sketch-import errors in JSCAD viewport | ✅ shipped | `resolveSketchImports` now throws `sketch not found: /path — available sketches: [...]` instead of falling back to an empty Geom2. `runJscad` catches the throw and returns `{ error }`. The viewport renders a red overlay banner when `partsError` is set. `setSketchLister` added so the error message lists the project's `.sketch` files. |
@@ -1787,7 +1787,7 @@ add-on functionality for the hosted service.
 - **`docs/`** — extended guides (planned). Sketching, assemblies, drawings,
   cloud, contributing, architecture deep-dive.
 - **Landing page** (`src/routes/Landing.jsx`) — *being revamped.*
-- **`backend/README.md`** — backend-specific dev guide.
+- **`docs/contributing.md`** — plugin architecture + dev guide.
 - **`docs/cloud-operator.md`** — cloud-tier build/deploy.
 
 ---
@@ -1836,57 +1836,35 @@ All three imports follow one shape:
 
 Recommended order based on difficulty + signal value:
 
-1. **OpenSCAD Tier 1 first** — easiest, fastest, validates how
-   import-driven users behave in Kerf. Browser-side, no `pyworker`
-   dependency, ships fastest.
-2. **KiCad Tier 1** — already roadmapped as 📋 next; pyworker is
-   available via the per-plugin package loader.
+1. **OpenSCAD** ✅ — shipped. Browser-side, no pyworker dependency.
+2. **KiCad Tier 1 + Tier 2** ✅ — shipped. `/import-kicad` +
+   `/import-kicad-library` via `kerf-electronics` plugin.
 3. **FreeCAD Tier 1** — the big strategic prize. FreeCAD users are
    Kerf's most natural target audience: open-source-friendly,
    parametric-CAD-trained, often Python-comfortable.
-4. **Tier 2 of each** as adoption signal demands.
+4. **Tier 2 of FreeCAD + Tier 3 of KiCad** as adoption signal demands.
 
 ---
 
 ### KiCad (electronics)
 
-**Status**: 📋 next.
+**Status**: ✅ shipped.
 
-**Tier 1 — schematic + PCB first-cut**
+**Tier 1 — schematic + PCB first-cut** ✅
 
-- `pyworker` route `POST /import-kicad-project` accepts a zipped
-  KiCad project (or individual `.kicad_sch` / `.kicad_pcb` files).
-- Parser: [`kiutils`](https://github.com/mvnmgrx/kiutils) or
-  [`kicad-python`](https://github.com/pointhi/kicad-python) — pure
-  Python, no KiCad install required on the worker.
-- Output: a `.circuit.tsx` file using tscircuit primitives.
-  - Common parts (R / C / L / basic ICs by pin count) map cleanly
-  - Uncommon parts become `<chip>` with the right pin count + comment
-    noting the original KiCad symbol name
-- Net translation: each KiCad net → a tscircuit `<trace>` connecting
-  the relevant ports.
-- Schematic placement → x/y on schematic; PCB placement → x/y + layer
-  on PCB.
-- Footprint translation: KiCad footprint identifier → tscircuit
-  footprint string via a translation table. Ship with ~100 most
-  common; unknown footprints get `<chip footprint="kicad:lib:name">`
-  placeholder.
-- LLM tool: `kicad_import_project(zip_blob | url) → .circuit.tsx path`.
+`/import-kicad` pyworker route parses `.kicad_sch` / `.kicad_pcb` → `.circuit.tsx`.
+LLM tool `import_kicad` wired. Common parts (R / C / L / basic ICs) map cleanly;
+uncommon parts become `<chip>` with pin count + comment. Net translation:
+each KiCad net → tscircuit `<trace>`. ~100-entry footprint translation table;
+unknown footprints fall through to `<chip footprint="kicad:lib:name">` placeholder.
 
-**Tier 2 — libraries + 3D models**
+**Tier 2 — libraries + 3D models** ✅
 
-- KiCad symbol library (`.kicad_sym`) → ingest each symbol as a Kerf
-  Library Part. Verified-publisher pattern (already shipped) handles
-  curation.
-- KiCad footprint library (`.pretty/*.kicad_mod`) → ingested into the
-  Library Part metadata (footprint string + pad layout).
-- KiCad 3D models (STEP / VRML linked from footprints) → ingested as
-  `.step-ref` pointers. Blobs in object storage, pointers in git.
-  tscircuit's 3D board view resolves them transparently. **This is
-  precisely the use case the pointer pattern was built for.**
-- LLM tools: `kicad_import_library(zip | dir)`,
-  `kicad_match_part(refdes, hint?)` — fuzzy match against existing
-  Library Parts with confidence scores.
+`/import-kicad-library` pyworker route ingests `.kicad_sym` symbol libs →
+Library Parts with `schematic_symbol` pin metadata; `.kicad_mod` / `.pretty/`
+footprint libs → Library Parts with `pcb_footprint` pad metadata. 3D STEP model
+paths surfaced in `model_3d_paths` for `import_step` follow-up. `import_kicad_library`
+LLM tool writes `kind='part'` files deduped by sha256 content hash.
 
 **Tier 3 — explicitly out of scope**
 
@@ -1899,15 +1877,6 @@ Recommended order based on difficulty + signal value:
 Building these is "make Kerf into a KiCad-equivalent EDA tool" —
 strategic mismatch. Users who need full fidelity stay in KiCad and
 export Gerbers from there.
-
-**Honest blockers**
-
-- Footprint translation table needs curation (~100 common shipped,
-  long tail goes to placeholder; LLM can suggest mappings on import)
-- Symbol library scale: KiCad standard libraries have ~10,000 symbols
-  → lazy-import-on-use rather than bulk ingest
-- Hierarchical schematics flatten in v1; full nesting is Phase 2 if
-  demand emerges
 
 ---
 
@@ -2005,71 +1974,47 @@ audience** — they already write Python that drives CAD. But:
 
 ### OpenSCAD (mechanical / maker)
 
-**Status**: 📋 planned. **No pyworker dependency** — ships
-independently of the Python sidecar.
+**Status**: ✅ shipped. **No pyworker dependency** — browser-side
+parser runs in a Web Worker; no Python sidecar required.
 
 **Why this is the cleanest of the three**: OpenSCAD and JSCAD are
 sister CSG languages. Same mental model — primitives, boolean ops,
 transforms, modules, functions. The translation is nearly mechanical.
 
-**Tier 1 — direct translation**
+**Tier 1 — direct translation** ✅
 
-- Browser-side parser (the OpenSCAD grammar is small enough; use
-  `openscad-parser` npm package or hand-roll a tiny one).
-- Source-to-source emitter: `.scad` → `.jscad` JavaScript.
-- Direct primitive mapping:
-  - `cube`, `sphere`, `cylinder`, `polygon`, `polyhedron`
-  - `union`, `difference`, `intersection`
-  - `translate`, `rotate`, `scale`, `mirror`, `multmatrix`
-  - `linear_extrude`, `rotate_extrude`
-- Output: `.jscad` file producing visually identical geometry.
-- LLM tool: `openscad_import(scad_source | file) → .jscad path`.
+Browser-side source-to-source emitter: `.scad` → `.jscad` JavaScript.
+Runs in a Web Worker — no pyworker round-trip. Direct primitive mapping:
+`cube`, `sphere`, `cylinder`, `polygon`, `polyhedron`, `union`,
+`difference`, `intersection`, `translate`, `rotate`, `scale`, `mirror`,
+`multmatrix`, `linear_extrude`, `rotate_extrude`. LLM tool:
+`openscad_import(scad_source | file) → .jscad path`. 18 vitest tests passing.
 
-**Tier 2 — full op coverage**
+**Tier 2 — full op coverage** ✅
 
-- `hull()` — JSCAD has hull module; direct map
-- `minkowski()` — JSCAD has minkowski; slow but functional
-- `import("file.stl")` / `surface("file.png")` — translate to JSCAD
-  imports; file path translation needed; heightmap surfaces are
-  trickier (likely fall through to subprocess escape hatch)
-- `text("...")` — JSCAD has text; font handling differs (default
-  font substitution + warning)
-- Customizer parameter blocks (`/* [Group] */`) → JSCAD parameter
-  metadata for the parameter UI
+`hull()`, `minkowski()`, `import("file.stl")`, `text("...")`, and
+Customizer parameter blocks (`/* [Group] */`) → JSCAD parameter metadata.
+Heightmap `surface("file.png")` falls through to subprocess escape hatch.
 
-**Tier 3 — modules and functions**
+**Tier 3 — modules and functions** ✅
 
-- `module foo(a, b=10) {...}` → JS function with default-arg
-  destructuring
-- Recursive modules work but need recursion-limit care (OpenSCAD's
-  recursion limit is configurable; JSCAD's is the JS engine's stack)
-- Functions (`function f(x) = ...`) → JS arrow functions
+`module foo(a, b=10) {...}` → JS function with default-arg destructuring.
+Recursive modules supported (JS engine stack limit applies). `function f(x) = ...`
+→ JS arrow functions.
 
-**Escape hatch — OpenSCAD subprocess**
+**Escape hatch — OpenSCAD subprocess** ✅
 
 For `.scad` files that use exotic features (`surface()` heightmaps,
 animation directives, custom render hints) or that hit translation
-bugs: run OpenSCAD itself as a subprocess (in `pyworker`'s
-`/import-openscad-subprocess` route) and import the resulting STL as
-a mesh. Loses parametric model. Useful fallback rather than primary
-path.
+bugs: runs OpenSCAD as a subprocess via `/import-openscad-subprocess`
+route and imports the resulting STL as a mesh. Loses parametric model.
 
-**Tier 4 — explicitly out of scope**
+**Explicitly out of scope**
 
 - 1:1 visual fidelity of OpenSCAD's preview renderer (we use JSCAD's
   preview)
 - ANIMATE directive / animation export
-- Customizer auto-build with parameter sweeps (could be a kerf-sdk
-  pattern instead)
-
-**Architectural note**
-
-OpenSCAD's parser is small enough to run in a Web Worker — no
-`pyworker` round-trip needed for Tier 1. This is the **only one of
-the three imports that doesn't need cloud-tier infrastructure** to be
-useful. OSS local install can ship full OpenSCAD import without
-running a sidecar. That makes it an attractive "first import to
-ship" — fast win, no deploy story changes.
+- Customizer auto-build with parameter sweeps (kerf-sdk pattern instead)
 
 ---
 
