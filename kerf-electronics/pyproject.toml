@@ -1,0 +1,23 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "kerf-electronics"
+version = "0.1.0"
+description = "Electronics (RF/SPICE/autoroute/pour) plugin for Kerf"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.optional-dependencies]
+rf = ["scikit-rf", "matplotlib", "numpy"]
+pour = ["shapely"]
+
+[project.entry-points."kerf.plugins"]
+electronics = "kerf_electronics.plugin:register"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/kerf_electronics"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -1,0 +1,93 @@
+"""
+kerf-electronics plugin registration.
+
+Wires RF, SPICE, autoroute and copper-pour routes + LLM tools into a Kerf plugin.
+"""
+from __future__ import annotations
+
+import logging
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from fastapi import FastAPI
+
+logger = logging.getLogger(__name__)
+
+
+async def register(app: "FastAPI", ctx):
+    """Entry point called by the Kerf plugin loader."""
+
+    # ── HTTP routes ──────────────────────────────────────────────────────
+    from kerf_electronics.routes_rf import router as rf_router
+    from kerf_electronics.routes_spice import router as spice_router
+    from kerf_electronics.routes_autoroute import router as autoroute_router
+    from kerf_electronics.routes_pour import router as pour_router
+
+    app.include_router(rf_router, tags=["electronics"])
+    app.include_router(spice_router, tags=["electronics"])
+    app.include_router(autoroute_router, tags=["electronics"])
+    app.include_router(pour_router, tags=["electronics"])
+
+    # ── LLM tools ────────────────────────────────────────────────────────
+    provides = []
+    _register_tools(ctx, provides)
+
+    # Probe which optional deps are available
+    try:
+        import skrf  # noqa: F401
+        provides.append("electronics.rf")
+    except ImportError:
+        logger.info("kerf-electronics: scikit-rf not available; RF capability disabled")
+
+    # ngspice is a system binary — always declare the route, gate at runtime
+    provides.append("electronics.spice")
+
+    # FreeRouting is auto-downloaded — always declare
+    provides.append("electronics.autoroute")
+
+    # Copper pour uses shapely (optional)
+    provides.append("electronics.pour")
+
+    try:
+        from kerf_core.plugin import PluginManifest  # type: ignore
+    except ImportError:
+        return {
+            "name": "electronics",
+            "version": "0.1.0",
+            "provides": provides,
+            "depends": [],
+        }
+
+    return PluginManifest(
+        name="electronics",
+        version="0.1.0",
+        provides=provides,
+        depends=[],
+    )
+
+
+def _register_tools(ctx, provides: list) -> None:
+    """Register all electronics LLM tools into ctx.tools."""
+    tool_modules = [
+        "kerf_electronics.tools.erc",
+        "kerf_electronics.tools.buses",
+        "kerf_electronics.tools.net_classes",
+        "kerf_electronics.tools.length_tuning",
+        "kerf_electronics.tools.via_stitching",
+        "kerf_electronics.tools.shove_router",
+        "kerf_electronics.tools.pad_overrides",
+        "kerf_electronics.tools.hier_schematic",
+        "kerf_electronics.tools.rf",
+        "kerf_electronics.tools.autoroute",
+        "kerf_electronics.tools.pour",
+    ]
+
+    for module_path in tool_modules:
+        try:
+            import importlib
+            mod = importlib.import_module(module_path)
+            if hasattr(mod, "TOOLS"):
+                for name, spec, handler in mod.TOOLS:
+                    ctx.tools.register(name, spec, handler)
+        except Exception as exc:
+            logger.warning("kerf-electronics: failed to load %s: %s", module_path, exc)

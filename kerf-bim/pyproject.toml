@@ -1,0 +1,22 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "kerf-bim"
+version = "0.1.0"
+description = "BIM (IFC/Revit-parity) plugin for Kerf"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.optional-dependencies]
+ifc = ["ifcopenshell"]
+
+[project.entry-points."kerf.plugins"]
+bim = "kerf_bim.plugin:register"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/kerf_bim"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

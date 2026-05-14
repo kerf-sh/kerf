@@ -1,0 +1,24 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "kerf-imports"
+version = "0.1.0"
+description = "Import adapters (KiCad, FreeCAD, Rhino3dm) + Rhino-parity tools for Kerf"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.optional-dependencies]
+kicad = ["kiutils"]
+rhino = ["rhino3dm"]
+# FreeCAD bindings are optional system packages; no PyPI name
+
+[project.entry-points."kerf.plugins"]
+imports = "kerf_imports.plugin:register"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/kerf_imports"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

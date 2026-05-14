@@ -1,0 +1,21 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "kerf-render"
+version = "0.1.0"
+description = "Blender Cycles render plugin for Kerf"
+requires-python = ">=3.11"
+dependencies = []
+
+# blender is a system binary; no Python dep declared
+
+[project.entry-points."kerf.plugins"]
+render = "kerf_render.plugin:register"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/kerf_render"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

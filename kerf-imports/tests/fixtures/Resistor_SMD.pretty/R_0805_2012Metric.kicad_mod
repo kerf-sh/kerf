@@ -1,0 +1,102 @@
+(footprint "R_0805_2012Metric"
+  (version 20211012)
+  (generator pcbnew)
+  (layer "F.Cu")
+  (descr "Resistor SMD 0805 (2012 Metric), square (rectangular) end terminal, IPC_7351 nominal, (Body size source: https://www.vishay.com/docs/20052/gcrcwatt.pdf), generated with kicad-footprint-generator")
+  (tags "resistor 0805")
+  (property "Reference" "R"
+    (at 0 -1.68 0)
+    (layer "F.SilkS")
+    (effects
+      (font
+        (size 1 1)
+        (thickness 0.15))))
+  (property "Value" "R_0805_2012Metric"
+    (at 0 1.68 0)
+    (layer "F.Fab")
+    (effects
+      (font
+        (size 1 1)
+        (thickness 0.15))))
+  (property "Footprint" ""
+    (at 0 0 0)
+    (layer "F.Fab")
+    (hide yes)
+    (effects
+      (font
+        (size 1.27 1.27))))
+  (property "Datasheet" ""
+    (at 0 0 0)
+    (layer "F.Fab")
+    (hide yes)
+    (effects
+      (font
+        (size 1.27 1.27))))
+  (fp_line
+    (start -0.254 0.875)
+    (end 0.254 0.875)
+    (layer "F.SilkS")
+    (width 0.12))
+  (fp_line
+    (start -0.254 -0.875)
+    (end 0.254 -0.875)
+    (layer "F.SilkS")
+    (width 0.12))
+  (fp_line
+    (start -2 -0.6)
+    (end 2 -0.6)
+    (layer "F.CrtYd")
+    (width 0.05))
+  (fp_line
+    (start 2 -0.6)
+    (end 2 0.6)
+    (layer "F.CrtYd")
+    (width 0.05))
+  (fp_line
+    (start 2 0.6)
+    (end -2 0.6)
+    (layer "F.CrtYd")
+    (width 0.05))
+  (fp_line
+    (start -2 0.6)
+    (end -2 -0.6)
+    (layer "F.CrtYd")
+    (width 0.05))
+  (fp_line
+    (start -1.6 -0.4)
+    (end 1.6 -0.4)
+    (layer "F.Fab")
+    (width 0.1))
+  (fp_line
+    (start 1.6 -0.4)
+    (end 1.6 0.4)
+    (layer "F.Fab")
+    (width 0.1))
+  (fp_line
+    (start 1.6 0.4)
+    (end -1.6 0.4)
+    (layer "F.Fab")
+    (width 0.1))
+  (fp_line
+    (start -1.6 0.4)
+    (end -1.6 -0.4)
+    (layer "F.Fab")
+    (width 0.1))
+  (pad "1" smd roundrect
+    (at -1.8625 0)
+    (size 1.125 1.75)
+    (layers "F.Cu" "F.Paste" "F.Mask")
+    (roundrect_rratio 0.25))
+  (pad "2" smd roundrect
+    (at 1.8625 0)
+    (size 1.125 1.75)
+    (layers "F.Cu" "F.Paste" "F.Mask")
+    (roundrect_rratio 0.25))
+  (model "${KISYS3DMOD}/Resistor_SMD.3dshapes/R_0805_2012Metric.step"
+    (offset
+      (xyz 0 0 0))
+    (scale
+      (xyz 1 1 1))
+    (rotate
+      (xyz 0 0 0)))
+)

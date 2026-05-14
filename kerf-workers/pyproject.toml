@@ -1,0 +1,18 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "kerf-workers"
+version = "0.1.0"
+description = "Generic background worker harness for Kerf"
+requires-python = ">=3.11"
+dependencies = [
+    "asyncpg",
+]
+
+[project.entry-points."kerf.plugins"]
+workers = "kerf_workers.plugin:register"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/kerf_workers"]
