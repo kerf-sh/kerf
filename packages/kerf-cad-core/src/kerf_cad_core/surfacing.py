@@ -614,6 +614,143 @@ async def run_feature_boolean(ctx: ProjectCtx, args: bytes) -> str:
     })
 
 
+# ── feature_surface_boolean ───────────────────────────────────────────────────
+#
+# NURBS Phase 4 Capability 1 (C1-T3).
+#
+# Surface-direct boolean between two feature bodies. Unlike feature_boolean
+# (which requires solids), this op accepts Face / Shell / Solid operands and
+# returns the BRepAlgoAPI_Cut / Fuse / Common result as a compound of trimmed
+# face fragments.  No feature_to_solid step needed.
+#
+# The worker's opSurfaceBoolean applies probe-gated ShapeFix_Shape pre-passes
+# and ShapeUpgrade_UnifySameDomain cleanup; fuzziness tunes the intersection
+# tolerance.
+#
+# Plan ref: docs/plans/nurbs-phase-4-full.md § Capability 1, C1-T3.
+
+feature_surface_boolean_spec = ToolSpec(
+    name="feature_surface_boolean",
+    description=(
+        "Append a `surface_boolean` node to a `.feature` file. "
+        "Performs a surface-direct CSG operation between two feature bodies "
+        "(`cut` = A − B, `fuse` = A ∪ B, `common` = A ∩ B). "
+        "Unlike `feature_boolean`, operands do NOT need to be solids — "
+        "Face, Shell, and Solid shapes are all accepted. "
+        "Returns a compound of trimmed face fragments. "
+        "Use when you want to intersect or subtract two NURBS surfaces without "
+        "the solid round-trip imposed by `feature_to_solid`. "
+        "If the worker logs a BOPAlgo error with a C1-T10 escalation note, the "
+        "current WASM build does not support non-solid operands; use "
+        "`feature_boolean` (with `feature_to_solid` pre-pass) as a fallback."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "file_id": {"type": "string", "description": "Target .feature file id."},
+            "target_a_id": {
+                "type": "string",
+                "description": "First operand (the 'A' side; preserved on cut).",
+            },
+            "target_b_id": {
+                "type": "string",
+                "description": "Second operand (the 'B' side; the tool body on cut).",
+            },
+            "kind": {
+                "type": "string",
+                "enum": ["cut", "fuse", "common"],
+                "description": "cut = A − B, fuse = A ∪ B, common = A ∩ B.",
+            },
+            "fuzziness": {
+                "type": "number",
+                "description": (
+                    "Intersection tolerance in model units (default 1e-4). "
+                    "Raise to 1e-3 if tangent-intersection face fragments go missing."
+                ),
+            },
+            "options": {
+                "type": "object",
+                "properties": {
+                    "id": {"type": "string"},
+                },
+            },
+        },
+        "required": ["file_id", "target_a_id", "target_b_id", "kind"],
+    },
+)
+
+
+@register(feature_surface_boolean_spec, write=True)
+async def run_feature_surface_boolean(ctx: ProjectCtx, args: bytes) -> str:
+    try:
+        a = json.loads(args)
+    except Exception as e:
+        return err_payload(f"invalid args: {e}", "BAD_ARGS")
+
+    file_id = a.get("file_id", "").strip()
+    target_a_id = a.get("target_a_id", "").strip()
+    target_b_id = a.get("target_b_id", "").strip()
+    kind = a.get("kind", "").strip()
+    fuzziness = a.get("fuzziness", None)
+    options = a.get("options", {})
+
+    if not file_id or not target_a_id or not target_b_id or not kind:
+        return err_payload(
+            "file_id, target_a_id, target_b_id, and kind are required", "BAD_ARGS"
+        )
+
+    if kind not in ("cut", "fuse", "common"):
+        return err_payload(
+            f"kind must be 'cut', 'fuse', or 'common'; got '{kind}'", "BAD_ARGS"
+        )
+
+    if fuzziness is not None:
+        if not isinstance(fuzziness, (int, float)) or fuzziness <= 0:
+            return err_payload(
+                f"fuzziness must be a positive number; got '{fuzziness}'", "BAD_ARGS"
+            )
+
+    try:
+        fid = uuid.UUID(file_id)
+    except Exception:
+        return err_payload("file_id must be a uuid", "BAD_ARGS")
+
+    content, err = read_feature_content(ctx, fid)
+    if err:
+        return err_payload(f"file not found: {err}", "NOT_FOUND")
+
+    node_id = ""
+
+    if isinstance(options, dict):
+        node_id = options.get("id", "").strip() or ""
+
+    if not node_id:
+        node_id = next_node_id(content, "surface_boolean")
+
+    node: dict = {
+        "id": node_id,
+        "op": "surface_boolean",
+        "target_a_id": target_a_id,
+        "target_b_id": target_b_id,
+        "kind": kind,
+    }
+
+    if fuzziness is not None:
+        node["fuzziness"] = float(fuzziness)
+
+    name, nid, err = append_feature_node(ctx, fid, node)
+    if err:
+        return err_payload(err, "ERROR")
+
+    return ok_payload({
+        "file_id": file_id,
+        "name": name,
+        "id": nid,
+        "op": "surface_boolean",
+        "kind": kind,
+    })
+
+
 def parse_sketch_curves(sketch_content: str) -> list:
     try:
         sketch = json.loads(sketch_content)
