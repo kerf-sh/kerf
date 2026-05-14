@@ -1,21 +1,19 @@
 """
-FreeCAD .fcstd file import via pythonocc.
+route.py — FastAPI route for the /import-freecad endpoint.
 
-POST /import-freecad
-Body: multipart file upload with .fcstd file
-
-Returns: {
-    "geometry_json": string,
-    "warnings": []
-}
+This is the stub route originally at kerf_imports/freecad.py, preserved
+intact while T1 adds the new parser sub-package.  The route will be
+rewritten to /import-freecad-project in T6.
 """
+from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, UploadFile, File
 import json
 import tempfile
 import zipfile
 from pathlib import Path
-from typing import Optional
+from typing import Optional  # noqa: F401  (kept for future use)
+
+from fastapi import APIRouter, HTTPException, UploadFile, File
 
 router = APIRouter()
 
@@ -31,10 +29,10 @@ async def import_freecad(
         raise HTTPException(status_code=400, detail="Only .fcstd files supported")
 
     try:
-        from OCC.Core import BRepAlgoAPI, BRepBuilderAPI, TopAbs, TopLoc
-        from OCC.Core.BRep import BRep_Builder
-        from OCC.Core.TopoDS import TopoDS_Shape
-        import ifcopenshell
+        from OCC.Core import BRepAlgoAPI, BRepBuilderAPI, TopAbs, TopLoc  # noqa: F401
+        from OCC.Core.BRep import BRep_Builder  # noqa: F401
+        from OCC.Core.TopoDS import TopoDS_Shape  # noqa: F401
+        import ifcopenshell  # noqa: F401
     except ImportError as e:
         return {
             "geometry_json": "",
@@ -50,7 +48,7 @@ async def import_freecad(
         fcstd_path.write_bytes(content)
 
         try:
-            geometry_json = parse_fcstd(str(fcstd_path), tmpdir)
+            geometry_json = _legacy_parse_fcstd(str(fcstd_path), tmpdir)
         except Exception as e:
             errors.append(str(e))
             return {
@@ -66,10 +64,11 @@ async def import_freecad(
     }
 
 
-def parse_fcstd(fcstd_path: str, tmpdir: str) -> str:
-    import zipfile
-    import json
-    from pathlib import Path
+def _legacy_parse_fcstd(fcstd_path: str, tmpdir: str) -> str:
+    """
+    Legacy stub parser.  Will be replaced by the T1 parser in T6.
+    """
+    import xml.etree.ElementTree as ET
 
     tmp_path = Path(tmpdir)
 
@@ -85,7 +84,6 @@ def parse_fcstd(fcstd_path: str, tmpdir: str) -> str:
         "shapes": [],
     }
 
-    import xml.etree.ElementTree as ET
     tree = ET.parse(doc_xml)
     root = tree.getroot()
 
