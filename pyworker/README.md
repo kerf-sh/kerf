@@ -1,9 +1,16 @@
 # pyworker
 
 FastAPI compute sidecar for Kerf. Handles CPU-heavy or subprocess-based
-operations that the main Go backend offloads: FEM, SPICE simulation, STEP
-tessellation, CAM toolpath generation, RF analysis, PCB autorouting,
-IFC compilation, and import pipelines.
+operations: FEM, SPICE simulation, STEP tessellation, CAM toolpath
+generation, RF analysis, PCB autorouting, IFC compilation, and import
+pipelines.
+
+> **Note**: as of the plugin-monorepo refactor, the route handlers themselves
+> live in `packages/kerf-{fem,cam,topo,mates,bim,electronics,imports,render,workers,tess}/`.
+> This `pyworker/main.py` simply imports their routers and mounts them on a
+> single FastAPI app — it is one possible deployment shape (a dedicated
+> compute pod). Production `kerf-server` (from `kerf-core`) discovers and
+> mounts the same routes via the `kerf.plugins` entry-point group.
 
 ## Install
 

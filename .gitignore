@@ -45,7 +45,10 @@ backend/tmp/
 *.test
 *.out
 
-# Compiled Go binaries (built into repo root and backend/)
+# Compiled Go binaries (built into repo root and backend/). These rooted
+# patterns (leading slash) only match the top-level binary; they do NOT
+# shadow packages/kerf-cloud/ or packages/kerf-oss/, which live under
+# packages/.
 /kerf
 /kerf-cloud
 /kerf-oss
