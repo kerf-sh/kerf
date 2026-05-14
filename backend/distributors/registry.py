@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 HTTP_TIMEOUT = 10.0
 
-from utils.encrypt import decrypt_secret, encrypt_secret
+from kerf_core.utils.encrypt import decrypt_secret, encrypt_secret
 
 SECRET_DOMAIN = "distributor-credentials"
 

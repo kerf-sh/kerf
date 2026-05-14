@@ -39,9 +39,6 @@ def kiutils_available():
 def import_kicad_library_module(kiutils_available):
     if not kiutils_available:
         pytest.skip("kiutils not installed")
-    import importlib, sys
-    # Ensure pyworker package root is on path
-    import os
     from kerf_imports.kicad_library import (
         _parse_sym_files,
         _parse_mod_files,

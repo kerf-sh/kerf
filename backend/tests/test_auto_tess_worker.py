@@ -16,19 +16,14 @@ import asyncio
 import hashlib
 import io
 import os
-import sys
 import uuid
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional
 
 import pytest
 
-_BACKEND = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if _BACKEND not in sys.path:
-    sys.path.insert(0, _BACKEND)
-
-from workers.auto_tess_worker import AutoTessWorker, _read_storage
-from workers.tess_worker import TessInputSpec
+from kerf_tess.worker import AutoTessWorker, _read_storage
+from kerf_tess.specs import TessInputSpec
 
 
 # --------------------------------------------------------------------------- fakes

@@ -43,7 +43,7 @@ from kerf_core.storage import get_storage_required
 from kerf_chat import llm as llm_module
 from tools.executor import execute as tools_execute, specs as tools_specs
 from tools.context import ProjectCtx
-from workers.auto_tess_worker import notify_step_uploaded
+from kerf_tess.worker import notify_step_uploaded
 
 router = APIRouter()
 LARGE_STEP_THRESHOLD = 5 * 1024 * 1024

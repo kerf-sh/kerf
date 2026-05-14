@@ -20,7 +20,7 @@ from kerf_core.dependencies import require_auth
 from kerf_core.storage import get_storage_required
 from kerf_core.storage.s3 import S3Storage
 from kerf_core.storage.git_storer import S3GitStorer, StorerConcurrencyError
-from utils.encrypt import encrypt_secret, decrypt_secret
+from kerf_core.utils.encrypt import encrypt_secret, decrypt_secret
 
 router = APIRouter()
 settings = get_settings()

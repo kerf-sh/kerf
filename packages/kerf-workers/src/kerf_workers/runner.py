@@ -8,8 +8,7 @@ import asyncpg
 
 from kerf_fem.worker import FEMWorker
 from kerf_workers.spice_worker import SPICEWorker
-from workers.tess_worker import TessWorker
-from workers.auto_tess_worker import AutoTessWorker
+from kerf_tess.worker import AutoTessWorker
 from kerf_cam.worker import CAMWorker
 
 logger = logging.getLogger(__name__)
@@ -71,9 +70,10 @@ async def start_all_workers(
             )
         )
 
-    for i in range(tess_count):
+    # tess_count and auto_tess_count both use AutoTessWorker (canonical since kerf-tess refactor)
+    for i in range(tess_count + auto_tess_count):
         workers.append(
-            TessWorker(
+            AutoTessWorker(
                 pool=pool,
                 storage_getter=storage_getter,
                 pyworker_url=pyworker_url,
@@ -88,16 +88,6 @@ async def start_all_workers(
                 storage_getter=storage_getter,
                 pyworker_url=pyworker_url,
                 timeout=cam_timeout,
-            )
-        )
-
-    for i in range(auto_tess_count):
-        workers.append(
-            AutoTessWorker(
-                pool=pool,
-                storage_getter=storage_getter,
-                pyworker_url=pyworker_url,
-                timeout=auto_tess_timeout,
             )
         )
 
