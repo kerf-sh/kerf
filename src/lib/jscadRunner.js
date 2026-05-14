@@ -104,26 +104,39 @@ export function setSketchResolver(fn) {
   sketchResolver = fn || null
 }
 
+// Optional lister: returns a Promise<string[]> of all available .sketch paths
+// in the current project. Used to produce a helpful error message when a
+// referenced sketch can't be found. If not registered, the error still fires
+// but without the suggestions list.
+let sketchLister = null
+export function setSketchLister(fn) {
+  // fn: () => Promise<string[]>
+  sketchLister = fn || null
+}
+
 async function resolveSketchImports(imports) {
   const out = {}
   if (!imports || imports.length === 0) return out
-  if (!sketchResolver) {
-    if (typeof console !== 'undefined') {
-      console.warn('jscadRunner: .sketch imports requested but no resolver registered; returning empty Geom2 for each')
-    }
-  }
   for (const { binding, path } of imports) {
-    try {
-      const file = sketchResolver ? await sketchResolver(path) : null
-      const sketch = parseSketch(file?.content || '')
-      const geom = sketchToGeom2(sketch)
-      out[binding] = geom
-    } catch (err) {
-      if (typeof console !== 'undefined') {
-        console.warn(`jscadRunner: failed to resolve sketch ${path}:`, err)
-      }
-      out[binding] = sketchToGeom2(parseSketch(''))
+    const file = sketchResolver ? await sketchResolver(path) : null
+    if (!file) {
+      // Collect available sketches for a diagnostic message.
+      let available = []
+      try {
+        available = sketchLister ? await sketchLister() : []
+      } catch { /* lister failure is non-fatal — still throw */ }
+      const listStr = available.length > 0
+        ? available.join(', ')
+        : '(no .sketch files in project)'
+      throw new Error(
+        `sketch not found: ${path} — available sketches: ${listStr}`,
+      )
     }
+    // File found — parse and convert. Parse errors propagate naturally;
+    // callers (runJscadOnMainThread / runJscad) catch them and surface via partsError.
+    const sketch = parseSketch(file.content || '')
+    const geom = sketchToGeom2(sketch)
+    out[binding] = geom
   }
   return out
 }
@@ -252,7 +265,12 @@ export async function runJscad(code, configParams) {
   // arrays + numbers), so this round-trips cleanly. If there are no sketch
   // imports the work is essentially zero.
   const { stripped, imports } = extractSketchImports(code || '')
-  const sketchProfiles = imports.length > 0 ? await resolveSketchImports(imports) : {}
+  let sketchProfiles
+  try {
+    sketchProfiles = imports.length > 0 ? await resolveSketchImports(imports) : {}
+  } catch (err) {
+    return { error: err && err.message ? err.message : String(err) }
+  }
   const equationsValues = await resolveEquationsScope()
   const mergedParams = (configParams && typeof configParams === 'object')
     ? { ...equationsValues, ...configParams }

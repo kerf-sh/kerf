@@ -15,12 +15,13 @@
 //   * cancelJscad()       — pure no-op when nothing is in flight.
 //   * setSketchResolver / setEquationsResolver — accept null + functions.
 
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, afterEach } from 'vitest'
 import {
   runJscad,
   cancelJscad,
   DEFAULT_JSCAD,
   setSketchResolver,
+  setSketchLister,
   setEquationsResolver,
 } from '../lib/jscadRunner.js'
 
@@ -137,5 +138,76 @@ describe('resolver setters', () => {
   it('accepts a function for the equations resolver', () => {
     expect(() => setEquationsResolver(async () => ({ values: { x: 1 } }))).not.toThrow()
     setEquationsResolver(null) // restore
+  })
+
+  it('accepts null to clear the sketch lister', () => {
+    expect(() => setSketchLister(null)).not.toThrow()
+  })
+
+  it('accepts a function for the sketch lister', () => {
+    expect(() => setSketchLister(async () => [])).not.toThrow()
+    setSketchLister(null) // restore
+  })
+})
+
+// ---------------------------------------------------------------------------
+// resolveSketchImports error model (exercised via runJscad)
+// ---------------------------------------------------------------------------
+
+describe('sketch import — missing path throws and propagates to partsError', () => {
+  afterEach(() => {
+    setSketchResolver(null)
+    setSketchLister(null)
+  })
+
+  it('surfaces an error when the sketch path is not found and no resolver is registered', async () => {
+    // No resolver → sketchResolver is null → file is null → should throw.
+    setSketchResolver(null)
+    const code = `import profile from '/missing.sketch'\nexport default function () { return [] }`
+    const res = await runJscad(code)
+    expect(res.error).toBeDefined()
+    expect(res.error).toContain('sketch not found')
+    expect(res.error).toContain('/missing.sketch')
+  })
+
+  it('error message includes the missing path and the available-sketches list', async () => {
+    // Resolver returns null (file not found) but lister knows about other files.
+    setSketchResolver(async () => null)
+    setSketchLister(async () => ['/parts/profile.sketch', '/parts/rail.sketch'])
+    const code = `import profile from '/missing.sketch'\nexport default function () { return [] }`
+    const res = await runJscad(code)
+    expect(res.error).toBeDefined()
+    expect(res.error).toContain('sketch not found: /missing.sketch')
+    expect(res.error).toContain('/parts/profile.sketch')
+    expect(res.error).toContain('/parts/rail.sketch')
+  })
+
+  it('error message says "(no .sketch files in project)" when lister returns empty', async () => {
+    setSketchResolver(async () => null)
+    setSketchLister(async () => [])
+    const code = `import profile from '/empty-project.sketch'\nexport default function () { return [] }`
+    const res = await runJscad(code)
+    expect(res.error).toBeDefined()
+    expect(res.error).toContain('sketch not found: /empty-project.sketch')
+    expect(res.error).toContain('(no .sketch files in project)')
+  })
+
+  it('happy path — existing sketch resolves correctly without error', async () => {
+    // Resolver returns a minimal valid sketch JSON (empty sketch, which produces
+    // an empty Geom2 — that is fine; open/empty sketches are allowed to continue
+    // evaluating per the design doc).
+    const minimalSketch = JSON.stringify({
+      version: 1,
+      plane: { type: 'base', name: 'XY' },
+      entities: [],
+      constraints: [],
+    })
+    setSketchResolver(async () => ({ content: minimalSketch }))
+    setSketchLister(async () => ['/parts/outline.sketch'])
+    const code = `import profile from '/parts/outline.sketch'\nexport default function () { return [] }`
+    const res = await runJscad(code)
+    // No error — sketch resolved, JSCAD ran, returned empty parts array.
+    expect(res.error).toBeUndefined()
+    expect(res.parts).toEqual([])
   })
 })

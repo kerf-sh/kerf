@@ -11,7 +11,7 @@
 //   - the live `parts` array for the currently-open file (JSCAD or STEP).
 import { create } from 'zustand'
 import { api, ApiError } from '../lib/api.js'
-import { runJscad, setSketchResolver, setEquationsResolver as setJscadEquationsResolver } from '../lib/jscadRunner.js'
+import { runJscad, setSketchResolver, setSketchLister, setEquationsResolver as setJscadEquationsResolver } from '../lib/jscadRunner.js'
 import { setEquationsResolver as setOcctEquationsResolver, setActiveConfigResolver as setOcctActiveConfigResolver } from '../lib/occtRunner.js'
 import { loadStep } from '../lib/stepLoader.js'
 import { loadMeshFromURL } from '../lib/meshLoader.js'
@@ -478,6 +478,14 @@ export const useWorkspace = create((set, get) => ({
       } catch {
         return null
       }
+    })
+    // Sketch lister: returns absolute paths of every .sketch file in the
+    // current project tree. Used by resolveSketchImports to generate a
+    // diagnostic "available sketches: ..." hint when an import can't be found.
+    setSketchLister(() => {
+      const state = useWorkspace.getState()
+      if (state.projectId !== id) return []
+      return collectSketchPaths(state.files)
     })
     // Equations resolver: walks every `.equations` file in the project,
     // parses + evaluates them in declaration order, and returns the merged
@@ -1566,6 +1574,7 @@ export const useWorkspace = create((set, get) => ({
 
   reset: () => {
     setSketchResolver(null)
+    setSketchLister(null)
     setJscadEquationsResolver(null)
     setOcctEquationsResolver(null)
     setSketchEquationsResolverSync(null)
@@ -2971,6 +2980,28 @@ export function findFileByPath(files, path) {
     }
   }
   return current && byId.get(current.id)
+}
+
+// Return absolute POSIX paths (e.g. "/parts/outline.sketch") for every
+// .sketch file in the project's file tree. Used by the JSCAD sketch-import
+// error message to list available alternatives when a referenced sketch path
+// can't be resolved.
+export function collectSketchPaths(files) {
+  if (!Array.isArray(files)) return []
+  const byId = new Map(files.map((f) => [f.id, f]))
+  function pathOf(file) {
+    const parts = []
+    let cur = file
+    while (cur) {
+      parts.unshift(cur.name)
+      cur = cur.parent_id != null ? byId.get(cur.parent_id) : null
+    }
+    return '/' + parts.join('/')
+  }
+  return files
+    .filter((f) => f.name && f.name.endsWith('.sketch'))
+    .map(pathOf)
+    .sort()
 }
 
 // Persist a programmatic source edit: update the local content, run JSCAD to

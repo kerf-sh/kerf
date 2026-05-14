@@ -1331,6 +1331,14 @@ export default function Editor() {
               assemblyComponents={assemblyComponents}
               className="w-full h-full"
             />
+            {w.partsError && (
+              <div className="pointer-events-none absolute inset-x-0 top-0 flex justify-center pt-4 z-10">
+                <div className="max-w-lg w-full mx-4 px-4 py-3 rounded-lg bg-red-950/90 border border-red-700/70 text-red-300 text-[11px] font-mono shadow-lg backdrop-blur">
+                  <div className="font-semibold text-red-200 mb-1">JSCAD error</div>
+                  <div className="whitespace-pre-wrap break-words">{w.partsError}</div>
+                </div>
+              </div>
+            )}
             {assemblyPickSide && (
               <div className="pointer-events-none absolute inset-x-0 top-2 flex justify-center z-20">
                 <div className="pointer-events-auto flex items-center gap-2 px-3 py-1.5 rounded-lg bg-amber-950/90 border border-amber-700/70 text-amber-300 text-[11px] shadow-lg">
