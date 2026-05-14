@@ -9,10 +9,10 @@
 JSCAD code · OpenCascade B-rep features · planegcs sketcher · tscircuit electronics · TechDraw drawings · assemblies · library + BOM · workshop sharing · workspace billing — with an LLM editing the source for you.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-FFD633.svg?style=flat-square)](LICENSE)
-[![Made in](https://img.shields.io/badge/Built%20in-Durban%20%F0%9F%87%BF%F0%9F%87%A6-1f2937?style=flat-square)](https://kerf.app)
+[![Made in](https://img.shields.io/badge/Built%20in-Durban%20%F0%9F%87%BF%F0%9F%87%A6-1f2937?style=flat-square)](https://kerf.sh)
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome-FFD633.svg?style=flat-square)](#contributing)
 
-[Website](https://kerf.app) · [Docs](https://kerf.app/docs) · [Roadmap](./ROADMAP.md) · [Contributing](#contributing)
+[Website](https://kerf.sh) · [Docs](https://kerf.sh/docs) · [Roadmap](./ROADMAP.md) · [Contributing](#contributing)
 
 </div>
 
@@ -36,7 +36,7 @@ JSCAD code · OpenCascade B-rep features · planegcs sketcher · tscircuit elect
 
 ## What it is
 
-A single workspace for mechanical, electronics, drawings, and library parts — written entirely in code (JSCAD / `.feature` JSON / `.circuit.tsx` / `.sketch` / `.drawing`) so an LLM can read, diff, and edit it. Multi-domain projects via free-form tags. Browser-native. Local install or hosted at [kerf.app](https://kerf.app).
+A single workspace for mechanical, electronics, drawings, and library parts — written entirely in code (JSCAD / `.feature` JSON / `.circuit.tsx` / `.sketch` / `.drawing`) so an LLM can read, diff, and edit it. Multi-domain projects via free-form tags. Browser-native. Local install or hosted at [kerf.sh](https://kerf.sh).
 
 ## Why
 
@@ -50,7 +50,7 @@ A single workspace for mechanical, electronics, drawings, and library parts — 
 
 ### Hosted
 
-[kerf.app](https://kerf.app) — sign up, you get 50 MB free, top up with credits when you need more LLM tokens or storage.
+[kerf.sh](https://kerf.sh) — sign up, you get 50 MB free, top up with credits when you need more LLM tokens or storage.
 
 ### Local
 
@@ -59,7 +59,7 @@ A single workspace for mechanical, electronics, drawings, and library parts — 
 # brew install kerf-sh/tap/kerf
 
 # Or one-shot installer
-curl -fsSL https://kerf.app/install.sh | sh
+curl -fsSL https://kerf.sh/install.sh | sh
 
 # Set up (creates kerf.toml + runs migrations)
 createdb kerf
@@ -148,13 +148,20 @@ Full schema: see [`kerf.example.toml`](./kerf.example.toml).
 | Workshop sharing (free-tier social gallery, like + fork) | ✅ |
 | Git (commits / branches / merge / GitHub sync) — S3-backed bare-repo storer | ✅ |
 | STEP import/export, chunked resumable uploads, server-side pre-tessellation | ✅ |
-| Imports: KiCad (Tier 1 + 2 libraries), OpenSCAD, Rhino3DM | ✅ |
+| Imports: KiCad (Tier 1 + 2 libraries), OpenSCAD, Rhino3DM, **FreeCAD** (Tier 1: BRep-lift + Sketcher + PartDesign metadata + multi-Body) | ✅ |
 | Scripting via `kerf-sdk` (PyPI, JSON-RPC to `/v1/rpc`) | ✅ |
+| Sketch → JSCAD workflow (`extrude_sketch_to_jscad` + reactive re-eval) | ✅ |
 | File revisions (Cmd+Z + diff-based gzip compression + SHA-256 dedup) | ✅ |
 | Filesystem / S3 / R2 / MinIO storage | ✅ |
 | Viewport perf — frustum culling + InstancedMesh batching for big assemblies | ✅ |
-| 📋 Sketch → JSCAD workflow (`extrude_sketch_to_jscad` + reactive re-eval) | next |
-| 📋 Import: FreeCAD | next |
+| NURBS booleans v1 (`feature_to_solid` cap-then-boolean + `feature_boolean`) | ✅ |
+| Persistent face naming (sketch-anchored + topo-hash fallback; survives upstream sketch edits) | ✅ |
+| 5-axis CAM v1 (constant-tilt finishing + 3+2 indexed) | ✅ |
+| Wiring / harness diagrams (`.wiring` via WireViz YAML → SVG) | ✅ |
+| 📋 NURBS Phase 4 — surface-direct booleans + trim-by-curve + matchSrf + G3 | in flight |
+| 📋 PLC structured text (`.plc.st` via IEC 61131-3 + OpenPLC) | next |
+| 📋 Slicing — cross-section + CNC layered + 3D-print G-code | next |
+| 📋 SubD modelling / Grasshopper node graph / Quad remesher | planned |
 
 The full ROADMAP — shipped, in-flight, next, planned — is in [ROADMAP.md](./ROADMAP.md).
 
@@ -247,7 +254,7 @@ Built in Durban 🇿🇦 by a small team. Engineered for engineers everywhere.
 
 ## Links
 
-- [Docs](https://kerf.app/docs) — getting started, concepts, sketching, assemblies, drawings, electronics
+- [Docs](https://kerf.sh/docs) — getting started, concepts, sketching, assemblies, drawings, electronics
 - [ROADMAP.md](./ROADMAP.md) — shipped · in-flight · next · planned
 - [docs/architecture.md](./docs/architecture.md) — full API + data model
 - [docs/capabilities.md](./docs/capabilities.md) — plugin capability-tag taxonomy

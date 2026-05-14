@@ -7,6 +7,7 @@ import Input from '../components/Input.jsx'
 import Card from '../components/Card.jsx'
 import { api, ApiError } from '../lib/api.js'
 import { useAuth } from '../store/auth.js'
+import { useCloudConfig } from '../cloud/useCloudConfig.js'
 
 const ERROR_LABELS = {
   missing_tokens: 'Google sign-in did not return tokens. Please try again.',
@@ -43,6 +44,7 @@ export default function Login() {
   const location = useLocation()
   const [params] = useSearchParams()
   const setSession = useAuth((s) => s.setSession)
+  const { googleClientId } = useCloudConfig()
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -151,21 +153,24 @@ export default function Login() {
               </Button>
             </form>
 
-            <div className="my-6 flex items-center gap-3">
-              <div className="h-px flex-1 bg-ink-800" />
-              <span className="text-[10px] uppercase tracking-widest text-ink-500 font-mono">
-                or
-              </span>
-              <div className="h-px flex-1 bg-ink-800" />
-            </div>
-
-            <a
-              href={api.googleAuthUrl()}
-              className="w-full inline-flex items-center justify-center gap-2 h-11 rounded-lg border border-ink-700 bg-ink-800/60 hover:bg-ink-800 transition-colors text-sm text-ink-100 font-medium"
-            >
-              <GoogleIcon />
-              Continue with Google
-            </a>
+            {googleClientId && (
+              <>
+                <div className="my-6 flex items-center gap-3">
+                  <div className="h-px flex-1 bg-ink-800" />
+                  <span className="text-[10px] uppercase tracking-widest text-ink-500 font-mono">
+                    or
+                  </span>
+                  <div className="h-px flex-1 bg-ink-800" />
+                </div>
+                <a
+                  href={api.googleAuthUrl()}
+                  className="w-full inline-flex items-center justify-center gap-2 h-11 rounded-lg border border-ink-700 bg-ink-800/60 hover:bg-ink-800 transition-colors text-sm text-ink-100 font-medium"
+                >
+                  <GoogleIcon />
+                  Continue with Google
+                </a>
+              </>
+            )}
           </Card>
 
           <p className="mt-6 text-center text-sm text-ink-400">

@@ -1142,7 +1142,7 @@ function TeaserPlan({ label, price, note, bullets, ctaTo, ctaText, highlighted }
 /* Section: Made in South Africa                                               */
 /* -------------------------------------------------------------------------- */
 
-function MadeInSA() {
+function MadeInSA({ cloudEnabled = false }) {
   return (
     <section className="relative border-t border-ink-900">
       <div className="mx-auto max-w-5xl px-6 py-12">
@@ -1193,7 +1193,7 @@ function MadeInSA() {
 /* CTA strip (between sections)                                                */
 /* -------------------------------------------------------------------------- */
 
-function CTAStrip({ cloudEnabled = false }) {
+function CTAStrip() {
   return (
     <section className="relative border-t border-ink-900">
       <div className="mx-auto max-w-7xl px-6 py-12 lg:py-14">
@@ -1250,8 +1250,8 @@ export default function Landing() {
       <RoadmapGlimpse />
       <LocalVsHosted />
       {cloudEnabled && <PricingTeaser />}
-      <CTAStrip cloudEnabled={cloudEnabled} />
-      <MadeInSA />
+      <CTAStrip />
+      <MadeInSA cloudEnabled={cloudEnabled} />
       <Footer />
     </div>
   )

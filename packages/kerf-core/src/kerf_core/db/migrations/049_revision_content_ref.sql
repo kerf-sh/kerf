@@ -33,4 +33,4 @@ alter table file_revisions
 -- Used by write_revision before deciding to insert a duplicate blob.
 create index if not exists file_revisions_sha256_base_idx
     on file_revisions(content_sha256)
-    where delta_kind = 'base' or kind = 'base';
+    where kind = 'base';
