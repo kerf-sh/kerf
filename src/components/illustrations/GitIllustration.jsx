@@ -108,43 +108,37 @@ export default function GitIllustration({ className = '' }) {
       </g>
 
       {/* === GitHub sync tile (right side) ===
-          Uses the canonical GitHub Mark path (24×24 source) scaled to 30×30
-          so it reads clearly as the GitHub logo. */}
-      <g transform="translate(228, 64)">
-        <rect width="70" height="56" rx="6" fill="#0f1115" stroke="#1a1d24" />
-        <g transform="translate(8, 8) scale(1.25)">
+          Canonical GitHub Mark path centered in the tile; the card title
+          already says "GitHub" so no in-tile text label is needed. The
+          green ↑ chip below carries the sync-status meaning. */}
+      <g transform="translate(238, 60)">
+        <rect width="50" height="50" rx="6" fill="#0f1115" stroke="#1a1d24" />
+        <g transform="translate(10, 10) scale(1.25)">
           <path
             d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"
             fill="#cbd0dc"
           />
         </g>
-        {/* GitHub label + sync status */}
+      </g>
+
+      {/* sync arrow from latest commit → tile (dashed) */}
+      <g stroke="#3a4150" strokeWidth="0.8" fill="none" strokeDasharray="2 2">
+        <path d={`M ${X[5] + 4} ${LANE_MAIN_Y - 4} Q 220 92 238 86`} />
+      </g>
+
+      {/* green ↑ in-sync chip beneath the tile */}
+      <g transform="translate(238, 118)">
+        <rect width="50" height="14" rx="3" fill="#0a0b0d" stroke="#7BB661" strokeOpacity="0.4" />
         <text
-          x="64"
-          y="22"
-          textAnchor="end"
-          fontSize="9"
-          fontFamily="ui-sans-serif, system-ui, sans-serif"
-          fontWeight="600"
-          fill="#cbd0dc"
-        >
-          GitHub
-        </text>
-        <text
-          x="64"
-          y="36"
-          textAnchor="end"
+          x="25"
+          y="10"
+          textAnchor="middle"
           fontSize="7"
           fontFamily="ui-monospace, SFMono-Regular, monospace"
           fill="#7BB661"
         >
           ↑ in sync
         </text>
-      </g>
-
-      {/* sync arrow from latest commit → tile (dashed) */}
-      <g stroke="#3a4150" strokeWidth="0.8" fill="none" strokeDasharray="2 2">
-        <path d={`M ${X[5] + 4} ${LANE_MAIN_Y - 4} Q 210 96 228 92`} />
       </g>
 
       {/* footer */}
