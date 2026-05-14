@@ -3,7 +3,7 @@ import {
   ChevronDown, ChevronRight,
   FileCode, Folder, FolderOpen, Layers,
   FilePlus, FolderPlus, Plus, Trash2, Box, Upload, Ruler, PenTool, X, RefreshCw,
-  Package, Cylinder, CircuitBoard, Loader2, AlertCircle, Variable, FileBox, Cable, Scissors,
+  Package, Cylinder, CircuitBoard, Loader2, AlertCircle, Variable, FileBox, Cable, Scissors, Wrench,
 } from 'lucide-react'
 import { useWorkspace } from '../store/workspace.js'
 import { FreeCADImportDialog, isFCStdFile } from './FreeCADImport.jsx'
@@ -42,6 +42,7 @@ function KindIcon({ kind, name, open }) {
   if (kind === 'wiring') return <Cable size={14} className={`${cls} text-orange-300`} />
   if (kind === 'section') return <Scissors size={14} className={`${cls} text-violet-300`} />
   if (kind === 'cam_layered') return <Layers size={14} className={`${cls} text-teal-300`} />
+  if (kind === 'tool') return <Wrench size={14} className={`${cls} text-kerf-300`} />
   if (kind === 'step-ref') return (
     <span className="relative flex-shrink-0 inline-flex items-center">
       <Box size={14} className="text-cyan-edge" />
@@ -78,6 +79,9 @@ function KindIcon({ kind, name, open }) {
   }
   if (lower.endsWith('.cam.layered')) {
     return <Layers size={14} className={`${cls} text-teal-300`} />
+  }
+  if (lower.endsWith('.tool')) {
+    return <Wrench size={14} className={`${cls} text-kerf-300`} />
   }
   if (lower.endsWith('.fcstd')) {
     return <FileBox size={14} className={`${cls} text-orange-300`} />
@@ -372,13 +376,14 @@ const KIND_ROWS = {
   wiring:    { icon: Cable,        label: 'Wiring',    hint: 'Cable harness / wiring diagram (.wiring)',  color: 'text-orange-300' },
   section:     { icon: Scissors,    label: 'Section',       hint: 'Plane cross-section outline (.section)',         color: 'text-violet-300' },
   cam_layered: { icon: Layers,      label: 'Layered CAM',   hint: 'Stacked Z-slice contours for layered milling',  color: 'text-teal-300' },
+  tool:        { icon: Wrench,      label: 'Tool',          hint: 'CNC tool definition for CAM (.tool)',           color: 'text-kerf-300' },
 }
 
 // Canonical menu order: folder + generic file first (basic primitives),
 // followed by domain-specific kinds in roughly mechanical → drawings →
 // library → electronics order. The `step` and `jscad` aliases are
 // import-only / synthetic and intentionally absent here.
-const KIND_ORDER = ['folder', 'file', 'sketch', 'assembly', 'drawing', 'feature', 'section', 'cam_layered', 'part', 'circuit', 'equations', 'wiring']
+const KIND_ORDER = ['folder', 'file', 'sketch', 'assembly', 'drawing', 'feature', 'section', 'cam_layered', 'part', 'circuit', 'equations', 'wiring', 'tool']
 
 // CreateMenu — single "+ New" dropdown that replaces the row of icon
 // buttons in the FileTree header. Shows the full union of canonical

@@ -15,8 +15,9 @@
 //   A "Generate G-code from layers" button POSTs to /api/.../cam/layered/gcode.
 
 import { useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react'
-import { AlertTriangle, CheckCircle, Download, Loader2, Layers, Settings, ChevronLeft, ChevronRight } from 'lucide-react'
+import { AlertTriangle, CheckCircle, Download, Loader2, Layers, Settings, ChevronLeft, ChevronRight, Wrench } from 'lucide-react'
 import { useAuth } from '../store/auth.js'
+import ToolDBPanel, { ToolPicker } from './ToolDBPanel.jsx'
 
 const API_URL = import.meta.env.VITE_API_URL || ''
 
@@ -50,6 +51,7 @@ export default function CAMView({ file, projectId, viewRef }) {
   useImperativeHandle(viewRef, () => ({
     snapshot: async () => null,
   }), [])
+  const [activeTab, setActiveTab] = useState('job')  // 'job' | 'tools'
   const [operation, setOperation] = useState('profile')
   const [toolDiameter, setToolDiameter] = useState('3.0')
   const [stepOver, setStepOver] = useState('0.5')
@@ -61,6 +63,41 @@ export default function CAMView({ file, projectId, viewRef }) {
   const [jobStatus, setJobStatus] = useState(null)
   const [error, setError] = useState(null)
   const pollingRef = useRef(null)
+
+  // Tool DB state (T7) — tools fetched from project files.
+  const [projectTools, setProjectTools] = useState([])
+  const [selectedToolId, setSelectedToolId] = useState(null)
+
+  // Fetch tool files whenever projectId changes.
+  useEffect(() => {
+    if (!pid) return
+    async function fetchTools() {
+      try {
+        const token = useAuth.getState().accessToken
+        const res = await fetch(`${API_URL}/api/projects/${pid}/files?kind=tool`, {
+          headers: { authorization: `Bearer ${token}` },
+        })
+        if (!res.ok) return
+        const data = await res.json()
+        const parsed = []
+        for (const f of (data.files || data || [])) {
+          if (f.kind !== 'tool') continue
+          try {
+            const r2 = await fetch(`${API_URL}/api/projects/${pid}/files/${f.id}/content`, {
+              headers: { authorization: `Bearer ${token}` },
+            })
+            if (!r2.ok) continue
+            const txt = await r2.text()
+            const obj = JSON.parse(txt)
+            parsed.push({ ...obj, _file_id: f.id })
+          } catch (_) { /* skip */ }
+        }
+        setProjectTools(parsed)
+      } catch (_) { /* silent */ }
+    }
+    fetchTools()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pid])
 
   const fid = file?.id
   const pid = projectId
@@ -180,8 +217,66 @@ export default function CAMView({ file, projectId, viewRef }) {
         <Settings size={15} style={{ color: '#a78bfa' }} />
         <span style={styles.title}>CAM Toolpath</span>
         {st && st !== 'not_found' && <StatusBadge status={st} />}
+        {/* T7: sidebar tab switcher */}
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: 4 }}>
+          <button
+            type="button"
+            onClick={() => setActiveTab('job')}
+            title="CAM Job"
+            style={{ ...styles.tabBtn, ...(activeTab === 'job' ? styles.tabBtnActive : {}) }}
+          >
+            <Settings size={11} />
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('tools')}
+            title="Tool Library"
+            style={{ ...styles.tabBtn, ...(activeTab === 'tools' ? styles.tabBtnActive : {}) }}
+          >
+            <Wrench size={11} />
+          </button>
+        </div>
       </div>
 
+      {/* T7: Tool Library tab */}
+      {activeTab === 'tools' && (
+        <ToolDBPanel
+          tools={projectTools}
+          onAddTool={(data) => {
+            // Optimistic local update; real persistence is via LLM tool or API.
+            setProjectTools((prev) => {
+              const idx = prev.findIndex((t) => t.id === data.id)
+              if (idx >= 0) {
+                const next = [...prev]
+                next[idx] = data
+                return next
+              }
+              return [...prev, data]
+            })
+          }}
+          onDeleteTool={(toolId) => {
+            setProjectTools((prev) => prev.filter((t) => t.id !== toolId))
+            if (selectedToolId === toolId) setSelectedToolId(null)
+          }}
+        />
+      )}
+
+      {activeTab === 'job' && (
+        <>
+        {/* Tool picker row (T7) */}
+        {projectTools.length > 0 && (
+          <div style={{ ...styles.section, paddingBottom: 6, borderBottom: '1px solid #1f2937' }}>
+            <div style={styles.row}>
+              <label style={styles.label}>Tool</label>
+              <ToolPicker
+                tools={projectTools}
+                value={selectedToolId}
+                onChange={setSelectedToolId}
+                disabled={running}
+              />
+            </div>
+          </div>
+        )}
       {/* Form */}
       <div style={styles.section}>
         <div style={styles.row}>
@@ -280,6 +375,8 @@ export default function CAMView({ file, projectId, viewRef }) {
           <span style={{ marginLeft: 8 }}>{st === 'queued' ? 'Queued…' : 'Generating toolpath…'}</span>
         </div>
       )}
+        </>
+      )}
     </div>
   )
 }
@@ -317,6 +414,8 @@ const styles = {
   warnBox: { background: '#1c1400', border: '1px solid #78350f', borderRadius: 5, padding: '6px 10px', color: '#fde68a', fontSize: 12, marginTop: 4 },
   infoBox: { display: 'flex', alignItems: 'center', color: '#c4b5fd', fontSize: 12, padding: '4px 0' },
   spin: { animation: 'spin 1s linear infinite' },
+  tabBtn: { display: 'flex', alignItems: 'center', padding: '3px 6px', background: 'none', border: '1px solid #374151', borderRadius: 4, color: '#6b7280', cursor: 'pointer' },
+  tabBtnActive: { background: '#1f2937', color: '#a78bfa', borderColor: '#4c1d95' },
 }
 
 // ── LayeredCAMView ─────────────────────────────────────────────────────────────
