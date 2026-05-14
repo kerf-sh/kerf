@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import Landing from './routes/Landing.jsx'
 import Pricing from './routes/Pricing.jsx'
+import Roadmap from './routes/Roadmap.jsx'
 import DocsHome from './routes/Docs/index.jsx'
 import DocsArticle from './routes/Docs/Article.jsx'
 import Login from './routes/Login.jsx'
@@ -113,6 +114,7 @@ export default function App() {
       />
       <Route path="/auth/callback" element={<AuthCallback />} />
       {cloudEnabled && <Route path="/pricing" element={<Pricing />} />}
+      <Route path="/roadmap" element={<Roadmap />} />
       <Route path="/docs" element={<DocsHome />} />
       <Route path="/docs/:slug" element={<DocsArticle />} />
       {cloudEnabled && <Route path="/workshop" element={<Workshop />} />}
