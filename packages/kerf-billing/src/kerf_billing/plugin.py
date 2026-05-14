@@ -27,9 +27,26 @@ async def register(app: FastAPI, ctx) -> PluginManifest:
 
     ctx.logger.info("kerf-billing: registered /api/billing/* routes (Paystack)")
 
+    # ── Background BillingResetWorker — daily api-token cap reset + monthly
+    # free-quota reset.  Only registered when running in cloud mode.
+    workers_registry = getattr(ctx, "workers", None)
+    if workers_registry is not None and not ctx.local_mode:
+        try:
+            from kerf_billing.scheduler import BillingResetWorker
+
+            async def _factory():
+                return BillingResetWorker(pool=ctx.pool)
+
+            workers_registry.register("billing_reset", _factory)
+            ctx.logger.info("kerf-billing: BillingResetWorker registered")
+        except Exception as exc:
+            ctx.logger.warning(
+                "kerf-billing: failed to register BillingResetWorker: %s", exc
+            )
+
     return PluginManifest(
         name="kerf-billing",
         version="0.1.0",
-        provides=["billing.paystack"],
+        provides=["billing.paystack", "billing.buckets"],
         depends=["kerf-auth"],
     )

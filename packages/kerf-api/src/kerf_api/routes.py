@@ -387,6 +387,43 @@ def _get_llm_registry() -> llm_module.Registry:
     ))
 
 
+async def _make_byo_provider(pool, user_id: str, provider_name: str, *, fallback):
+    """Build a Provider instance whose api_key comes from the user's saved
+    BYO key.  Falls back to ``fallback`` if anything goes wrong — the
+    bucket selector already decided BYO was viable, so a decryption failure
+    here is a server-side bug worth logging but not worth nuking the chat.
+    """
+    try:
+        from kerf_core.utils.encrypt import decrypt_secret
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                SELECT encrypted_key
+                FROM user_provider_keys
+                WHERE user_id = $1 AND provider = $2
+                """,
+                user_id, provider_name,
+            )
+        if not row:
+            return fallback
+        api_key = decrypt_secret(row["encrypted_key"], "byo-provider-key").decode()
+
+        # Match Registry.resolve's provider mapping — the names we accept
+        # match Provider.name() return values from kerf_chat.llm.
+        if provider_name == "anthropic":
+            return llm_module.AnthropicProvider(api_key)
+        if provider_name == "openai":
+            return llm_module.OpenAIProvider(api_key)
+        if provider_name == "moonshot":
+            return llm_module.MoonshotProvider(api_key)
+        if provider_name == "gemini":
+            return llm_module.GeminiProvider(api_key)
+        return fallback
+    except Exception:
+        _logger.exception("byo: provider override failed; falling back")
+        return fallback
+
+
 @router.get("/bootstrap")
 async def bootstrap():
     if not settings.local_mode:
@@ -2410,6 +2447,82 @@ async def post_message(pid: str, tid: str, req: PostMessageRequest, payload: dic
             )
         return {"user_message": user_msg, "assistant_message": assistant_msg, "tool_messages": []}
 
+    # ── Three-bucket billing selection (cloud only) ─────────────────────────
+    # In OSS/local mode billing is dormant; pick_bucket can't talk to
+    # cloud_user_balances (the table may not exist) so we wrap the whole
+    # gate in settings.usage_enabled and short-circuit otherwise.
+    bucket = None
+    bucket_model_info = None
+    bucket_model_info_price = None
+    bucket_provider_name = provider.name()
+    if settings.usage_enabled:
+        try:
+            from kerf_billing.buckets import (
+                load_model_info,
+                load_user_billing,
+                pick_bucket,
+                InsufficientCredits,
+                Byo,
+            )
+            from kerf_pricing.queries import get_price as _get_price
+
+            bucket_model_info = await load_model_info(
+                pool, bucket_provider_name, provider_model_id,
+            )
+            if bucket_model_info is None:
+                # The model isn't in our pricing table — refuse to bill an
+                # unknown rate.  Tell the user; their admin can refresh.
+                async with pool.acquire() as conn:
+                    assistant_msg = await _insert_assistant_message(
+                        conn, tid,
+                        "That model isn't in the pricing table yet — contact admin to refresh /api/admin/pricing/refresh.",
+                        "none", None,
+                    )
+                    await conn.execute(
+                        "UPDATE chat_threads SET last_message_at = now(), updated_at = now() WHERE id = $1", tid
+                    )
+                return {"user_message": user_msg, "assistant_message": assistant_msg, "tool_messages": []}
+
+            user_billing = await load_user_billing(pool, user_id)
+
+            # Rough estimate for the credit check: assume ~1k in + ~1k out
+            # at provider COGS × 1.20.  Off by an order of magnitude on
+            # large turns, but the spend-commit path settles against the
+            # real numbers so this only gates rejection.
+            bucket_model_info_price = await _get_price(
+                pool, bucket_provider_name, provider_model_id,
+            )
+            est_cogs = bucket_model_info_price.compute_cost_usd(1000, 1000) \
+                if bucket_model_info_price else 0.0
+            est_billed = est_cogs * 1.20
+
+            bucket = pick_bucket(
+                user_billing, bucket_model_info, est_billed,
+                estimated_input_tokens=1000, estimated_output_tokens=1000,
+            )
+
+            if isinstance(bucket, InsufficientCredits):
+                code = (
+                    "INSUFFICIENT_CREDITS_BYO_AVAILABLE"
+                    if bucket.byo_available
+                    else "INSUFFICIENT_CREDITS"
+                )
+                raise HTTPException(
+                    status_code=402,
+                    detail={"code": code, "provider": bucket_provider_name},
+                )
+
+            # BYO: pull the encrypted key and instantiate an override provider.
+            if isinstance(bucket, Byo):
+                provider = await _make_byo_provider(
+                    pool, user_id, bucket.provider, fallback=provider,
+                )
+        except HTTPException:
+            raise
+        except Exception as bx:
+            _logger.warning(f"bucket-select: degrading to legacy path: {bx}")
+            bucket = None
+
     # Resolve project tags addendum
     async with pool.acquire() as conn:
         proj_row = await conn.fetchrow("SELECT tags FROM projects WHERE id = $1", pid)
@@ -2467,11 +2580,38 @@ async def post_message(pid: str, tid: str, req: PostMessageRequest, payload: dic
         # Record token usage (cloud only)
         if settings.usage_enabled and (resp.input_tokens > 0 or resp.output_tokens > 0):
             try:
-                from cloud.usage import record_token_event
-                await record_token_event(
-                    pool, user_id, pid, provider_model_id,
-                    resp.input_tokens, resp.output_tokens, cost_usd=0.0,
-                )
+                if bucket is not None and bucket_model_info is not None:
+                    # New three-bucket path: commit via kerf_billing.spend
+                    # so usage_events.payer is set correctly + balance/quota
+                    # gets debited atomically in one txn.
+                    from kerf_billing.spend import commit_spend, ApiTokenDailyCapExceeded
+                    cogs = bucket_model_info_price.compute_cost_usd(
+                        resp.input_tokens, resp.output_tokens,
+                    ) if bucket_model_info_price else 0.0
+                    billed = cogs * 1.20
+                    try:
+                        await commit_spend(
+                            pool,
+                            bucket=bucket,
+                            user_id=user_id,
+                            project_id=pid,
+                            model=provider_model_id,
+                            input_tokens=resp.input_tokens,
+                            output_tokens=resp.output_tokens,
+                            cogs_usd=cogs,
+                            billed_usd=billed,
+                            api_token_id=None,  # web sessions don't have an api_token
+                        )
+                    except ApiTokenDailyCapExceeded as cap:
+                        _logger.warning(f"usage: api token daily cap: {cap}")
+                else:
+                    # Legacy fallback path (OSS local mode / cloud_user_balances
+                    # missing).  Records the token row only.
+                    from cloud.usage import record_token_event
+                    await record_token_event(
+                        pool, user_id, pid, provider_model_id,
+                        resp.input_tokens, resp.output_tokens, cost_usd=0.0,
+                    )
             except Exception as ue:
                 _logger.warning(f"usage: record token event: {ue}")
 
