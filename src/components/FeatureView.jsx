@@ -49,7 +49,7 @@ import {
   Disc, Layers, Drill, Sigma, AlertTriangle, Loader2, Play,
   Move, Crosshair, GitBranch, Repeat, FlipHorizontal,
   PencilLine, Pointer, Waves, Layers3, Aperture, Plus,
-  X, ChevronRight, LayoutGrid,
+  X, ChevronRight, LayoutGrid, Combine,
 } from 'lucide-react'
 import FeatureRenderer from './FeatureRenderer.jsx'
 import {
@@ -350,13 +350,39 @@ const FEATURE_KINDS = [
       ] },
     ],
   },
+  // NURBS booleans v1 — T6: to_solid + boolean inspector entries
+  {
+    op: 'to_solid',
+    label: 'To Solid',
+    icon: Box,
+    defaults: { target_id: '', tolerance: 1e-6 },
+    fields: [
+      { key: 'target_id', kind: 'feature_picker', label: 'Surface body to cap' },
+      { key: 'tolerance', kind: 'number', label: 'Sewing tolerance (mm)', min: 1e-9, step: 1e-7 },
+    ],
+  },
+  {
+    op: 'boolean',
+    label: 'Boolean',
+    icon: Combine,
+    defaults: { target_a_id: '', target_b_id: '', kind: 'cut' },
+    fields: [
+      { key: 'target_a_id', kind: 'feature_picker', label: 'A (kept on cut)' },
+      { key: 'target_b_id', kind: 'feature_picker', label: 'B (subtracted on cut)' },
+      { key: 'kind', kind: 'select', label: 'Operation', options: [
+        { value: 'cut',    label: 'Cut (A − B)' },
+        { value: 'fuse',   label: 'Fuse (A ∪ B)' },
+        { value: 'common', label: 'Common (A ∩ B)' },
+      ] },
+    ],
+  },
 ]
 
 const KIND_BY_OP = Object.fromEntries(FEATURE_KINDS.map((k) => [k.op, k]))
 
 const FEATURE_CATEGORIES = [
   { id: 'sketch',   label: 'Sketch-based',  ops: ['pad', 'boss_with_draft', 'pocket', 'cut_from_sketch', 'revolve', 'hole', 'hole_pattern'] },
-  { id: 'modify',   label: 'Modify',        ops: ['fillet', 'chamfer', 'shell', 'push_pull', 'variable_radius_fillet'] },
+  { id: 'modify',   label: 'Modify',        ops: ['fillet', 'chamfer', 'shell', 'push_pull', 'variable_radius_fillet', 'to_solid', 'boolean'] },
   { id: 'pattern',  label: 'Pattern',       ops: ['linear_pattern', 'polar_pattern', 'mirror_pattern'] },
   { id: 'surface',  label: 'Surfacing',     ops: ['sweep1', 'sweep2', 'loft', 'network_srf', 'blend_srf'] },
 ]
