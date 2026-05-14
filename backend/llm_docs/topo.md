@@ -18,6 +18,7 @@ to the pyworker FEniCSx engine.
   "volume_fraction": 0.3,
   "penalization_power": 3,
   "filter_radius_mm": 1.5,
+  "smoothing_iterations": 3,
   "max_iterations": 200,
   "convergence_tolerance": 1e-4,
   "boundary_conditions": [
@@ -38,15 +39,41 @@ to the pyworker FEniCSx engine.
 }
 ```
 
+### Multi-body variant
+
+When the `.feature` STEP contains multiple OCC volumes (bodies), pass
+`volume_fraction` and `filter_radius_mm` as arrays instead of scalars:
+
+```json
+{
+  "volume_fraction": [
+    { "body_tag": 1, "volume_fraction": 0.3 },
+    { "body_tag": 2, "volume_fraction": 0.5 }
+  ],
+  "filter_radius_mm": [
+    { "body_tag": 1, "filter_radius_mm": 1.5 },
+    { "body_tag": 2, "filter_radius_mm": 2.5 }
+  ]
+}
+```
+
+A scalar value is still accepted (backwards-compatible); it applies to the
+whole domain or to every body equally.
+
 - `version` must be `1`. Anything else renders as "unsupported".
 - `design_space_feature_path` is the absolute path of the `.feature` file
   that defines the design domain (the solid body to optimize).
 - `material_path` is the absolute path of the `.material` file providing
   E, ν, ρ needed by the FEM stiffness solve.
 - `volume_fraction` is the target fraction of original material remaining
-  (0 < V_f < 1; industry default is 0.3–0.5).
+  (0 < V_f < 1; industry default is 0.3–0.5). Accepts a scalar or an array
+  of `{body_tag, volume_fraction}` objects for multi-body runs.
 - `penalization_power` is the SIMP exponent p (industry standard p = 3).
-- `filter_radius_mm` is the Heaviside filter kernel radius in mm.
+- `filter_radius_mm` is the Heaviside filter kernel radius in mm. Accepts a
+  scalar or an array of `{body_tag, filter_radius_mm}` objects.
+- `smoothing_iterations` is the number of Laplacian smoothing passes applied
+  to the marching-cubes mesh before STEP export (default 3, 0 to disable).
+  Removes voxel staircase artefacts while preserving topology and boundary edges.
 - `max_iterations` caps the SIMP loop; the engine stops early on KKT
   convergence.
 - `convergence_tolerance` is the relative change in compliance below which
@@ -109,13 +136,24 @@ The pyworker `POST /run-topo` route executes this loop server-side:
       i.  Check convergence:
               if |C_new − C_old| / C_old < tolerance: break
 5.  Voxelise the scattered density field onto a regular 30×30×30 grid.
-6.  Run skimage.measure.marching_cubes at ρ_threshold=0.5.
-    Each triangle → OCC BRepBuilderAPI_MakeFace; all faces sewn with
-    BRepBuilderAPI_Sewing into a shell compound.
-7.  Write STEP via STEPControl_Writer.  Note: the output is a faceted
-    (triangulated) STEP shell.  Smoothing / NURBS reconstruction is a
-    future enhancement.
-8.  Return step_b64 to the backend tool, which persists it as a new
+6.  Run skimage.measure.marching_cubes at ρ_threshold=0.5 → triangle mesh.
+7.  Apply Laplacian smoothing (smoothing_iterations passes, boundary-fixed).
+    Each interior vertex is moved to the mean of its neighbours' positions.
+    Boundary vertices (on open edges) are held fixed to preserve the footprint.
+8.  Group triangles into connected components (BFS over shared edges).
+    For each component with >= 9 vertices (and scipy installed):
+      a. PCA to find dominant plane.
+      b. Project points to (u, v) in that plane.
+      c. Build a regular grid_n × grid_n sample grid; nearest-neighbour lookup
+         back to 3-D points via scipy.spatial.cKDTree.
+      d. Fit GeomAPI_PointsToBSplineSurface (degree 3–8, chord-length param,
+         C2 continuity, 1e-2 mm tolerance).
+      e. Wrap in BRepBuilderAPI_MakeFace → OCC Face.
+    If fitting fails for a component, fall back to one triangular face per
+    triangle in that component (same as the pre-NURBS path).
+9.  Sew all faces (NURBS + fallback) with BRepBuilderAPI_Sewing into a compound.
+10. Write STEP via STEPControl_Writer.
+11. Return step_b64 to the backend tool, which persists it as a new
     'step' file (kind='step') and sets output_mesh_file_id.
 ```
 
@@ -168,13 +206,44 @@ Engine pending — FEniCSx not yet deployed.
 to `results.warnings` (idempotent) and writes back the file. The
 TopoView uses this to render an "engine pending" banner.
 
+## Common edits — new fields
+
+### Adjust smoothing passes
+
+```text
+old: "smoothing_iterations": 3,
+new: "smoothing_iterations": 5,   # more smoothing
+new: "smoothing_iterations": 0,   # disable to preserve raw marching-cubes mesh
+```
+
+### Run multi-body optimization
+
+```json
+"volume_fraction": [
+  { "body_tag": 1, "volume_fraction": 0.3 },
+  { "body_tag": 2, "volume_fraction": 0.6 }
+],
+"filter_radius_mm": [
+  { "body_tag": 1, "filter_radius_mm": 1.5 },
+  { "body_tag": 2, "filter_radius_mm": 2.0 }
+]
+```
+
+`body_tag` values correspond to the 1-indexed OCC volume ordering in the STEP
+file. Use a single run without BCs to discover which body_tag maps to which
+volume (reported in warnings).
+
 ## Known limits
 
-- **Faceted STEP output.** The marching-cubes STEP is a triangulated shell,
-  not a smooth B-rep solid. Import it into the Kerf part tree as a reference
-  mesh and remodel the critical features with proper fillets for manufacturing.
-  NURBS reconstruction is a future enhancement.
+- **NURBS fitting quality.** The PCA-plane projection works well for nearly
+  planar or smoothly curved iso-surface patches. Highly non-planar components
+  (e.g., saddle surfaces, thin topological tubes) fall back to the faceted path
+  automatically. Import the STEP into the Kerf part tree as a reference and
+  remodel critical features with proper fillets for manufacturing.
+- **scipy required for NURBS.** Without `scipy` installed the engine always
+  uses the faceted fallback (`conda install -c conda-forge scipy`).
 - **face_tag stability.** Gmsh assigns surface tags in OCC surface-exploration
   order. Adding new features to the `.feature` file may renumber tags. Re-run
   with a diagnostic pass to confirm tags after structural edits.
-- **One design space per topo.** No multi-body optimization yet.
+- **Multi-body body_tag assignment.** `occ.fragment()` may renumber volumes
+  when the STEP geometry changes. Check warnings after structural edits.
