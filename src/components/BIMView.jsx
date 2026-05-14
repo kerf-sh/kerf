@@ -10,7 +10,8 @@
  *
  * If the package is absent, a stub card with install instructions is shown.
  */
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useImperativeHandle, useRef, useState } from 'react'
+import { snapshotCanvas } from '../lib/snapshotHelpers.js'
 
 // ---------------------------------------------------------------------------
 // Lazy dep loader — dynamic import so the bundle still works without web-ifc
@@ -31,11 +32,19 @@ async function tryLoadDeps() {
 // Component
 // ---------------------------------------------------------------------------
 
-export default function BIMView({ ifc_base64, className = '' }) {
+export default function BIMView({ ifc_base64, className = '', viewRef }) {
   const canvasRef = useRef(null)
   const [error, setError] = useState(null)
   const [loading, setLoading] = useState(true)
   const [depsAvailable, setDepsAvailable] = useState(null)
+
+  // Editor thumbnail capture: pull whatever's currently on the WebGL
+  // canvas. We don't force a render here because the IFC scene already
+  // re-renders every frame via animate(); reading the buffer between
+  // frames is enough.
+  useImperativeHandle(viewRef, () => ({
+    snapshot: (opts) => snapshotCanvas(canvasRef.current, opts),
+  }), [])
 
   useEffect(() => {
     let cancelled = false

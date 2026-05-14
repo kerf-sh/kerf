@@ -1,4 +1,5 @@
-import { forwardRef, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
+import { snapshotSvg } from '../lib/snapshotHelpers.js'
 import { sheetDimensions, titleBlockLayout, scaleBarGeometry } from '../lib/sheetFrames.js'
 import {
   projectFile, projectFileWithHLR, projectionLabel,
@@ -115,6 +116,8 @@ const DrawingView = forwardRef(function DrawingView({
   onAddSheet,
   onRemoveSheet,
   onResetTool,
+  // Editor-managed ref for thumbnail capture. Receives {snapshot}.
+  viewRef,
 }, ref) {
   // Resolve the active sheet from the multi-sheet drawing object. New
   // canonical shape: drawing.sheets = [{ id, frame, views, dimensions, ... }];
@@ -286,6 +289,11 @@ const DrawingView = forwardRef(function DrawingView({
     if (typeof ref === 'function') ref(svgRef.current)
     else if (ref) ref.current = svgRef.current
   }, [ref])
+  // Editor thumbnail capture — separate imperative ref so it doesn't
+  // clobber the SVG-element handoff the export pipeline relies on.
+  useImperativeHandle(viewRef, () => ({
+    snapshot: (opts) => snapshotSvg(svgRef.current, opts),
+  }), [])
 
   // Build per-source BVH maps so the cross-part HLR pass can ray-test against
   // every other part's geometry. We lazy-import three-mesh-bvh to keep it out

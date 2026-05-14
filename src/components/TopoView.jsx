@@ -24,9 +24,10 @@
 // Engine integration (FEniCSx) is still deferred; this view consumes whatever
 // result arrays a future engine slice writes into `results`.
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useImperativeHandle, useRef, useState } from 'react'
 import { Activity, AlertTriangle, Box, Loader2, Play, Sigma } from 'lucide-react'
 import { useWorkspace } from '../store/workspace.js'
+import { snapshotCanvas } from '../lib/snapshotHelpers.js'
 
 const ENGINE_PENDING_WARNING = 'Engine pending — FEniCSx not yet deployed.'
 
@@ -108,9 +109,20 @@ export function addEnginePendingWarning(parsed) {
   }
 }
 
-export default function TopoView({ content, fileName }) {
+export default function TopoView({ content, fileName, viewRef }) {
   const parsed = parseTopo(content || '')
   const [running, setRunning] = useState(false)
+  const rootRef = useRef(null)
+
+  // Capture whatever the DensityMeshViewer is currently rendering. If
+  // the optimization hasn't run yet, no canvas exists → null → Editor
+  // falls back to skipping the upload.
+  useImperativeHandle(viewRef, () => ({
+    snapshot: (opts) => {
+      const canvas = rootRef.current?.querySelector?.('canvas')
+      return snapshotCanvas(canvas, opts)
+    },
+  }), [])
 
   const runDisabled =
     running ||
@@ -141,7 +153,7 @@ export default function TopoView({ content, fileName }) {
 
   if (parsed.kind === 'invalid' || parsed.kind === 'unsupported') {
     return (
-      <div className="h-full flex flex-col bg-ink-950 text-ink-100 min-h-0">
+      <div ref={rootRef} className="h-full flex flex-col bg-ink-950 text-ink-100 min-h-0">
         <div className="flex items-center gap-2 px-4 py-2.5 border-b border-ink-800 bg-ink-900/40 flex-shrink-0">
           <AlertTriangle size={14} className="text-amber-400 shrink-0" />
           <span className="text-xs font-semibold uppercase tracking-wider text-ink-300">
@@ -164,7 +176,7 @@ export default function TopoView({ content, fileName }) {
   const isError = results.status === 'error'
 
   return (
-    <div className="h-full flex flex-col bg-ink-950 text-ink-100 min-h-0">
+    <div ref={rootRef} className="h-full flex flex-col bg-ink-950 text-ink-100 min-h-0">
       <div className="flex items-center gap-2 px-4 py-2.5 border-b border-ink-800 bg-ink-900/40 flex-shrink-0">
         <Sigma size={14} className="text-kerf-300 shrink-0" />
         <span className="text-xs font-semibold uppercase tracking-wider text-ink-300">

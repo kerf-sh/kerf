@@ -25,7 +25,8 @@
 //     bottom traces under solid top traces; trace-on-trace overlap may be
 //     ambiguous.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
+import { snapshotSvg } from '../lib/snapshotHelpers.js'
 import { Maximize2, RotateCcw, AlertTriangle, Layers, Eye, EyeOff, Zap, Loader, CheckCircle, ShieldAlert, X } from 'lucide-react'
 import { convertCircuitJsonToPcbSvg } from 'circuit-to-svg'
 import { runDRC } from '../lib/pcbDRC.js'
@@ -86,10 +87,20 @@ const LAYER_MODES = [
   { id: 'both',   label: 'Both',   color: '#a855f7' },
 ]
 
-export default function PCBView({ circuitJson, highlightRefdes = null, onSelectRefdes, onAutoroute = null, autorouteStatus = null }) {
+export default function PCBView({ circuitJson, highlightRefdes = null, onSelectRefdes, onAutoroute = null, autorouteStatus = null, viewRef }) {
   const containerRef = useRef(null)
   const innerTopRef = useRef(null)
   const innerBottomRef = useRef(null)
+  const svgRef = useRef(null)
+
+  // Thumbnail capture: PCBView always renders a single <svg> wrapper
+  // around the top/bottom layer groups, so we point at it directly.
+  // circuit-to-svg's PCB output sometimes embeds <foreignObject> for
+  // labels — snapshotSvg handles that by returning null on decode
+  // failure, and the Editor falls through silently.
+  useImperativeHandle(viewRef, () => ({
+    snapshot: (opts) => snapshotSvg(svgRef.current, opts),
+  }), [])
 
   // refdes (source_component.name) → pcb_component_id, derived from the
   // circuit JSON. Used to map cross-view selection onto the SVG elements,
@@ -417,6 +428,7 @@ export default function PCBView({ circuitJson, highlightRefdes = null, onSelectR
       style={{ touchAction: 'none', cursor: draggingRef.current ? 'grabbing' : 'grab' }}
     >
       <svg
+        ref={svgRef}
         width={size.w}
         height={size.h}
         viewBox={`0 0 ${size.w} ${size.h}`}

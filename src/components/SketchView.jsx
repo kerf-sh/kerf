@@ -11,7 +11,8 @@
 // The sketch JSON IS the file content. We write through `updateSketch()` from
 // the workspace store, which handles persistence + revisions.
 
-import { useCallback, useEffect, useRef, useState, useMemo } from 'react'
+import { useCallback, useEffect, useImperativeHandle, useRef, useState, useMemo } from 'react'
+import { snapshotSvg } from '../lib/snapshotHelpers.js'
 import {
   MousePointer2, Slash, Circle as CircleIcon, Spline, Square, Dot,
   MoveHorizontal, MoveVertical, Triangle, Equal, Anchor,
@@ -105,9 +106,16 @@ export default function SketchView({
   dofCount,              // number
   conflicts,             // string[] of conflicting constraint ids
   loadParts,             // (fileId) => Promise<parts[]>; powers 3D backdrop
+  viewRef,               // Editor-managed ref for thumbnail capture
 }) {
   const svgRef = useRef(null)
   const containerRef = useRef(null)
+
+  // Thumbnail capture for the Editor's project-thumbnail trigger. SVG
+  // gets serialized + rasterized to JPEG via snapshotHelpers.
+  useImperativeHandle(viewRef, () => ({
+    snapshot: (opts) => snapshotSvg(svgRef.current, opts),
+  }), [])
   const [view, setView] = useState(DEFAULT_VIEW)
   const [tool, setTool] = useState('select')
   const [construction, setConstruction] = useState(false)

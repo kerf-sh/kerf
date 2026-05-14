@@ -8,7 +8,7 @@
 // is queued or running. Lets the user configure a 2.5D CAM operation and
 // submit via POST /api/projects/{pid}/files/{fid}/cam.
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useImperativeHandle, useRef, useState } from 'react'
 import { AlertTriangle, CheckCircle, Download, Loader2, Settings, Tool } from 'lucide-react'
 import { useAuth } from '../store/auth.js'
 
@@ -36,7 +36,14 @@ function fmtMin(s) {
   return m > 0 ? `${m}m ${sec}s` : `${sec}s`
 }
 
-export default function CAMView({ file, projectId }) {
+export default function CAMView({ file, projectId, viewRef }) {
+  // CAM view is currently a form + status panel — no renderable G-code
+  // preview. The thumbnail hook is still wired so the Editor doesn't
+  // need to special-case the kind; snapshot resolves to null and the
+  // upload step is silently skipped.
+  useImperativeHandle(viewRef, () => ({
+    snapshot: async () => null,
+  }), [])
   const [operation, setOperation] = useState('profile')
   const [toolDiameter, setToolDiameter] = useState('3.0')
   const [stepOver, setStepOver] = useState('0.5')

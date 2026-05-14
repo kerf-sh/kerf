@@ -1,8 +1,9 @@
 // RFView — renders S-parameter analysis results: Smith chart, VSWR/return-loss
 // tables, and a VSWR vs frequency line chart.
 
-import { useMemo } from 'react'
+import { useImperativeHandle, useMemo, useRef } from 'react'
 import { Activity, AlertTriangle, CheckCircle, Clock, XCircle } from 'lucide-react'
+import { snapshotSvg } from '../lib/snapshotHelpers.js'
 
 const STATUS_CONFIG = {
   queued:  { icon: Clock,       color: 'text-ink-400',   label: 'Queued' },
@@ -159,11 +160,23 @@ function VswrChart({ frequency_range, vswr, frequency_unit }) {
   )
 }
 
-export default function RFView({ rfResult, fileId, onRunStudy }) {
+export default function RFView({ rfResult, fileId, onRunStudy, viewRef }) {
   const status = rfResult?.status || 'queued'
+  const rootRef = useRef(null)
+
+  // The visual artifact for an RF analysis is the Smith chart SVG
+  // injected via dangerouslySetInnerHTML. If a study hasn't run yet,
+  // we fall back to the local-rendered VSWR SVG, which is always
+  // present even in the empty-state.
+  useImperativeHandle(viewRef, () => ({
+    snapshot: (opts) => {
+      const svg = rootRef.current?.querySelector?.('svg')
+      return snapshotSvg(svg, opts)
+    },
+  }), [])
 
   return (
-    <div className="flex flex-col h-full bg-ink-950 text-ink-200 overflow-auto">
+    <div ref={rootRef} className="flex flex-col h-full bg-ink-950 text-ink-200 overflow-auto">
       <div className="flex items-center justify-between px-4 py-3 border-b border-ink-800">
         <div className="flex items-center gap-3">
           <span className="text-[13px] font-semibold text-kerf-300">RF Analysis</span>

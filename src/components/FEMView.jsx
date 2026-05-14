@@ -8,10 +8,11 @@
 // is queued or running. Lets the user pick a material preset and submit a new
 // analysis via POST /api/projects/{pid}/files/{fid}/fem.
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useImperativeHandle, useRef, useState } from 'react'
 import { Activity, AlertTriangle, CheckCircle, Loader2, Play } from 'lucide-react'
 import { useAuth } from '../store/auth.js'
 import DeformedShapeOverlay from './FEMDeformedShape.jsx'
+import { snapshotCanvas } from '../lib/snapshotHelpers.js'
 
 const API_URL = import.meta.env.VITE_API_URL || ''
 
@@ -46,9 +47,21 @@ function fmtMm(m) {
 // (passed in by Editor.jsx when a source mesh is available). Forwarded to
 // DeformedShapeOverlay so it renders an actual morphed surface instead of the
 // point-cloud proxy.
-export default function FEMView({ file, projectId, geometry }) {
+export default function FEMView({ file, projectId, geometry, viewRef }) {
   const { accessToken } = useAuth()
   const [preset, setPreset] = useState('steel')
+  const rootRef = useRef(null)
+
+  // The "visual" part of FEMView is the deformed-shape overlay, which
+  // mounts its own <canvas>. We can find it via a descendant query —
+  // when no analysis has run yet the panel is just controls, which
+  // we don't have a useful image for.
+  useImperativeHandle(viewRef, () => ({
+    snapshot: (opts) => {
+      const canvas = rootRef.current?.querySelector?.('canvas')
+      return snapshotCanvas(canvas, opts)
+    },
+  }), [])
   const [analysisType, setAnalysisType] = useState('linear_static')
   const [solver, setSolver] = useState('fenicsx')
   const [meshSize, setMeshSize] = useState('0.01')
@@ -176,7 +189,7 @@ export default function FEMView({ file, projectId, geometry }) {
   const hasDeformedShape = result?.node_displacements?.length > 0
 
   return (
-    <div style={styles.root}>
+    <div ref={rootRef} style={styles.root}>
       {/* Header */}
       <div style={styles.header}>
         <Activity size={16} style={{ color: '#22d3ee' }} />

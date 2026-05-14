@@ -22,7 +22,8 @@
 //     the outer `<svg>` and graft its inner contents into ours so CSS pan/zoom
 //     transforms compose cleanly.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
+import { snapshotSvg } from '../lib/snapshotHelpers.js'
 import { Maximize2, RotateCcw, AlertTriangle, Activity } from 'lucide-react'
 import { convertCircuitJsonToSchematicSvg } from 'circuit-to-svg'
 import { parseProbes, appendProbe, removeProbe, renameProbe } from '../lib/circuitTSX.js'
@@ -102,9 +103,15 @@ export default function SchematicView({
   onEditSource = () => {},
   selectedCircuitComponentId = null,
   onSelectComponent = () => {},
+  viewRef,
 }) {
   const containerRef = useRef(null)
   const innerRef = useRef(null)
+  const svgRef = useRef(null)
+
+  useImperativeHandle(viewRef, () => ({
+    snapshot: (opts) => snapshotSvg(svgRef.current, opts),
+  }), [])
 
   // refdes (source_component.name) → schematic_component_id, used to map
   // cross-view selection onto SVG elements (which carry
@@ -451,6 +458,7 @@ export default function SchematicView({
       style={{ touchAction: 'none', cursor: draggingRef.current ? 'grabbing' : 'grab' }}
     >
       <svg
+        ref={svgRef}
         width={size.w}
         height={size.h}
         viewBox={`0 0 ${size.w} ${size.h}`}

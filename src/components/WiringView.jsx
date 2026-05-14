@@ -15,18 +15,29 @@
  * because it was authored by the project owner; the SVG is never user-supplied
  * from outside the project.
  */
-import { useEffect, useState } from 'react'
+import { useEffect, useImperativeHandle, useRef, useState } from 'react'
 import { api } from '../lib/api.js'
+import { snapshotSvg } from '../lib/snapshotHelpers.js'
 
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
-export default function WiringView({ source, projectId, fileId, className = '' }) {
+export default function WiringView({ source, projectId, fileId, className = '', viewRef }) {
   const [svg, setSvg] = useState(null)
   const [warnings, setWarnings] = useState([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
+  const svgContainerRef = useRef(null)
+
+  // Thumbnail capture: the SVG is injected via dangerouslySetInnerHTML
+  // so we reach into the container and grab the first <svg> child.
+  useImperativeHandle(viewRef, () => ({
+    snapshot: (opts) => {
+      const el = svgContainerRef.current?.querySelector?.('svg')
+      return snapshotSvg(el, opts)
+    },
+  }), [])
 
   useEffect(() => {
     if (!source || !source.trim()) {
@@ -105,6 +116,7 @@ export default function WiringView({ source, projectId, fileId, className = '' }
       )}
       {svg ? (
         <div
+          ref={svgContainerRef}
           className="w-full overflow-auto rounded-lg border border-ink-700 bg-white/5 p-2"
           // SVG originates from the WireViz renderer (trusted server-side output)
           // eslint-disable-next-line react/no-danger
