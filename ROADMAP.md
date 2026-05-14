@@ -1649,10 +1649,10 @@ prefers the glb to re-parsing the STEP.
 - Bug fix: broken `gunzip_bytes` (tried to unpack `r.read()` as tuple) replaced by `_decompress_row` with legacy base64-text fallback.
 - 23 hermetic tests in `packages/kerf-core/tests/test_revisions_compaction.py`.
 
-**Phase 5 / future:**
-- Background compaction worker: lazily re-compact old chains (worker/cron style).
-- Hash-based cross-file dedup: share base content between files with identical sha256 (content-addressable blobs).
-- Frontend lazy-preview: revisions panel fetches `content_preview` only; full content loaded on restore (deferred — requires API contract change).
+**Phase 5 — ✅ shipped:**
+- ✅ Background compaction worker: `kerf_core.workers.compaction_worker.CompactionWorker` — polls chains longer than `COMPACTION_THRESHOLD` (40 diffs), reconstructs tip, writes new base, deletes intermediate diffs. Cloud-tier-only gate (`cloud_enabled=True` and `local_mode=False`). Registered in `kerf-workers/runner.py`; controlled by `COMPACTION_WORKERS` env var.
+- ✅ Hash-based cross-file dedup: if any `base` row in the table shares the same `content_sha256`, the new revision is stored as a `kind='ref'` row (no blob payload) pointing to that base via `parent_revision_id`. Migration `049_revision_content_ref.sql` adds `ref` to the CHECK constraint. Pruning extended to protect cross-file base targets. 5 new hermetic tests.
+- ✅ Frontend lazy-preview: `GET /api/projects/{pid}/files/{fid}/revisions/{rid}/content` endpoint reconstructs and returns full content on demand. `RevisionDrawer.jsx` shows a "View / Hide" toggle per row that fetches lazily; list endpoint continues to return only `content_preview`. `src/lib/revisionPreview.js` helper + 22 vitest tests.
 
 ---
 

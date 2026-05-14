@@ -1,9 +1,9 @@
 """
-Hermetic tests for kerf_core.revisions (Phase 4: revision DB efficiency).
+Hermetic tests for kerf_core.revisions (Phase 4 + Phase 5: revision DB efficiency).
 
 Tests use an in-memory fake asyncpg-like pool — no Postgres required.
 
-Covers:
+Covers (Phase 4):
   - compute_unified_diff + apply_unified_diff round-trips
   - _compress / _decompress_row codec='gzip' (raw bytea)
   - _decompress_row codec='plain' legacy base64-encoded path
@@ -11,6 +11,12 @@ Covers:
   - Rebase trigger: after REBASE_THRESHOLD diffs a new base is written
   - Cap pruning: old rows beyond cap are removed; chain-parents are protected
   - write_revision → reconstruct_revision full round-trip (multi-diff chain)
+
+Covers (Phase 5 cross-file hash dedup):
+  - Writing identical content to two files: second produces a 'ref' row.
+  - reconstruct_revision on a 'ref' row returns the same content as the base.
+  - Same-file dedup (identical consecutive save) still works (not a ref).
+  - Safe pruning never deletes a 'base' row that has live 'ref' references.
 """
 from __future__ import annotations
 
@@ -99,6 +105,15 @@ class FakePool:
             rows = self._rows_for_file_sorted(file_id)
             return self.Row(rows[-1]) if rows else None
 
+        # Phase 5: cross-file base lookup
+        # SELECT id FROM file_revisions WHERE content_sha256 = $1 AND kind = 'base' LIMIT 1
+        if "content_sha256 = $1" in query and "kind = 'base'" in query:
+            target_hash = args[0]
+            for row in self._revisions.values():
+                if row.get("content_sha256") == target_hash and row.get("kind") == "base":
+                    return self.Row(row)
+            return None
+
         return None
 
     async def fetchval(self, query: str, *args) -> Any:
@@ -141,6 +156,11 @@ class FakePool:
           VALUES ($1, $2, '', $3, 'gzip', 'diff', $4, $5, $6, $7, $8)
           args: id, file_id, content_gz, parent_revision_id, source, user_id,
                 content_sha256, preview
+
+        Ref SQL (7 params, Phase 5 cross-file dedup):
+          VALUES ($1, $2, '', NULL, 'gzip', 'ref', $3, $4, $5, $6, $7)
+          args: id, file_id, shared_base_id (parent), source, user_id,
+                content_sha256, preview
         """
         now = _now()
         if "'base'" in query:
@@ -164,6 +184,30 @@ class FakePool:
                 "content_sha256": content_sha256,
                 "content_preview": preview,
                 "parent_revision_id": None,
+                "created_at": now,
+            }
+        elif "'ref'" in query:
+            # Phase 5 ref row — 7 positional args (no content_gz payload)
+            new_id = args[0]
+            file_id = args[1]
+            # args[2] is the shared_base_id (parent_revision_id)
+            shared_base_id = args[2]
+            source = args[3]
+            user_id = args[4]
+            content_sha256 = args[5]
+            preview = args[6]
+            row = {
+                "id": uuid.UUID(str(new_id)),
+                "file_id": uuid.UUID(str(file_id)),
+                "content": "",
+                "content_gz": None,
+                "content_codec": "gzip",
+                "kind": "ref",
+                "source": source,
+                "user_id": user_id,
+                "content_sha256": content_sha256,
+                "content_preview": preview,
+                "parent_revision_id": uuid.UUID(str(shared_base_id)),
                 "created_at": now,
             }
         else:  # diff — 8 positional args
@@ -474,3 +518,117 @@ def test_compress_gives_significant_shrink_on_large_content():
     compressed = _compress(content)
     ratio = len(compressed) / len(content.encode())
     assert ratio < 0.25, f"Expected <25% size ratio, got {ratio:.2%}"
+
+
+# ---------------------------------------------------------------------------
+# Phase 5: cross-file hash dedup
+# ---------------------------------------------------------------------------
+
+def test_cross_file_dedup_produces_ref_row(pool):
+    """
+    Writing identical content to two different files: the second insert should
+    produce a 'ref' row pointing to the first file's 'base' row, not a new
+    base blob.
+    """
+    file_a = uuid.uuid4()
+    file_b = uuid.uuid4()
+    shared_content = "shared content\nidentical across files\n"
+
+    # File A gets a base row.
+    rid_a = run(write_revision(pool, file_a, shared_content, "tool"))
+    rows_a = pool._rows_for_file(file_a)
+    assert len(rows_a) == 1
+    assert rows_a[0]["kind"] == "base"
+    base_id = rows_a[0]["id"]
+
+    # File B writes the same content — should get a 'ref' row.
+    rid_b = run(write_revision(pool, file_b, shared_content, "tool"))
+    rows_b = pool._rows_for_file(file_b)
+    assert len(rows_b) == 1
+    ref_row = rows_b[0]
+    assert ref_row["kind"] == "ref", f"Expected ref, got {ref_row['kind']}"
+    assert ref_row["parent_revision_id"] == base_id, (
+        f"ref row should point to base {base_id}, got {ref_row['parent_revision_id']}"
+    )
+    assert ref_row["content_gz"] is None, "ref rows must not store a content payload"
+
+
+def test_cross_file_dedup_reconstruct_ref_returns_correct_content(pool):
+    """
+    Reconstructing a 'ref' row should return the same content as the shared base.
+    """
+    file_a = uuid.uuid4()
+    file_b = uuid.uuid4()
+    shared_content = "shared blob content\nline two\nline three\n"
+
+    run(write_revision(pool, file_a, shared_content, "tool"))
+    rid_b = run(write_revision(pool, file_b, shared_content, "tool"))
+
+    # Reconstruction via the ref row must give back the original content.
+    result = run(reconstruct_revision(pool, rid_b))
+    assert result == shared_content
+
+
+def test_same_file_dedup_still_works_with_cross_file_dedup(pool):
+    """
+    The same-file dedup (Phase 4) must still function after Phase 5: writing
+    the same content to the same file twice should return the same revision id.
+    """
+    file_a = uuid.uuid4()
+    content = "repeated save\n"
+
+    rid1 = run(write_revision(pool, file_a, content, "tool"))
+    rid2 = run(write_revision(pool, file_a, content, "tool"))
+
+    # Same id returned — no new row inserted.
+    assert rid1 == rid2
+    assert len(pool._rows_for_file(file_a)) == 1
+
+
+def test_cross_file_dedup_base_not_deleted_while_ref_exists(pool):
+    """
+    Safe pruning must NOT delete a 'base' row that a 'ref' row in another
+    file is pointing to.
+    """
+    file_a = uuid.uuid4()
+    file_b = uuid.uuid4()
+    shared_content = "base content that must survive pruning\n"
+    cap = 2
+
+    # File A: write the shared base.
+    run(write_revision(pool, file_a, shared_content, "tool", cap=cap))
+    base_id = pool._rows_for_file(file_a)[0]["id"]
+
+    # File B: write the same content → ref row.
+    run(write_revision(pool, file_b, shared_content, "tool", cap=cap))
+    ref_row = pool._rows_for_file(file_b)[0]
+    assert ref_row["kind"] == "ref"
+
+    # File A: write many more revisions to trigger cap pruning.
+    for i in range(cap + 5):
+        run(write_revision(pool, file_a, f"extra revision {i}\n", "tool", cap=cap))
+
+    # The base row that file_b's ref points to must still be present.
+    all_ids = {r["id"] for r in pool._revisions.values()}
+    assert base_id in all_ids, (
+        "base row referenced by a cross-file ref must not be pruned"
+    )
+
+    # The ref row itself must still be present and reconstructable.
+    result = run(reconstruct_revision(pool, ref_row["id"]))
+    assert result == shared_content
+
+
+def test_cross_file_dedup_different_content_does_not_produce_ref(pool):
+    """
+    Writing different content to two files should not produce a ref row —
+    each file gets its own base.
+    """
+    file_a = uuid.uuid4()
+    file_b = uuid.uuid4()
+
+    run(write_revision(pool, file_a, "content for A\n", "tool"))
+    run(write_revision(pool, file_b, "content for B\n", "tool"))
+
+    rows_b = pool._rows_for_file(file_b)
+    assert rows_b[0]["kind"] == "base", "different content must produce a base, not ref"

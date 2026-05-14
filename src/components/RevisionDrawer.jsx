@@ -21,14 +21,15 @@
 // a row of source-toggle chips (You / AI / Tool / Restore). Filtering is
 // purely client-side — no API roundtrip.
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   History, RotateCcw, X, RefreshCw, Search, Check, ChevronRight,
-  FileText,
+  FileText, Eye, EyeOff, Loader,
 } from 'lucide-react'
 import { useWorkspace } from '../store/workspace.js'
 import { sourceMeta } from '../lib/revisionMeta.js'
 import { relativeTime, dayKey, dayLabel } from '../lib/relativeTime.js'
+import { api } from '../lib/api.js'
 
 // ─────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -152,6 +153,8 @@ function RevisionRow({
   onRequestRestore,
   onConfirmRestore,
   onCancelRestore,
+  projectId,
+  fileId,
 }) {
   const meta = sourceMeta(rev.source)
   const Icon = meta.icon
@@ -160,6 +163,36 @@ function RevisionRow({
   const isoTitle = useMemo(() => {
     try { return new Date(rev.created_at).toLocaleString() } catch { return rev.created_at || '' }
   }, [rev.created_at])
+
+  // Lazy full-content state for this row.
+  const [fullContent, setFullContent] = useState(null)
+  const [loadingContent, setLoadingContent] = useState(false)
+  const [contentError, setContentError] = useState(null)
+  const [showFull, setShowFull] = useState(false)
+
+  const handleToggleFullContent = useCallback(async (e) => {
+    e.stopPropagation()
+    if (showFull) {
+      setShowFull(false)
+      return
+    }
+    if (fullContent !== null) {
+      setShowFull(true)
+      return
+    }
+    if (!projectId || !fileId) return
+    setLoadingContent(true)
+    setContentError(null)
+    try {
+      const data = await api.getRevisionContent(projectId, fileId, rev.id)
+      setFullContent(data?.content ?? '')
+      setShowFull(true)
+    } catch (err) {
+      setContentError(err?.message || 'Failed to load content')
+    } finally {
+      setLoadingContent(false)
+    }
+  }, [showFull, fullContent, projectId, fileId, rev.id])
 
   const added = rev.diff_added ?? rev.added_lines
   const removed = rev.diff_removed ?? rev.removed_lines
@@ -237,8 +270,20 @@ function RevisionRow({
             )}
           </div>
 
-          {/* Footer: restore action + diff counts. Inline confirmation
-              replaces the row's footer when we're awaiting confirm. */}
+          {/* Lazy full-content panel — only shown when user expands. */}
+          {showFull && fullContent !== null && (
+            <div className="mt-1.5 rounded border border-ink-800 bg-ink-950/60 p-1.5 max-h-32 overflow-y-auto">
+              <pre className="text-[10px] font-mono text-ink-300 whitespace-pre-wrap break-all leading-relaxed">
+                {fullContent || <span className="italic text-ink-600">(empty)</span>}
+              </pre>
+            </div>
+          )}
+          {contentError && (
+            <div className="mt-1 text-[10px] text-red-400/80">{contentError}</div>
+          )}
+
+          {/* Footer: restore action + diff counts + show-content toggle.
+              Inline confirmation replaces the row's footer when awaiting confirm. */}
           {!isCurrent && confirming && (
             <ConfirmRestoreStrip
               onConfirm={onConfirmRestore}
@@ -256,6 +301,24 @@ function RevisionRow({
                 <RotateCcw size={9} />
                 Restore
               </button>
+
+              {/* Lazy content toggle */}
+              <button
+                type="button"
+                onClick={handleToggleFullContent}
+                disabled={loadingContent}
+                className="inline-flex items-center gap-1 px-1.5 h-5 rounded border border-ink-800 text-[10px] uppercase tracking-wider text-ink-500 hover:text-ink-200 hover:border-ink-700 disabled:opacity-40"
+                title={showFull ? 'Hide full content' : 'Show full content'}
+              >
+                {loadingContent
+                  ? <Loader size={9} className="animate-spin" />
+                  : showFull
+                    ? <EyeOff size={9} />
+                    : <Eye size={9} />
+                }
+                {showFull ? 'Hide' : 'View'}
+              </button>
+
               {hasDiffStat && (
                 <span className="font-mono text-[10px] text-ink-500">
                   {typeof added === 'number' && (
@@ -286,6 +349,7 @@ const FILTER_KINDS = ['user', 'llm', 'tool', 'restore']
 export default function RevisionDrawer({ revisions, loading, onRestore, onClose }) {
   const currentFile = useWorkspace((s) => s.currentFile)
   const currentFileId = useWorkspace((s) => s.currentFileId)
+  const projectId = useWorkspace((s) => s.projectId)
 
   const [query, setQuery] = useState('')
   const [activeKinds, setActiveKinds] = useState(() => new Set())
@@ -565,6 +629,8 @@ export default function RevisionDrawer({ revisions, loading, onRestore, onClose 
                       onRequestRestore={() => onRequestRestore(rev.id)}
                       onConfirmRestore={() => onConfirmRestore(rev.id)}
                       onCancelRestore={onCancelRestore}
+                      projectId={projectId}
+                      fileId={currentFileId}
                     />
                   ))}
                 </ul>

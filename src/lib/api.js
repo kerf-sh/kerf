@@ -390,6 +390,11 @@ export const api = {
     request(`/api/projects/${projectId}/files/${fileId}/revisions${limit ? `?limit=${limit}` : ''}`),
   getRevision: (projectId, fileId, revisionId) =>
     request(`/api/projects/${projectId}/files/${fileId}/revisions/${revisionId}`),
+  // Lazy-load the full reconstructed content for a single revision.
+  // The list endpoint intentionally omits content; call this only when the
+  // user explicitly requests it (e.g. "Show full content" in the panel).
+  getRevisionContent: (projectId, fileId, revisionId) =>
+    request(`/api/projects/${projectId}/files/${fileId}/revisions/${revisionId}/content`),
   restoreRevision: (projectId, fileId, revisionId) =>
     request(`/api/projects/${projectId}/files/${fileId}/restore/${revisionId}`, { method: 'POST' }),
 

@@ -9,6 +9,17 @@ Improvements shipped in Phase 4:
   - gzip stored as raw bytea via content_codec='gzip' (new rows only);
     legacy base64-text rows (content_codec='plain') still decode correctly.
 
+Improvements shipped in Phase 5:
+  - Cross-file hash dedup (migration 049_revision_content_ref.sql):
+    if any existing 'base' row in the table has the same content_sha256,
+    the new revision is stored as a 'ref' row pointing to that base via
+    parent_revision_id.  No content payload is stored; reconstruction
+    follows the pointer.
+  - reconstruct_revision: 'ref' rows are followed via parent_revision_id
+    to retrieve the shared base content.
+  - Safe pruning extended: never delete a 'base' row that is pointed to
+    by live 'ref' rows elsewhere in the table.
+
 The 'diff' rows store a unified-diff of the *decoded* parent content vs
 the new content. Reconstruction walks up to the nearest base, then applies
 diffs in order. Chain length is capped at REBASE_THRESHOLD — once that
@@ -152,6 +163,12 @@ async def reconstruct_revision(pool: Any, rev_id: uuid.UUID) -> str:
     """
     Walk the parent_revision_id chain up to the nearest 'base' row, then
     apply each 'diff' in order to reconstruct the content at rev_id.
+
+    Phase 5 addition: 'ref' rows are cross-file content pointers.  When a
+    'ref' row is encountered (either at the start or mid-chain), follow its
+    parent_revision_id to the shared base row and return that content
+    directly — no diff application needed because ref rows always point to
+    base rows, not to diff chains.
     """
     row = await pool.fetchrow(
         "SELECT id, kind, parent_revision_id, content_gz, content, content_codec "
@@ -160,6 +177,21 @@ async def reconstruct_revision(pool: Any, rev_id: uuid.UUID) -> str:
     )
     if not row:
         return ""
+
+    # Fast-path: cross-file content reference.  Follow the pointer to the
+    # shared base row and return its content immediately.
+    if row["kind"] == "ref":
+        ref_pid = row["parent_revision_id"]
+        if ref_pid is None:
+            return ""
+        base_row = await pool.fetchrow(
+            "SELECT id, kind, parent_revision_id, content_gz, content, content_codec "
+            "FROM file_revisions WHERE id = $1",
+            ref_pid,
+        )
+        if not base_row:
+            return ""
+        return _decompress_row(base_row)
 
     chain: list[Any] = [row]
 
@@ -201,22 +233,27 @@ async def write_revision(
     Record a new revision for file_id.
 
     Algorithm:
-      1. SHA-256 dedup: if the latest revision for this file has the same
-         hash, skip the insert and return its id.
-      2. Count diff rows since the last base. If >= REBASE_THRESHOLD, write
+      1. SHA-256 dedup — same-file: if the latest revision for this file
+         has the same hash, skip the insert and return its id.
+      2. SHA-256 dedup — cross-file (Phase 5): if any 'base' row in the
+         table has the same hash, insert a 'ref' row pointing to it.  A
+         'ref' row stores no content payload and is reconstructed by
+         following parent_revision_id to the shared base.
+      3. Count diff rows since the last base. If >= REBASE_THRESHOLD, write
          a new 'base' row; otherwise write a 'diff' row containing a unified
          patch against the latest revision.
-      3. Base rows compress their full content. Diff rows compress the patch.
+      4. Base rows compress their full content. Diff rows compress the patch.
          Both use content_codec='gzip' (raw bytea, no base64 wrapping).
-      4. Prune old revisions: delete the oldest rows beyond cap, but never
+      5. Prune old revisions: delete the oldest rows beyond cap, but never
          delete a row that is referenced as parent_revision_id (would corrupt
-         a diff chain).
+         a diff chain or a cross-file ref).  Also never delete a 'base' row
+         that has live 'ref' references pointing to it from any file.
     """
     fid = uuid.UUID(str(file_id)) if not isinstance(file_id, uuid.UUID) else file_id
     new_hash = _sha256(content)
     preview = content[:200]
 
-    # --- 1. SHA-256 dedup ---
+    # --- 1. SHA-256 dedup — same-file (Phase 4) ---
     latest = await pool.fetchrow(
         "SELECT id, kind, content_sha256, parent_revision_id "
         "FROM file_revisions WHERE file_id = $1 ORDER BY created_at DESC LIMIT 1",
@@ -225,8 +262,36 @@ async def write_revision(
     if latest is not None and latest["content_sha256"] == new_hash:
         return latest["id"]
 
-    # --- 2. Decide base vs diff ---
-    if latest is None or latest["kind"] == "base":
+    new_id = uuid.uuid4()
+
+    # --- 2. Cross-file hash dedup (Phase 5) ---
+    # If any 'base' row elsewhere has the same hash, record a lightweight
+    # 'ref' row instead of duplicating the full content blob.
+    existing_base = await pool.fetchrow(
+        """
+        SELECT id FROM file_revisions
+        WHERE content_sha256 = $1 AND kind = 'base'
+        LIMIT 1
+        """,
+        new_hash,
+    )
+    if existing_base is not None:
+        shared_base_id: uuid.UUID = existing_base["id"]
+        await pool.execute(
+            """
+            INSERT INTO file_revisions
+              (id, file_id, content, content_gz, content_codec, kind,
+               parent_revision_id, source, user_id, content_sha256, content_preview)
+            VALUES ($1, $2, '', NULL, 'gzip', 'ref', $3, $4, $5, $6, $7)
+            """,
+            new_id, fid, shared_base_id, source, user_id, new_hash, preview,
+        )
+        # Pruning below will protect the shared base row from deletion.
+        await _safe_prune(pool, fid, cap)
+        return new_id
+
+    # --- 3. Decide base vs diff ---
+    if latest is None or latest["kind"] in ("base", "ref"):
         diffs_since_base = 0
     else:
         diffs_since_base = await pool.fetchval(
@@ -244,8 +309,6 @@ async def write_revision(
         )
 
     make_base = latest is None or diffs_since_base >= REBASE_THRESHOLD
-
-    new_id = uuid.uuid4()
 
     if make_base:
         payload = _compress(content)
@@ -273,27 +336,38 @@ async def write_revision(
             new_id, fid, payload, latest["id"], source, user_id, new_hash, preview,
         )
 
-    # --- 4. Safe cap-pruning ---
-    # Find the oldest revision id beyond the cap, then delete it only if
-    # nothing younger references it as a parent (i.e. it's not mid-chain).
+    # --- 5. Safe cap-pruning ---
+    await _safe_prune(pool, fid, cap)
+
+    return new_id
+
+
+async def _safe_prune(pool: Any, fid: uuid.UUID, cap: int) -> None:
+    """
+    Delete oldest revisions for fid beyond cap, subject to safety rules:
+
+      - Never delete a row that is referenced as parent_revision_id by any
+        live row (would corrupt a diff chain or a ref pointer).
+      - Never delete a 'base' row that any 'ref' row in the *entire table*
+        points to (cross-file dedup: the base may serve other files).
+    """
     await pool.execute(
         """
         DELETE FROM file_revisions
         WHERE file_id = $1
           AND id NOT IN (
-              -- protect: rows referenced by younger diffs
+              -- protect: rows referenced as parent by any row in any file
               SELECT parent_revision_id FROM file_revisions
-              WHERE file_id = $1 AND parent_revision_id IS NOT NULL
+              WHERE parent_revision_id IS NOT NULL
           )
           AND id NOT IN (
-              -- protect: the N most recent rows
+              -- protect: the N most recent rows for this file
               SELECT id FROM file_revisions
               WHERE file_id = $1
               ORDER BY created_at DESC
               LIMIT $2
           )
         """,
-        fid, cap,
+        fid,
+        cap,
     )
-
-    return new_id

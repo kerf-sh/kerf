@@ -2729,6 +2729,50 @@ async def get_revision(request: Request, payload: dict = Depends(require_auth)):
         return rev
 
 
+@router.get("/projects/{pid}/files/{fid}/revisions/{rid}/content")
+async def get_revision_content(pid: str, fid: str, rid: str, request: Request, payload: dict = Depends(require_auth)):
+    """
+    Return the full reconstructed content for a single revision.
+
+    The list endpoint (GET .../revisions) intentionally omits the content
+    payload to keep the response small.  The frontend uses this endpoint
+    lazily — only when the user clicks "Show full content" in the revisions
+    panel — so we reconstruct the diff chain on demand.
+
+    Response: ``{"id": <rid>, "content": "<full text>"}``
+    """
+    user_id = payload.get("sub")
+
+    pool = await get_pool_required()
+    async with pool.acquire() as conn:
+        ws_id = await project_workspace_id(pid)
+        if not ws_id:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="project not found")
+
+        role = await get_user_workspace_role(conn, ws_id, user_id)
+        if not role:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="project not found")
+
+        # Verify the revision belongs to this file/project before fetching.
+        exists = await conn.fetchval(
+            """
+            SELECT 1 FROM file_revisions fr
+            INNER JOIN files f ON f.id = fr.file_id
+            WHERE fr.id = $1 AND fr.file_id = $2 AND f.project_id = $3
+            """,
+            rid, fid, pid,
+        )
+        if not exists:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="revision not found")
+
+    # Reconstruct outside the connection-borrow (may walk a diff chain via
+    # multiple fetchrow calls; that's fine — pool handles concurrency).
+    from kerf_core.revisions import reconstruct_revision as _reconstruct
+    import uuid as _uuid
+    content = await _reconstruct(pool, _uuid.UUID(str(rid)))
+    return {"id": rid, "content": content}
+
+
 @router.post("/projects/{pid}/files/{fid}/revisions/{rid}/restore")
 async def restore_revision(request: Request, payload: dict = Depends(require_auth)):
     user_id = payload.get("sub")
