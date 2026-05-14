@@ -490,6 +490,38 @@ function opShell(oc, prev, node, _sketches, tracker) {
   return builder.Shape()
 }
 
+/**
+ * cutCylinderAtPoint — shared cylinder-cut primitive.
+ *
+ * Punches a cylinder of radius `dia/2` × `depth*2` (double-length, centred on
+ * the sketch plane) along the -Z axis through `body` at sketch-space position
+ * `(cx, cy)`.  The double-length trick ensures the tool always passes fully
+ * through bodies sitting on either side of the sketch plane.
+ *
+ * @param {object} oc       - OpenCascade.js binding
+ * @param {object} body     - BRep shape to cut into (must be non-null)
+ * @param {number} cx       - hole centre X in sketch-space mm
+ * @param {number} cy       - hole centre Y in sketch-space mm
+ * @param {number} dia      - hole diameter in mm (> 0)
+ * @param {number} depth    - hole depth in mm (> 0)
+ * @param {object} tracker  - OCCT memory tracker (from makeTracker)
+ * @returns {object} the resulting BRep shape after the boolean cut
+ */
+function cutCylinderAtPoint(oc, body, cx, cy, dia, depth, tracker) {
+  const ax1 = track(tracker, new oc.gp_Ax2_3(
+    track(tracker, new oc.gp_Pnt_3(cx, cy, depth)),
+    track(tracker, new oc.gp_Dir_4(0, 0, -1)),
+  ))
+  const cyl = track(tracker, new oc.BRepPrimAPI_MakeCylinder_3(ax1, dia / 2, depth * 2))
+  cyl.Build()
+  if (!cyl.IsDone()) throw new Error('hole: cylinder build failed')
+  const tool = cyl.Shape()
+  const cut = track(tracker, new oc.BRepAlgoAPI_Cut_3(body, tool, new oc.Message_ProgressRange_1()))
+  cut.Build(new oc.Message_ProgressRange_1())
+  if (!cut.IsDone()) throw new Error('hole: boolean cut failed')
+  return cut.Shape()
+}
+
 function opHole(oc, prev, node, _sketches, tracker) {
   // v1 hole: cut a cylinder of `diameter` × `depth` through the previous
   // shape, centered at a point picked from the sketch. Center selection
@@ -522,18 +554,58 @@ function opHole(oc, prev, node, _sketches, tracker) {
       if (pt) { cx = Number(pt.x) || 0; cy = Number(pt.y) || 0 }
     }
   } catch { /* */ }
-  const ax1 = track(tracker, new oc.gp_Ax2_3(
-    track(tracker, new oc.gp_Pnt_3(cx, cy, depth)),
-    track(tracker, new oc.gp_Dir_4(0, 0, -1)),
-  ))
-  const cyl = track(tracker, new oc.BRepPrimAPI_MakeCylinder_3(ax1, dia / 2, depth * 2))
-  cyl.Build()
-  if (!cyl.IsDone()) throw new Error('hole: cylinder build failed')
-  const tool = cyl.Shape()
-  const cut = track(tracker, new oc.BRepAlgoAPI_Cut_3(prev, tool, new oc.Message_ProgressRange_1()))
-  cut.Build(new oc.Message_ProgressRange_1())
-  if (!cut.IsDone()) throw new Error('hole: boolean cut failed')
-  return cut.Shape()
+  return cutCylinderAtPoint(oc, prev, cx, cy, dia, depth, tracker)
+}
+
+/**
+ * parseSketchPoints — extract all non-origin point entities from a sketch.
+ *
+ * Accepts a sketch JSON string or parsed object (or null/undefined).
+ * Non-point entities are silently skipped so users can mix construction
+ * circles or guide lines in the same sketch.
+ *
+ * @param {string|object|null} sketchJson
+ * @returns {Array<{x:number, y:number}>}
+ */
+function parseSketchPoints(sketchJson) {
+  if (!sketchJson) return []
+  try {
+    const obj = typeof sketchJson === 'string' ? JSON.parse(sketchJson) : sketchJson
+    const ent = obj?.entities || []
+    const pts = []
+    for (const e of ent) {
+      if (e?.type !== 'point') continue
+      if (e.id === 'origin') continue
+      pts.push({ x: Number(e.x) || 0, y: Number(e.y) || 0 })
+    }
+    return pts
+  } catch { return [] }
+}
+
+function opHolePattern(oc, prev, node, _sketches, tracker) {
+  // Parametric hole pattern: iterate every non-origin point in the sketch
+  // and call cutCylinderAtPoint for each one.  Non-point sketch entities
+  // (lines, arcs, circles) are silently ignored so the user can include
+  // construction geometry alongside the hole centres.
+  if (!prev) throw new Error('hole_pattern: no target shape')
+  const dia = Number(node.diameter) || 0
+  const depth = Number(node.depth) || 0
+  if (dia <= 0 || depth <= 0) throw new Error('hole_pattern: diameter and depth required')
+
+  const sketchJson = node.sketch_path ? node._sketches?.[node.sketch_path] : null
+  const points = parseSketchPoints(sketchJson)
+  if (points.length === 0) {
+    throw new Error(
+      'hole_pattern: sketch has no point entities — ' +
+      "add point entities with sketch_add_entity {type:'point'}"
+    )
+  }
+
+  let body = prev
+  for (const { x, y } of points) {
+    body = cutCylinderAtPoint(oc, body, x, y, dia, depth, tracker)
+  }
+  return body
 }
 
 // ---------------------------------------------------------------------------
@@ -1219,7 +1291,8 @@ function evaluateTree(oc, tree, sketches) {
         case 'fillet':   next = opFillet(oc, current, node, sketches, tracker); break
         case 'chamfer':  next = opChamfer(oc, current, node, sketches, tracker); break
         case 'shell':    next = opShell(oc, current, node, sketches, tracker); break
-        case 'hole':     next = opHole(oc, current, node, sketches, tracker); break
+        case 'hole':         next = opHole(oc, current, node, sketches, tracker); break
+        case 'hole_pattern': next = opHolePattern(oc, current, node, sketches, tracker); break
         case 'linear_pattern': next = opLinearPattern(oc, current, node, sketches, tracker); break
         case 'polar_pattern':  next = opPolarPattern(oc, current, node, sketches, tracker); break
         case 'mirror_pattern': next = opMirrorPattern(oc, current, node, sketches, tracker); break
@@ -1327,7 +1400,8 @@ async function evaluateToFinalShape(oc, tree, sketches) {
         case 'fillet':   next = opFillet(oc, current, node, sketches, tracker); break
         case 'chamfer':  next = opChamfer(oc, current, node, sketches, tracker); break
         case 'shell':    next = opShell(oc, current, node, sketches, tracker); break
-        case 'hole':     next = opHole(oc, current, node, sketches, tracker); break
+        case 'hole':         next = opHole(oc, current, node, sketches, tracker); break
+        case 'hole_pattern': next = opHolePattern(oc, current, node, sketches, tracker); break
         case 'linear_pattern': next = opLinearPattern(oc, current, node, sketches, tracker); break
         case 'polar_pattern':  next = opPolarPattern(oc, current, node, sketches, tracker); break
         case 'mirror_pattern': next = opMirrorPattern(oc, current, node, sketches, tracker); break

@@ -23,6 +23,7 @@ logger = logging.getLogger(__name__)
 # ── LLM tool modules provided by this plugin ─────────────────────────────────
 _TOOL_MODULES = [
     "kerf_cad_core.feature_cut_from_sketch",
+    "kerf_cad_core.feature_hole_pattern_from_sketch",
 ]
 
 # ── kerf_core contract (built by kerf-core agent in parallel) ─────────────────
@@ -48,11 +49,16 @@ except ImportError:
 # ── OCC availability ──────────────────────────────────────────────────────────
 from kerf_cad_core.occ_helpers import _OCC_AVAILABLE
 
-# Import the feature tool so the @register decorator fires on plugin load.
+# Import the feature tools so the @register decorators fire on plugin load.
 try:
     import kerf_cad_core.feature_boss_with_draft  # noqa: F401 — side-effect import
 except Exception as _import_err:
     logger.warning("kerf-cad-core: could not load feature_boss_with_draft: %s", _import_err)
+
+try:
+    import kerf_cad_core.feature_hole_pattern_from_sketch  # noqa: F401 — side-effect import
+except Exception as _import_err:
+    logger.warning("kerf-cad-core: could not load feature_hole_pattern_from_sketch: %s", _import_err)
 
 _PROVIDES_FULL = [
     "cad.step-io",

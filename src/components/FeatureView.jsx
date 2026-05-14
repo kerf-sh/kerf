@@ -49,7 +49,7 @@ import {
   Disc, Layers, Drill, Sigma, AlertTriangle, Loader2, Play,
   Move, Crosshair, GitBranch, Repeat, FlipHorizontal,
   PencilLine, Pointer, Waves, Layers3, Aperture, Plus,
-  X, ChevronRight,
+  X, ChevronRight, LayoutGrid,
 } from 'lucide-react'
 import FeatureRenderer from './FeatureRenderer.jsx'
 import {
@@ -202,6 +202,18 @@ const FEATURE_KINDS = [
     ],
   },
   {
+    op: 'hole_pattern',
+    label: 'Hole pattern',
+    icon: LayoutGrid,
+    defaults: { target_id: '', sketch_path: '', diameter: 3, depth: 5 },
+    fields: [
+      { key: 'sketch_path', kind: 'sketch_picker', label: 'Points sketch' },
+      { key: 'target_id', kind: 'feature_picker', label: 'Target body' },
+      { key: 'diameter', kind: 'number', label: 'Diameter (mm)', min: 0.001 },
+      { key: 'depth', kind: 'number', label: 'Depth (mm)', min: 0.001 },
+    ],
+  },
+  {
     op: 'linear_pattern',
     label: 'Linear pat.',
     icon: Repeat,
@@ -342,7 +354,7 @@ const FEATURE_KINDS = [
 const KIND_BY_OP = Object.fromEntries(FEATURE_KINDS.map((k) => [k.op, k]))
 
 const FEATURE_CATEGORIES = [
-  { id: 'sketch',   label: 'Sketch-based',  ops: ['pad', 'boss_with_draft', 'pocket', 'cut_from_sketch', 'revolve', 'hole'] },
+  { id: 'sketch',   label: 'Sketch-based',  ops: ['pad', 'boss_with_draft', 'pocket', 'cut_from_sketch', 'revolve', 'hole', 'hole_pattern'] },
   { id: 'modify',   label: 'Modify',        ops: ['fillet', 'chamfer', 'shell', 'push_pull', 'variable_radius_fillet'] },
   { id: 'pattern',  label: 'Pattern',       ops: ['linear_pattern', 'polar_pattern', 'mirror_pattern'] },
   { id: 'surface',  label: 'Surfacing',     ops: ['sweep1', 'sweep2', 'loft', 'network_srf', 'blend_srf'] },
