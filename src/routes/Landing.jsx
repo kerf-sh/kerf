@@ -2,17 +2,24 @@
  * Landing — production marketing page.
  *
  * Sections (top → bottom):
- *   1. Hero — headline, subheadline, two CTAs, three-pane editor
- *      illustration above the fold (>=lg) or below (mobile).
- *   2. Capability tour — seven cards, each with a domain illustration
- *      (Library and Workshop split into their own stories).
- *   3. Chat loop — single-frame view of how an LLM turn shapes geometry.
- *   4. Recently shipped — three cards drawn from ROADMAP.md ✅ rows.
- *   5. Roadmap glimpse — four "🔮 planned" tiles.
- *   6. Local vs hosted — same product, two ways to run it.
- *   7. Pricing teaser — three plan cards linking to /pricing.
- *   8. Made in South Africa — small pride block.
- *   9. Footer (own component).
+ *   1. Hero — single-line headline, two CTAs (Try it free / Read the
+ *      docs), a small "Run it locally" install snippet, and the three-
+ *      pane editor illustration above the fold (>=lg) or below (mobile).
+ *   2. Output strip — tiny pills listing the real engineering artifacts
+ *      Kerf emits (STEP, IFC, gerber, G-code, SPICE, FEM, BOM).
+ *   3. Pipeline divider — sketch → feature → assembly → drawing → CAM.
+ *   4. Capability tour — capability cards, each with a domain
+ *      illustration, grouped into mechanical / electronics / arch /
+ *      engineering / sharing.
+ *   5. Chat loop — single-frame view of how an LLM turn shapes geometry.
+ *   6. Recently shipped — drawn from docs/whats-new.md and the most
+ *      recent ROADMAP ✅ rows. Links into the docs.
+ *   7. Roadmap glimpse — "what's next" tiles + link to roadmap.
+ *   8. Local vs hosted — same product, two ways to run it.
+ *   9. Pricing teaser — three plan cards linking to /pricing.
+ *  10. CTA strip — try / GitHub.
+ *  11. Made in South Africa — small pride block.
+ *  12. Footer (own component).
  *
  * Palette is locked to ink-* / kerf-* / cyan-edge / magenta-edge from
  * src/index.css. No raster assets — everything inline SVG.
@@ -37,9 +44,17 @@ import {
   Check,
   CircuitBoard,
   Workflow,
-  Shapes,
   Share2,
+  Building2,
+  Activity,
+  Wrench,
+  GitBranch,
+  Cpu,
+  Terminal,
+  Radio,
+  Copy,
 } from 'lucide-react'
+import { useState } from 'react'
 import Header from '../components/Header.jsx'
 import Footer from '../components/Footer.jsx'
 import Button from '../components/Button.jsx'
@@ -53,9 +68,17 @@ import {
   LibraryIllustration,
   WorkshopIllustration,
   ChatLoopIllustration,
+  FemIllustration,
+  TopoIllustration,
+  CamIllustration,
+  BimIllustration,
+  GitIllustration,
+  ScriptingIllustration,
+  PipelineIllustration,
 } from '../components/illustrations/index.js'
 
 const GITHUB_URL = 'https://github.com/imranp/kerf'
+const INSTALL_CMD = 'brew install exolution/tap/kerf'
 
 /* -------------------------------------------------------------------------- */
 /* Section: Hero                                                               */
@@ -71,26 +94,26 @@ function Hero() {
           <div>
             <span className="inline-flex items-center gap-2 rounded-full border border-ink-800 bg-ink-900/70 backdrop-blur px-3 py-1 text-xs text-ink-300 font-mono">
               <span className="w-1.5 h-1.5 rounded-full bg-kerf-300 animate-pulse" />
-              open source · now shipping IFC
+              open source · mech · electronics · architecture
             </span>
 
             <h1 className="mt-4 font-display text-[2.6rem] sm:text-5xl lg:text-[4.25rem] font-semibold tracking-[-0.03em] leading-[1.02]">
-              CAD that
+              Chat-driven CAD.
               <br />
               <span className="relative inline-block">
-                <span className="relative z-10 text-kerf-300">talks back</span>
+                <span className="relative z-10 text-kerf-300">Real</span>
                 <span
                   aria-hidden
                   className="absolute left-0 right-0 -bottom-2 h-2.5 bg-kerf-300/15 -skew-x-12 rounded-sm"
                 />
-              </span>
-              .
+              </span>{' '}
+              engineering output.
             </h1>
 
             <p className="mt-4 text-lg text-ink-300 leading-relaxed max-w-xl">
-              Kerf is a chat-native CAD workspace. Write JSCAD, draft B-rep
-              features, sketch with constraints, lay out PCBs, and ship real
-              engineering drawings — with an LLM editing the source for you.{' '}
+              Sketch with constraints, draft B-rep features, lay out PCBs,
+              compile IFC buildings, run FEM, and post G-code — all from
+              chat, all in one workspace, all backed by real open kernels.{' '}
               <Link
                 to="/docs/whats-new"
                 className="text-kerf-300 underline underline-offset-2 hover:text-kerf-200 transition-colors"
@@ -104,12 +127,14 @@ function Hero() {
                 Try it free
                 <ArrowRight size={16} />
               </Button>
-              <Button as={Link} to="/docs/quickstart/python-sdk" variant="outline" size="lg">
-                Python SDK docs
+              <Button as={Link} to="/docs/getting-started" variant="outline" size="lg">
+                Read the docs
               </Button>
             </div>
 
-            <ul className="mt-6 flex flex-wrap items-center gap-x-6 gap-y-2 text-xs text-ink-400 font-mono">
+            <RunLocallyChip />
+
+            <ul className="mt-5 flex flex-wrap items-center gap-x-6 gap-y-2 text-xs text-ink-400 font-mono">
               <li className="flex items-center gap-1.5">
                 <span className="w-1 h-1 rounded-full bg-ink-500" />
                 MIT licensed
@@ -133,12 +158,60 @@ function Hero() {
               aria-hidden
               className="absolute -inset-6 -z-10 rounded-[2rem] bg-kerf-300/[0.05] blur-3xl"
             />
+            {/* small floating chips around the hero illustration to read at a glance */}
+            <FloatingChip className="hidden lg:flex absolute -top-3 -left-4" icon={Sparkles} label="LLM tool surface" />
+            <FloatingChip className="hidden lg:flex absolute -bottom-3 -right-4" icon={GitBranch} label="GitHub sync" />
           </div>
         </div>
 
         <LogoStrip />
       </div>
     </section>
+  )
+}
+
+function FloatingChip({ icon: Icon, label, className = '' }) {
+  return (
+    <div
+      className={
+        'items-center gap-1.5 rounded-full border border-ink-700 bg-ink-900/85 backdrop-blur px-2.5 py-1 text-[10px] font-mono text-ink-200 shadow-lg shadow-black/40 ' +
+        className
+      }
+    >
+      <Icon size={11} className="text-kerf-300" />
+      {label}
+    </div>
+  )
+}
+
+function RunLocallyChip() {
+  const [copied, setCopied] = useState(false)
+  const copy = () => {
+    if (typeof navigator !== 'undefined' && navigator.clipboard) {
+      navigator.clipboard.writeText(INSTALL_CMD).catch(() => {})
+    }
+    setCopied(true)
+    setTimeout(() => setCopied(false), 1400)
+  }
+  return (
+    <div className="mt-4 inline-flex items-center gap-2 rounded-lg border border-ink-800 bg-ink-900/60 px-3 py-2 font-mono text-xs text-ink-300 max-w-full">
+      <Terminal size={12} className="text-kerf-300 shrink-0" />
+      <span className="truncate">
+        <span className="text-ink-500">$</span>{' '}
+        <span className="text-ink-100">{INSTALL_CMD}</span>
+      </span>
+      <button
+        type="button"
+        onClick={copy}
+        aria-label="Copy install command"
+        className="ml-1 inline-flex items-center justify-center w-6 h-6 rounded text-ink-400 hover:text-kerf-300 hover:bg-ink-800 transition-colors shrink-0"
+      >
+        {copied ? <Check size={12} className="text-kerf-300" /> : <Copy size={12} />}
+      </button>
+      <span className="hidden sm:inline text-[10px] text-ink-500 ml-1">
+        or `curl kerf.app/install.sh | sh`
+      </span>
+    </div>
   )
 }
 
@@ -171,7 +244,18 @@ function HeroBackdrop() {
 function LogoStrip() {
   // The "trusted by" strip is honest: list the technologies under the
   // hood, not vapor logos. Pure typographic, low-key.
-  const items = ['JSCAD', 'OpenCascade', 'tscircuit', 'planegcs', 'TechDraw', 'Three.js', 'KiCad', 'OpenSCAD']
+  const items = [
+    'JSCAD',
+    'OpenCascade',
+    'tscircuit',
+    'planegcs',
+    'FEniCSx',
+    'OpenCAMlib',
+    'IfcOpenShell',
+    'FreeRouting',
+    'TechDraw',
+    'KiCad',
+  ]
   return (
     <div className="mt-10 lg:mt-12 flex flex-col items-center gap-3">
       <p className="text-[10px] font-mono uppercase tracking-[0.2em] text-ink-500">
@@ -192,51 +276,204 @@ function LogoStrip() {
 }
 
 /* -------------------------------------------------------------------------- */
+/* Section: Output formats strip                                               */
+/* -------------------------------------------------------------------------- */
+
+const OUTPUT_FORMATS = [
+  { label: 'STEP', sub: 'OCCT B-rep' },
+  { label: 'STL · 3MF', sub: 'mesh export' },
+  { label: 'IFC4', sub: 'BIM' },
+  { label: 'gerber', sub: 'PCB fab' },
+  { label: 'G-code', sub: 'CNC posts' },
+  { label: 'SPICE', sub: 'circuit sim' },
+  { label: 'FEM mesh', sub: 'CalculiX · gmsh' },
+  { label: 'PDF · DXF', sub: 'drawings' },
+  { label: 'BOM CSV', sub: 'with prices' },
+  { label: 'Touchstone', sub: 'S-parameters' },
+]
+
+function OutputStrip() {
+  return (
+    <section className="relative border-t border-ink-900 bg-ink-950/60">
+      <div className="mx-auto max-w-7xl px-6 py-8 lg:py-10">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+          <p className="text-[10px] font-mono uppercase tracking-[0.2em] text-ink-500">
+            Real artefacts out the other side
+          </p>
+          <p className="text-[10px] font-mono uppercase tracking-[0.2em] text-ink-500/70">
+            no proprietary lock-in
+          </p>
+        </div>
+        <ul className="flex flex-wrap gap-2">
+          {OUTPUT_FORMATS.map((f) => (
+            <li
+              key={f.label}
+              className="inline-flex items-center gap-2 rounded-md border border-ink-800 bg-ink-900/50 px-2.5 py-1"
+            >
+              <span className="font-mono text-xs text-kerf-300">{f.label}</span>
+              <span className="font-mono text-[10px] text-ink-500">{f.sub}</span>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </section>
+  )
+}
+
+/* -------------------------------------------------------------------------- */
+/* Section: Pipeline divider                                                   */
+/* -------------------------------------------------------------------------- */
+
+function PipelineDivider() {
+  return (
+    <section className="relative border-t border-ink-900">
+      <div className="mx-auto max-w-7xl px-6 py-6 lg:py-8">
+        <PipelineIllustration className="block w-full h-auto" />
+      </div>
+    </section>
+  )
+}
+
+/* -------------------------------------------------------------------------- */
 /* Section: Capability tour                                                    */
 /* -------------------------------------------------------------------------- */
 
-const CAPABILITIES = [
+const CAPABILITY_GROUPS = [
   {
-    icon: Code2,
-    title: 'JSCAD code authoring',
-    body: 'Plain JavaScript with @jscad/modeling. Worker-based eval, IndexedDB mesh cache, file-revisions undo for every keystroke.',
-    Illustration: JscadIllustration,
+    id: 'mech',
+    eyebrow: 'Mechanical · code-first CAD',
+    title: 'JSCAD, OCCT B-rep, and a real sketcher.',
+    body: 'Code-first parametric geometry, real solid-modeling parity with FreeCAD/SolidWorks, and a constraints-solved 2D sketcher that drives every feature.',
+    cards: [
+      {
+        icon: Code2,
+        title: 'JSCAD code authoring',
+        body: 'Plain JavaScript with @jscad/modeling. Worker-based eval, IndexedDB mesh cache, file-revisions undo for every keystroke.',
+        Illustration: JscadIllustration,
+      },
+      {
+        icon: Layers,
+        title: 'OCCT B-rep features',
+        body: 'Pad, Pocket, Revolve, Fillet, Chamfer, Shell, Hole, Draft, Sweep, Loft, plus NURBS surfacing (sweep2 / network / blend) and direct face/edge gumballs.',
+        Illustration: FeatureTreeIllustration,
+      },
+      {
+        icon: PenTool,
+        title: '2D parametric sketcher',
+        body: 'planegcs solver. 12+ constraints. Trim, extend, ellipse, B-spline, fillet, mirror, linear/polar patterns. Arc/circle edge projection. Multi-loop holes.',
+        Illustration: SketcherIllustration,
+      },
+      {
+        icon: FileText,
+        title: 'TechDraw 2D drawings',
+        body: 'Multi-sheet drawings. Linear, aligned, radius, diameter, angular, baseline, chain, ordinate dims. GD&T frames per Y14.5. Hatching, leaders, balloons, centerlines.',
+        Illustration: DrawingIllustration,
+      },
+    ],
   },
   {
-    icon: Layers,
-    title: 'OCCT B-rep features',
-    body: 'Pad, Pocket, Revolve, Fillet, Chamfer, Shell, Hole, Draft. A timeline you can scrub, with real solid-modeling parity.',
-    Illustration: FeatureTreeIllustration,
+    id: 'cae',
+    eyebrow: 'Engineering · CAE + CAM',
+    title: 'FEM, topology, tolerance, CAM — one chain.',
+    body: 'Push a part through linear-static and modal FEM, density-field topology optimisation, worst-case / RSS / Monte-Carlo tolerance, and emit posted G-code. All open-source solvers under the hood.',
+    cards: [
+      {
+        icon: Activity,
+        title: 'FEM analysis',
+        body: 'FEniCSx primary (UFL, multiphysics-ready) + CalculiX second-solver. Linear static, modal, multi-body bonded contact. Deformed-shape 3D overlay with stress colouring.',
+        Illustration: FemIllustration,
+      },
+      {
+        icon: Sparkles,
+        title: 'Topology optimisation',
+        body: 'Density-field SIMP via FEniCSx. Multi-body conformal meshing. Marching cubes + NURBS surface fitting → real STEP output you can edit downstream.',
+        Illustration: TopoIllustration,
+      },
+      {
+        icon: Wrench,
+        title: 'CAM toolpaths',
+        body: 'OpenCAMlib + pythonOCC. 2.5D face/contour/pocket/drill/profile, 3D parallel + waterline, lathe X-Z. LinuxCNC / GRBL / Mach3 / Fanuc post-processors.',
+        Illustration: CamIllustration,
+      },
+    ],
   },
   {
-    icon: PenTool,
-    title: '2D parametric sketcher',
-    body: 'planegcs solver. Parallel, perpendicular, equal, tangent, distance, angle. Drag-to-solve with live DOF feedback.',
-    Illustration: SketcherIllustration,
+    id: 'electronics',
+    eyebrow: 'Electronics · schematic to gerber',
+    title: 'PCB design with autorouting and real simulation.',
+    body: 'tscircuit-powered TSX schematics, full layer stack and manual routing, FreeRouting autoroute, SPICE simulation via ngspice, and RF analysis via scikit-rf — all cross-linked to mechanical assemblies.',
+    cards: [
+      {
+        icon: CircuitBoard,
+        title: 'Schematic + PCB',
+        body: 'TSX → CircuitJSON. Manual trace routing, copper pours, layer stack, DRC + ERC, net classes, length tuning, diff-pair match, via stitching, push-pull router.',
+        Illustration: CircuitIllustration,
+      },
+      {
+        icon: Cpu,
+        title: 'SPICE + autoroute',
+        body: 'Server-side ngspice via /run-spice. V/I probes on the schematic. FreeRouting JAR for autoroute, KiCad import for both schematics and footprint libraries.',
+        Illustration: ScriptingIllustration,
+      },
+      {
+        icon: Radio,
+        title: 'RF analysis',
+        body: 'scikit-rf S-parameters: VSWR, return / insertion loss, Rollett K, max available gain. Smith chart SVG. Touchstone import. openEMS field solver on the way.',
+        Illustration: null,
+      },
+    ],
   },
   {
-    icon: FileText,
-    title: 'TechDraw 2D drawings',
-    body: 'Multi-sheet drawings. Linear, aligned, radius, diameter, angular, baseline, chain, ordinate dims. GD&T frames per Y14.5.',
-    Illustration: DrawingIllustration,
+    id: 'arch',
+    eyebrow: 'Architecture · BIM that compiles',
+    title: '.bim text-DSL → IFC4 buildings.',
+    body: 'A code-first BIM authoring loop. Walls, slabs, openings, spaces, levels, families, schedules, views, sheets, MEP routing, curtain walls — all compiled via IfcOpenShell and rendered with web-ifc in the browser.',
+    cards: [
+      {
+        icon: Building2,
+        title: '.bim → IFC4 compiler',
+        body: 'Text or JSON DSL describing walls / slabs / openings / spaces / levels / sites compiles to IFC4 via IfcOpenShell. Rendered in Three.js via web-ifc.',
+        Illustration: BimIllustration,
+      },
+      {
+        icon: Layers,
+        title: 'Revit-parity authoring',
+        body: 'Families (.family.json), schedules (.schedule.json), views (.view.json), sheets (.sheet.json). Categories + hosted refs, type vs instance, phasing, view filters.',
+        Illustration: null,
+      },
+      {
+        icon: Workflow,
+        title: 'Stairs · railings · MEP',
+        body: 'Stairs, railings, curtain walls, and MEP routing for ducts / pipes / conduits. Sheet revisions tracked alongside cloud git history.',
+        Illustration: null,
+      },
+    ],
   },
   {
-    icon: CircuitBoard,
-    title: 'Electronics via tscircuit',
-    body: 'TSX → CircuitJSON. Schematic and PCB views. 3D board preview. Cross-link parts to mechanical assemblies.',
-    Illustration: CircuitIllustration,
-  },
-  {
-    icon: Boxes,
-    title: 'Library',
-    body: "Drop-in parts. Yours, the community's, curated. Every project has its own parts; verified-publisher accounts (Adafruit, McMaster-style) seed common components. Drop them into assemblies, drive BOMs, sync 3D models for the schematic.",
-    Illustration: LibraryIllustration,
-  },
-  {
-    icon: Share2,
-    title: 'Workshop',
-    body: 'Publish a project; fork what others built. One click publishes a project to the Workshop, where anyone can browse, like, or fork it as a starting point for their own work. Same MIT-licensed code that runs locally.',
-    Illustration: WorkshopIllustration,
+    id: 'sharing',
+    eyebrow: 'Library · Workshop · Cloud',
+    title: 'Open sharing, curated parts, real git.',
+    body: 'A community Workshop for forking projects, a curated Library of parts with live distributor pricing (DigiKey / Mouser / LCSC), and a cloud-tier real-git backend with GitHub sync.',
+    cards: [
+      {
+        icon: Boxes,
+        title: 'Library',
+        body: 'Drop-in parts. Yours, the community’s, curated. Verified-publisher accounts (Adafruit, McMaster-style) seed common components. Live pricing via DigiKey / Mouser / LCSC.',
+        Illustration: LibraryIllustration,
+      },
+      {
+        icon: Share2,
+        title: 'Workshop',
+        body: 'Publish a project; fork what others built. One click publishes to the Workshop, where anyone can browse, like, or fork it as a starting point. Same MIT code that runs locally.',
+        Illustration: WorkshopIllustration,
+      },
+      {
+        icon: GitBranch,
+        title: 'Cloud git + GitHub',
+        body: 'Real go-git / pygit2 backend, multi-lane lattice graph, GitHub OAuth, AES-GCM-encrypted tokens, S3 storer for stateless serverless deploys, .step-ref pointers for big binaries.',
+        Illustration: GitIllustration,
+      },
+    ],
   },
 ]
 
@@ -244,7 +481,7 @@ function CapabilityTour() {
   return (
     <section className="relative border-t border-ink-900">
       <div className="mx-auto max-w-7xl px-6 py-12 lg:py-14">
-        <div className="max-w-2xl mb-8">
+        <div className="max-w-2xl mb-10">
           <p className="font-mono text-xs uppercase tracking-[0.2em] text-kerf-300">
             What you can build
           </p>
@@ -255,13 +492,39 @@ function CapabilityTour() {
           </h2>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {CAPABILITIES.map((c) => (
-            <CapabilityCard key={c.title} {...c} />
+        <div className="flex flex-col gap-12 lg:gap-14">
+          {CAPABILITY_GROUPS.map((g) => (
+            <CapabilityGroup key={g.id} group={g} />
           ))}
         </div>
       </div>
     </section>
+  )
+}
+
+function CapabilityGroup({ group }) {
+  return (
+    <div>
+      <div className="mb-5 max-w-3xl">
+        <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-kerf-300">
+          {group.eyebrow}
+        </p>
+        <h3 className="mt-1.5 font-display text-2xl sm:text-3xl font-semibold tracking-[-0.02em] text-ink-100">
+          {group.title}
+        </h3>
+        <p className="mt-2 text-sm text-ink-300 leading-relaxed">{group.body}</p>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        {group.cards.map((c) =>
+          c.Illustration ? (
+            <CapabilityCard key={c.title} {...c} />
+          ) : (
+            <CapabilityTextCard key={c.title} {...c} />
+          ),
+        )}
+      </div>
+    </div>
   )
 }
 
@@ -286,6 +549,24 @@ function CapabilityCard({ icon: Icon, title, body, Illustration }) {
   )
 }
 
+function CapabilityTextCard({ icon: Icon, title, body }) {
+  // A leaner card that drops the illustration slot — used to round out
+  // sub-groups where we don't have (or don't need) a bespoke SVG.
+  return (
+    <article className="group relative rounded-2xl border border-ink-800 bg-ink-900/40 p-5 transition-colors hover:border-ink-700 hover:bg-ink-900/60">
+      <div className="flex items-center gap-2.5 mb-2">
+        <span className="grid place-items-center w-7 h-7 rounded-md bg-kerf-300/10 border border-kerf-300/30 text-kerf-300">
+          <Icon size={13} />
+        </span>
+        <h3 className="font-display text-base font-semibold tracking-tight text-ink-100">
+          {title}
+        </h3>
+      </div>
+      <p className="text-sm text-ink-300 leading-relaxed">{body}</p>
+    </article>
+  )
+}
+
 /* -------------------------------------------------------------------------- */
 /* Section: Chat loop                                                          */
 /* -------------------------------------------------------------------------- */
@@ -304,7 +585,15 @@ function ChatLoop() {
           <p className="mt-3 text-ink-300 leading-relaxed max-w-xl">
             Every chat turn is a small, deliberate program. The model picks
             tools from a small fixed surface — file ops, validation,
-            doc-search — edits the source, then re-renders.
+            doc-search — edits the source, then re-renders. Or skip chat
+            and drive the same surface from Python with{' '}
+            <Link
+              to="/docs/llm-tools"
+              className="text-kerf-300 underline underline-offset-2 hover:text-kerf-200 transition-colors"
+            >
+              kerf-sdk
+            </Link>
+            .
           </p>
         </div>
 
@@ -326,9 +615,9 @@ function ChatLoop() {
             body="search_kerf_docs reads /docs/llm/*.md before editing"
           />
           <FactCard
-            icon={Shapes}
-            title="Every domain, same loop"
-            body="JSCAD, B-rep, sketches, drawings, circuits, BOM"
+            icon={Terminal}
+            title="Scriptable too"
+            body="kerf-sdk on PyPI · JSON-RPC over /v1/rpc · bring your own LLM"
           />
         </div>
       </div>
@@ -354,21 +643,44 @@ function FactCard({ icon: Icon, title, body }) {
 /* Section: Recently shipped                                                   */
 /* -------------------------------------------------------------------------- */
 
+// Pulled from docs/whats-new.md (May 2026 wave) — six highlights that
+// span domains. Keep this list short; longer ones get unscannable.
 const SHIPPED = [
   {
-    title: 'Architecture: IFC + BIM',
-    body: 'New .bim text-DSL compiles to IFC4 via IfcOpenShell. Walls, slabs, spaces, levels, and site — viewed in Three.js via web-ifc.',
-    docHref: '/docs/bim-format',
-  },
-  {
-    title: 'Sketcher v2 — complete',
-    body: '6 new constraints, arc/circle edge projection, multi-loop holes, 3D backdrop. All tools wired and vitest-covered.',
+    title: 'Sketcher v2 + Carbon-copy',
+    domain: 'Mechanical',
+    body: '6 new constraints, trim/extend/ellipse/B-spline/fillet/mirror, linear + polar patterns, arc/circle edge projection, carbon-copy sketches with validation.',
     docHref: '/docs/sketching',
   },
   {
-    title: '55-material database',
-    body: 'Curated engineering materials covering metals, polymers, ceramics, and composites. Used by FEM, tolerance, Part defaults, and drawings.',
-    docHref: '/docs/whats-new',
+    title: 'PartDesign feature parity',
+    domain: 'Mechanical',
+    body: 'Helix (variable-pitch), tapered Draft, Mirror, Multi-Transform, Rib. Twelve new curve ops: offset, extend, blend, trim, intersect, project, section, split…',
+    docHref: '/docs/feature-format',
+  },
+  {
+    title: 'Rhino-parity surfacing',
+    domain: 'Mechanical',
+    body: 'SubD (Catmull-Clark), full 3DM import/export, mesh tools (remesh / decimate / smooth / repair), Cycles render output, parametric .graph (Grasshopper-equivalent).',
+    docHref: '/docs/feature-format',
+  },
+  {
+    title: 'Revit-parity authoring',
+    domain: 'Architecture',
+    body: 'Families, schedules, views, sheets, categories, phasing, view filters, stairs, railings, MEP, curtain walls. Full BIM toolchain on top of IFC4.',
+    docHref: '/docs/bim-format',
+  },
+  {
+    title: 'KiCad-parity PCB editor',
+    domain: 'Electronics',
+    body: 'Manual routing, copper pours, layer stack, DRC + ERC, net classes, length tuning, diff-pair match, via stitching, push-pull router, hierarchical schematics, buses.',
+    docHref: '/docs/circuit-format',
+  },
+  {
+    title: 'Cloud git → S3 + LFS',
+    domain: 'Cloud',
+    body: 'pygit2 S3 storer for stateless serverless deploys. `.step-ref` pointer kind for large binaries — git history stays lean, files served via CDN.',
+    docHref: '/docs/architecture',
   },
 ]
 
@@ -384,17 +696,37 @@ function RecentlyShipped() {
             <h2 className="mt-2 font-display text-3xl sm:text-4xl font-semibold tracking-[-0.02em]">
               Moving fast, in public.
             </h2>
+            <p className="mt-3 text-ink-300 leading-relaxed">
+              Six highlights from the most recent sprint. The full list
+              lives in{' '}
+              <Link
+                to="/docs/whats-new"
+                className="text-kerf-300 underline underline-offset-2 hover:text-kerf-200"
+              >
+                What&apos;s New
+              </Link>
+              , and the long view in{' '}
+              <a
+                href={`${GITHUB_URL}/blob/main/ROADMAP.md`}
+                target="_blank"
+                rel="noreferrer"
+                className="text-kerf-300 underline underline-offset-2 hover:text-kerf-200"
+              >
+                ROADMAP.md
+              </a>
+              .
+            </p>
           </div>
           <Link
-            to="/docs/roadmap"
+            to="/docs/whats-new"
             className="hidden sm:inline-flex items-center gap-1.5 text-sm text-ink-400 hover:text-ink-100 transition-colors"
           >
-            full roadmap
+            all updates
             <ArrowRight size={14} />
           </Link>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {SHIPPED.map((s) => (
             <Link
               key={s.title}
@@ -406,15 +738,18 @@ function RecentlyShipped() {
                   <Check size={10} strokeWidth={3} />
                   shipped
                 </span>
-                <ArrowRight
-                  size={14}
-                  className="text-ink-500 group-hover:text-kerf-300 group-hover:translate-x-0.5 transition-all"
-                />
+                <span className="inline-flex items-center rounded-full bg-ink-800/80 border border-ink-700 px-2 py-0.5 text-[10px] font-mono uppercase tracking-widest text-ink-400">
+                  {s.domain}
+                </span>
               </div>
-              <h3 className="font-display text-lg font-semibold tracking-tight text-ink-100 mb-1.5">
+              <h3 className="font-display text-lg font-semibold tracking-tight text-ink-100 mb-1.5 group-hover:text-kerf-200 transition-colors">
                 {s.title}
               </h3>
               <p className="text-sm text-ink-300 leading-relaxed">{s.body}</p>
+              <ArrowRight
+                size={14}
+                className="absolute right-5 bottom-5 text-ink-500 group-hover:text-kerf-300 group-hover:translate-x-0.5 transition-all"
+              />
             </Link>
           ))}
         </div>
@@ -428,23 +763,46 @@ function RecentlyShipped() {
 /* -------------------------------------------------------------------------- */
 
 const ROADMAP = [
-  { title: 'NURBS surfacing', body: 'sweep2 · networkSrf · blendSrf for jewelry & freeform.' },
-  { title: 'SPICE simulation', body: 'Python scripting via kerf-sdk. Probe pins, get plots.' },
-  { title: 'FEM analysis', body: 'CalculiX + Gmsh. Linear static, modal, bonded contact.' },
-  { title: 'Direct face manipulation', body: 'Gumball on faces, parametric timeline intact.' },
+  {
+    title: 'Sketch → JSCAD',
+    body: 'AI-generated 3D from a constrained 2D sketch — the mesh-side analog of .feature.',
+  },
+  {
+    title: 'FreeCAD sketch shortcuts',
+    body: 'Boss-with-draft, cut-from-sketch, hole-pattern-from-sketch, loft symmetric, sweep tangent-locked.',
+  },
+  {
+    title: 'FreeCAD ingest (Tier 1–2)',
+    body: 'Part + PartDesign → .feature + .sketch. Sketcher constraints + Spreadsheet → .equations.',
+  },
+  {
+    title: 'openEMS RF field solver',
+    body: 'Phase-2 RF: full 3D EM field simulation alongside scikit-rf S-parameters.',
+  },
 ]
 
 function RoadmapGlimpse() {
   return (
     <section className="relative border-t border-ink-900 bg-ink-950/60">
       <div className="mx-auto max-w-7xl px-6 py-12 lg:py-14">
-        <div className="max-w-2xl mb-6">
-          <p className="font-mono text-xs uppercase tracking-[0.2em] text-kerf-300">
-            On the way
-          </p>
-          <h2 className="mt-2 font-display text-3xl sm:text-4xl font-semibold tracking-[-0.02em]">
-            What we're building next.
-          </h2>
+        <div className="flex items-end justify-between mb-6 gap-6">
+          <div className="max-w-2xl">
+            <p className="font-mono text-xs uppercase tracking-[0.2em] text-kerf-300">
+              On the way
+            </p>
+            <h2 className="mt-2 font-display text-3xl sm:text-4xl font-semibold tracking-[-0.02em]">
+              What we&apos;re building next.
+            </h2>
+          </div>
+          <a
+            href={`${GITHUB_URL}/blob/main/ROADMAP.md`}
+            target="_blank"
+            rel="noreferrer"
+            className="hidden sm:inline-flex items-center gap-1.5 text-sm text-ink-400 hover:text-ink-100 transition-colors"
+          >
+            full roadmap
+            <ArrowRight size={14} />
+          </a>
         </div>
 
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
@@ -454,7 +812,7 @@ function RoadmapGlimpse() {
               className="rounded-xl border border-dashed border-ink-700 bg-ink-900/30 p-4 hover:border-kerf-300/30 hover:bg-ink-900/50 transition-colors"
             >
               <span className="inline-flex items-center gap-1 rounded-full bg-ink-900 border border-ink-800 px-2 py-0.5 text-[10px] font-mono uppercase tracking-widest text-ink-400 mb-2">
-                <span aria-hidden>🔮</span>
+                <span aria-hidden>○</span>
                 planned
               </span>
               <h3 className="font-display text-sm font-semibold tracking-tight text-ink-100 mb-1">
@@ -474,11 +832,12 @@ function RoadmapGlimpse() {
 /* -------------------------------------------------------------------------- */
 
 const SHARED_FEATURES = [
-  'Full editor: JSCAD, B-rep, sketcher, drawings, electronics',
+  'Full editor: JSCAD, B-rep, sketcher, drawings, electronics, BIM',
+  'FEM · topology · tolerance · CAM',
   'Library, BOM, Workshop sharing',
   'File revisions = unlimited undo',
   'Workspaces with member roles',
-  'Multi-domain via free-form tags',
+  'Free-form tags for multi-domain projects',
 ]
 
 function LocalVsHosted() {
@@ -495,7 +854,7 @@ function LocalVsHosted() {
           <p className="mt-3 text-ink-300 leading-relaxed">
             Every line of code is open source — including billing,
             Workshop, and git sync. We host the binary as a service so you
-            don't have to operate Postgres yourself.
+            don&apos;t have to operate Postgres yourself.
           </p>
         </div>
 
@@ -505,7 +864,7 @@ function LocalVsHosted() {
             label="Local install"
             sub="MIT · self-host"
             ctaText="Install locally"
-            ctaTo="/docs/install"
+            ctaTo="/docs/getting-started"
             extra="Bring your own LLM API key"
             features={SHARED_FEATURES}
           />
@@ -624,7 +983,7 @@ function PricingTeaser() {
             price="$0"
             note="MIT · forever"
             bullets={['Single Go binary', 'Bring your own LLM key', 'Bring your own Postgres']}
-            ctaTo="/docs/install"
+            ctaTo="/docs/getting-started"
             ctaText="Install"
           />
           <TeaserPlan
@@ -647,7 +1006,7 @@ function PricingTeaser() {
         </div>
 
         <p className="mt-4 text-center text-xs text-ink-500 font-mono">
-          USD displayed · ZAR settled via Paystack · 20% margin over provider list price
+          USD displayed · ZAR settled · 20% margin over provider list price
         </p>
       </div>
     </section>
@@ -718,7 +1077,7 @@ function MadeInSA() {
               className="text-4xl leading-none shrink-0"
               aria-hidden
             >
-              🇿🇦
+              ZA
             </span>
             <div>
               <p className="font-display text-lg font-semibold tracking-tight text-ink-100">
@@ -781,6 +1140,9 @@ function CTAStrip() {
                 Try it free
                 <ArrowRight size={16} />
               </Button>
+              <Button as={Link} to="/library" variant="outline" size="lg">
+                Browse the library
+              </Button>
               <Button as="a" href={GITHUB_URL} target="_blank" rel="noreferrer" variant="outline" size="lg">
                 <Github size={16} />
                 GitHub
@@ -802,6 +1164,8 @@ export default function Landing() {
     <div className="min-h-screen bg-ink-950 text-ink-100">
       <Header />
       <Hero />
+      <OutputStrip />
+      <PipelineDivider />
       <CapabilityTour />
       <ChatLoop />
       <RecentlyShipped />
