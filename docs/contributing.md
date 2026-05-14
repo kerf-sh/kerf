@@ -6,7 +6,7 @@ project's split between OSS and cloud plugins.
 ## Quickstart
 
 ```sh
-git clone https://github.com/exolution/kerf
+git clone https://github.com/kerf-sh/kerf
 cd kerf
 
 # Postgres on the default port

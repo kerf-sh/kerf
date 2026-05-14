@@ -55,8 +55,8 @@ A single workspace for mechanical, electronics, drawings, and library parts — 
 ### Local
 
 ```sh
-# Homebrew (macOS / Linux)
-brew install exolution/tap/kerf
+# Homebrew (coming soon)
+# brew install kerf-sh/tap/kerf
 
 # Or one-shot installer
 curl -fsSL https://kerf.app/install.sh | sh
@@ -72,7 +72,7 @@ In local mode the server auto-creates a single user and skips the login screen e
 ### From source
 
 ```sh
-git clone https://github.com/imranp/kerf
+git clone https://github.com/kerf-sh/kerf
 cd kerf
 npm install
 npm run dev          # vite :5173 + uvicorn :8080
@@ -241,6 +241,6 @@ Built in Durban 🇿🇦 by a small team. Engineered for engineers everywhere.
 - [docs/architecture.md](./docs/architecture.md) — full API + data model
 - [backend/README.md](./backend/README.md) — backend developer guide
 - [docs/cloud-operator.md](./docs/cloud-operator.md) — hosted-tier build/deploy notes
-- [Issues](https://github.com/imranp/kerf/issues) · [Discussions](https://github.com/imranp/kerf/discussions)
+- [Issues](https://github.com/kerf-sh/kerf/issues) · [Discussions](https://github.com/kerf-sh/kerf/discussions)
 </content>
 </invoke>

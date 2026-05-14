@@ -5,7 +5,7 @@ Kerf is a browser-based CAD platform where an AI agent loop sits between your in
 ## Quick start
 
 ```sh
-git clone https://github.com/exolution/kerf
+git clone https://github.com/kerf-sh/kerf
 cd kerf
 
 # pick the persona you want — see docs/capabilities.md for the full menu
