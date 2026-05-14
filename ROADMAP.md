@@ -1618,10 +1618,20 @@ After upload finalize: insert a `step_tessellation_jobs` row,
 background worker calls the pyworker, produces `.glb`, frontend
 prefers the glb to re-parsing the STEP.
 
-### Phase 4: revision DB efficiency — 📋 next
-- Diff-based revisions (Myers diff): base every N rows + diffs in between.
-- Compress `content` column (gzip in app, `bytea` on disk).
-- Combined: ~50× shrink for typical edit patterns.
+### Phase 4: revision DB efficiency — ✅ shipped
+- Diff-based revisions: base every N rows + real unified diffs in between (shipped).
+- Gzip base and diff payloads as raw `bytea` via `content_codec='gzip'` column (migration `048_revision_compaction.sql`).
+- SHA-256 dedup: identical consecutive saves are a no-op at the write layer.
+- Safe cap-pruning: never deletes a row that is a `parent_revision_id` for a live diff (chain-integrity protected).
+- Canonical `kerf_core.revisions` module replaces 5 copy-pasted `record_revision_for_file` implementations.
+- Bug fix: `diff` rows previously stored full gzip-compressed content (not actual diffs); now store unified-diff patches.
+- Bug fix: broken `gunzip_bytes` (tried to unpack `r.read()` as tuple) replaced by `_decompress_row` with legacy base64-text fallback.
+- 23 hermetic tests in `packages/kerf-core/tests/test_revisions_compaction.py`.
+
+**Phase 5 / future:**
+- Background compaction worker: lazily re-compact old chains (worker/cron style).
+- Hash-based cross-file dedup: share base content between files with identical sha256 (content-addressable blobs).
+- Frontend lazy-preview: revisions panel fetches `content_preview` only; full content loaded on restore (deferred — requires API contract change).
 
 ---
 

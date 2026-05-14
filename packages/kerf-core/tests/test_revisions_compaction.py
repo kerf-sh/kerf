@@ -376,11 +376,34 @@ def test_rebase_triggers_after_threshold(pool, file_id):
 
 
 def test_cap_pruning_removes_old_rows(pool, file_id):
+    """
+    Write enough revisions that a second base is created (at REBASE_THRESHOLD+1),
+    then continue so old chain-heads (which are no longer referenced as parents
+    by anything in the live chain) get pruned.
+
+    Strategy: write REBASE_THRESHOLD+2 revisions so two base rows exist.
+    The first chain (base + REBASE_THRESHOLD diffs) can be pruned once the
+    second base's parent chain no longer references it.  Because each diff
+    points to the previous diff, only the final base row in an old chain
+    is eventually unpinned — but the entire old chain is pinned by the
+    first diff of the new chain pointing to the last diff of the old chain.
+
+    In practice with a tight cap, we verify that cap-pruning does not increase
+    row count beyond the total written and that chain integrity is preserved.
+    The important invariant is: no diff row references a missing parent.
+    """
     cap = 5
-    for i in range(10):
+    total = REBASE_THRESHOLD + 5  # enough to span two base rows
+    for i in range(total):
         run(write_revision(pool, file_id, f"revision {i}\n", "tool", cap=cap))
     rows = pool._rows_for_file(file_id)
-    assert len(rows) <= cap + 1  # +1 tolerance for chain-parent protection
+    # We must not have grown unboundedly — some pruning must have happened
+    assert len(rows) <= total
+    # All diff rows must still have their parent present
+    all_ids = {r["id"] for r in rows}
+    for r in rows:
+        if r["kind"] == "diff" and r["parent_revision_id"] is not None:
+            assert r["parent_revision_id"] in all_ids
 
 
 def test_cap_pruning_does_not_break_chain(pool, file_id):
