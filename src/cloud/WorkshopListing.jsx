@@ -133,7 +133,14 @@ function ForkDialog({ open, onClose, listing, onForked }) {
 // detail page never renders a blank hero. Cycles via prev/next + thumbnail
 // strip; arrow keys are intentionally not wired (we share the focus
 // surface with the rest of the page).
+//
+// Slide ordering: pinned-primary first, then sort_order (already enforced
+// by the list endpoint's ORDER BY is_primary desc, sort_order asc),
+// then the auto-captured fallback appended only when no gallery exists.
 function ImageCarousel({ slides, fallbackUrl }) {
+  // The list endpoint already orders primary first. When there are gallery
+  // images we never show the auto-thumbnail (primary gallery or first slide
+  // covers it). Only fall back to the auto-thumbnail when the gallery is empty.
   const list = slides && slides.length > 0
     ? slides
     : (fallbackUrl ? [{ url: fallbackUrl, caption: null, _fallback: true }] : [])
@@ -183,6 +190,12 @@ function ImageCarousel({ slides, fallbackUrl }) {
             </div>
           </>
         )}
+        {/* Primary badge — shown on the active slide when it's pinned */}
+        {active.is_primary && (
+          <div className="absolute top-2 left-2 inline-flex items-center gap-1 px-2 py-0.5 rounded bg-amber-400/20 border border-amber-400/40 text-[10px] font-mono text-amber-300">
+            <Star size={9} className="fill-current" /> Primary
+          </div>
+        )}
         {active.caption && (
           <div className="absolute bottom-2 right-2 max-w-[55%] px-2 py-1 rounded bg-ink-950/70 text-[11px] text-ink-100">
             {active.caption}
@@ -198,11 +211,16 @@ function ImageCarousel({ slides, fallbackUrl }) {
               onClick={() => setIdx(i)}
               aria-label={`Show image ${i + 1}`}
               className={[
-                'flex-shrink-0 w-16 h-12 rounded overflow-hidden border-2 transition-colors',
+                'relative flex-shrink-0 w-16 h-12 rounded overflow-hidden border-2 transition-colors',
                 i === idx ? 'border-kerf-300' : 'border-ink-800 hover:border-ink-600',
               ].join(' ')}
             >
               <img src={s.url} alt="" className="w-full h-full object-cover" />
+              {s.is_primary && (
+                <span className="absolute top-0.5 right-0.5 w-4 h-4 grid place-items-center rounded bg-amber-400/30">
+                  <Star size={8} className="fill-amber-400 stroke-amber-400" />
+                </span>
+              )}
             </button>
           ))}
         </div>
