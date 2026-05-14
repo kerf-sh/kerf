@@ -378,6 +378,46 @@ const FEATURE_KINDS = [
       ] },
     ],
   },
+  // NURBS Phase 4 C1-T4 — surface_boolean inspector entry.
+  //
+  // Conceptual sibling to `boolean` (solid CSG) but works directly on
+  // Face / Shell / Solid operands — no feature_to_solid pre-step needed.
+  // Returns a compound of trimmed face fragments rather than a closed solid.
+  // Ideal for jewelry-CAD surface-direct workflows (blend cut by sweep, etc.).
+  //
+  // Differences vs `boolean`:
+  //   - Accepts any topology (Face / Shell / Solid) — no solid enforcement.
+  //   - Returns a compound of trimmed fragments, not a closed solid.
+  //   - `tolerance` tunes the BOPAlgo intersection tolerance (fuzziness).
+  //   - `fuzzy_value` passes directly to BRepAlgoAPI_*::SetFuzzyValue when
+  //     the binding exposes it; raise to 1e-3 if tangent-intersection face
+  //     fragments go missing.
+  //   - If the worker logs a C1-T10 escalation, the current WASM build does
+  //     not support non-solid operands — fall back to feature_boolean with a
+  //     feature_to_solid pre-pass.
+  {
+    op: 'surface_boolean',
+    label: 'SurfaceBoolean',
+    icon: Combine,
+    defaults: { target_a_id: '', target_b_id: '', kind: 'cut', tolerance: 1e-3 },
+    caption: (
+      'Surface-direct boolean — accepts Face/Shell/Solid operands without a ' +
+      'feature_to_solid pre-step. Returns trimmed face fragments. ' +
+      'Use when operating on raw NURBS surfaces (sweeps, blends, networks). ' +
+      'For solid-on-solid CSG use the regular Boolean op instead.'
+    ),
+    fields: [
+      { key: 'target_a_id', kind: 'feature_picker', label: 'A (surface/solid, kept on cut)' },
+      { key: 'target_b_id', kind: 'feature_picker', label: 'B (surface/solid, tool on cut)' },
+      { key: 'kind', kind: 'select', label: 'Operation', options: [
+        { value: 'cut',    label: 'Cut (A − B)' },
+        { value: 'fuse',   label: 'Fuse (A ∪ B)' },
+        { value: 'common', label: 'Common (A ∩ B)' },
+      ] },
+      { key: 'tolerance', kind: 'number', label: 'Tolerance (mm)', min: 1e-9, step: 1e-4 },
+      { key: 'fuzzy_value', kind: 'number', label: 'Fuzzy value (optional)', min: 0, step: 1e-4 },
+    ],
+  },
   // Slicing v0.2 — plane cross-section via BRepAlgoAPI_Section.
   // Returns a compound of intersection edges (1D outline, not a solid).
   // Inspector: target solid picker + plane point/normal xyz inputs.
@@ -409,7 +449,7 @@ const FEATURE_CATEGORIES = [
   { id: 'sketch',   label: 'Sketch-based',  ops: ['pad', 'boss_with_draft', 'pocket', 'cut_from_sketch', 'revolve', 'hole', 'hole_pattern'] },
   { id: 'modify',   label: 'Modify',        ops: ['fillet', 'chamfer', 'shell', 'push_pull', 'variable_radius_fillet', 'to_solid', 'boolean', 'section'] },
   { id: 'pattern',  label: 'Pattern',       ops: ['linear_pattern', 'polar_pattern', 'mirror_pattern'] },
-  { id: 'surface',  label: 'Surfacing',     ops: ['sweep1', 'sweep2', 'loft', 'network_srf', 'blend_srf'] },
+  { id: 'surface',  label: 'Surfacing',     ops: ['sweep1', 'sweep2', 'loft', 'network_srf', 'blend_srf', 'surface_boolean'] },
 ]
 
 const DEBOUNCE_MS = 300
@@ -1304,6 +1344,12 @@ function FeatureInspector({
           </div>
         )
       })}
+      {/* Caption — optional explanatory note for ops that benefit from one (e.g. surface_boolean). */}
+      {kind.caption && (
+        <div className="mx-3 mb-3 px-2 py-2 rounded bg-ink-800/60 border border-ink-700/50 text-[10px] text-ink-400 leading-relaxed">
+          {kind.caption}
+        </div>
+      )}
       </div>
     </div>
   )
