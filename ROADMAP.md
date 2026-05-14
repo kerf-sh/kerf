@@ -32,6 +32,8 @@ local install, optional hosted tier with billing + workshop sharing + git.
 | **2D technical drawings (TechDraw-flavored)** | ✅ shipped | Multi-sheet, dimensions (distance/radius/diameter/angular/baseline/chain/ordinate), section hatching, leaders/balloons, GD&T frames, centerlines, break-lines |
 | **Cloud: Workshop sharing** | ✅ shipped | Free-sharing gallery, like + fork, OnShape-style insert dialog |
 | **Cloud: Paystack billing** | ✅ shipped | USD pricing, ZAR settlement, FX refresh, webhook-credited prepaid balance |
+| **Billing: live model pricing via LiteLLM** | ✅ shipped | `packages/kerf-pricing/` daily fetches the LiteLLM JSON → `model_prices` table with `cheap_tier_eligible` flag. Replaces hardcoded pricing in `kerf-cloud/pricing.py`. Admin page at `/admin/pricing`. |
+| **Billing: free / paid / BYO three-bucket model** | ✅ shipped | Free tier: monthly chat-token quota redeemable only on cheap-tier models (Sonnet 4.7 / Gemini 3 Flash / DeepSeek / MiniMax). Paid: pass-through with 20% markup against pre-paid credits. BYO: user supplies their own provider API key; zero Kerf billing, tokens still tracked on dashboard. Per-API-token daily cap closes stolen-credential blast radius. |
 | **Cloud: Git (commits + branches + merge + GitHub sync)** | ✅ shipped | go-git, multi-lane lattice graph view, GitHub OAuth, AES-GCM-encrypted tokens |
 | **Filesystem storage backend** | ✅ shipped | Projects mirror to disk as folders for local-install workflows |
 | **Single-binary build with embedded frontend** | ✅ shipped | `npm run build` → ~32 MB self-contained `kerf` |
