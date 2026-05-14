@@ -90,6 +90,8 @@ function cascadeDelete(sketch, ids) {
         dead.add(e.id); grew = true
       } else if (e.type === 'circle' && dead.has(e.center)) {
         dead.add(e.id); grew = true
+      } else if (e.type === 'bezier' && (e.control_points || []).some((cp) => dead.has(cp))) {
+        dead.add(e.id); grew = true
       }
     }
   }
@@ -122,6 +124,8 @@ function constraintRefs(c) {
     case 'block': return c.refs || []
     case 'point_on_line': return [c.point, c.line]
     case 'point_on_arc': return [c.point, c.arc]
+    case 'bezier_tangent':
+    case 'bezier_g1': return [c.p0, c.p1, c.p2].filter(Boolean)
     default: return []
   }
 }
@@ -150,6 +154,14 @@ function constraintRefs(c) {
 export function trim(sketch, lineId, clickPoint) {
   if (!sketch || !lineId || !clickPoint) return { sketch }
   const { ent, pointById, posedById } = indexEntities(sketch)
+  // Bezier entities are free-form curves — trim semantics are not
+  // well-defined (no parametric split that preserves the Bezier structure
+  // without subdivision). Return unchanged and let the caller handle it.
+  const targetEnt = ent.find((e) => e.id === lineId)
+  if (targetEnt?.type === 'bezier') {
+    console.warn('sketch_trim: Bezier trim not yet supported — entity untouched')
+    return { sketch }
+  }
   const line = ent.find((e) => e.id === lineId && e.type === 'line')
   if (!line) return { sketch }
   const linePose = posedById.get(lineId)
@@ -247,6 +259,20 @@ export function trim(sketch, lineId, clickPoint) {
 export function extend(sketch, endpointId, targetCurveId) {
   if (!sketch || !endpointId || !targetCurveId) return { sketch }
   const { ent, pointById, posedById } = indexEntities(sketch)
+  // Check if the target is a Bezier — extending onto a Bezier is not well-
+  // defined (no analytical ray–Bezier intersection in this module). Return
+  // unchanged if either the source or target is a Bezier.
+  const targetEnt = ent.find((e) => e.id === targetCurveId)
+  if (targetEnt?.type === 'bezier') {
+    console.warn('sketch_extend: Bezier target not yet supported — operation skipped')
+    return { sketch }
+  }
+  // Bezier control-point endpoints cannot serve as the extend handle either.
+  const ownerBezier = ent.find((e) => e.type === 'bezier' && (e.control_points || []).includes(endpointId))
+  if (ownerBezier) {
+    console.warn('sketch_extend: Bezier endpoint extension not yet supported — operation skipped')
+    return { sketch }
+  }
   // Find the line that owns this endpoint.
   const line = ent.find((e) => e.type === 'line' && (e.p1 === endpointId || e.p2 === endpointId))
   if (!line) return { sketch }

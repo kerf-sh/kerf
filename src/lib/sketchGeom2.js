@@ -18,6 +18,12 @@ import { ellipseLine, ellipseEllipse, bsplineLine, bsplineArc, angleOnArc } from
 
 const ARC_SEG_PER_RADIAN = 12 // ~5° per segment — matches FreeCAD's default
 const BSPLINE_SAMPLES_PER_SEGMENT = 16
+// Bezier discretization tolerance. We use 24 samples per degree of the curve
+// (so a cubic gets 72 segments per span). This keeps chord-error < 0.1 mm for
+// typical 10–30 mm radius curves at the ~0.01 mm sketch tolerance. More
+// precision than the B-spline sampler because Bezier is usually used for
+// free-form surface profiles where visible faceting matters.
+const BEZIER_SAMPLES_PER_DEGREE = 24
 
 function tessellateArc(centerX, centerY, radius, startAngle, endAngle, ccw) {
   // Normalize sweep direction.
@@ -159,6 +165,19 @@ function buildAdjacency(sketch) {
         }
         vpts.forEach((pt, k) => { if (!points.has(k)) points.set(k, pt) })
       }
+    } else if (e.type === 'bezier') {
+      // Bezier is represented as control_points (array of point ids).
+      // Minimum 3 for quadratic, 4 for cubic.
+      const cps = (e.control_points || []).map((id) => points.get(id)).filter(Boolean)
+      if (cps.length < 3) continue
+      const seg = tessellateBezier(cps)
+      if (seg.length < 2) continue
+      for (let i = 0; i < seg.length - 1; i++) {
+        const ka = getVpt(seg[i][0], seg[i][1]), kb = getVpt(seg[i + 1][0], seg[i + 1][1])
+        addEdge(ka, { edgeId: e.id + '_' + i, otherId: kb, kind: 'bezier', e, fromIdx: i, toIdx: i + 1 })
+        addEdge(kb, { edgeId: e.id + '_' + i, otherId: ka, kind: 'bezier', e, fromIdx: i + 1, toIdx: i })
+      }
+      vpts.forEach((pt, k) => { if (!points.has(k)) points.set(k, pt) })
     }
   }
   return { points, adj }
@@ -228,6 +247,19 @@ function walkLoop(startPid, points, adj, usedEdges) {
               for (let i = 0; i <= i2; i++) ring.push(seg[i])
             }
           }
+        } else if (closing.kind === 'bezier') {
+          const bz = closing.e
+          const cps = (bz.control_points || []).map((id) => points.get(id)).filter(Boolean)
+          if (cps.length >= 3) {
+            const seg = tessellateBezier(cps)
+            let i1 = closing.fromIdx, i2 = closing.toIdx
+            if (i1 < i2) {
+              for (let i = i1 + 1; i <= i2; i++) ring.push(seg[i])
+            } else {
+              for (let i = i1 + 1; i < seg.length; i++) ring.push(seg[i])
+              for (let i = 0; i <= i2; i++) ring.push(seg[i])
+            }
+          }
         }
         return ring
       }
@@ -281,6 +313,19 @@ function walkLoop(startPid, points, adj, usedEdges) {
           for (let i = 0; i <= i2; i++) ring.push(seg[i])
         }
       }
+    } else if (pick.kind === 'bezier') {
+      const bz = pick.e
+      const cps = (bz.control_points || []).map((id) => points.get(id)).filter(Boolean)
+      if (cps.length >= 3) {
+        const seg = tessellateBezier(cps)
+        let i1 = pick.fromIdx, i2 = pick.toIdx
+        if (i1 < i2) {
+          for (let i = i1 + 1; i <= i2; i++) ring.push(seg[i])
+        } else {
+          for (let i = i1 + 1; i < seg.length; i++) ring.push(seg[i])
+          for (let i = 0; i <= i2; i++) ring.push(seg[i])
+        }
+      }
     }
     prevPid = current
     current = pick.otherId
@@ -313,6 +358,10 @@ function findLoops(sketch) {
     if (e.construction) continue
     if (e.type === 'ellipse') totalEdges += 64
     else if (e.type === 'bspline') totalEdges += BSPLINE_SAMPLES_PER_SEGMENT
+    else if (e.type === 'bezier') {
+      const deg = Math.max(2, (e.control_points || []).length - 1)
+      totalEdges += BEZIER_SAMPLES_PER_DEGREE * deg
+    }
   }
   if (totalEdges === 0) return loops
 
@@ -414,6 +463,41 @@ export function tessellateEllipse(cx, cy, rx, ry, rotation, segments = 64) {
     const lx = rx * Math.cos(t)
     const ly = ry * Math.sin(t)
     out.push([cx + lx * cs - ly * sn, cy + lx * sn + ly * cs])
+  }
+  return out
+}
+
+// Bezier tessellation via de Casteljau algorithm.
+// controlPoints: array of {x,y} (or [x,y]) objects, degree+1 items.
+// Minimum 3 points (quadratic); 4 for cubic (the most common case).
+// Returns an array of [x, y] pairs at uniform parameter spacing.
+//
+// Tolerance: BEZIER_SAMPLES_PER_DEGREE * degree total steps.
+// At 24 * 3 = 72 steps for a cubic, the maximum chord error for a
+// curve of radius R is R*(1 - cos(π/72)) ≈ 0.001*R — well below
+// our 0.01 mm sketch tolerance for R > 10 mm.
+export function tessellateBezier(controlPoints, samples) {
+  const cp = controlPoints.map((p) => (Array.isArray(p) ? [p[0], p[1]] : [p.x ?? 0, p.y ?? 0]))
+  if (cp.length < 2) return cp.slice()
+  const n = cp.length - 1 // degree
+  const total = samples != null ? samples : Math.max(2, BEZIER_SAMPLES_PER_DEGREE * n)
+  const out = []
+
+  function deCasteljau(t) {
+    const d = cp.map((p) => [p[0], p[1]])
+    for (let r = 1; r <= n; r++) {
+      for (let i = 0; i <= n - r; i++) {
+        d[i] = [
+          (1 - t) * d[i][0] + t * d[i + 1][0],
+          (1 - t) * d[i][1] + t * d[i + 1][1],
+        ]
+      }
+    }
+    return d[0]
+  }
+
+  for (let i = 0; i <= total; i++) {
+    out.push(deCasteljau(i / total))
   }
   return out
 }

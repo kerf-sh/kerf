@@ -243,6 +243,8 @@ function estimateDof(sketch) {
     } else if (e.type === 'arc') {
       dof += 3 // start_angle, end_angle, radius (endpoints are points)
     }
+    // bezier control points are independent point entities — their DOF is
+    // already counted in the 'point' branch above. No extra DOF here.
   }
   // The origin point is permanently pinned by the planegcs wrapper (fixed=true)
   // so it removes 2 DOF immediately. Without this subtraction the sketcher
@@ -296,6 +298,15 @@ function estimateDof(sketch) {
       case 'arc_on_arc':
       case 'intersection_point':
         // Composed of two primitive constraints, removes 2 DOFs.
+        dof -= 2
+        break
+      // Bezier continuity: tangent (G1 direction) removes 1 DOF; G1 compound
+      // (coincident + tangent) removes 2 DOF; G2 is currently decomposed the
+      // same as G1 since planegcs has no curvature-match primitive.
+      case 'bezier_tangent':
+        dof -= 1
+        break
+      case 'bezier_g1':
         dof -= 2
         break
       default:
@@ -656,6 +667,56 @@ function buildPlanegcsPrimitives(sketch) {
         if (c.point && c.line1 && c.line2) {
           constraints.push({ id: nextId(), type: 'point_on_line_pl', p_id: resolve(c.point), l_id: c.line1 })
           constraints.push({ id: nextId(), type: 'point_on_line_pl', p_id: resolve(c.point), l_id: c.line2 })
+        }
+        break
+      }
+      // ---------------------------------------------------------------------------
+      // Bezier continuity constraints.
+      //
+      // planegcs has no native Bezier primitive. Instead we enforce continuity by
+      // constraining the control-point positions geometrically:
+      //
+      //   bezier_tangent: tangent direction at the join — the two neighbouring
+      //     control points (p0, p2) and the shared endpoint (p1) must be
+      //     collinear. We enforce collinearity by constructing a synthetic Line
+      //     p0→p2 and constraining p1 to lie on it.
+      //
+      //   bezier_g1: G0 (endpoint coincident) + G1 (tangent). Coincidence is
+      //     already handled via the coincident-remap before we reach this point;
+      //     the tangent part is the same collinearity as bezier_tangent.
+      //
+      //   bezier_g2: G2 (curvature match) — planegcs does NOT expose a
+      //     CurvatureMatch or EqualCurvatureAtPoint constraint in its
+      //     push_primitive API (confirmed: no such type in constraints.d.ts).
+      //     We ship G0 + G1 here and TODO G2 when the upstream binding adds it.
+      //
+      // Constraint schema:
+      //   { type: 'bezier_tangent', p0, p1, p2 }  — p0 and p2 are the
+      //     second-to-last / second control points of the two segments; p1 is the
+      //     shared junction endpoint. All are point entity ids.
+      case 'bezier_tangent':
+      case 'bezier_g1': {
+        // Collinearity of p0—p1—p2: synthesize a temp Line from p0 to p2 and
+        // push point_on_line_ppp(p1, p0, p2). planegcs provides this constraint
+        // via point_on_line_ppp (three points form: is p2 on line p0→p1?) but we
+        // want p1 ON the line p0—p2, so the parameter order matters:
+        //   point_on_line_pl(p_id, l_id) — uses a real line entity.
+        // We instead use a synthetic Line (pushed inline) from p0 to p2 and then
+        // constrain p1 to lie on it. But we can't push ephemeral lines after
+        // constraints are already added (ordering matters in planegcs). Instead use
+        // point_on_line_ppp which takes three point ids directly:
+        //   { id, type: 'point_on_line_ppp', p_id, p1_id, p2_id }
+        // This enforces that p_id lies on the infinite line through p1_id—p2_id.
+        if (c.p0 && c.p1 && c.p2) {
+          // p1 (junction point) lies on the line through p0 and p2 (the
+          // tangent-handle control points of the two adjacent Bezier segments).
+          constraints.push({
+            id: nextId(),
+            type: 'point_on_line_ppp',
+            p_id: resolve(c.p1),
+            p1_id: resolve(c.p0),
+            p2_id: resolve(c.p2),
+          })
         }
         break
       }

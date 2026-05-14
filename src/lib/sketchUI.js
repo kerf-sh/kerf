@@ -119,6 +119,8 @@ export function constraintEntityRefs(c) {
     case 'arc_on_circle': return [c.arc, c.circle]
     case 'arc_on_arc': return [c.arc, c.otherArc]
     case 'intersection_point': return [c.point, c.line1, c.line2]
+    case 'bezier_tangent':
+    case 'bezier_g1': return [c.p0, c.p1, c.p2].filter(Boolean)
     default: return []
   }
 }

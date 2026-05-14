@@ -128,6 +128,10 @@ export function deleteEntities(sketch, ids) {
         idSet.add(e.id); deletedSomething = true
       } else if (e.type === 'circle' && idSet.has(e.center)) {
         idSet.add(e.id); deletedSomething = true
+      } else if (e.type === 'bspline' && (e.controls || []).some((cp) => idSet.has(cp))) {
+        idSet.add(e.id); deletedSomething = true
+      } else if (e.type === 'bezier' && (e.control_points || []).some((cp) => idSet.has(cp))) {
+        idSet.add(e.id); deletedSomething = true
       }
     }
   }
@@ -173,6 +177,9 @@ function constraintRefs(c) {
     case 'arc_on_circle': return [c.arc, c.circle]
     case 'arc_on_arc': return [c.arc, c.otherArc]
     case 'intersection_point': return [c.point, c.line1, c.line2]
+    // Bezier continuity constraints reference up to three control points
+    case 'bezier_tangent':
+    case 'bezier_g1': return [c.p0, c.p1, c.p2].filter(Boolean)
     default: return []
   }
 }
@@ -280,6 +287,20 @@ export function addBspline(sketch, pointIds, opts = {}) {
   return { sketch: { ...sketch, entities: [...(sketch.entities || []), ent] }, id }
 }
 
+// Bezier: polynomial Bezier curve defined by an array of control point ids.
+// Degree 2 (quadratic) needs 3 pts; degree 3 (cubic) needs 4 pts.
+// The degree is inferred from the point count: n+1 pts → degree n.
+// Degree > 3 is accepted but not recommended — use B-spline for high-degree.
+export function addBezier(sketch, pointIds, opts = {}) {
+  const id = opts.id || shortId('bz')
+  const degree = Math.max(2, pointIds.length - 1)
+  const ent = {
+    id, type: 'bezier', degree, control_points: pointIds.slice(),
+    ...(opts.construction ? { construction: true } : {}),
+  }
+  return { sketch: { ...sketch, entities: [...(sketch.entities || []), ent] }, id }
+}
+
 // ---------- multi-entity construction helpers ----------
 
 export function setConstruction(sketch, ids, value) {
@@ -343,6 +364,7 @@ function clonePosed(sketch, entityIds, transformPoint) {
     else if (e.type === 'arc') { refPoints.add(e.center); refPoints.add(e.start); refPoints.add(e.end) }
     else if (e.type === 'ellipse') refPoints.add(e.center)
     else if (e.type === 'bspline') for (const cp of e.controls || []) refPoints.add(cp)
+    else if (e.type === 'bezier') for (const cp of e.control_points || []) refPoints.add(cp)
     else if (e.type === 'point') refPoints.add(e.id)
   }
   for (const id of entityIds) addRefs(id)
@@ -384,6 +406,10 @@ function clonePosed(sketch, entityIds, transformPoint) {
       next = r.sketch; rootIds.push(r.id)
     } else if (e.type === 'bspline') {
       const r = addBspline(next, (e.controls || []).map((cp) => oldToNew.get(cp)),
+        e.construction ? { construction: true } : {})
+      next = r.sketch; rootIds.push(r.id)
+    } else if (e.type === 'bezier') {
+      const r = addBezier(next, (e.control_points || []).map((cp) => oldToNew.get(cp)),
         e.construction ? { construction: true } : {})
       next = r.sketch; rootIds.push(r.id)
     }

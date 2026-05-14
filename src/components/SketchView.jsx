@@ -27,14 +27,14 @@ import {
   planeFaceFrame,
 } from '../lib/sketchSolver.js'
 import {
-  addPoint, addLine, addCircle, addArc, addEllipse, addBspline,
+  addPoint, addLine, addCircle, addArc, addEllipse, addBspline, addBezier,
   addConstraint, addExternalCurve,
   setPointXY, toggleConstruction, toggleConstructionMany, setConstraintValue,
   deleteEntities, deleteConstraint, snapTarget, ensurePointAt,
   trimAt, extendTo, filletCorner,
   mirrorEntities, linearPattern, polarPattern,
 } from '../lib/sketchEdit.js'
-import { tessellateEllipse, tessellateBspline } from '../lib/sketchGeom2.js'
+import { tessellateEllipse, tessellateBspline, tessellateBezier } from '../lib/sketchGeom2.js'
 import { geom3ToBufferGeometry } from '../lib/geom3.js'
 import {
   projectLineDraft, describeLineDraft,
@@ -57,6 +57,7 @@ const TOOLS = [
   { id: 'rect',     key: 'R',   icon: Square,        label: 'Rectangle',             category: 'tool' },
   { id: 'ellipse',  key: 'shift+E', icon: Hexagon,   label: 'Ellipse (Shift+E)',     category: 'tool' },
   { id: 'bspline',  key: 'B',   icon: Waves,         label: 'B-spline (cubic)',      category: 'tool' },
+  { id: 'bezier',   key: 'Z',   icon: Spline,        label: 'Bezier curve (Z)',      category: 'tool' },
 ]
 
 // 2D-edit tools — modal interactions launched from the palette.
@@ -92,6 +93,8 @@ const CONSTRAINTS = [
   { id: 'radius',           key: 'shift+R', icon: CircleDashed, label: 'Radius (circle/arc)' },
   { id: 'diameter',         key: 'shift+D', icon: CircleDot,   label: 'Diameter (circle/arc)' },
   { id: 'distance',         key: 'D',     icon: Ruler,        label: 'Dimension (auto)' },
+  { id: 'bezier_tangent',   key: '',      icon: Spline,       label: 'Bezier tangent (G1 direction)' },
+  { id: 'bezier_g1',        key: '',      icon: Spline,       label: 'Bezier G1 (coincident + tangent)' },
 ]
 
 // ---------------------------------------------------------------------------
@@ -403,6 +406,12 @@ export default function SketchView({
       commit(s1)
       setPendingPoints([])
     }
+    if (tool === 'bezier' && pendingPoints.length >= 3) {
+      const ids = pendingPoints.map((p) => p.id)
+      const { sketch: s1 } = addBezier(sketch, ids, { construction })
+      commit(s1)
+      setPendingPoints([])
+    }
   }
 
   // ---- Tool state machines -----------------------------------------------
@@ -446,6 +455,16 @@ export default function SketchView({
       const { sketch: s1, id: pid } = ensurePointAt(sketch, sn, w)
       commit(s1)
       setPendingPoints([...pendingPoints, { id: pid, role: 'cp' }])
+      return
+    }
+    if (tool === 'bezier') {
+      // Click to add control point. Press Enter after placing degree+1 points to
+      // commit the curve. For a cubic (default) that means 4 clicks then Enter.
+      // Double-click also commits (same as bspline). Minimum 3 points for a
+      // quadratic, 4 for cubic.
+      const { sketch: s1, id: pid } = ensurePointAt(sketch, sn, w)
+      commit(s1)
+      setPendingPoints([...pendingPoints, { id: pid, role: 'bz_cp' }])
       return
     }
     if (tool === 'point') {
@@ -723,6 +742,23 @@ export default function SketchView({
         setDimensionPrompt({ kind: 'diameter', refs: { circle: cs[0] }, defaultValue: round(v) })
         return
       }
+    } else if (kind === 'bezier_tangent') {
+      // Requires exactly 3 selected points: p0 (tangent-handle of first segment),
+      // p1 (shared junction endpoint), p2 (tangent-handle of second segment).
+      // The order in selection determines the role: [p0, p1, p2].
+      const ps = sel.filter(isPoint)
+      if (ps.length === 3) {
+        ;({ sketch: next } = addConstraint(sketch, 'bezier_tangent', { p0: ps[0], p1: ps[1], p2: ps[2] }))
+      }
+    } else if (kind === 'bezier_g1') {
+      // G1 = G0 (coincident, handled separately) + tangent (same as bezier_tangent).
+      // Requires 3 points in the same order as bezier_tangent. The G0 part
+      // (endpoint coincidence) should already be a coincident constraint between
+      // p1 and the curve endpoint; we only emit the direction part here.
+      const ps = sel.filter(isPoint)
+      if (ps.length === 3) {
+        ;({ sketch: next } = addConstraint(sketch, 'bezier_g1', { p0: ps[0], p1: ps[1], p2: ps[2] }))
+      }
     } else if (kind === 'distance') {
       // Auto-pick by selection types.
       if (sel.length === 1 && isCircleArc(sel[0])) {
@@ -987,6 +1023,18 @@ export default function SketchView({
       if (k === 't') { e.preventDefault(); setTool('trim'); setPendingPoints([]); return }
       if (k === 'e') { e.preventDefault(); setTool('extend'); setPendingPoints([]); return }
       if (k === 'f') { e.preventDefault(); openFilletFromSelection(); return }
+      if (e.key === 'Enter') {
+        // Commit bezier when Enter is pressed (like bspline double-click).
+        if (tool === 'bezier' && pendingPoints.length >= 3) {
+          e.preventDefault()
+          const ids = pendingPoints.map((p) => p.id)
+          const { sketch: s1 } = addBezier(sketch, ids, { construction })
+          commit(s1)
+          setPendingPoints([])
+          return
+        }
+        return
+      }
       if (e.key === 'Escape') {
         e.preventDefault()
         setPendingPoints([]); setTool('select'); setSelection([])
@@ -1312,6 +1360,9 @@ export default function SketchView({
             {tool === 'bspline' && (pendingPoints.length < 4
               ? `B-spline — add control points (${pendingPoints.length}/4 minimum). Double-click to finish.`
               : 'B-spline — keep clicking to add control points. Double-click to finish.')}
+            {tool === 'bezier' && (pendingPoints.length < 3
+              ? `Bezier — add control points (${pendingPoints.length}/3 minimum). Press Enter or double-click to finish.`
+              : `Bezier — ${pendingPoints.length} control points. Press Enter or double-click to commit, or click to add more.`)}
             {tool === 'trim' && 'Trim — click any segment between two intersections'}
             {tool === 'extend' && (extendState
               ? 'Extend — click the target entity to extend to'
@@ -1540,6 +1591,35 @@ function SketchEntities({ sketch, view, worldToScreen, selection, conflicts, sta
               strokeDasharray={e.construction ? '4 3' : null}
               fill="none" data-id={e.id} />
             {/* Control polygon (faint dashed) */}
+            <path
+              d={cps.map((p, i) => {
+                const s = worldToScreen(p.x, p.y)
+                return `${i === 0 ? 'M' : 'L'} ${s.x} ${s.y}`
+              }).join(' ')}
+              stroke="#3a4150" strokeWidth={0.75} strokeDasharray="2 3"
+              fill="none"
+            />
+          </g>
+        )
+      })}
+      {/* Bezier curves */}
+      {ent.filter((e) => e.type === 'bezier').map((e) => {
+        const cps = (e.control_points || []).map((id) => pointById.get(id)).filter(Boolean)
+        if (cps.length < 3) return null
+        const samples = tessellateBezier(cps, 48)
+        const d = samples.map((p, i) => {
+          const s = worldToScreen(p[0], p[1])
+          return `${i === 0 ? 'M' : 'L'} ${s.x} ${s.y}`
+        }).join(' ')
+        const col = colorFor(e)
+        const sel = selSet.has(e.id)
+        return (
+          <g key={e.id}>
+            <path d={d}
+              stroke={col} strokeWidth={sel ? 2 : 1.5}
+              strokeDasharray={e.construction ? '4 3' : null}
+              fill="none" data-id={e.id} />
+            {/* Control polygon hull (faint dashed) */}
             <path
               d={cps.map((p, i) => {
                 const s = worldToScreen(p.x, p.y)
@@ -1819,6 +1899,36 @@ function PendingPreview({ tool, sketch, pendingPoints, hover, worldToScreen, lin
     const pts = [...cps, hover]
     const d = pts.map((p, i) => {
       const s = worldToScreen(p.x, p.y)
+      return `${i === 0 ? 'M' : 'L'} ${s.x} ${s.y}`
+    }).join(' ')
+    return <path d={d} fill="none" stroke="#fbbf24" strokeWidth={1} strokeDasharray="3 2" />
+  }
+  if (tool === 'bezier' && pendingPoints.length >= 1) {
+    // Resolve already-committed control points + append the live cursor.
+    const resolved = pendingPoints.map((p) => sketch.entities.find((e) => e.id === p.id)).filter(Boolean)
+    if (resolved.length < 1) return null
+    const pts = [...resolved, hover]
+    if (pts.length >= 3) {
+      // Enough for a Bezier — render the actual curve preview.
+      const samples = tessellateBezier(pts, 48)
+      const curve = samples.map((p, i) => {
+        const s = worldToScreen(p[0], p[1])
+        return `${i === 0 ? 'M' : 'L'} ${s.x} ${s.y}`
+      }).join(' ')
+      const hull = pts.map((p, i) => {
+        const s = worldToScreen(p.x ?? p[0] ?? 0, p.y ?? p[1] ?? 0)
+        return `${i === 0 ? 'M' : 'L'} ${s.x} ${s.y}`
+      }).join(' ')
+      return (
+        <g>
+          <path d={hull} fill="none" stroke="#fbbf24" strokeWidth={0.5} strokeDasharray="2 3" opacity={0.5} />
+          <path d={curve} fill="none" stroke="#fbbf24" strokeWidth={1} strokeDasharray="3 2" />
+        </g>
+      )
+    }
+    // Only 1–2 points so far — just draw the control polygon.
+    const d = pts.map((p, i) => {
+      const s = worldToScreen(p.x ?? p[0] ?? 0, p.y ?? p[1] ?? 0)
       return `${i === 0 ? 'M' : 'L'} ${s.x} ${s.y}`
     }).join(' ')
     return <path d={d} fill="none" stroke="#fbbf24" strokeWidth={1} strokeDasharray="3 2" />
@@ -2904,6 +3014,18 @@ function entityHitTest(sketch, world, scale) {
         if (d < best) best = d
       }
       if (best < TOL) return e.id
+    } else if (e.type === 'bezier') {
+      const cps = (e.control_points || []).map((id) => pointById.get(id)).filter(Boolean)
+      if (cps.length < 3) continue
+      const samples = bezierSamplesCache(e.id, cps)
+      let best = Infinity
+      for (let i = 0; i < samples.length - 1; i++) {
+        const a = { x: samples[i][0], y: samples[i][1] }
+        const b = { x: samples[i + 1][0], y: samples[i + 1][1] }
+        const d = distancePointLineSeg(world, a, b)
+        if (d < best) best = d
+      }
+      if (best < TOL) return e.id
     }
   }
   return null
@@ -2921,6 +3043,17 @@ function bsplineSamplesCache(id, cps) {
   _bsplineCache.set(id, { sig, samples })
   // bound size
   if (_bsplineCache.size > 64) _bsplineCache.delete(_bsplineCache.keys().next().value)
+  return samples
+}
+
+const _bezierCache = new Map()
+function bezierSamplesCache(id, cps) {
+  const sig = id + ':' + cps.map((p) => `${p.x},${p.y}`).join('|')
+  const hit = _bezierCache.get(id)
+  if (hit && hit.sig === sig) return hit.samples
+  const samples = tessellateBezier(cps, 24)
+  _bezierCache.set(id, { sig, samples })
+  if (_bezierCache.size > 64) _bezierCache.delete(_bezierCache.keys().next().value)
   return samples
 }
 
