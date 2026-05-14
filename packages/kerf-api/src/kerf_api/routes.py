@@ -3708,6 +3708,324 @@ async def upload_project_thumbnail(
         }
 
 
+# Project Workshop Images (multi-image gallery)
+#
+# Net-new endpoints (Thingiverse-style cover gallery). The primary
+# thumbnail (POST /projects/:pid/thumbnail above) is auto-captured from
+# the editor and unchanged; gallery images are uploader-curated cover
+# art with much looser caps (5MB vs 512KB) and a per-project count
+# limit. Storage path: projects/{pid}/workshop/{image_id}{.ext}.
+
+WORKSHOP_IMAGE_MAX_BYTES = 5 * 1024 * 1024
+WORKSHOP_IMAGES_PER_PROJECT = 10
+WORKSHOP_IMAGE_ALLOWED_MIME = {
+    "image/jpeg": ".jpg",
+    "image/png": ".png",
+    "image/webp": ".webp",
+}
+
+
+def _workshop_image_row_to_dict(row, pid: str) -> dict:
+    return {
+        "id": str(row["id"]),
+        "project_id": pid,
+        "sort_order": row["sort_order"],
+        "caption": row["caption"],
+        "width_px": row["width_px"],
+        "height_px": row["height_px"],
+        "bytes": row["bytes"],
+        "url": f"/api/projects/{pid}/workshop-images/{row['id']}/file",
+        "created_at": row["created_at"].isoformat() if row["created_at"] else None,
+    }
+
+
+@router.get("/projects/{pid}/workshop-images")
+async def list_workshop_images(
+    pid: str,
+    payload: dict = Depends(require_auth),
+):
+    """GET /api/projects/:pid/workshop-images — list, ordered by sort_order asc."""
+    uid = payload.get("sub")
+    pool = await get_pool_required()
+    async with pool.acquire() as conn:
+        ws_id = await project_workspace_id(pid)
+        if not ws_id:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="project not found")
+        role = await get_user_workspace_role(conn, ws_id, uid)
+        if not role:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="project not found")
+
+        rows = await conn.fetch(
+            """
+            select id, sort_order, storage_key, caption, width_px, height_px, bytes, created_at
+              from project_workshop_images
+             where project_id = $1
+             order by sort_order asc, created_at asc
+            """,
+            uuid.UUID(pid),
+        )
+        return {"images": [_workshop_image_row_to_dict(r, pid) for r in rows]}
+
+
+@router.post("/projects/{pid}/workshop-images")
+async def upload_workshop_image(
+    request: Request,
+    pid: str,
+    payload: dict = Depends(require_auth),
+):
+    """POST /api/projects/:pid/workshop-images — multipart upload."""
+    uid = payload.get("sub")
+    pool = await get_pool_required()
+    async with pool.acquire() as conn:
+        ws_id = await project_workspace_id(pid)
+        if not ws_id:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="project not found")
+        role = await get_user_workspace_role(conn, ws_id, uid)
+        if not role:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="project not found")
+        if role == "viewer":
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="viewers cannot upload gallery images")
+
+        # Enforce count cap before consuming the upload body.
+        existing_count = await conn.fetchval(
+            "select count(*) from project_workshop_images where project_id = $1",
+            uuid.UUID(pid),
+        )
+        if int(existing_count or 0) >= WORKSHOP_IMAGES_PER_PROJECT:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"max {WORKSHOP_IMAGES_PER_PROJECT} gallery images per project",
+            )
+
+        form = await request.form()
+        file = form.get("file")
+        if not file:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="missing 'file' field")
+        caption = (form.get("caption") or "").strip() or None
+
+        content = await file.read()
+        if len(content) > WORKSHOP_IMAGE_MAX_BYTES:
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail=f"image too large (>{WORKSHOP_IMAGE_MAX_BYTES // (1024 * 1024)}MB)",
+            )
+
+        mime = (getattr(file, "content_type", None) or "").lower()
+        if mime not in WORKSHOP_IMAGE_ALLOWED_MIME:
+            # Try sniffing via Pillow as a fallback for clients that don't
+            # set content-type — keeps the endpoint robust against curl.
+            try:
+                from PIL import Image
+                import io as pil_io
+                probe = Image.open(pil_io.BytesIO(content))
+                fmt = (probe.format or "").lower()
+                if fmt == "jpeg":
+                    mime = "image/jpeg"
+                elif fmt == "png":
+                    mime = "image/png"
+                elif fmt == "webp":
+                    mime = "image/webp"
+            except Exception:
+                pass
+        if mime not in WORKSHOP_IMAGE_ALLOWED_MIME:
+            raise HTTPException(
+                status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+                detail="image must be JPEG, PNG, or WebP",
+            )
+
+        # Probe dimensions (best-effort; Pillow is optional).
+        width_px = None
+        height_px = None
+        try:
+            from PIL import Image
+            import io as pil_io
+            probe = Image.open(pil_io.BytesIO(content))
+            width_px, height_px = probe.size
+        except Exception:
+            pass
+
+        ext = WORKSHOP_IMAGE_ALLOWED_MIME[mime]
+        image_id = uuid.uuid4()
+        key = f"projects/{pid}/workshop/{image_id}{ext}"
+        storage = get_storage_required()
+        await storage.put(key, io.BytesIO(content), mime, len(content))
+
+        # New images are appended at the end of the gallery.
+        next_order = await conn.fetchval(
+            "select coalesce(max(sort_order), -1) + 1 from project_workshop_images where project_id = $1",
+            uuid.UUID(pid),
+        )
+        row = await conn.fetchrow(
+            """
+            insert into project_workshop_images
+              (id, project_id, sort_order, storage_key, caption, width_px, height_px, bytes)
+            values ($1, $2, $3, $4, $5, $6, $7, $8)
+            returning id, sort_order, storage_key, caption, width_px, height_px, bytes, created_at
+            """,
+            image_id,
+            uuid.UUID(pid),
+            int(next_order or 0),
+            key,
+            caption,
+            width_px,
+            height_px,
+            len(content),
+        )
+        return _workshop_image_row_to_dict(row, pid)
+
+
+@router.get("/projects/{pid}/workshop-images/{image_id}/file")
+async def serve_workshop_image(
+    pid: str,
+    image_id: str,
+    auth: Optional[dict] = Depends(optional_auth),
+):
+    """GET .../workshop-images/:id/file — raw image bytes.
+
+    Public projects: anonymous reads OK. Private/unlisted: caller must
+    be a workspace member.
+    """
+    pool = await get_pool_required()
+    async with pool.acquire() as conn:
+        # Check the parent project's visibility + access.
+        proj = await conn.fetchrow(
+            "select workspace_id, visibility from projects where id = $1",
+            uuid.UUID(pid),
+        )
+        if not proj:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="project not found")
+        if proj["visibility"] != "public":
+            uid = auth.get("sub") if auth else None
+            if not uid:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="project not found")
+            role = await get_user_workspace_role(conn, str(proj["workspace_id"]), uid)
+            if not role:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="project not found")
+
+        row = await conn.fetchrow(
+            """
+            select storage_key from project_workshop_images
+             where project_id = $1 and id = $2
+            """,
+            uuid.UUID(pid),
+            uuid.UUID(image_id),
+        )
+        if not row:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="image not found")
+
+        storage = get_storage_required()
+        body, content_type = await storage.get(row["storage_key"])
+        # storage.get returns an IO[bytes] — pass through as a stream so
+        # large WebP/PNG uploads don't need to fully buffer in memory.
+        return StreamingResponse(body, media_type=content_type or "image/jpeg")
+
+
+class WorkshopImagePatch(BaseModel):
+    caption: Optional[str] = None
+    sort_order: Optional[int] = None
+
+
+@router.patch("/projects/{pid}/workshop-images/{image_id}")
+async def update_workshop_image(
+    pid: str,
+    image_id: str,
+    patch: WorkshopImagePatch,
+    payload: dict = Depends(require_auth),
+):
+    """PATCH .../workshop-images/:id — edit caption + sort_order."""
+    uid = payload.get("sub")
+    pool = await get_pool_required()
+    async with pool.acquire() as conn:
+        ws_id = await project_workspace_id(pid)
+        if not ws_id:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="project not found")
+        role = await get_user_workspace_role(conn, ws_id, uid)
+        if not role:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="project not found")
+        if role == "viewer":
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="viewers cannot edit gallery images")
+
+        # Build a partial update. We update only the columns explicitly
+        # sent so a caption-only PATCH doesn't reset sort_order to NULL.
+        sets = []
+        args = []
+        if patch.caption is not None:
+            sets.append(f"caption = ${len(args) + 1}")
+            args.append(patch.caption.strip() or None)
+        if patch.sort_order is not None:
+            sets.append(f"sort_order = ${len(args) + 1}")
+            args.append(int(patch.sort_order))
+        if not sets:
+            # No-op patch — return the row as-is.
+            row = await conn.fetchrow(
+                """
+                select id, sort_order, storage_key, caption, width_px, height_px, bytes, created_at
+                  from project_workshop_images
+                 where project_id = $1 and id = $2
+                """,
+                uuid.UUID(pid),
+                uuid.UUID(image_id),
+            )
+            if not row:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="image not found")
+            return _workshop_image_row_to_dict(row, pid)
+
+        args.append(uuid.UUID(pid))
+        args.append(uuid.UUID(image_id))
+        row = await conn.fetchrow(
+            f"""
+            update project_workshop_images
+               set {', '.join(sets)}
+             where project_id = ${len(args) - 1} and id = ${len(args)}
+            returning id, sort_order, storage_key, caption, width_px, height_px, bytes, created_at
+            """,
+            *args,
+        )
+        if not row:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="image not found")
+        return _workshop_image_row_to_dict(row, pid)
+
+
+@router.delete("/projects/{pid}/workshop-images/{image_id}")
+async def delete_workshop_image(
+    pid: str,
+    image_id: str,
+    payload: dict = Depends(require_auth),
+):
+    """DELETE .../workshop-images/:id — remove the row + storage blob."""
+    uid = payload.get("sub")
+    pool = await get_pool_required()
+    async with pool.acquire() as conn:
+        ws_id = await project_workspace_id(pid)
+        if not ws_id:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="project not found")
+        role = await get_user_workspace_role(conn, ws_id, uid)
+        if not role:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="project not found")
+        if role == "viewer":
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="viewers cannot delete gallery images")
+
+        row = await conn.fetchrow(
+            """
+            delete from project_workshop_images
+             where project_id = $1 and id = $2
+            returning storage_key
+            """,
+            uuid.UUID(pid),
+            uuid.UUID(image_id),
+        )
+        if not row:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="image not found")
+
+        # Best-effort blob delete — DB row is gone either way.
+        try:
+            storage = get_storage_required()
+            await storage.delete(row["storage_key"])
+        except Exception:
+            pass
+        return {"deleted": True, "id": image_id}
+
+
 # Avatar (avatar.go)
 
 AVATAR_MAX_BYTES = 1 * 1024 * 1024
