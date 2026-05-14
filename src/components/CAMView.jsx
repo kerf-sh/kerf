@@ -7,9 +7,15 @@
 // Polls GET /api/projects/{pid}/files/{fid}/cam/status every 3 s while a job
 // is queued or running. Lets the user configure a 2.5D CAM operation and
 // submit via POST /api/projects/{pid}/files/{fid}/cam.
+//
+// Also exports LayeredCAMView for `.cam.layered` file kind:
+//   file.kind === 'cam_layered'
+//   Renders the layer stack with a Z-slider to scrub between layers.
+//   Each layer is shown as a 2D SVG contour (same projection as SectionView).
+//   A "Generate G-code from layers" button POSTs to /api/.../cam/layered/gcode.
 
-import { useEffect, useImperativeHandle, useRef, useState } from 'react'
-import { AlertTriangle, CheckCircle, Download, Loader2, Settings, Tool } from 'lucide-react'
+import { useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react'
+import { AlertTriangle, CheckCircle, Download, Loader2, Layers, Settings, ChevronLeft, ChevronRight } from 'lucide-react'
 import { useAuth } from '../store/auth.js'
 
 const API_URL = import.meta.env.VITE_API_URL || ''
@@ -311,4 +317,290 @@ const styles = {
   warnBox: { background: '#1c1400', border: '1px solid #78350f', borderRadius: 5, padding: '6px 10px', color: '#fde68a', fontSize: 12, marginTop: 4 },
   infoBox: { display: 'flex', alignItems: 'center', color: '#c4b5fd', fontSize: 12, padding: '4px 0' },
   spin: { animation: 'spin 1s linear infinite' },
+}
+
+// ── LayeredCAMView ─────────────────────────────────────────────────────────────
+//
+// Renders a `.cam.layered` file: a stack of 2-D contour layers produced by
+// the `feature_cam_layered` Python tool.
+//
+// Layout:
+//   header — axis / step / layer count
+//   layer scrubber — slider + prev/next buttons + current Z label
+//   SVG canvas — 2-D contour for the selected layer
+//   footer — "Generate G-code from layers" button
+//
+// Data format (file content JSON):
+//   { version: 1, axis: "Z", z_step_mm: 5.0,
+//     layers: [ { z_mm: 0.0, edges: [[[x0,y0],[x1,y1]], ...] }, ... ] }
+//
+// Z slider scrubber is shipped in v1.  3-D gizmo deferred to v0.3.
+
+// Project a list of edge segments [[p0, p1], ...] into a flat bounds object.
+function layerBounds(edges) {
+  if (!edges || edges.length === 0) return { minX: -10, maxX: 10, minY: -10, maxY: 10 }
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity
+  for (const [[x0, y0], [x1, y1]] of edges) {
+    minX = Math.min(minX, x0, x1); maxX = Math.max(maxX, x0, x1)
+    minY = Math.min(minY, y0, y1); maxY = Math.max(maxY, y0, y1)
+  }
+  const px = (maxX - minX) * 0.12 || 5
+  const py = (maxY - minY) * 0.12 || 5
+  return { minX: minX - px, maxX: maxX + px, minY: minY - py, maxY: maxY + py }
+}
+
+export function LayeredCAMView({ file, projectId, parsedContent, viewRef }) {
+  // parsedContent — the already-parsed JSON of the .cam.layered file (passed
+  // in by the parent Editor component, same pattern as parsedFeature).
+  // Falls back to null when not yet loaded.
+
+  useImperativeHandle(viewRef, () => ({
+    snapshot: async () => null,
+  }), [])
+
+  const layers = parsedContent?.layers || []
+  const axis = parsedContent?.axis || 'Z'
+  const zStepMm = parsedContent?.z_step_mm ?? null
+
+  const [layerIdx, setLayerIdx] = useState(0)
+  const [gcodeRunning, setGcodeRunning] = useState(false)
+  const [gcodeError, setGcodeError] = useState(null)
+  const [gcodeResult, setGcodeResult] = useState(null)
+
+  // Clamp layerIdx when layers list changes.
+  useEffect(() => {
+    if (layerIdx >= layers.length && layers.length > 0) {
+      setLayerIdx(layers.length - 1)
+    }
+  }, [layers.length, layerIdx])
+
+  const currentLayer = layers[layerIdx] || null
+  const edges = currentLayer?.edges || []
+  const zMm = currentLayer?.z_mm ?? null
+
+  const bounds = layerBounds(edges)
+  const W = bounds.maxX - bounds.minX
+  const H = bounds.maxY - bounds.minY
+
+  // Panning / zoom state for the SVG canvas.
+  const [zoom, setZoom] = useState(1)
+  const [pan, setPan] = useState({ x: 0, y: 0 })
+  const isPanning = useRef(false)
+  const panStart = useRef({ x: 0, y: 0, panX: 0, panY: 0 })
+
+  const onMouseDown = useCallback((e) => {
+    if (e.button !== 0 && e.button !== 1) return
+    isPanning.current = true
+    panStart.current = { x: e.clientX, y: e.clientY, panX: pan.x, panY: pan.y }
+    e.preventDefault()
+  }, [pan])
+
+  const onMouseMove = useCallback((e) => {
+    if (!isPanning.current) return
+    setPan({ x: panStart.current.panX + (e.clientX - panStart.current.x), y: panStart.current.panY + (e.clientY - panStart.current.y) })
+  }, [])
+
+  const onMouseUp = useCallback(() => { isPanning.current = false }, [])
+
+  const onWheel = useCallback((e) => {
+    e.preventDefault()
+    setZoom((z) => Math.max(0.05, Math.min(50, z * (e.deltaY > 0 ? 0.9 : 1.1))))
+  }, [])
+
+  const handleReset = () => { setZoom(1); setPan({ x: 0, y: 0 }) }
+
+  // Generate G-code from all layers via the API.
+  async function handleGenerateGcode() {
+    if (!file?.id || !projectId) return
+    setGcodeError(null)
+    setGcodeResult(null)
+    setGcodeRunning(true)
+    try {
+      const token = useAuth.getState().accessToken
+      const res = await fetch(`${API_URL}/api/projects/${projectId}/files/${file.id}/cam/layered/gcode`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+        body: JSON.stringify({ safe_z_mm: 5.0, plunge_feed: 200 }),
+      })
+      if (!res.ok) {
+        const txt = await res.text()
+        throw new Error(`${res.status}: ${txt}`)
+      }
+      const data = await res.json()
+      setGcodeResult(data)
+    } catch (e) {
+      setGcodeError(e.message)
+    } finally {
+      setGcodeRunning(false)
+    }
+  }
+
+  function handleDownloadGcode() {
+    if (!gcodeResult?.gcode_b64) return
+    const bytes = atob(gcodeResult.gcode_b64)
+    const blob = new Blob([bytes], { type: 'text/plain' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${file?.name || 'layers'}.nc`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const isEmpty = layers.length === 0
+
+  return (
+    <div style={{ ...styles.root, minWidth: 340, height: '100%', overflow: 'auto' }}>
+      {/* Header */}
+      <div style={styles.header}>
+        <Layers size={15} style={{ color: '#2dd4bf' }} />
+        <span style={styles.title}>Layered CAM</span>
+        {!isEmpty && (
+          <span style={{ marginLeft: 'auto', fontSize: 11, color: '#9ca3af' }}>
+            {layers.length} layer{layers.length !== 1 ? 's' : ''} · {axis} axis
+            {zStepMm != null ? ` · ${zStepMm}mm step` : ''}
+          </span>
+        )}
+      </div>
+
+      {isEmpty ? (
+        <div style={{ color: '#6b7280', fontSize: 12, padding: '12px 0' }}>
+          No layer data yet. Run <code style={{ color: '#a78bfa' }}>feature_cam_layered</code> on a solid to generate layers.
+        </div>
+      ) : (
+        <>
+          {/* Layer scrubber */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <button
+                type="button"
+                onClick={() => setLayerIdx((i) => Math.max(0, i - 1))}
+                disabled={layerIdx === 0}
+                style={{ ...lStyles.navBtn, opacity: layerIdx === 0 ? 0.3 : 1 }}
+                title="Previous layer"
+              >
+                <ChevronLeft size={14} />
+              </button>
+              <input
+                type="range"
+                min={0}
+                max={layers.length - 1}
+                value={layerIdx}
+                onChange={(e) => setLayerIdx(Number(e.target.value))}
+                style={{ flex: 1, accentColor: '#2dd4bf' }}
+              />
+              <button
+                type="button"
+                onClick={() => setLayerIdx((i) => Math.min(layers.length - 1, i + 1))}
+                disabled={layerIdx === layers.length - 1}
+                style={{ ...lStyles.navBtn, opacity: layerIdx === layers.length - 1 ? 0.3 : 1 }}
+                title="Next layer"
+              >
+                <ChevronRight size={14} />
+              </button>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 11, color: '#9ca3af' }}>
+              <span>Layer {layerIdx + 1} / {layers.length}</span>
+              {zMm != null && (
+                <span style={{ fontFamily: 'ui-monospace,monospace', color: '#2dd4bf' }}>
+                  {axis}={zMm.toFixed(3)} mm
+                </span>
+              )}
+              <button type="button" onClick={handleReset} style={{ fontSize: 10, color: '#6b7280', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>reset view</button>
+            </div>
+          </div>
+
+          {/* SVG canvas */}
+          <div
+            style={{ height: 280, background: '#0d1117', borderRadius: 6, border: '1px solid #1f2937', overflow: 'hidden', position: 'relative', cursor: 'grab' }}
+            onWheel={onWheel}
+            onMouseDown={onMouseDown}
+            onMouseMove={onMouseMove}
+            onMouseUp={onMouseUp}
+            onMouseLeave={onMouseUp}
+          >
+            {edges.length === 0 ? (
+              <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#4b5563', fontSize: 11 }}>
+                No edges at this layer
+              </div>
+            ) : (
+              <svg
+                width="100%"
+                height="100%"
+                viewBox={`${bounds.minX} ${bounds.minY} ${W || 20} ${H || 20}`}
+                preserveAspectRatio="xMidYMid meet"
+                style={{ transform: `translate(${pan.x}px,${pan.y}px) scale(${zoom})` }}
+              >
+                <defs>
+                  <pattern id="cl-grid" width="10" height="10" patternUnits="userSpaceOnUse">
+                    <path d="M 10 0 L 0 0 0 10" fill="none" stroke="#1f2937" strokeWidth="0.3" />
+                  </pattern>
+                </defs>
+                <rect x={bounds.minX} y={bounds.minY} width={W || 20} height={H || 20} fill="url(#cl-grid)" />
+                <line x1={bounds.minX} y1="0" x2={bounds.maxX} y2="0" stroke="#374151" strokeWidth="0.4" strokeDasharray="2,2" />
+                <line x1="0" y1={bounds.minY} x2="0" y2={bounds.maxY} stroke="#374151" strokeWidth="0.4" strokeDasharray="2,2" />
+                {edges.map(([[x0, y0], [x1, y1]], i) => (
+                  <line key={i} x1={x0} y1={-y0} x2={x1} y2={-y1} stroke="#2dd4bf" strokeWidth="0.5" strokeLinecap="round" />
+                ))}
+              </svg>
+            )}
+          </div>
+
+          {/* Layer list (compact) */}
+          <div style={{ maxHeight: 100, overflowY: 'auto', fontSize: 11, color: '#6b7280', border: '1px solid #1f2937', borderRadius: 4, padding: '4px 0' }}>
+            {layers.map((l, i) => (
+              <div
+                key={i}
+                onClick={() => setLayerIdx(i)}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 8, padding: '2px 8px',
+                  cursor: 'pointer',
+                  background: i === layerIdx ? '#1f2937' : 'transparent',
+                  color: i === layerIdx ? '#2dd4bf' : '#6b7280',
+                }}
+              >
+                <span style={{ width: 20, textAlign: 'right', fontFamily: 'monospace' }}>{i + 1}</span>
+                <span style={{ fontFamily: 'ui-monospace,monospace' }}>{axis}={l.z_mm.toFixed(3)}</span>
+                <span style={{ marginLeft: 'auto' }}>{l.edges.length} seg{l.edges.length !== 1 ? 's' : ''}</span>
+              </div>
+            ))}
+          </div>
+
+          {/* Generate G-code */}
+          <div style={styles.section}>
+            <button
+              onClick={handleGenerateGcode}
+              disabled={gcodeRunning || !file?.id || !projectId}
+              style={{ ...styles.button, background: '#0f4c3a', ...(gcodeRunning ? styles.buttonDisabled : {}) }}
+            >
+              {gcodeRunning
+                ? <><Loader2 size={13} style={styles.spin} /> Generating G-code…</>
+                : <><Layers size={13} /> Generate G-code from layers</>}
+            </button>
+            {gcodeError && (
+              <div style={styles.errorBox}>
+                <AlertTriangle size={12} />
+                <span style={{ marginLeft: 6 }}>{gcodeError}</span>
+              </div>
+            )}
+            {gcodeResult && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <div style={{ ...styles.infoBox, color: '#34d399' }}>
+                  <CheckCircle size={12} />
+                  <span style={{ marginLeft: 6 }}>G-code ready — {gcodeResult.line_count ?? '?'} lines</span>
+                </div>
+                <button onClick={handleDownloadGcode} style={{ ...styles.button, background: '#1e3a5f' }}>
+                  <Download size={13} /> Download .nc
+                </button>
+              </div>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
+const lStyles = {
+  navBtn: { display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#1f2937', border: '1px solid #374151', borderRadius: 4, color: '#e5e7eb', padding: '2px 4px', cursor: 'pointer', width: 26, height: 26 },
 }
