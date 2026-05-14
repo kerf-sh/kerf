@@ -52,7 +52,7 @@ export default (
 
 LLM tools: `create_circuit` scaffolds the file. After that, `write_file` / `edit_file` handle all component additions, value changes, and trace edits.
 
-See [backend/llm_docs/circuit.md](/docs/llm/circuit.md) for the full JSX authoring reference.
+See `packages/kerf-chat/llm_docs/circuit.md` for the full JSX authoring reference.
 
 ---
 
@@ -75,7 +75,7 @@ Probes are persisted as `// @kerf-probe` comment lines inside the `.circuit.tsx`
 
 LLM tools: `add_probe`, `remove_probe`, `rename_probe`.
 
-See [backend/llm_docs/probe.md](/docs/llm/probe.md) for probe semantics and the `add_probe` tool reference.
+See `packages/kerf-electronics/llm_docs/probe.md` for probe semantics and the `add_probe` tool reference.
 
 ---
 
@@ -91,7 +91,7 @@ The **PCB tab** renders the board layout from `pcbX`/`pcbY` props. Key operation
 
 **Manual trace routing** — use the RouteTool (orthogonal / 45° / free modes) to draw copper paths. The LLM tools `route_trace_segments`, `split_trace`, `merge_traces`, `move_trace_vertex`, and `delete_trace` manipulate traces programmatically.
 
-See [backend/llm_docs/routing.md](/docs/llm/routing.md) for the full trace manipulation API.
+See `packages/kerf-chat/llm_docs/routing.md` for the full trace manipulation API.
 
 ---
 
@@ -108,7 +108,7 @@ Selecting a row injects the part's metadata into the circuit. For tscircuit chip
 
 LLM tools: no dedicated tool — after picking a part via the modal, the circuit TSX is updated to include a `part_id` or `mpn` reference on the component.
 
-See [backend/llm_docs/part.md](/docs/llm/part.md) for the `.part` file schema, and [backend/llm_docs/library.md](/docs/llm/library.md) for the catalog submission flow.
+See `packages/kerf-chat/llm_docs/part.md` for the `.part` file schema, and `packages/kerf-chat/llm_docs/library.md` for the catalog submission flow.
 
 ---
 
@@ -142,13 +142,14 @@ Override shape in `.assembly` JSON:
 
 LLM tool: `generate_bom` walks every assembly and part, returns rows rolled up by MPN.
 
-See [backend/llm_docs/bom.md](/docs/llm/bom.md) for the full rollup logic, CSV columns, and distributor metadata flow.
+See `packages/kerf-chat/llm_docs/bom.md` for the full rollup logic, CSV columns, and distributor metadata flow.
 
 ---
 
 ## 7. SPICE Simulation Flow
 
-Kerf runs SPICE via a `pyworker` ngspice subprocess. The pipeline is:
+Kerf runs SPICE via an ngspice subprocess inside the `kerf-electronics` plugin
+(`electronics.spice` capability). The pipeline is:
 
 ```
 add_probe → run_simulation → SimulationView (waveform chart)
@@ -197,7 +198,9 @@ Analysis types: `transient`, `dc` (operating point), `dc-sweep`, `ac`.
 run_simulation(circuit_file_id, analysis: 'transient'|'dc'|'ac', ...)
 ```
 
-`run_simulation` queues a `pyworker` job. Poll `rf_job_status` (same tool — reused for RF) or check the `.simulation` file for `results.waveforms`.
+`run_simulation` queues a `kerf-workers` job (`workers.harness`). Poll
+`rf_job_status` (same tool — reused for RF) or check the `.simulation` file
+for `results.waveforms`.
 
 ### Step 4 — View results
 
@@ -207,7 +210,9 @@ The **Simulation tab** (`SimulationView`) renders waveforms via uPlot. Waveforms
 
 LLM tools: `add_probe`, `remove_probe`, `rename_probe`, `run_simulation`.
 
-See [backend/llm_docs/probe.md](/docs/llm/probe.md) and [backend/llm_docs/simulation.md](/docs/llm/simulation.md) for the full probe and simulation file reference.
+See `packages/kerf-electronics/llm_docs/probe.md` and
+`packages/kerf-fem/llm_docs/simulation.md` for the full probe and simulation
+file reference.
 
 ---
 
@@ -249,7 +254,7 @@ Returns `status: "queued" | "running" | "done" | "error"`. On `done`, the `resul
 
 LLM tools: `import_touchstone`, `run_rf_study`, `rf_job_status`.
 
-See [backend/llm_docs/rf.md](/docs/llm/rf.md) for the full RF study file schema and Smith chart rendering details.
+See `packages/kerf-electronics/llm_docs/rf.md` for the full RF study file schema and Smith chart rendering details.
 
 ---
 
@@ -257,7 +262,7 @@ See [backend/llm_docs/rf.md](/docs/llm/rf.md) for the full RF study file schema 
 
 Kerf integrates [FreeRouting](https://github.com/freerouting/freerouting) (Java, GPL3) for PCB autorouting.
 
-**Prerequisites:** FreeRouting JAR at `~/.cache/kerf/freerouting/FreeRouting.jar`. The `pyworker` auto-downloads it on first use; local-install users can also run `kerf-pyworker` themselves.
+**Prerequisites:** FreeRouting JAR at `~/.cache/kerf/freerouting/FreeRouting.jar`. The `kerf-electronics` plugin auto-downloads it on first use.
 
 ### Run autorouter
 
@@ -278,13 +283,13 @@ Autoroute the board, then refine specific nets manually. The routing tools (`rou
 
 LLM tool: `autoroute_circuit`.
 
-See [ROADMAP.md](../ROADMAP.md) row 71 and `pyworker/routes/autoroute.py` for the full FreeRouting integration details.
+See [ROADMAP.md](../ROADMAP.md) and `packages/kerf-electronics/src/kerf_electronics/routes_autoroute.py` for the full FreeRouting integration details.
 
 ---
 
 ## 10. Importing from KiCad
 
-Kerf imports KiCad schematic and PCB files via the cloud `pyworker` service (also available as `kerf-pyworker` for local installs).
+Kerf imports KiCad schematic and PCB files via the `kerf-imports` plugin (capability tag `imports.kicad`). It runs in-process — no separate service required.
 
 **Supported inputs:** `.kicad_sch`, `.kicad_pcb`, or a zipped KiCad project bundle.
 
@@ -307,21 +312,21 @@ Kerf imports KiCad schematic and PCB files via the cloud `pyworker` service (als
 
 LLM tool: `kicad_import_project` (or use the "Import KiCad" UI).
 
-See [imports.md](./imports.md) for the full KiCad import scope and notes on the `kerf-pyworker` local-install option.
+See [imports.md](./imports.md) for the full KiCad import scope.
 
 ---
 
 ## Related Documentation
 
-| Topic | File |
-|-------|------|
-| `.circuit.tsx` JSX reference | [backend/llm_docs/circuit.md](/docs/llm/circuit.md) |
-| SPICE probes | [backend/llm_docs/probe.md](/docs/llm/probe.md) |
-| `.simulation` file | [backend/llm_docs/simulation.md](/docs/llm/simulation.md) |
-| RF / Touchstone | [backend/llm_docs/rf.md](/docs/llm/rf.md) |
-| Manual trace routing | [backend/llm_docs/routing.md](/docs/llm/routing.md) |
-| BOM rollup | [backend/llm_docs/bom.md](/docs/llm/bom.md) |
-| `.part` file schema | [backend/llm_docs/part.md](/docs/llm/part.md) |
-| Library catalog | [backend/llm_docs/library.md](/docs/llm/library.md) |
-| KiCad import | [imports.md](./imports.md) |
-| LLM tool reference | [llm-tools.md](./llm-tools.md) |
+| Topic                          | File                                              |
+|--------------------------------|---------------------------------------------------|
+| `.circuit.tsx` JSX reference    | `packages/kerf-chat/llm_docs/circuit.md`           |
+| SPICE probes                   | `packages/kerf-electronics/llm_docs/probe.md`     |
+| `.simulation` file             | `packages/kerf-fem/llm_docs/simulation.md`         |
+| RF / Touchstone                | `packages/kerf-electronics/llm_docs/rf.md`        |
+| Manual trace routing           | `packages/kerf-chat/llm_docs/routing.md`           |
+| BOM rollup                     | `packages/kerf-chat/llm_docs/bom.md`               |
+| `.part` file schema            | `packages/kerf-chat/llm_docs/part.md`              |
+| Library catalog                | `packages/kerf-chat/llm_docs/library.md`           |
+| KiCad import                   | [imports.md](./imports.md)                         |
+| LLM tool reference             | [llm-tools.md](./llm-tools.md)                     |

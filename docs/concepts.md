@@ -18,9 +18,10 @@ Files cannot import across project boundaries; all geometry references stay with
 
 ## 1. File kinds are first-class
 
-Kerf supports **40+ file kinds**. Every domain is a JSON file kind with a schema doc in
-`backend/llm_docs/<kind>.md`. The LLM reads the relevant schema doc before authoring or
-editing that kind — no guessing, no hallucinated field names.
+Kerf supports **40+ file kinds**. Every domain is a JSON file kind with a schema doc
+shipped inside the plugin that owns that kind (`packages/kerf-<plugin>/llm_docs/`).
+The LLM reads the relevant schema doc before authoring or editing that kind — no
+guessing, no hallucinated field names.
 
 Key kinds:
 
@@ -45,8 +46,7 @@ Binary files (STEP) keep a pointer in Postgres; bytes live in the configured Sto
 backend (local disk, S3/R2/MinIO, or filesystem mirror). Every text file edit
 appends a row to `file_revisions`, capped at 200 per file.
 
-See [architecture.md](./architecture.md) for the full table and
-[backend/llm_docs/index.md](../backend/llm_docs/index.md) for all schema docs.
+See [architecture.md](./architecture.md) for the full table.
 
 ## 2. LLM as primary author
 
@@ -55,14 +55,16 @@ The AI chat edits JSON via tool calls. Every UI action is also a tool call — t
 One `make this 6 mm thicker` chains read → edit → validate as individual chat rows visible in
 the thread.
 
-`backend/tools/` exposes **60+ modules / 150+ tools**. Every tool is registered via
-`@register(ToolSpec(...), write=...)` and the LLM sees a role-filtered list:
-`viewer` role gets read-only tools only. `write=True` marks tools that mutate project state.
+Each plugin registers its own LLM tools into the shared `ToolRegistry` carried on
+`PluginContext`. The full surface across 19 plugins is **~150 tools**. The LLM sees
+a role-filtered list: viewer role gets read-only tools only. Write tools mutate
+project state.
 
-Before touching any non-`.jscad` file, the LLM queries `search_kerf_docs` → reads the
-matching `backend/llm_docs/<topic>.md` → makes an informed tool call. This doc-search loop
-is the reason the LLM can productively edit `.feature`, `.bim`, `.circuit`, and all the
-other domain-specific kinds without hallucinating schemas.
+Before touching any non-`.jscad` file, the LLM queries `search_kerf_docs` → reads
+the matching `packages/kerf-<plugin>/llm_docs/<topic>.md` → makes an informed tool
+call. This doc-search loop is the reason the LLM can productively edit `.feature`,
+`.bim`, `.circuit`, and all the other domain-specific kinds without hallucinating
+schemas.
 
 See [llm-tools.md](./llm-tools.md) for the full tool surface.
 
@@ -72,30 +74,30 @@ See [llm-tools.md](./llm-tools.md) for the full tool surface.
 scriptable, great for parametric exploration. The LLM can freely generate and mutate it.
 IndexedDB caches meshes keyed by JSCAD content hash so repeated evals are instant.
 
-**.feature** — JSON feature tree evaluated by OCCT (WASM in pyworker). Real B-rep:
-fillets, chamfers, shell, draft, holes, ribs, helical threads. Edge identity is preserved
-for selection-driven ops. Lossless STEP export. No code — just a declarative list of
-ordered operations.
+**.feature** — JSON feature tree evaluated by OCCT (WASM in the browser, pythonOCC
+via `kerf-cad-core` on the server). Real B-rep: fillets, chamfers, shell, draft,
+holes, ribs, helical threads. Edge identity is preserved for selection-driven ops.
+Lossless STEP export. No code — just a declarative list of ordered operations.
 
 Both kernels coexist per-file. Assemblies compose both at the mesh level — same trade
 Rhino and FreeCAD make. This is intentional: code-first is unbeatable when the LLM is in
 the loop; B-rep is unbeatable when you need precision and edge ops a mesh can't give you.
 
-See [backend/llm_docs/feature.md](../backend/llm_docs/feature.md) and
-[backend/llm_docs/jscad.md](../backend/llm_docs/jscad.md).
+See `packages/kerf-chat/llm_docs/feature.md` and `packages/kerf-chat/llm_docs/jscad.md`.
 
 ## 4. File revisions are diff-compressed
 
 Every text edit appends a row to `file_revisions` with `source` of `'user' | 'llm' | 'tool' | 'restore'`.
-The backend stores a **content-hashed delta chain** — revisions share content-addressed blobs.
-This achieves ~82x size reduction compared to storing full copies.
+Phase 4 (May 2026) reworked storage as a content-hashed delta chain — revisions share
+SHA-256-addressed blobs. Real diffs + dedup gave ~82× size reduction on a representative
+project corpus compared to storing full copies, plus a safe-pruning path.
 
 Every save is a checkpoint; `Cmd+Z` (Editor → Restore) calls the restore endpoint which
 replays the revision chain backwards. Soft-deletes keep history readable so the History
 drawer can resurrect a deleted file. The `[limits].file_revisions_max` (default 200) trims
 the oldest rows on each write.
 
-See [backend/llm_docs/sheet_revisions.md](../backend/llm_docs/sheet_revisions.md).
+See `packages/kerf-imports/llm_docs/sheet_revisions.md` for the drawing-side revision flow.
 
 ## 5. Library Parts and Assemblies share the same nouns
 
@@ -116,44 +118,49 @@ The same Object can be placed multiple times (different `id`, different transfor
 that's how repeated parts (screws, clips, grommets) work. A `.part` file adds
 MPN/distributor data on top of this structure for library management.
 
-See [backend/llm_docs/part.md](../backend/llm_docs/part.md) and
-[backend/llm_docs/assembly.md](../backend/llm_docs/assembly.md).
+See `packages/kerf-chat/llm_docs/part.md` and
+`packages/kerf-chat/llm_docs/assembly.md`.
 
 ## 6. Doc-search loop
 
 Before touching any file kind, the LLM queries `search_kerf_docs` → reads matching
-`backend/llm_docs/<topic>.md` → makes an informed tool call. The corpus covers:
+`packages/kerf-<plugin>/llm_docs/<topic>.md` → makes an informed tool call. The corpus covers:
 
-- Every file kind schema (40+ docs under `backend/llm_docs/`)
-- MEP routing vocabulary ([mep.md](../backend/llm_docs/mep.md), [routing.md](../backend/llm_docs/routing.md), [duct.md](../backend/llm_docs/mep.md))
-- PCB layer stack and DRC rules ([pcb_layers.md](../backend/llm_docs/pcb_layers.md), [pcb_drc.md](../backend/llm_docs/pcb_drc.md))
-- Feature-tree semantics and multi-transform patterns ([feature.md](../backend/llm_docs/feature.md), [feature_multi_transform.md](../backend/llm_docs/feature_multi_transform.md))
-- Simulation configs and solvers ([fem.md](../backend/llm_docs/fem.md), [rf.md](../backend/llm_docs/rf.md), [topo.md](../backend/llm_docs/topo.md), [cam.md](../backend/llm_docs/cam.md))
-- BIM categories and hosted relationships ([bim.md](../backend/llm_docs/bim.md), [bim_categories.md](../backend/llm_docs/bim_categories.md))
+- Every file kind schema (40+ docs spread across kerf-chat, kerf-imports, kerf-bim,
+  kerf-electronics, kerf-render)
+- MEP routing vocabulary (`packages/kerf-bim/llm_docs/mep.md`)
+- PCB layer stack and DRC rules (`packages/kerf-chat/llm_docs/pcb_layers.md`,
+  `packages/kerf-chat/llm_docs/pcb_drc.md`)
+- Feature-tree semantics and multi-transform patterns (`packages/kerf-chat/llm_docs/feature.md`)
+- Simulation configs and solvers (kerf-fem, kerf-topo, kerf-cam, kerf-electronics)
+- BIM categories and hosted relationships (`packages/kerf-bim/llm_docs/bim.md`,
+  `packages/kerf-bim/llm_docs/bim_categories.md`)
 
 The loop: **user chat → LLM queries docs → reads schema → tool call → execute → render → SSE push to viewport**.
 
 ## 7. OSS vs Cloud — same codebase
 
-The `cloud_enabled` feature flag gates cloud-only additions at runtime. Same codebase,
-same binary — flip a flag to go from self-hosted OSS to Kerf Cloud. The flag is read at
-server startup via `KERF_CLOUD=1` / `cloud_enabled=true` in `.env`.
+Cloud-only functionality ships as two proprietary plugin packages
+(`packages/kerf-billing/`, `packages/kerf-cloud/`). They install only when the
+`full` persona is selected. The `cloud_enabled` flag gates registration at
+runtime — when off, the packages load but advertise an empty `provides=[]`
+list (dormant).
 
-| Feature | Cloud-only |
-|---------|------------|
-| Paystack billing / prepaid credit (USD→ZAR daily FX, ZAR settlement) | ✅ |
-| Email (Resend/SES/SMTP via `backend/cloud/email/mailer.py`) | ✅ |
-| S3 Git Storer — stateless bare-repo deploys via pygit2 | ✅ |
-| Distributor live pricing sweep (DigiKey/Mouser/LCSC, 6h sync) | ✅ |
-| GitHub OAuth (AES-GCM encrypted tokens in `cloud_github_tokens`) | ✅ |
-| Workshop sharing / publishing / forking / library submissions | ✅ |
-| STEP pre-tessellation (server-side triangulation via `TESS_WORKERS`) | ✅ |
-| Everything else | OSS |
+| Capability                                  | Plugin       |
+|---------------------------------------------|--------------|
+| Paystack billing (USD→ZAR daily FX, ZAR settlement) | kerf-billing |
+| Email (Resend/SES/SMTP)                     | kerf-cloud   |
+| S3 Git Storer (stateless bare-repo deploys) | kerf-cloud   |
+| Distributor live pricing sweep              | kerf-cloud   |
+| GitHub OAuth (AES-GCM encrypted tokens)     | kerf-cloud   |
+| Workshop sharing + library submissions      | kerf-cloud   |
+| STEP pre-tessellation (server-side glTF)    | kerf-tess (OSS, just needs pythonOCC) |
+| Everything else                             | OSS plugins  |
 
-`local_mode` is forced off when `cloud_enabled=true`. Pluggable storage (local / S3/R2/MinIO /
-filesystem mirror / git mirror per-project). The rest of the codebase only sees the `Storage` ABC.
+`local_mode` is forced off when `cloud_enabled=true`. Pluggable storage
+(local / S3/R2/MinIO / filesystem mirror / git mirror per-project).
 
-See [cloud.md](./cloud.md).
+See [cloud.md](./cloud.md) and [capabilities.md](./capabilities.md).
 
 ## 8. Parametric stack — three layers
 
@@ -177,9 +184,8 @@ highest-level layer — it can invoke feature ops as nodes.
 Configurations (M3/M4/M5, long/short, engraved/blank) produce multiple flavors from a
 single source file by merging config params *over* the equations scope at eval time.
 
-See [parametric.md](./parametric.md), [backend/llm_docs/equations.md](../backend/llm_docs/equations.md),
-[backend/llm_docs/feature.md](../backend/llm_docs/feature.md), and
-[backend/llm_docs/graph.md](../backend/llm_docs/graph.md).
+See [parametric.md](./parametric.md), `packages/kerf-chat/llm_docs/equations.md`,
+`packages/kerf-chat/llm_docs/feature.md`, and `packages/kerf-imports/llm_docs/graph.md`.
 
 ## 9. Categories + hosted refs in .bim
 
@@ -204,45 +210,49 @@ Geometry is either `.jscad` mesh or `.feature` B-rep. BIM elements point to the 
 file via `geometry_file_id` and `object_id`. MEP elements additionally carry routing
 connectivity (duct/pipe segments connect at junctions).
 
-See [backend/llm_docs/bim.md](../backend/llm_docs/bim.md) and
-[backend/llm_docs/bim_categories.md](../backend/llm_docs/bim_categories.md).
+See `packages/kerf-bim/llm_docs/bim.md` and
+`packages/kerf-bim/llm_docs/bim_categories.md`.
 
-## 10. Domain-specific simulations — server-side via pyworker
+## 10. Domain-specific simulations — server-side in compute plugins
 
-Heavy CPU/GPU compute runs in a `pyworker` sidecar (async Python worker over HTTP or Redis
-queue), not the request thread. The LLM triggers runs and reads results via tool calls.
+Heavy CPU/GPU compute runs inside the relevant plugin (kerf-fem, kerf-cam,
+kerf-topo, kerf-electronics, kerf-render). The `kerf-workers` plugin
+(`workers.harness`) manages long-running jobs out of the request thread. The
+LLM triggers runs and reads results via tool calls.
 
-| Domain | Kinds | What it does |
-|--------|-------|--------------|
-| Structural FEM | `.fem`, `.simulation` | Linear static, modal, thermal — mesh + boundary conditions → stress/displacement results |
-| SPICE circuit | `.circuit.tsx` | Circuit simulation via ngspice; AC/DC/transient analysis |
-| RF / electromagnetic | `.rf-study` | S-parameter analysis, antenna design, EM simulation |
-| Topology optimization | `.topo` | Density-based topology study → optimized geometry |
-| CAM | `.cam` | CNC toolpath generation, operation list, feed/speed calculation |
-| Sheet metal | `.draft` | Flat-pattern, bend deduction, K-factor analysis, springback |
+| Domain                 | Kinds                  | Plugin            |
+|------------------------|------------------------|-------------------|
+| Structural FEM         | `.fem`, `.simulation`  | kerf-fem          |
+| SPICE circuit          | `.circuit.tsx`         | kerf-electronics  |
+| RF / electromagnetic   | `.rf-study`            | kerf-electronics  |
+| Topology optimization  | `.topo`                | kerf-topo         |
+| CAM                    | `.cam`                 | kerf-cam          |
+| Sheet metal            | `.draft`               | kerf-imports      |
+| STEP tessellation      | `.step` → glTF         | kerf-tess         |
+| Rendering              | `.render` → image      | kerf-render       |
 
 All results are JSON blobs stored in Postgres + object storage. The LLM can query
-simulation status, retrieve results, and trigger new runs. STEP files ≥5 MB are stored
-as `kind='step-ref'` with a SHA256 content pointer to avoid duplicating large binaries.
+job status, retrieve results, and trigger new runs. STEP files ≥5 MB are stored
+as `kind='step-ref'` with a SHA-256 content pointer to avoid duplicating large
+binaries.
 
-See [backend/llm_docs/simulation.md](../backend/llm_docs/simulation.md),
-[backend/llm_docs/fem.md](../backend/llm_docs/fem.md), [backend/llm_docs/rf.md](../backend/llm_docs/rf.md),
-[backend/llm_docs/cam.md](../backend/llm_docs/cam.md), and [backend/llm_docs/topo.md](../backend/llm_docs/topo.md).
+See the per-plugin `llm_docs/` (e.g. `packages/kerf-fem/llm_docs/`,
+`packages/kerf-cam/llm_docs/`).
 
 ## Quick reference — schema docs by domain
 
-| Domain | Start here |
-|--------|------------|
-| Mechanical / JSCAD | [jscad.md](../backend/llm_docs/jscad.md) · [feature.md](../backend/llm_docs/feature.md) |
-| Sketching | [sketch.md](../backend/llm_docs/sketch.md) |
-| Assemblies | [assembly.md](../backend/llm_docs/assembly.md) · [mates.md](../backend/llm_docs/mates.md) |
-| Drawings | [drawing.md](../backend/llm_docs/drawing.md) · [sheet.md](../backend/llm_docs/sheet.md) |
-| Architecture / BIM | [bim.md](../backend/llm_docs/bim.md) · [bim_categories.md](../backend/llm_docs/bim_categories.md) |
-| Electronics | [circuit.md](../backend/llm_docs/circuit.md) · [pcb_layers.md](../backend/llm_docs/pcb_layers.md) |
-| Parametric | [equations.md](../backend/llm_docs/equations.md) · [graph.md](../backend/llm_docs/graph.md) |
-| Simulation | [simulation.md](../backend/llm_docs/simulation.md) · [fem.md](../backend/llm_docs/fem.md) |
-| CAM | [cam.md](../backend/llm_docs/cam.md) |
-| Surfacing / STEP | [surfacing.md](../backend/llm_docs/surfacing.md) |
+| Domain              | Start here                                                |
+|---------------------|-----------------------------------------------------------|
+| Mechanical / JSCAD  | `packages/kerf-chat/llm_docs/jscad.md` · `feature.md`     |
+| Sketching           | `packages/kerf-chat/llm_docs/sketch.md`                   |
+| Assemblies          | `packages/kerf-chat/llm_docs/assembly.md`                 |
+| Drawings            | `packages/kerf-chat/llm_docs/drawing.md`                  |
+| Architecture / BIM  | `packages/kerf-bim/llm_docs/bim.md` · `bim_categories.md` |
+| Electronics         | `packages/kerf-chat/llm_docs/circuit.md` · `pcb_layers.md` |
+| Parametric          | `packages/kerf-chat/llm_docs/equations.md` · `packages/kerf-imports/llm_docs/graph.md` |
+| FEM                 | `packages/kerf-fem/llm_docs/fem.md`                       |
+| CAM                 | `packages/kerf-cam/llm_docs/cam.md`                       |
+| Surfacing / STEP    | `packages/kerf-cad-core/` source comments                 |
 
 ---
 

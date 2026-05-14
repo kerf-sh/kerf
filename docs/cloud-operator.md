@@ -1,54 +1,61 @@
-# Kerf Cloud
+# Kerf Cloud operator guide
 
-This directory and the two sibling directories `backend/cloud/` and `src/cloud/`
-contain the proprietary code that powers the **hosted** version of Kerf at
-kerf.app (or wherever it ends up running). It is **not** covered by the MIT
-license that applies to the rest of this repo. See `LICENSE-CLOUD`.
+Cloud-tier functionality lives in two **proprietary plugin packages** —
+`packages/kerf-billing/` and `packages/kerf-cloud/`. They are **not** covered
+by the MIT license that applies to every other package under `packages/`. See
+`LICENSE-CLOUD` at the repo root.
 
 ## What's here vs. there
 
-| Path                  | License     | Purpose                                    |
-| --------------------- | ----------- | ------------------------------------------ |
-| `LICENSE` (root)      | MIT         | Covers OSS code (everything below)         |
-| `backend/**`          | MIT         | Python (FastAPI) API server, LLM proxy, file storage |
-| `src/**`              | MIT         | React frontend                             |
-| `LICENSE-CLOUD`       | proprietary | Terms for everything cloud-marked          |
-| `backend/cloud/**`    | proprietary | Paystack billing, FX, quotas, usage events |
-| `src/cloud/**`        | proprietary | Billing UI, plan selector, usage widget    |
+| Path                       | License     | Purpose                                              |
+| -------------------------- | ----------- | ---------------------------------------------------- |
+| `LICENSE` (root)           | MIT         | Covers OSS plugins and frontend                      |
+| `packages/kerf-*/`         | MIT         | All plugins except billing / cloud                   |
+| `src/**`                   | MIT         | React frontend                                       |
+| `LICENSE-CLOUD`            | proprietary | Terms for the cloud plugin packages                  |
+| `packages/kerf-billing/**` | proprietary | Paystack billing, FX, quotas, usage events           |
+| `packages/kerf-cloud/**`   | proprietary | Workshop / git / GitHub OAuth / distributors / email |
+| `src/cloud/**`             | proprietary | Billing UI, plan selector, usage widget              |
 
 ## Why split this way
 
 Kerf is open source so that anyone can self-host it for personal use,
-contribute back, or run it in BYO-keys mode without paying us. The cloud/
-directory holds the things that turn it into a paid hosted service —
-mainly: payments (Paystack), per-user quotas, exchange rates, and usage
-metering. None of those need to exist in the OSS build, so they live behind
-a Python feature flag (KERF_CLOUD_ENABLED) and a Vite env flag.
+contribute back, or run it in BYO-keys mode without paying us. The two cloud
+plugin packages hold the things that turn it into a paid hosted service —
+payments, per-user quotas, exchange rates, usage metering, the Workshop, and
+the S3 git mirror. None of those need to exist in the OSS build, so they ship
+as their own packages and are only installed when the `full` persona is
+selected or when explicitly listed.
 
 ## Building the OSS server (no cloud)
 
 ```bash
-cd backend
-python3.12 -m venv venv
-./venv/bin/pip install -r requirements.txt
-./venv/bin/uvicorn main:app --host 0.0.0.0 --port 8080
+# Install one of the OSS personas
+pip install -e .[mech]            # mechanical CAD stack
+pip install -e .[electronics]     # EDA stack
+pip install -e .[bim]             # building information modelling
+pip install -e .[api-only]        # API gateway pod
+
+kerf-server --host 0.0.0.0 --port 8080
 ```
 
-The resulting server contains zero cloud code. There is no billing, no
-quotas, no Paystack — users either configure provider API keys via env
-(self-host) or paste their own keys in a settings panel (BYO mode, when
-`AUTH_OPTIONAL=true`).
+The resulting server contains zero cloud plugin code — the packages aren't
+even on disk. There is no billing, no quotas, no Paystack. Users either
+configure provider API keys via env (self-host) or paste their own keys in a
+settings panel (BYO mode, when `AUTH_OPTIONAL=true`).
 
 ## Building the hosted server (with cloud)
 
 ```bash
-cd backend
-python3.12 -m venv venv
-./venv/bin/pip install -r requirements.txt
-KERF_CLOUD_ENABLED=true ./venv/bin/uvicorn main:app --host 0.0.0.0 --port 8080
+# Install the full persona (includes kerf-billing + kerf-cloud)
+pip install -e .[full]
+
+KERF_CLOUD=1 kerf-server --host 0.0.0.0 --port 8080
 ```
 
-This adds Paystack handlers, quota middleware, and usage tracking.
+`KERF_CLOUD=1` (equivalently `cloud_enabled=true` in `kerf.toml`) tells the
+cloud plugins to actually register their routes and workers. Without the flag
+the plugins load but advertise an empty `provides=[]` list (dormant).
 
 ## Frontend builds
 
@@ -64,21 +71,21 @@ VITE_CLOUD=1 npm run build
 
 ## Migrations
 
-Two independent commands, two independent tracking tables:
+Migrations live in `packages/kerf-core/src/kerf_core/db/migrations/`. They are
+plain SQL files run by `kerf_core.db.migrations.runner` in numeric order. The
+cloud plugins add their own migrations alongside the OSS set (numbered in the
+shared sequence; e.g. 031 `cloud_github_tokens`).
 
 ```bash
 # OSS schema (required first)
-cd backend
-alembic upgrade head
+kerf-server --migrate
 
-# Cloud schema (applies additional cloud migrations when KERF_CLOUD_ENABLED=true)
-KERF_CLOUD_ENABLED=true alembic upgrade head
+# Cloud schema (applies cloud-only DDL when KERF_CLOUD=1)
+KERF_CLOUD=1 kerf-server --migrate
 ```
 
-- OSS migrate applies migrations in `backend/alembic/versions/`, tracks in `alembic_version`.
-- Cloud migrate applies additional cloud migrations when `KERF_CLOUD_ENABLED=true`.
-
-From the repo root, npm shortcuts: `npm run migrate`, `npm run migrate:cloud`, `npm run migrate:all`.
+From the repo root, npm shortcuts: `npm run migrate`, `npm run migrate:cloud`,
+`npm run migrate:all`.
 
 ## Optional: revision-storage backfill (Phase 4)
 
@@ -90,20 +97,22 @@ the legacy `content` column when `content_gz` is NULL).
 A separate, **opt-in** command repacks legacy rows so they no longer
 consume their full plaintext size:
 
-**Note:** `backend.scripts.migrate_revisions` is TODO — the script has not yet been ported from Go.
+Phase 4 also shipped the repack script as a `kerf-server` subcommand. It
+back-fills `content_gz` + SHA-256 on legacy rows and (optionally) prunes the
+legacy `content` column once verified.
 
 ```bash
 # Dry run — reports how many rows would be touched.
-python -m backend.scripts.migrate_revisions --dry-run
+kerf-server revisions repack --dry-run
 
 # Compress every row's content into content_gz, leave the legacy
 # `content` column populated as a safety net.
-python -m backend.scripts.migrate_revisions
+kerf-server revisions repack
 
 # Same, but additionally clear the legacy column once the gzip
 # roundtrip has been verified for each row. Use only after confirming a
 # successful run on a non-prod replica first.
-python -m backend.scripts.migrate_revisions --prune-legacy
+kerf-server revisions repack --prune-legacy
 ```
 
 The command is idempotent — re-running on an up-to-date DB is a no-op
@@ -197,8 +206,9 @@ via AES-GCM with a key derived from `cfg.JWTSecret`:
 | `cloud_github_tokens`       | Per-user GitHub OAuth access tokens (cloud) | `cloud:github-token`           |
 | `distributor_credentials`   | Operator-configured distributor API keys    | `distributor-credentials`      |
 
-The shared helper lives at `backend/utils/encrypt.py` — `encrypt_secret`
-and `decrypt_secret`, both keyed by `SHA-256("kerf:enc:<domain>:<jwt_secret>")`.
+The shared helper lives at `packages/kerf-core/src/kerf_core/utils/encrypt.py` —
+`encrypt_secret` and `decrypt_secret`, both keyed by
+`SHA-256("kerf:enc:<domain>:<jwt_secret>")`.
 
 **Rotating `JWT_SECRET` invalidates every encrypted row.** This is
 intentional — the secret IS the key, and there's no way to re-derive
@@ -227,13 +237,13 @@ secret IS the key" is consciously low-tech.
 - **FX:** USD→ZAR fetched daily, stored in `cloud_fx_rates`. Charges convert
   USD price → ZAR at charge time using current rate + small spread.
 - **Tokens:** raw provider cost × 1.20 (20% markup), per-1M-token rates in
-  `backend/cloud/pricing/pricing.go`.
+  `packages/kerf-billing/src/kerf_billing/pricing.py`.
 - **Storage:** $0.20/GB-month, billed on max-of-month, 50MB free for everyone.
 - **Free tier:** unlimited projects, 50MB storage. No paid tier limits — pure
   metered billing on top of the included free quota.
 - **Email:** transactional only, absorbed (not metered).
 
-See `backend/cloud/pricing/pricing.go` for the current numbers.
+See `packages/kerf-billing/src/kerf_billing/pricing.py` for the current numbers.
 
 ## Transactional email
 
@@ -383,10 +393,11 @@ The `kerf library-import` command takes a YAML manifest and upserts
 a publisher user, a project to hold the Parts, and one Part file per
 manifest entry:
 
-**Note:** `backend.scripts.library_import` is TODO — not yet ported from Go.
+The library importer is exposed as a `kerf-server` subcommand backed by
+`packages/kerf-cloud/src/kerf_cloud/scripts/library_import.py`:
 
 ```bash
-python -m backend.scripts.library_import --manifest samples/libraries/adafruit-sensors.yaml
+kerf-server library-import --manifest samples/libraries/adafruit-sensors.yaml
 ```
 
 Pass `--dry-run` to see the plan without writing. Re-running the

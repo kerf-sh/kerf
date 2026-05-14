@@ -20,7 +20,7 @@ Project-wide numeric variables evaluated via [mathjs](https://mathjs.org/). One 
 }
 ```
 
-Schema: [backend/llm_docs/equations.md](../backend/llm_docs/equations.md)
+Schema: `packages/kerf-chat/llm_docs/equations.md`
 
 ### `.feature` — sequential feature tree
 
@@ -36,7 +36,7 @@ An ordered list of OCCT B-rep operations (pad, pocket, revolve, fillet, shell…
 }
 ```
 
-Schema: [backend/llm_docs/feature.md](../backend/llm_docs/feature.md)
+Schema: `packages/kerf-chat/llm_docs/feature.md`
 
 ### `.graph` — node-based pipeline
 
@@ -53,7 +53,7 @@ A Grasshopper-equivalent DAG of nodes. Built-in ops (sliders, series, expression
 }
 ```
 
-Schema: [backend/llm_docs/graph.md](../backend/llm_docs/graph.md)
+Schema: `packages/kerf-imports/llm_docs/graph.md`
 
 ---
 
@@ -172,4 +172,4 @@ The `series` node emits `[0, 1, 2, …, N-1]` which the `feature_revolve` uses t
      └── configs override equations scope
 ```
 
-Schema: [backend/llm_docs/configurations.md](../backend/llm_docs/configurations.md)
+Schema: `packages/kerf-chat/llm_docs/configurations.md`

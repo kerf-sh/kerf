@@ -113,7 +113,7 @@ add_hatch_to_drawing({
 ```
 
 For custom patterns, drop a `.pat` seed file under `seed/hatch_library/`
-and reference it by name. Full pattern spec: `backend/llm_docs/drawing.md`.
+and reference it by name. Full pattern spec: `packages/kerf-chat/llm_docs/drawing.md`.
 
 ### Detail views
 
@@ -244,6 +244,6 @@ for CAM or third-party CAD.
 
 ## Wire format
 
-Full schema in `backend/llm_docs/drawing.md`.
+Full schema in `packages/kerf-chat/llm_docs/drawing.md`.
 
 Next: [cloud.md](./cloud.md)

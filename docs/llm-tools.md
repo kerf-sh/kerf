@@ -1,10 +1,13 @@
 # LLM tools (~150)
 
-Kerf exposes ~150 Python tools the LLM can call. Each tool lives in
-`backend/tools/` and is registered via the `@register` decorator, which
-auto-generates the JSON-RPC schema and wires it into the agent loop. When
-a chat message arrives, the LLM decides which tool to call; the agent loop
-dispatches via asyncio and streams results back.
+Kerf exposes ~150 Python tools the LLM can call. Tools are contributed by
+plugins under `packages/kerf-*/src/kerf_*/tools/` and registered into the
+shared `ToolRegistry` carried on `PluginContext`. When a chat message arrives,
+the LLM decides which tool to call; the chat plugin (`kerf-chat`) dispatches
+via asyncio and streams results back.
+
+Which tools are live depends on which plugins are installed in the active
+persona — query `GET /health/capabilities` to see the live set.
 
 ## How it all works
 
@@ -12,45 +15,45 @@ The tool system follows a **doc-search-first** pattern:
 
 1. The LLM receives a user request (e.g. *"add a fillet to this part"*).
 2. It calls `search_kerf_docs("fillet")` — this hits an embedded markdown
-   corpus (`backend/llm_docs/*.md`) and returns `{path, title, excerpt, score}`.
+   corpus loaded at boot from every plugin that ships an `llm_docs/` folder
+   and returns `{path, title, excerpt, score}`.
 3. The LLM reads the relevant doc via `read_file` (paths under `/docs/llm/` are
    routed to the corpus, not the project tree).
 4. Armed with the right conventions, the LLM calls the low-level tools
    (`read_file`, `edit_file`, `create_file`, etc.) to mutate the JSON directly.
 
 This keeps the tool surface stable — new domain knowledge lives in docs,
-not new tool functions. The `@register` decorator handles schema generation
-so adding a tool is: write the function, add one line to `registry.py`.
+not new tool functions.
 
-### The @register decorator
+### Registering a tool
 
-Every tool function in `backend/tools/` is prefixed with `@register`.
-This decorator does three things:
-
-1. **Schema generation** — inspects the function signature and docstring
-   to produce a JSON-Schema for that tool's parameters.
-2. **Registry injection** — adds the function to the central `Registry`
-   map that the agent loop consults on every call.
-3. **Permission tagging** — attaches a `read` or `write` permission label
-   derived from the function's name (or an explicit `perm=` kwarg).
-
-Example:
+Inside a plugin's `register()` function:
 
 ```python
-@register
-def feature_fillet(session, part_path, edge_ids, radius):
-    """Add fillet to specified edges.  [write]
-    Args:
-      part_path:  path to .part or .feature file
-      edge_ids:   list of edge identifiers
-      radius:     fillet radius in mm
-    """
-    ...
+from kerf_core.plugin import ToolSpec
+
+ctx.tools.register(
+    name="feature_fillet",
+    spec=ToolSpec(
+        name="feature_fillet",
+        description="Add fillet to specified edges.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "part_path": {"type": "string"},
+                "edge_ids": {"type": "array", "items": {"type": "string"}},
+                "radius":   {"type": "number"},
+            },
+            "required": ["part_path", "edge_ids", "radius"],
+        },
+    ),
+    handler=run_feature_fillet,
+)
 ```
 
-The decorator infers `"editor+"` for names starting with `set_`, `add_`,
-`create_`, `delete_`, `run_`, `write_`, etc.; everything else is
-`"viewer+"`. Explicit overrides via `perm="editor"` are supported.
+Write-vs-read filtering is enforced inside the dispatcher by name pattern
+(`set_`, `add_`, `create_`, `delete_`, `run_`, `write_`, …) or via an
+explicit `write=True` flag on the spec.
 
 ### The agent loop
 
@@ -96,8 +99,8 @@ are subject to a 30 s timeout and 50 MB cap per file.
 Sketch entities (lines, arcs, circles, splines, B-splines) and the
 constraint solver. Constraints are either geometric (coincident,
 parallel, perpendicular, tangent, equal…) or dimensional (distance,
-angle, radius…). The sketch doc (`backend/llm_docs/sketch.md`) has the
-full constraint vocabulary and entity ID reference.
+angle, radius…). The sketch doc (`packages/kerf-chat/llm_docs/sketch.md`)
+has the full constraint vocabulary and entity ID reference.
 
 `sketch_add_entity` · `sketch_add_constraint` · `sketch_set_constraint_value` · `sketch_delete_entity` · `sketch_trim` · `sketch_extend` · `sketch_carbon_copy` · `sketch_validate` · `sketch_offset_selection` · `sketch_convert_curve_type`
 
@@ -188,8 +191,8 @@ conventions.
 ## Electronics — schematic
 
 ERC, probes, buses, sub-sheets, hierarchical labels, and flattening.
-The circuit doc (`backend/llm_docs/circuit.md`) covers tscircuit JSX
-patterns and selector syntax for schematic elements.
+The circuit doc (`packages/kerf-chat/llm_docs/circuit.md`) covers tscircuit
+JSX patterns and selector syntax for schematic elements.
 
 `add_probe` · `remove_probe` · `rename_probe` · `run_erc` · `add_bus` · `expand_bus` · `add_differential_pair` · `list_differential_pairs` · `add_sub_sheet` · `remove_sub_sheet` · `add_global_label` · `add_hierarchical_label` · `flatten_hierarchy` · `validate_hierarchy`
 
@@ -308,13 +311,14 @@ This avoids the LLM having to guess the schema for a new file.
 
 ## Authoring corpus
 
-`search_kerf_docs` hits `backend/llm_docs/*.md` — guides that document
-conventions for sketch constraints, feature parameters, assembly mates,
-PCB routing, BIM categories, and more. After searching, the LLM reads
-the relevant doc then edits the file's JSON directly.
+`search_kerf_docs` hits the embedded markdown corpus loaded at boot from
+every plugin's `llm_docs/` folder — guides that document conventions for
+sketch constraints, feature parameters, assembly mates, PCB routing, BIM
+categories, and more. After searching, the LLM reads the relevant doc then
+edits the file's JSON directly.
 
-Current docs: `assembly.md` · `sketch.md` · `feature.md` · `drawing.md`
-· `part.md` · `circuit.md` · `jscad.md` · `index.md`
+Plugins contributing the corpus today: `kerf-chat`, `kerf-imports`,
+`kerf-bim`, `kerf-electronics`, `kerf-render`.
 
 ## When to use which tool — usage patterns
 
@@ -378,57 +382,30 @@ Current docs: `assembly.md` · `sketch.md` · `feature.md` · `drawing.md`
 
 ## Where things live
 
-- **Tool registry**: `backend/tools/registry.py`
-- **Implementations**: `backend/tools/*.py` (one file per domain)
-- **Authoring corpus**: `backend/llm_docs/*.md`
-- **Wire schema**: `backend/llm_docs/` and `docs/v1-rpc.md`
+- **Tool registry contract**: `packages/kerf-core/src/kerf_core/plugin.py` (`ToolRegistry`, `ToolSpec`)
+- **Implementations**: each plugin's `tools/` subpackage
+- **Authoring corpus**: each plugin's `llm_docs/` folder
+- **Wire schema**: `docs/v1-rpc.md` + the per-plugin `llm_docs/`
 
-Adding a tool = write the function + one decorator line in `registry.py`.
-Adding an authoring doc = write the `.md` file + restart the server.
+Adding a tool = write the handler in the right plugin + one
+`ctx.tools.register(...)` call inside that plugin's `register()` function.
+Adding an authoring doc = drop the `.md` into the right plugin's `llm_docs/`
+folder + restart the server.
 
-### Tool file layout
+### Plugin → tool surface
 
-| File | Domain |
-|------|--------|
-| `file_ops.py` | File read/write/import |
-| `object_ops.py` | Object mutation in JSCAD |
-| `sketch.py` | Sketch entities + constraints |
-| `feature_*.py` | Solid features |
-| `surfacing.py` | Surface operations |
-| `curve_ops.py` | Curve operations |
-| `mesh.py` | Mesh modeling |
-| `subd.py` | Subdivision surfaces |
-| `import_3dm.py` | 3DM interchange |
-| `assembly.py` | Assembly + mates |
-| `equations.py` | Parametric equations |
-| `configurations.py` | Named configurations |
-| `graph.py` | Solver graph |
-| `bim*.py` | BIM, families, MEP |
-| `erc.py` | Schematic ERC |
-| `buses.py` | Bus operations |
-| `routing.py` | PCB routing |
-| `pour.py` | Copper pours |
-| `pcb_drc.py` | Design rule check |
-| `pcb_layer_tools.py` | PCB layer management |
-| `net_classes.py` | Net classes |
-| `length_tuning.py` | Length tuning |
-| `via_stitching.py` | Via stitching |
-| `pad_overrides.py` | Pad overrides |
-| `shove_router.py` | Shove router |
-| `fem.py` | FEA |
-| `sim.py` | Simulation |
-| `rf.py` | RF analysis |
-| `topo.py` | Topology optimization |
-| `tolerance.py` | Tolerance analysis |
-| `inspection.py` | Inspection |
-| `cam.py` | CAM |
-| `material.py` | Materials |
-| `render.py` | Rendering |
-| `project_layers.py` | Canvas layers |
-| `draft.py` | 2D draft |
-| `drafting_complete.py` | Drawing annotations |
-| `revisions.py` | Version history |
-| `docs.py` | Doc search |
-| `validation.py` | Validation |
-| `autoroute.py` | Autorouting |
-| `scaffold.py` | File scaffolding |
+| Plugin            | Tool modules (under `tools/`)                                              |
+|-------------------|---------------------------------------------------------------------------|
+| `kerf-api`        | `file_ops`, `object_ops`, `scaffold`, `revisions`, `configurations`, `equations`, `validation` |
+| `kerf-chat`       | `docs` (search_kerf_docs)                                                  |
+| `kerf-cad-core`   | sketch + surfacing helpers (library, not LLM tools)                        |
+| `kerf-imports`    | `import_3dm`, `subd`, `mesh`, `curve_ops`, `draft`, `inspection`, `graph`, `feature_helix`, `drawings` |
+| `kerf-bim`        | `bim`, `bim_categories`, `family`, `schedule`, `view`, `sheet`, `stairs`, `railings`, `mep`, `curtain_wall` |
+| `kerf-electronics`| `erc`, `buses`, `net_classes`, `length_tuning`, `via_stitching`, `shove_router`, `pad_overrides`, `hier_schematic`, `routing`, `pour`, `pcb_drc`, `pcb_layer_tools`, `autoroute`, `rf`, `spice` |
+| `kerf-fem`        | `fem`, `sim`                                                               |
+| `kerf-cam`        | `cam`                                                                      |
+| `kerf-topo`       | `topo`                                                                     |
+| `kerf-mates`      | `assembly`, `mates`, `tolerance`                                           |
+| `kerf-render`     | `render`                                                                   |
+| `kerf-cloud`      | `library`, `distributors`, `workshop`, `material` (cloud-only)             |
+| `kerf-billing`    | (REST routes only; no LLM tools)                                           |

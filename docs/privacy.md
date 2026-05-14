@@ -17,10 +17,11 @@ the data controller for the personal information described below.
 The hosted service runs on Python FastAPI with asyncpg connecting to Postgres.
 File blobs go to S3-compatible storage. Sensitive tokens (GitHub OAuth and
 distributor tokens) are encrypted at rest using AES-GCM
-(see `backend/utils/encrypt.py`).
+(see `packages/kerf-core/src/kerf_core/utils/encrypt.py`).
 
-Request logging is handled by the RequestID and AccessLog middleware in
-`backend/main.py`. Every request gets a unique ID for tracing.
+Request logging is handled by middleware in
+`packages/kerf-core/src/kerf_core/app.py`. Every request gets a unique ID
+for tracing.
 
 ## What we collect
 
@@ -177,10 +178,12 @@ than posting publicly. We'll credit you in the release notes if you'd like.
 ## Open source
 
 Kerf is [MIT licensed](https://github.com/imranp/kerf) and the codebase is
-public on [GitHub](https://github.com/imranp/kerf). If you want to know exactly
-what gets logged when, the RequestID and AccessLog middleware lives in
-`backend/main.py`. If you want to see what context goes to the LLM, check
-`backend/llm.py`. There's no second secret repo — the whole thing is auditable.
+public on [GitHub](https://github.com/imranp/kerf). If you want to know
+exactly what gets logged when, the middleware lives in
+`packages/kerf-core/src/kerf_core/app.py`. If you want to see what context
+goes to the LLM, check `packages/kerf-chat/src/kerf_chat/`. The cloud plugin
+packages (`packages/kerf-billing/`, `packages/kerf-cloud/`) carry the
+hosted-only paths. There's no second secret repo — the whole thing is auditable.
 
 ## Changes to this policy
 

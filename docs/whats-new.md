@@ -2,28 +2,107 @@
 
 Recent features shipped to Kerf. See [ROADMAP.md](https://github.com/imranp/kerf/blob/main/ROADMAP.md) for the full list and status of every item.
 
-## Sprint — May 2026 (Massive Feature Wave)
+## Sprint — May 2026
+
+### Plugin architecture + monorepo
+
+The backend has been split into a `packages/kerf-*/` plugin monorepo. Nineteen
+independent packages discovered via Python entry points (`kerf.plugins` group),
+each advertising a `provides=[...]` capability list at boot. The previous
+`backend/` and `pyworker/` trees are retired; install personas
+(`api-only` / `mech` / `electronics` / `bim` / `full` / `compute-only`) pull the
+relevant subset. Runtime capability tags are inspectable at
+`GET /health/capabilities`. See [architecture.md](./architecture.md) and
+[capabilities.md](./capabilities.md).
+
+### kerf-sdk (Python SDK)
+
+New `kerf-sdk` package on PyPI (`pip install kerf-sdk`). A thin Python client
+for the `/v1/rpc` endpoint — drives the same tool surface the chat LLM uses,
+from your own machine. Authenticates with an API token (`KERF_API_TOKEN`).
+Replaces the previously-rejected TS Web Worker scripting plan.
+
+### kerf-server CLI
+
+Single CLI entry-point: `kerf-server [--config ...] [--migrate]`. Drops in for
+`uvicorn backend.main:app`. Provided by `kerf-core`.
+
+### Cloud retired into plugins + root LICENSE-CLOUD
+
+The legacy `cloud/` and `backend/cloud/` trees collapsed into two proprietary
+plugin packages: `packages/kerf-billing/` and `packages/kerf-cloud/`.
+`LICENSE-CLOUD` sits at the repo root. Operator docs moved to
+[cloud-operator.md](./cloud-operator.md).
+
+### FEM polish
+
+Deformed-mesh overlay in the viewport, SLEPc + CalculiX modal analysis,
+multi-material BCs. `kerf-fem` now advertises `fem.linear-static`,
+`fem.modal`, and `fem.thermal` whenever the relevant solver is available.
+
+### CAM polish
+
+Real B-rep contour extraction, parallel-3D finishing, waterline finishing,
+lathe / turning operations, and a 5-axis path stub. `kerf-cam` exports
+`cam.2_5d` (always) plus `cam.parallel-3d`, `cam.waterline`, `cam.lathe`
+when pythonOCC is available.
+
+### Topo polish
+
+NURBS-driven STEP reconstruction of optimized geometry, smoothing pass,
+and multi-body topology support. `kerf-topo` exports `topo.simp`.
+
+### Mates UI restored
+
+Three.js mate visualisation back in the viewport. BREP face/edge picker
+returned; mate authoring is a click+click again. Tolerance auto chain-walk
+follows assembly mates through nested sub-assemblies.
+
+### Scalability — S1 + S2
+
+Frustum culling (S1) and `InstancedMesh` batching (S2) for the Three.js
+scene. Assemblies with hundreds of identical components now render at
+interactive frame rates.
+
+### Performance Phase 4 — revision DB
+
+Real diff-based `file_revisions` with SHA-256 deduplication and a
+safe-prune path. ~82× size reduction on a representative corpus. New
+`kerf-server revisions repack` subcommand back-fills the new format on
+existing rows (idempotent, dry-runnable, prune-on-confirm).
+
+### Planned designs landed in `docs/plans/`
+
+- [FreeCAD sketch → 3D shortcuts](./plans/freecad-sketch-shortcuts.md) —
+  `feature_boss_with_draft`, `feature_cut_from_sketch`,
+  `feature_hole_pattern_from_sketch`, symmetric loft, corrected-Frenet sweep.
+- [Sketch → JSCAD workflow](./plans/sketch-to-jscad.md) — mesh-side analog of
+  the `.sketch → .feature` BRep path.
+
+---
+
+## Sprint — earlier in May 2026 (Massive Feature Wave)
 
 ### Sketcher / Mechanical
-6 new constraints (horizontal/vertical distance, symmetric, block, equal angle, parallel). Arc/circle edge projection for external geometry. Multi-loop holes in extrude/pocket. 3D backdrop overlay. Carbon-copy sketches with validation. [sketch.md](../packages/kerf-chat/llm_docs/sketch.md)
+6 new constraints (horizontal/vertical distance, symmetric, block, equal angle, parallel). Arc/circle edge projection for external geometry. Multi-loop holes in extrude/pocket. 3D backdrop overlay. Carbon-copy sketches with validation. (`packages/kerf-chat/llm_docs/sketch.md`)
 
 ### Features — PartDesign / FreeCAD Parity
-Helix (variable-pitch), tapered Draft, Mirror, Multi-Transform, and Rib features shipped. ~10 new curve operations (offset, extend, blend, trim, intersect, project, section, split, isotrim, swap). [feature.md](../packages/kerf-chat/llm_docs/feature.md) · [curve_ops.md](../packages/kerf-chat/llm_docs/curve_ops.md)
+Helix (variable-pitch), tapered Draft, Mirror, Multi-Transform, and Rib features shipped. ~10 new curve operations (offset, extend, blend, trim, intersect, project, section, split, isotrim, swap).
 
 ### Surface Modeling — Rhino Parity
-SubD (Catmull-Clark subdivision surfaces). Full 3DM import/export. Mesh tools: remesh, decimate, smooth, repair, fill-holes, surface-from-points. Render-quality output via Blender Cycles. Parametric `.graph` (Grasshopper-equivalent). [subd.md](../packages/kerf-imports/llm_docs/subd.md) · [import_3dm.md](../packages/kerf-imports/llm_docs/import_3dm.md) · [mesh.md](../packages/kerf-imports/llm_docs/mesh.md) · [render.md](../packages/kerf-render/llm_docs/render.md) · [graph.md](../packages/kerf-imports/llm_docs/graph.md)
+SubD (Catmull-Clark subdivision surfaces). Full 3DM import/export. Mesh tools: remesh, decimate, smooth, repair, fill-holes, surface-from-points. Render-quality output via Blender Cycles. Parametric `.graph` (Grasshopper-equivalent).
 
 ### Drawings — Draft Workbench
-Hatch patterns, leader lines, rich text, and dimension chains — full drafting completeness. Draft workbench (2D CAD) for technical drawings. [drawing.md](../packages/kerf-chat/llm_docs/drawing.md) · [draft.md](../packages/kerf-imports/llm_docs/draft.md)
+Hatch patterns, leader lines, rich text, and dimension chains — full drafting completeness. Draft workbench (2D CAD) for technical drawings.
 
 ### Architecture — Revit Parity
-IFC compiler (`POST /compile-ifc` → IFC4 via IfcOpenShell). `.family.json` parametric components, `.schedule.json` query DSL, `.view.json` saved views, `.sheet.json` print layouts. Categories + hosted references, type vs instance params, phasing + view filters. Stairs, railings, MEP routing (`.duct`/`.pipe`/`.conduit`), curtain wall, sheet revisions. [bim.md](../packages/kerf-bim/llm_docs/bim.md) · [family.md](../packages/kerf-bim/llm_docs/family.md) · [schedule.md](../packages/kerf-bim/llm_docs/schedule.md) · [view.md](../packages/kerf-bim/llm_docs/view.md) · [sheet.md](../packages/kerf-bim/llm_docs/sheet.md) · [stairs.md](../packages/kerf-bim/llm_docs/stairs.md) · [railings.md](../packages/kerf-bim/llm_docs/railings.md) · [mep.md](../packages/kerf-bim/llm_docs/mep.md) · [curtain_wall.md](../packages/kerf-bim/llm_docs/curtain_wall.md) · [sheet_revisions.md](../packages/kerf-imports/llm_docs/sheet_revisions.md)
+IFC compiler (`POST /compile-ifc` → IFC4 via IfcOpenShell). `.family.json` parametric components, `.schedule.json` query DSL, `.view.json` saved views, `.sheet.json` print layouts. Categories + hosted references, type vs instance params, phasing + view filters. Stairs, railings, MEP routing (`.duct`/`.pipe`/`.conduit`), curtain wall, sheet revisions.
 
 ### Electronics — KiCad Parity
-Manual trace routing, copper pours/ground planes, full layer stack. PCB DRC, ERC (electrical rules check), net classes. Length tuning + diff-pair match, via stitching + teardrops. Push-pull (shove) router. Hierarchical schematics, buses + differential pairs. Per-pad mask/paste overrides. [circuit.md](../packages/kerf-chat/llm_docs/circuit.md) · [pcb_layers.md](../packages/kerf-chat/llm_docs/pcb_layers.md) · [pcb_drc.md](../packages/kerf-chat/llm_docs/pcb_drc.md) · [erc.md](../packages/kerf-electronics/llm_docs/erc.md) · [net_classes.md](../packages/kerf-electronics/llm_docs/net_classes.md) · [length_tuning.md](../packages/kerf-electronics/llm_docs/length_tuning.md) · [via_stitching.md](../packages/kerf-electronics/llm_docs/via_stitching.md) · [shove_router.md](../packages/kerf-electronics/llm_docs/shove_router.md) · [hier_schematic.md](../packages/kerf-electronics/llm_docs/hier_schematic.md) · [buses.md](../packages/kerf-electronics/llm_docs/buses.md) · [pad_overrides.md](../packages/kerf-electronics/llm_docs/pad_overrides.md)
+Manual trace routing, copper pours/ground planes, full layer stack. PCB DRC, ERC (electrical rules check), net classes. Length tuning + diff-pair match, via stitching + teardrops. Push-pull (shove) router. Hierarchical schematics, buses + differential pairs. Per-pad mask/paste overrides.
 
 ### Workshop / Library / Cloud
-Workshop + Library endpoints ported. Cloud git → S3 Storer (stateless serverless). Large-file `.step-ref` Phase 1 (JSON pointer + object storage). GitHub OAuth. AES-GCM encrypt utility. [library.md](../packages/kerf-chat/llm_docs/library.md) · [derived_cache.md](../packages/kerf-chat/llm_docs/derived_cache.md)
+Workshop + Library endpoints ported into `kerf-cloud`. Cloud git → S3 Storer (stateless serverless). Large-file `.step-ref` Phase 1 (JSON pointer + object storage). GitHub OAuth. AES-GCM encrypt utility.
 
 ### Inspection / Misc
-Model comparison tool. Distributor catalog ported. Configurable layers + display modes. [inspection.md](../packages/kerf-imports/llm_docs/inspection.md) · [distributors.md](../packages/kerf-chat/llm_docs/distributors.md) · [workspace.md](../packages/kerf-chat/llm_docs/workspace.md)
+Model comparison tool. Distributor catalog ported. Configurable layers + display modes.

@@ -9,10 +9,13 @@ All imports produce native Kerf file types. Large binary assets (STEP, STL, mesh
 Every format supports three import paths:
 
 - **UI:** Drag the file onto the file tree, or click "+ New" → "Import…"
-- **LLM tool:** Ask the assistant to import — it calls `kerf-sdk` under the hood
-- **REST:** `POST /import-<format>` via `kerf-pyworker` (cloud or local)
+- **LLM tool:** Ask the assistant to import — it dispatches the relevant
+  `import_*` tool registered by `kerf-imports`
+- **REST:** `POST /import-<format>` (mounted by the `kerf-imports` plugin)
 
-Large files are processed asynchronously. Check the job status at `GET /import-jobs/<id>`.
+Large files are processed asynchronously by `kerf-workers`. Check the job
+status at `GET /import-jobs/<id>`. Programmatic access from your own machine
+is via the `kerf-sdk` Python package (`pip install kerf-sdk`).
 
 ## OpenSCAD
 
@@ -41,9 +44,10 @@ Browser-side parser at `src/lib/openscadToJscad.js` with 18 vitest tests. Drag-d
 
 ## KiCad
 
-**Status: shipped (Tier 1), in-flight (Tier 2)**
+**Status: shipped (Tier 1 + Tier 2)**
 
-pyworker `/import-kicad` parses `.kicad_sch` / `.kicad_pcb` → `.circuit.tsx`.
+`kerf-imports` plugin: `POST /import-kicad` parses `.kicad_sch` / `.kicad_pcb`
+→ `.circuit.tsx`. Capability tag: `imports.kicad`.
 
 **How to import:**
 - Drag a `.kicad_sch`, `.kicad_pcb`, or zipped KiCad project onto the file tree
@@ -55,22 +59,26 @@ pyworker `/import-kicad` parses `.kicad_sch` / `.kicad_pcb` → `.circuit.tsx`.
 - ~100 common footprints via translation table
 - Schematic and PCB x/y placement
 
-**Tier 2 — in-flight:**
+**Tier 2 — shipped:**
 - Symbol and footprint library lookup
+  (`packages/kerf-imports/src/kerf_imports/kicad_library.py`)
 - 3D models via `step-ref` pointers
 
-**Tier 3 — out of scope for this sprint:**
+**Tier 3 — out of scope:**
 - Lossless round-trip or export back to KiCad
 - Full layout fidelity (differential pairs, layer stack-ups, custom design rules)
 - ERC/DRC rule preservation
 
-**Requires:** cloud pyworker service. Local-install users run `kerf-pyworker` themselves.
+Runs entirely in-process: any install persona that includes `kerf-imports`
+(`full`, `compute-only`) gets the endpoint.
 
 ## Rhino .3dm
 
 **Status: shipped**
 
-`pyworker/routes/rhino3dm.py` + `backend/tools/import_3dm.py`. POST `/import-3dm`. Per ROADMAP: single biggest adoption unlock.
+`kerf-imports` plugin: `packages/kerf-imports/src/kerf_imports/rhino3dm_route.py`
++ `kerf_imports/tools/import_3dm.py`. POST `/import-3dm`. Capability tag:
+`imports.rhino3dm`. Per ROADMAP: single biggest adoption unlock.
 
 **How to import:**
 - Drag a `.3dm` file onto the file tree
@@ -119,9 +127,13 @@ Track progress in [ROADMAP](../ROADMAP.md).
 
 ## FreeCAD
 
-**Status: explicitly excluded from this sprint**
+**Status: planned**
 
-Future work. Watch the roadmap for updates.
+The `kerf-imports` plugin advertises `imports.freecad` once the FreeCAD-side
+`.FCStd` reader lands (currently empty; see
+`packages/kerf-imports/src/kerf_imports/freecad.py`). Parity scope: PartDesign
+body imports → `.feature` tree; sketches imported alongside as their own
+`.sketch`. Track progress in [ROADMAP](../ROADMAP.md).
 
 ## General tips
 

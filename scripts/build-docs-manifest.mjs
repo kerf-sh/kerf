@@ -1,5 +1,5 @@
-// Walks the two docs corpora — `backend/llm_docs/*.md` (the
-// LLM-authoring guides we expose to humans too) and the top-level `docs/*.md`
+// Walks the two docs corpora — the per-plugin `packages/kerf-*/llm_docs/*.md`
+// authoring guides (we expose them to humans too) and the top-level `docs/*.md`
 // (long-form articles + legal) — and writes `public/docs-manifest.json`.
 //
 // The manifest is a flat list of { slug, title, group, source, mtime, body }.
@@ -9,7 +9,7 @@
 //
 // Wired into `predev` and `prebuild:web` so the SPA always has a fresh copy.
 
-import { readdirSync, readFileSync, writeFileSync, statSync, mkdirSync } from 'node:fs'
+import { readdirSync, readFileSync, writeFileSync, statSync, mkdirSync, existsSync } from 'node:fs'
 import { join, basename } from 'node:path'
 
 const ROOT = process.cwd()
@@ -18,6 +18,44 @@ const ROOT = process.cwd()
 // Source corpora. `group` is the sidebar section header. `slug` becomes the
 // route segment under /docs/. `source` lets us rebuild edit-on-GitHub URLs.
 // ----------------------------------------------------------------------------
+
+// Per-plugin LLM-doc folders — these contribute schema references that humans
+// will also want to read. Walked at runtime; only the file-slugs listed below
+// get surfaced in the nav. Anything else is ignored (LLM-only).
+const LLM_DOC_PAGES = {
+  // Modeling
+  'sketch':                { group: 'Modeling',          order: 1, slug: 'sketch-format' },
+  'feature':               { group: 'Modeling',          order: 4, slug: 'feature-format' },
+  'jscad':                 { group: 'Modeling',          order: 5, slug: 'jscad-format' },
+  'assembly':              { group: 'Modeling',          order: 6, slug: 'assembly-format' },
+  'drawing':               { group: 'Modeling',          order: 7, slug: 'drawing-format' },
+  // Architecture / BIM
+  'bim':                   { group: 'Architecture',      order: 0, slug: 'bim-format' },
+  // Electronics
+  'circuit':               { group: 'Electronics',       order: 0, slug: 'circuit-format' },
+  // Library & BOM
+  'part':                  { group: 'Library & BOM',     order: 0, slug: 'part-format' },
+  'distributors':          { group: 'Library & BOM',     order: 1 },
+  'curation':              { group: 'Library & BOM',     order: 2 },
+  // Workspaces
+  'email':                 { group: 'Workspaces',        order: 1 },
+}
+
+function discoverPluginLLMDocs() {
+  const sources = []
+  const pkgRoot = join(ROOT, 'packages')
+  if (!existsSync(pkgRoot)) return sources
+  for (const pkg of readdirSync(pkgRoot)) {
+    const llmDir = join(pkgRoot, pkg, 'llm_docs')
+    if (!existsSync(llmDir)) continue
+    sources.push({
+      dir: `packages/${pkg}/llm_docs`,
+      sourcePrefix: `packages/${pkg}/llm_docs/`,
+      pages: LLM_DOC_PAGES,
+    })
+  }
+  return sources
+}
 
 const SOURCES = [
   // Top-level human docs — getting started, concepts, architecture, legal.
@@ -33,12 +71,19 @@ const SOURCES = [
       'sketching':             { group: 'Modeling',        order: 0 },
       'assemblies':            { group: 'Modeling',        order: 2 },
       'drawings':              { group: 'Modeling',        order: 3 },
+      'parametric':            { group: 'Modeling',        order: 8 },
+      // Domains
+      'electronics':           { group: 'Domains',         order: 0 },
+      'imports':               { group: 'Domains',         order: 1 },
       // Workspaces
       'cloud':                 { group: 'Workspaces',      order: 0 },
+      'cloud-operator':        { group: 'Workspaces',      order: 1 },
       // API & Reference
       'architecture':          { group: 'API & Reference', order: 0 },
-      'llm-tools':             { group: 'API & Reference', order: 1 },
-      'contributing':          { group: 'API & Reference', order: 2 },
+      'capabilities':          { group: 'API & Reference', order: 1 },
+      'llm-tools':             { group: 'API & Reference', order: 2 },
+      'v1-rpc':                { group: 'API & Reference', order: 3 },
+      'contributing':          { group: 'API & Reference', order: 4 },
       // What's New
       'whats-new':             { group: "What's New",      order: 0 },
       // Legal
@@ -47,31 +92,17 @@ const SOURCES = [
       'privacy':               { group: 'Legal',           order: 2 },
     },
   },
-  // LLM-authoring corpus — file-format references that humans will also want.
+  // Design docs for planned work.
   {
-    dir: 'backend/llm_docs',
-    sourcePrefix: 'backend/llm_docs/',
+    dir: 'docs/plans',
+    sourcePrefix: 'docs/plans/',
     pages: {
-      // Modeling
-      'sketch':                { group: 'Modeling',          order: 1, slug: 'sketch-format' },
-      'feature':               { group: 'Modeling',          order: 4, slug: 'feature-format' },
-      'jscad':                 { group: 'Modeling',          order: 5, slug: 'jscad-format' },
-      'assembly':              { group: 'Modeling',          order: 6, slug: 'assembly-format' },
-      'drawing':               { group: 'Modeling',          order: 7, slug: 'drawing-format' },
-      // Architecture / BIM
-      'bim':                   { group: 'Architecture',      order: 0, slug: 'bim-format' },
-      // Electronics
-      'circuit':               { group: 'Electronics',       order: 0, slug: 'circuit-format' },
-      // Library & BOM
-      'part':                  { group: 'Library & BOM',     order: 0, slug: 'part-format' },
-      'distributors':          { group: 'Library & BOM',     order: 1 },
-      'curation':              { group: 'Library & BOM',     order: 2 },
-      // Workspaces
-      'email':                 { group: 'Workspaces',        order: 1 },
-      // API & Reference (the LLM corpus index page)
-      'index':                 { group: 'API & Reference',   order: 3, slug: 'llm-corpus' },
+      'freecad-sketch-shortcuts': { group: 'Plans', order: 0 },
+      'sketch-to-jscad':          { group: 'Plans', order: 1 },
     },
   },
+  // Per-plugin LLM corpus folders — discovered at run time.
+  ...discoverPluginLLMDocs(),
 ]
 
 // ----------------------------------------------------------------------------
