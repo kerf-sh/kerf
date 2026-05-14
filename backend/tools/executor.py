@@ -1,35 +1,13 @@
-import json
-from typing import Optional
-from tools.registry import Tool, ToolSpec, err_payload, ok_payload, Registry
-from tools.context import ProjectCtx
+"""Forwarding shim: executor.py has moved to kerf_chat.tools.executor.
 
+This file exists so that ``from tools.executor import ...`` (and the re-export
+in backend/tools/__init__.py) continues to resolve correctly.
+"""
+from kerf_chat.tools.executor import (  # noqa: F401
+    specs,
+    find,
+    execute,
+)
+from kerf_chat.tools.registry import Registry  # noqa: F401
 
-def specs(role: str) -> list[ToolSpec]:
-    out = []
-    for t in Registry:
-        if t.write and role == "viewer":
-            continue
-        out.append(t.spec)
-    return out
-
-
-def find(name: str) -> Optional[Tool]:
-    for t in Registry:
-        if t.spec.name == name:
-            return t
-    return None
-
-
-async def execute(ctx: ProjectCtx, name: str, args: bytes) -> str:
-    tool = find(name)
-    if tool is None:
-        return err_payload(f"unknown tool {name}", "UNKNOWN_TOOL")
-    if tool.write and ctx.role == "viewer":
-        return err_payload(f"viewers cannot use {name}", "FORBIDDEN")
-    if not args:
-        args = b"{}"
-    try:
-        out = await tool.run(ctx, args)
-        return out
-    except Exception as e:
-        return err_payload(str(e), "ERROR")
+__all__ = ["specs", "find", "execute", "Registry"]

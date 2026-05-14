@@ -1,38 +1,15 @@
-from dataclasses import dataclass, field
-from typing import Callable, Any
+"""Forwarding shim: registry.py has moved to kerf_chat.tools.registry.
 
-Registry: list["Tool"] = []
+This file exists so that ``from tools.registry import ...`` in backend tool
+modules (which are still on sys.path) continues to resolve correctly.
+"""
+from kerf_chat.tools.registry import (  # noqa: F401
+    Registry,
+    Tool,
+    ToolSpec,
+    register,
+    ok_payload,
+    err_payload,
+)
 
-
-@dataclass
-class ToolSpec:
-    name: str
-    description: str
-    input_schema: dict
-
-
-@dataclass
-class Tool:
-    spec: ToolSpec
-    write: bool = False
-    run: Callable = None
-
-
-def register(spec: ToolSpec, write: bool = False):
-    def decorator(fn):
-        Registry.append(Tool(spec=spec, write=write, run=fn))
-        return fn
-    return decorator
-
-
-def ok_payload(v: Any) -> str:
-    import json
-    try:
-        return json.dumps(v)
-    except Exception as e:
-        return err_payload(f"encode result: {e}", "ERROR")
-
-
-def err_payload(msg: str, code: str) -> str:
-    import json
-    return json.dumps({"error": msg, "code": code})
+__all__ = ["Registry", "Tool", "ToolSpec", "register", "ok_payload", "err_payload"]
