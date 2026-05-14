@@ -700,56 +700,56 @@ function FactCard({ icon: Icon, title, body }) {
 /* Section: Recently shipped                                                   */
 /* -------------------------------------------------------------------------- */
 
-// Pulled from docs/whats-new.md (May 2026 wave). Most recent items first.
-// Keep this list to ~9 — much longer gets unscannable.
+// Pulled from ROADMAP.md ✅ shipped rows — most recent first. Keep to 9
+// (3×3 on lg). The full list lives in /roadmap and ROADMAP.md.
 const SHIPPED = [
   {
-    title: 'FreeCAD sketch → 3D shortcuts',
+    title: 'FreeCAD Tier 1 import',
+    domain: 'Imports',
+    body: '.FCStd → .feature + .sketch + .assembly. Pure-Python parser, BRep-lifted geometry, PartDesign metadata captured, multi-Body → assembly with placement transforms.',
+    docHref: '/docs/imports',
+  },
+  {
+    title: 'NURBS booleans v1',
     domain: 'Mechanical',
-    body: 'feature_boss_with_draft, feature_cut_from_sketch, feature_hole_pattern_from_sketch. Symmetric Loft. Sweep1 corrected-Frenet mode. Single-tool sketch→solid handoff.',
-    docHref: '/docs/freecad-sketch-shortcuts',
+    body: 'feature_to_solid cap-then-boolean + feature_boolean (cut/fuse/common) on solids. 7-task scope shipped end-to-end; sets up Phase 4 surface-direct.',
+    docHref: '/docs/feature-format',
+  },
+  {
+    title: 'NURBS Phase 4 — surface booleans (C1)',
+    domain: 'Mechanical',
+    body: 'feature_surface_boolean Python tool + opSurfaceBoolean worker handler behind a binding probe. First 3 of 10 Capability-1 tasks landed.',
+    docHref: '/docs/feature-format',
+  },
+  {
+    title: 'Persistent face naming',
+    domain: 'Mechanical',
+    body: 'Sketch-anchored primary (Pad-A.TopCap) + topo-hash fallback. Dual-write target_face_name alongside legacy face_id — survives upstream sketch edits.',
+    docHref: '/docs/feature-format',
+  },
+  {
+    title: '5-axis CAM v1',
+    domain: 'CAM',
+    body: 'Constant-tilt finishing (UV iso-curves + per-point surface normal + tilt-about-tangent ball-end math) and 3+2 indexed (rotate STL to drive-face Z).',
+    docHref: '/docs/capabilities',
+  },
+  {
+    title: 'Wiring + harness diagrams',
+    domain: 'Electronics',
+    body: 'New .wiring file kind. WireViz YAML → SVG. Per-plugin kerf-wiring package, /run-wireviz pyworker route, opt-in GPLv3 extra.',
+    docHref: '/docs/electronics',
   },
   {
     title: 'Sketch → JSCAD workflow',
     domain: 'Mechanical',
-    body: 'extrude_sketch_to_jscad LLM tool, sketch-import errors surfaced in the viewport, reactive re-eval when the imported .sketch changes. Mesh-side analog of .sketch → .feature.',
+    body: 'extrude_sketch_to_jscad LLM tool, viewport surfaces sketch-import errors, reactive re-eval when an imported .sketch changes. Mesh-side analog of .feature.',
     docHref: '/docs/sketch-to-jscad',
-  },
-  {
-    title: 'Mates UI + tolerance chain-walk',
-    domain: 'Mechanical',
-    body: 'BREP face/edge picker is back; mate authoring is click+click again. tolerance_auto_chain walks the assembly-mate graph by BFS between two feature refs.',
-    docHref: '/docs/assemblies',
-  },
-  {
-    title: 'Viewport scalability S1 + S2',
-    domain: 'Performance',
-    body: 'Frustum culling (S1) + InstancedMesh batching (S2) in Three.js. Assemblies with hundreds of identical components now render at interactive frame rates.',
-    docHref: '/docs/architecture',
-  },
-  {
-    title: 'Revision DB — 82× smaller',
-    domain: 'Performance',
-    body: 'Phase-4: real diff-based file_revisions with SHA-256 dedup + safe-prune. kerf-server revisions repack back-fills the new format on existing rows.',
-    docHref: '/docs/architecture',
   },
   {
     title: 'kerf-sdk Python SDK',
     domain: 'Scripting',
-    body: 'pip install kerf-sdk. JSON-RPC over /v1/rpc, API-token auth, namespaced wrappers for files / equations / configurations / revisions / docs. Bring your own LLM.',
+    body: 'pip install kerf-sdk. JSON-RPC over /v1/rpc, API-token auth, namespaced wrappers for files / equations / configurations / revisions / docs.',
     docHref: '/docs/v1-rpc',
-  },
-  {
-    title: 'Plugin monorepo + kerf-server',
-    domain: 'Architecture',
-    body: '19 plugin packages under packages/, discovered via Python entry points. kerf-server CLI entry point. Six install personas (api-only / mech / electronics / bim / full / compute-only).',
-    docHref: '/docs/architecture',
-  },
-  {
-    title: 'FEM, CAM, Topo polish',
-    domain: 'CAE',
-    body: 'Deformed-mesh overlay + SLEPc modal + multi-material BCs. Real B-rep contour extraction + lathe + 5-axis stub for CAM. NURBS-driven STEP reconstruction for topo.',
-    docHref: '/docs/capabilities',
   },
   {
     title: 'Revit-parity authoring',
@@ -839,20 +839,24 @@ function RecentlyShipped() {
 
 const ROADMAP = [
   {
-    title: 'Sketch → JSCAD finishing',
-    body: 'Carbon-copy/datum support and end-to-end LLM scenario for the .sketch → .jscad bridge (3 of 5 tasks shipped).',
+    title: 'NURBS Phase 4 — surface-direct',
+    body: 'Robust surface booleans (Capability 1, in flight — 3/10 tasks shipped). Trim-by-curve, matchSrf, G3 continuity follow.',
+    status: 'in_flight',
   },
   {
-    title: 'FreeCAD ingest (Tier 1–2)',
-    body: 'Part + PartDesign → .feature + .sketch. Sketcher constraints + Spreadsheet → .equations.',
+    title: 'Slicing — cross-section + layered + 3D-print',
+    body: 'feature_section wraps BRepAlgoAPI_Section; CNC layered milling; AGPLv3 slicer subprocess for FDM/SLA G-code.',
+    status: 'planned',
   },
   {
-    title: 'NURBS Phase 4 long-tail',
-    body: 'Trimming + booleans against NURBS surfaces — multi-year OCCT kernel work tracked separately.',
+    title: 'Quad remesher (Rhino parity)',
+    body: 'feature_quad_remesh wraps Instant Meshes — quad-dominant remeshing, distinct from the triangle mesh.remesh op. SubD/FEM prep.',
+    status: 'planned',
   },
   {
-    title: 'openEMS RF field solver',
-    body: 'Phase-2 RF: full 3D EM field simulation alongside scikit-rf S-parameters.',
+    title: 'PLC structured text (.plc.st)',
+    body: 'IEC 61131-3 Structured Text editor + offline MATIEC lint; optional OpenPLC sim. Companion to .circuit.tsx on the electronics persona.',
+    status: 'planned',
   },
 ]
 
@@ -869,33 +873,69 @@ function RoadmapGlimpse() {
               What we&apos;re building next.
             </h2>
           </div>
-          <a
-            href={`${GITHUB_URL}/blob/main/ROADMAP.md`}
-            target="_blank"
-            rel="noreferrer"
-            className="hidden sm:inline-flex items-center gap-1.5 text-sm text-ink-400 hover:text-ink-100 transition-colors"
-          >
-            full roadmap
-            <ArrowRight size={14} />
-          </a>
+          <div className="hidden sm:flex items-center gap-4">
+            <Link
+              to="/roadmap"
+              className="inline-flex items-center gap-1.5 rounded-md bg-kerf-300 text-ink-950 px-3 h-9 text-sm font-medium tracking-tight hover:bg-kerf-200 transition-colors"
+            >
+              See full roadmap
+              <ArrowRight size={14} />
+            </Link>
+            <a
+              href={`${GITHUB_URL}/blob/main/ROADMAP.md`}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1.5 text-sm text-ink-400 hover:text-ink-100 transition-colors"
+            >
+              ROADMAP.md
+              <ArrowRight size={14} />
+            </a>
+          </div>
         </div>
 
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-          {ROADMAP.map((r) => (
-            <div
-              key={r.title}
-              className="rounded-xl border border-dashed border-ink-700 bg-ink-900/30 p-4 hover:border-kerf-300/30 hover:bg-ink-900/50 transition-colors"
-            >
-              <span className="inline-flex items-center gap-1 rounded-full bg-ink-900 border border-ink-800 px-2 py-0.5 text-[10px] font-mono uppercase tracking-widest text-ink-400 mb-2">
-                <span aria-hidden>○</span>
-                planned
-              </span>
-              <h3 className="font-display text-sm font-semibold tracking-tight text-ink-100 mb-1">
-                {r.title}
-              </h3>
-              <p className="text-xs text-ink-400 leading-relaxed">{r.body}</p>
-            </div>
-          ))}
+          {ROADMAP.map((r) => {
+            const isInFlight = r.status === 'in_flight'
+            const pillCls = isInFlight
+              ? 'bg-kerf-300/10 border border-kerf-300/30 text-kerf-300'
+              : 'bg-ink-900 border border-ink-800 text-ink-400'
+            return (
+              <div
+                key={r.title}
+                className={
+                  'rounded-xl border border-dashed bg-ink-900/30 p-4 transition-colors ' +
+                  (isInFlight
+                    ? 'border-kerf-300/30 hover:bg-ink-900/50'
+                    : 'border-ink-700 hover:border-kerf-300/30 hover:bg-ink-900/50')
+                }
+              >
+                <span
+                  className={
+                    'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-mono uppercase tracking-widest mb-2 ' +
+                    pillCls
+                  }
+                >
+                  <span aria-hidden>{isInFlight ? '●' : '○'}</span>
+                  {isInFlight ? 'in flight' : 'planned'}
+                </span>
+                <h3 className="font-display text-sm font-semibold tracking-tight text-ink-100 mb-1">
+                  {r.title}
+                </h3>
+                <p className="text-xs text-ink-400 leading-relaxed">{r.body}</p>
+              </div>
+            )
+          })}
+        </div>
+
+        {/* Mobile CTA */}
+        <div className="mt-6 flex sm:hidden">
+          <Link
+            to="/roadmap"
+            className="inline-flex items-center gap-1.5 rounded-md bg-kerf-300 text-ink-950 px-3 h-9 text-sm font-medium tracking-tight hover:bg-kerf-200 transition-colors"
+          >
+            See full roadmap
+            <ArrowRight size={14} />
+          </Link>
         </div>
       </div>
     </section>
