@@ -75,10 +75,13 @@ import {
   GitIllustration,
   ScriptingIllustration,
   PipelineIllustration,
+  SketchShortcutsIllustration,
+  SketchToJscadIllustration,
 } from '../components/illustrations/index.js'
 
-const GITHUB_URL = 'https://github.com/imranp/kerf'
-const INSTALL_CMD = 'brew install exolution/tap/kerf'
+const GITHUB_URL = 'https://github.com/kerf-sh/kerf'
+const INSTALL_CMD = 'pip install -e .[mech]'
+const RUN_CMD = 'kerf-server --migrate'
 
 /* -------------------------------------------------------------------------- */
 /* Section: Hero                                                               */
@@ -141,7 +144,7 @@ function Hero() {
               </li>
               <li className="flex items-center gap-1.5">
                 <span className="w-1 h-1 rounded-full bg-ink-500" />
-                32 MB single binary
+                Python plugin monorepo
               </li>
               <li className="flex items-center gap-1.5">
                 <span className="w-1 h-1 rounded-full bg-ink-500" />
@@ -187,30 +190,40 @@ function FloatingChip({ icon: Icon, label, className = '' }) {
 function RunLocallyChip() {
   const [copied, setCopied] = useState(false)
   const copy = () => {
+    const text = `${INSTALL_CMD}\n${RUN_CMD}`
     if (typeof navigator !== 'undefined' && navigator.clipboard) {
-      navigator.clipboard.writeText(INSTALL_CMD).catch(() => {})
+      navigator.clipboard.writeText(text).catch(() => {})
     }
     setCopied(true)
     setTimeout(() => setCopied(false), 1400)
   }
   return (
-    <div className="mt-4 inline-flex items-center gap-2 rounded-lg border border-ink-800 bg-ink-900/60 px-3 py-2 font-mono text-xs text-ink-300 max-w-full">
-      <Terminal size={12} className="text-kerf-300 shrink-0" />
-      <span className="truncate">
-        <span className="text-ink-500">$</span>{' '}
-        <span className="text-ink-100">{INSTALL_CMD}</span>
-      </span>
-      <button
-        type="button"
-        onClick={copy}
-        aria-label="Copy install command"
-        className="ml-1 inline-flex items-center justify-center w-6 h-6 rounded text-ink-400 hover:text-kerf-300 hover:bg-ink-800 transition-colors shrink-0"
-      >
-        {copied ? <Check size={12} className="text-kerf-300" /> : <Copy size={12} />}
-      </button>
-      <span className="hidden sm:inline text-[10px] text-ink-500 ml-1">
-        or `curl kerf.app/install.sh | sh`
-      </span>
+    <div className="mt-4 flex flex-col gap-1 rounded-lg border border-ink-800 bg-ink-900/60 px-3 py-2 font-mono text-xs text-ink-300 max-w-full sm:max-w-md">
+      <div className="flex items-start gap-2 min-w-0">
+        <Terminal size={12} className="text-kerf-300 shrink-0 mt-1" />
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="text-ink-500 shrink-0">$</span>
+            <span className="text-ink-100 break-all">{INSTALL_CMD}</span>
+          </div>
+          <div className="flex items-center gap-2 min-w-0 mt-0.5">
+            <span className="text-ink-500 shrink-0">$</span>
+            <span className="text-ink-100 break-all">{RUN_CMD}</span>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={copy}
+          aria-label="Copy install commands"
+          className="inline-flex items-center justify-center w-6 h-6 rounded text-ink-400 hover:text-kerf-300 hover:bg-ink-800 transition-colors shrink-0"
+        >
+          {copied ? <Check size={12} className="text-kerf-300" /> : <Copy size={12} />}
+        </button>
+      </div>
+      <p className="text-[10px] text-ink-500 pl-5">
+        Python 3.11+ · Postgres · or{' '}
+        <code className="text-ink-400">curl kerf.app/install.sh | sh</code>
+      </p>
     </div>
   )
 }
@@ -354,7 +367,7 @@ const CAPABILITY_GROUPS = [
       {
         icon: Layers,
         title: 'OCCT B-rep features',
-        body: 'Pad, Pocket, Revolve, Fillet, Chamfer, Shell, Hole, Draft, Sweep, Loft, plus NURBS surfacing (sweep2 / network / blend) and direct face/edge gumballs.',
+        body: 'Pad, Pocket, Revolve, Fillet, Chamfer, Shell, Hole, Draft, Sweep (corrected-Frenet mode), symmetric Loft, plus NURBS surfacing (sweep2 / network / blend) and direct face/edge gumballs.',
         Illustration: FeatureTreeIllustration,
       },
       {
@@ -362,6 +375,18 @@ const CAPABILITY_GROUPS = [
         title: '2D parametric sketcher',
         body: 'planegcs solver. 12+ constraints. Trim, extend, ellipse, B-spline, fillet, mirror, linear/polar patterns. Arc/circle edge projection. Multi-loop holes.',
         Illustration: SketcherIllustration,
+      },
+      {
+        icon: Zap,
+        title: 'FreeCAD sketch shortcuts',
+        body: 'feature_boss_with_draft, feature_cut_from_sketch, feature_hole_pattern_from_sketch — single LLM calls that land a 2D profile straight into a B-rep feature with the right downstream metadata.',
+        Illustration: SketchShortcutsIllustration,
+      },
+      {
+        icon: Workflow,
+        title: 'Sketch → JSCAD',
+        body: 'extrude_sketch_to_jscad LLM tool. Import a .sketch profile into a JSCAD program; reactive re-eval when the sketch changes; sketch-import errors surface in the viewport.',
+        Illustration: SketchToJscadIllustration,
       },
       {
         icon: FileText,
@@ -375,12 +400,12 @@ const CAPABILITY_GROUPS = [
     id: 'cae',
     eyebrow: 'Engineering · CAE + CAM',
     title: 'FEM, topology, tolerance, CAM — one chain.',
-    body: 'Push a part through linear-static and modal FEM, density-field topology optimisation, worst-case / RSS / Monte-Carlo tolerance, and emit posted G-code. All open-source solvers under the hood.',
+    body: 'Push a part through linear-static and modal FEM, density-field topology optimisation, worst-case / RSS / Monte-Carlo tolerance with assembly-mate-aware chain-walking, and emit posted G-code. All open-source solvers under the hood.',
     cards: [
       {
         icon: Activity,
         title: 'FEM analysis',
-        body: 'FEniCSx primary (UFL, multiphysics-ready) + CalculiX second-solver. Linear static, modal, multi-body bonded contact. Deformed-shape 3D overlay with stress colouring.',
+        body: 'FEniCSx primary (UFL, multiphysics-ready) + CalculiX second-solver. Linear static, modal (SLEPc), multi-body bonded contact. Deformed-shape 3D overlay with stress colouring.',
         Illustration: FemIllustration,
       },
       {
@@ -394,6 +419,12 @@ const CAPABILITY_GROUPS = [
         title: 'CAM toolpaths',
         body: 'OpenCAMlib + pythonOCC. 2.5D face/contour/pocket/drill/profile, 3D parallel + waterline, lathe X-Z. LinuxCNC / GRBL / Mach3 / Fanuc post-processors.',
         Illustration: CamIllustration,
+      },
+      {
+        icon: Activity,
+        title: 'Tolerance + mates',
+        body: 'Worst-case · RSS · Monte-Carlo dimension stacks. tolerance_auto_chain walks the assembly-mate graph by BFS between two feature refs and builds the dimension chain for you. Mates UI is back with BREP face/edge picker.',
+        Illustration: null,
       },
     ],
   },
@@ -413,7 +444,7 @@ const CAPABILITY_GROUPS = [
         icon: Cpu,
         title: 'SPICE + autoroute',
         body: 'Server-side ngspice via /run-spice. V/I probes on the schematic. FreeRouting JAR for autoroute, KiCad import for both schematics and footprint libraries.',
-        Illustration: ScriptingIllustration,
+        Illustration: null,
       },
       {
         icon: Radio,
@@ -451,9 +482,9 @@ const CAPABILITY_GROUPS = [
   },
   {
     id: 'sharing',
-    eyebrow: 'Library · Workshop · Cloud',
-    title: 'Open sharing, curated parts, real git.',
-    body: 'A community Workshop for forking projects, a curated Library of parts with live distributor pricing (DigiKey / Mouser / LCSC), and a cloud-tier real-git backend with GitHub sync.',
+    eyebrow: 'Library · Workshop · Cloud · SDK',
+    title: 'Open sharing, curated parts, real git, scriptable.',
+    body: 'A community Workshop for forking projects, a curated Library of parts with live distributor pricing (DigiKey / Mouser / LCSC), a real-git backend with GitHub sync, and a Python SDK for driving the same tool surface from your own machine.',
     cards: [
       {
         icon: Boxes,
@@ -470,8 +501,26 @@ const CAPABILITY_GROUPS = [
       {
         icon: GitBranch,
         title: 'Cloud git + GitHub',
-        body: 'Real go-git / pygit2 backend, multi-lane lattice graph, GitHub OAuth, AES-GCM-encrypted tokens, S3 storer for stateless serverless deploys, .step-ref pointers for big binaries.',
+        body: 'pygit2 backend, multi-lane lattice graph, GitHub OAuth, AES-GCM-encrypted tokens, S3 storer for stateless serverless deploys, .step-ref pointers for big binaries.',
         Illustration: GitIllustration,
+      },
+      {
+        icon: Terminal,
+        title: 'kerf-sdk · Python SDK',
+        body: 'pip install kerf-sdk. JSON-RPC over /v1/rpc, API-token auth, same tool surface the chat LLM uses — drive parameter sweeps and CI bakes from your own machine.',
+        Illustration: ScriptingIllustration,
+      },
+      {
+        icon: Zap,
+        title: 'Viewport at scale',
+        body: 'Frustum culling (S1) + InstancedMesh batching (S2) in Three.js. Assemblies with hundreds of identical components render at interactive frame rates.',
+        Illustration: null,
+      },
+      {
+        icon: GitBranch,
+        title: 'Fine-grained undo',
+        body: 'Every file edit appends to file_revisions. Phase-4 diff-based storage + SHA-256 dedup shrinks revision DB ~82×. Cmd+Z restores from any point; deleted files resurrect from history.',
+        Illustration: null,
       },
     ],
   },
@@ -643,44 +692,62 @@ function FactCard({ icon: Icon, title, body }) {
 /* Section: Recently shipped                                                   */
 /* -------------------------------------------------------------------------- */
 
-// Pulled from docs/whats-new.md (May 2026 wave) — six highlights that
-// span domains. Keep this list short; longer ones get unscannable.
+// Pulled from docs/whats-new.md (May 2026 wave). Most recent items first.
+// Keep this list to ~9 — much longer gets unscannable.
 const SHIPPED = [
   {
-    title: 'Sketcher v2 + Carbon-copy',
+    title: 'FreeCAD sketch → 3D shortcuts',
     domain: 'Mechanical',
-    body: '6 new constraints, trim/extend/ellipse/B-spline/fillet/mirror, linear + polar patterns, arc/circle edge projection, carbon-copy sketches with validation.',
-    docHref: '/docs/sketching',
+    body: 'feature_boss_with_draft, feature_cut_from_sketch, feature_hole_pattern_from_sketch. Symmetric Loft. Sweep1 corrected-Frenet mode. Single-tool sketch→solid handoff.',
+    docHref: '/docs/freecad-sketch-shortcuts',
   },
   {
-    title: 'PartDesign feature parity',
+    title: 'Sketch → JSCAD workflow',
     domain: 'Mechanical',
-    body: 'Helix (variable-pitch), tapered Draft, Mirror, Multi-Transform, Rib. Twelve new curve ops: offset, extend, blend, trim, intersect, project, section, split…',
-    docHref: '/docs/feature-format',
+    body: 'extrude_sketch_to_jscad LLM tool, sketch-import errors surfaced in the viewport, reactive re-eval when the imported .sketch changes. Mesh-side analog of .sketch → .feature.',
+    docHref: '/docs/sketch-to-jscad',
   },
   {
-    title: 'Rhino-parity surfacing',
+    title: 'Mates UI + tolerance chain-walk',
     domain: 'Mechanical',
-    body: 'SubD (Catmull-Clark), full 3DM import/export, mesh tools (remesh / decimate / smooth / repair), Cycles render output, parametric .graph (Grasshopper-equivalent).',
-    docHref: '/docs/feature-format',
+    body: 'BREP face/edge picker is back; mate authoring is click+click again. tolerance_auto_chain walks the assembly-mate graph by BFS between two feature refs.',
+    docHref: '/docs/assemblies',
+  },
+  {
+    title: 'Viewport scalability S1 + S2',
+    domain: 'Performance',
+    body: 'Frustum culling (S1) + InstancedMesh batching (S2) in Three.js. Assemblies with hundreds of identical components now render at interactive frame rates.',
+    docHref: '/docs/architecture',
+  },
+  {
+    title: 'Revision DB — 82× smaller',
+    domain: 'Performance',
+    body: 'Phase-4: real diff-based file_revisions with SHA-256 dedup + safe-prune. kerf-server revisions repack back-fills the new format on existing rows.',
+    docHref: '/docs/architecture',
+  },
+  {
+    title: 'kerf-sdk Python SDK',
+    domain: 'Scripting',
+    body: 'pip install kerf-sdk. JSON-RPC over /v1/rpc, API-token auth, namespaced wrappers for files / equations / configurations / revisions / docs. Bring your own LLM.',
+    docHref: '/docs/v1-rpc',
+  },
+  {
+    title: 'Plugin monorepo + kerf-server',
+    domain: 'Architecture',
+    body: '19 plugin packages under packages/, discovered via Python entry points. kerf-server CLI entry point. Six install personas (api-only / mech / electronics / bim / full / compute-only).',
+    docHref: '/docs/architecture',
+  },
+  {
+    title: 'FEM, CAM, Topo polish',
+    domain: 'CAE',
+    body: 'Deformed-mesh overlay + SLEPc modal + multi-material BCs. Real B-rep contour extraction + lathe + 5-axis stub for CAM. NURBS-driven STEP reconstruction for topo.',
+    docHref: '/docs/capabilities',
   },
   {
     title: 'Revit-parity authoring',
     domain: 'Architecture',
     body: 'Families, schedules, views, sheets, categories, phasing, view filters, stairs, railings, MEP, curtain walls. Full BIM toolchain on top of IFC4.',
     docHref: '/docs/bim-format',
-  },
-  {
-    title: 'KiCad-parity PCB editor',
-    domain: 'Electronics',
-    body: 'Manual routing, copper pours, layer stack, DRC + ERC, net classes, length tuning, diff-pair match, via stitching, push-pull router, hierarchical schematics, buses.',
-    docHref: '/docs/circuit-format',
-  },
-  {
-    title: 'Cloud git → S3 + LFS',
-    domain: 'Cloud',
-    body: 'pygit2 S3 storer for stateless serverless deploys. `.step-ref` pointer kind for large binaries — git history stays lean, files served via CDN.',
-    docHref: '/docs/architecture',
   },
 ]
 
@@ -764,16 +831,16 @@ function RecentlyShipped() {
 
 const ROADMAP = [
   {
-    title: 'Sketch → JSCAD',
-    body: 'AI-generated 3D from a constrained 2D sketch — the mesh-side analog of .feature.',
-  },
-  {
-    title: 'FreeCAD sketch shortcuts',
-    body: 'Boss-with-draft, cut-from-sketch, hole-pattern-from-sketch, loft symmetric, sweep tangent-locked.',
+    title: 'Sketch → JSCAD finishing',
+    body: 'Carbon-copy/datum support and end-to-end LLM scenario for the .sketch → .jscad bridge (3 of 5 tasks shipped).',
   },
   {
     title: 'FreeCAD ingest (Tier 1–2)',
     body: 'Part + PartDesign → .feature + .sketch. Sketcher constraints + Spreadsheet → .equations.',
+  },
+  {
+    title: 'NURBS Phase 4 long-tail',
+    body: 'Trimming + booleans against NURBS surfaces — multi-year OCCT kernel work tracked separately.',
   },
   {
     title: 'openEMS RF field solver',
@@ -913,7 +980,7 @@ function RunCard({ icon, label, sub, ctaText, ctaTo, features, extras = [], extr
           </span>
         ) : (
           <span className="inline-flex items-center gap-1 rounded-full bg-ink-800 text-ink-300 text-[10px] font-mono uppercase tracking-widest px-2.5 py-0.5">
-            32 MB
+            MIT
           </span>
         )}
       </div>
@@ -982,7 +1049,7 @@ function PricingTeaser() {
             label="Free local install"
             price="$0"
             note="MIT · forever"
-            bullets={['Single Go binary', 'Bring your own LLM key', 'Bring your own Postgres']}
+            bullets={['pip install -e .[mech]', 'Bring your own LLM key', 'Bring your own Postgres']}
             ctaTo="/docs/getting-started"
             ctaText="Install"
           />
@@ -1096,7 +1163,7 @@ function MadeInSA() {
               className="inline-flex items-center gap-2 rounded-md border border-ink-800 bg-ink-900/60 px-3 py-1.5 text-xs text-ink-300 hover:border-ink-700 hover:text-ink-100 transition-colors"
             >
               <Github size={13} />
-              <span className="font-mono">imranp/kerf</span>
+              <span className="font-mono">kerf-sh/kerf</span>
             </a>
             <Link
               to="/pricing"
