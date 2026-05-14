@@ -76,6 +76,7 @@ full = [
     "kerf-v1",
     "kerf-billing",
     "kerf-cloud",
+    "kerf-pricing",
     "kerf-cad-core",
     "kerf-tess",
     "kerf-fem",
@@ -123,6 +124,7 @@ members = [
     "packages/kerf-v1",
     "packages/kerf-billing",
     "packages/kerf-cloud",
+    "packages/kerf-pricing",
     "packages/kerf-cad-core",
     "packages/kerf-tess",
     "packages/kerf-fem",
@@ -145,6 +147,7 @@ kerf-chat = { workspace = true }
 kerf-v1 = { workspace = true }
 kerf-billing = { workspace = true }
 kerf-cloud = { workspace = true }
+kerf-pricing = { workspace = true }
 kerf-cad-core = { workspace = true }
 kerf-tess = { workspace = true }
 kerf-fem = { workspace = true }
@@ -170,6 +173,7 @@ testpaths = [
     "packages/kerf-v1/tests",
     "packages/kerf-billing/tests",
     "packages/kerf-cloud/tests",
+    "packages/kerf-pricing/tests",
     "packages/kerf-cad-core/tests",
     "packages/kerf-tess/tests",
     "packages/kerf-fem/tests",
