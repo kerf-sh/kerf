@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "name": "E-Glass Fiberglass Epoxy",
+  "category": "composite/gfrp/woven",
+  "common_names": ["E-glass", "fiberglass", "GFRP", "glass fiber epoxy"],
+  "color_hex": "#c8dcc8",
+  "mechanical": {
+    "E_GPa": 24,
+    "G_GPa": 4.5,
+    "nu": 0.25,
+    "yield_MPa": 280,
+    "ultimate_MPa": 350,
+    "elongation_pct": 0
+  },
+  "thermal": {
+    "alpha_per_K": 5.0e-6,
+    "k_W_mK": 0.35,
+    "cp_J_kgK": 935,
+    "T_min_C": -60,
+    "T_max_C": 120
+  },
+  "physical": {
+    "rho_kg_m3": 1900
+  },
+  "callout": "E-Glass/Epoxy",
+  "notes": "Woven E-glass fiber reinforced epoxy composite. Good strength-to-weight ratio with excellent electrical insulation. Used in PCB, boat hulls, and structural panels. Source: MatWeb / AOC (woven roving E-glass vinyl ester laminate)."
+}

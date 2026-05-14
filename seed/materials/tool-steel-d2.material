@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "name": "D2 Tool Steel",
+  "category": "metal/steel/tool",
+  "common_names": ["D2", "AISI D2", "冷作模具钢"],
+  "color_hex": "#6e6e6e",
+  "mechanical": {
+    "E_GPa": 210,
+    "G_GPa": 83,
+    "nu": 0.27,
+    "yield_MPa": 1650,
+    "ultimate_MPa": 2000,
+    "elongation_pct": 2
+  },
+  "thermal": {
+    "alpha_per_K": 10.5e-6,
+    "k_W_mK": 20,
+    "cp_J_kgK": 460,
+    "T_min_C": -30,
+    "T_max_C": 500
+  },
+  "physical": {
+    "rho_kg_m3": 7700
+  },
+  "callout": "D2 Tool Steel",
+  "notes": "Air-hardening, high-carbon, high-chromium cold-work tool steel. Exceptional wear resistance and edge-holding. Used for cutting tools, dies, and gauges. Source: MatWeb / AISI D2 spec."
+}

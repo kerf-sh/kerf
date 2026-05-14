@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "name": "Rigid PVC",
+  "category": "polymer/thermoplastic/pvc",
+  "common_names": ["PVC", "polyvinyl chloride", "rigid PVC"],
+  "color_hex": "#e8e4de",
+  "mechanical": {
+    "E_GPa": 3.3,
+    "G_GPa": 1.2,
+    "nu": 0.38,
+    "yield_MPa": 55,
+    "ultimate_MPa": 48,
+    "elongation_pct": 25
+  },
+  "thermal": {
+    "alpha_per_K": 52e-6,
+    "k_W_mK": 0.16,
+    "cp_J_kgK": 1000,
+    "T_min_C": -15,
+    "T_max_C": 60
+  },
+  "physical": {
+    "rho_kg_m3": 1400
+  },
+  "callout": "Rigid PVC",
+  "notes": "Widely used rigid thermoplastic with excellent chemical resistance and flame retardancy. Used in pipes, profiles, and sheet. Source: MatWeb (unplasticized PVC-U pipe grade)."
+}

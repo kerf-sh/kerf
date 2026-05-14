@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "name": "Yttria-Stabilized Zirconia (YSZ)",
+  "category": "ceramic/oxide/zirconia",
+  "common_names": ["YSZ", "zirconia", "Y-TZP", "ZrO2"],
+  "color_hex": "#e0e0e0",
+  "mechanical": {
+    "E_GPa": 210,
+    "G_GPa": 82,
+    "nu": 0.3,
+    "yield_MPa": 900,
+    "ultimate_MPa": 1200,
+    "elongation_pct": 0
+  },
+  "thermal": {
+    "alpha_per_K": 10.0e-6,
+    "k_W_mK": 2.5,
+    "cp_J_kgK": 400,
+    "T_min_C": -196,
+    "T_max_C": 1000
+  },
+  "physical": {
+    "rho_kg_m3": 6100
+  },
+  "callout": "YSZ",
+  "notes": "Tough zirconia ceramic stabilized with yttria. Excellent fracture toughness (8-10 MPa·m1/2) and thermal barrier properties. Used in dental prosthetics, cutting tools, and thermal barrier coatings. Source: MatWeb / Tosoh (TZ-3Y-E)."
+}

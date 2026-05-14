@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "name": "Aluminum A356-T6 Cast",
+  "category": "metal/aluminum/cast",
+  "common_names": ["A356", "A356-T6", "Al-Si-Mg cast"],
+  "color_hex": "#c9c4bc",
+  "mechanical": {
+    "E_GPa": 72.4,
+    "G_GPa": 27,
+    "nu": 0.33,
+    "yield_MPa": 200,
+    "ultimate_MPa": 283,
+    "elongation_pct": 6
+  },
+  "thermal": {
+    "alpha_per_K": 21.4e-6,
+    "k_W_mK": 150,
+    "cp_J_kgK": 963,
+    "T_min_C": -196,
+    "T_max_C": 175
+  },
+  "physical": {
+    "rho_kg_m3": 2660
+  },
+  "callout": "A356-T6",
+  "notes": "Premium aluminum casting alloy with excellent castability and pressure tightness. T6 heat treatment gives high strength. Used in automotive wheels, transmission cases, and structural castings. Source: MatWeb / ASTM B26/B26M (T6 temper)."
+}

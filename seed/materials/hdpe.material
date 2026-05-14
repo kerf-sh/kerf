@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "name": "HDPE",
+  "category": "polymer/thermoplastic/polyethylene",
+  "common_names": ["HDPE", "high-density polyethylene", "polyethylene"],
+  "color_hex": "#f0ebe0",
+  "mechanical": {
+    "E_GPa": 1.1,
+    "G_GPa": 0.38,
+    "nu": 0.45,
+    "yield_MPa": 26,
+    "ultimate_MPa": 30,
+    "elongation_pct": 600
+  },
+  "thermal": {
+    "alpha_per_K": 120e-6,
+    "k_W_mK": 0.45,
+    "cp_J_kgK": 2300,
+    "T_min_C": -50,
+    "T_max_C": 80
+  },
+  "physical": {
+    "rho_kg_m3": 960
+  },
+  "callout": "HDPE",
+  "notes": "Semi-crystalline thermoplastic with excellent chemical resistance and low moisture absorption. Used in packaging, containers, and piping. Source: MatWeb (homopolymer resin)."
+}

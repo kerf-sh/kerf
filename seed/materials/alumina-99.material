@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "name": "Alumina 99% (Al2O3)",
+  "category": "ceramic/oxide/alumina",
+  "common_names": ["alumina 99%", "Al2O3", "aluminum oxide", "99% alumina"],
+  "color_hex": "#e8e8e8",
+  "mechanical": {
+    "E_GPa": 380,
+    "G_GPa": 152,
+    "nu": 0.22,
+    "yield_MPa": 350,
+    "ultimate_MPa": 2800,
+    "elongation_pct": 0
+  },
+  "thermal": {
+    "alpha_per_K": 7.2e-6,
+    "k_W_mK": 30,
+    "cp_J_kgK": 900,
+    "T_min_C": -196,
+    "T_max_C": 1500
+  },
+  "physical": {
+    "rho_kg_m3": 3900
+  },
+  "callout": "Al2O3 99%",
+  "notes": "High-purity alumina ceramic with excellent wear resistance, high dielectric strength, and thermal stability. Used in insulators, abrasives, and crucibles. Source: MatWeb / CoorsTek (AD-995)."
+}

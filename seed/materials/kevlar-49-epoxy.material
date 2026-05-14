@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "name": "Kevlar 49 / Epoxy",
+  "category": "composite/aramid/unidirectional",
+  "common_names": ["Kevlar 49", "aramid", "Twaron", "K-49 epoxy"],
+  "color_hex": "#e8e000",
+  "mechanical": {
+    "E_GPa": 76,
+    "G_GPa": 2.9,
+    "nu": 0.36,
+    "yield_MPa": 1200,
+    "ultimate_MPa": 2100,
+    "elongation_pct": 0
+  },
+  "thermal": {
+    "alpha_per_K": -2.0e-6,
+    "k_W_mK": 0.50,
+    "cp_J_kgK": 1420,
+    "T_min_C": -60,
+    "T_max_C": 150
+  },
+  "physical": {
+    "rho_kg_m3": 1380
+  },
+  "callout": "Kevlar 49/Epoxy",
+  "notes": "Unidirectional aramid fiber reinforced epoxy with exceptional impact and ballistic resistance. Used in body armor, helmets, and aerospace composites. Source: MatWeb / DuPont (Kevlar 49 fiber/ epoxy unidirectional laminate)."
+}

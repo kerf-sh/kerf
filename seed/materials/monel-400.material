@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "name": "Monel 400",
+  "category": "metal/nickel-alloy/monel",
+  "common_names": ["Monel 400", "Alloy 400", "N04400"],
+  "color_hex": "#c0c0c0",
+  "mechanical": {
+    "E_GPa": 179,
+    "G_GPa": 66,
+    "nu": 0.32,
+    "yield_MPa": 240,
+    "ultimate_MPa": 550,
+    "elongation_pct": 40
+  },
+  "thermal": {
+    "alpha_per_K": 14.0e-6,
+    "k_W_mK": 22,
+    "cp_J_kgK": 427,
+    "T_min_C": -200,
+    "T_max_C": 540
+  },
+  "physical": {
+    "rho_kg_m3": 8830
+  },
+  "callout": "Monel 400",
+  "notes": "Ni-Cu solid solution alloy with excellent corrosion resistance in seawater and chemicals. Used in marine hardware, pumps, valves, and chemical processing. Source: MatWeb / Special Metals (Monel 400)."
+}

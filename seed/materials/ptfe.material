@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "name": "PTFE (Teflon)",
+  "category": "polymer/thermoplastic/fluoropolymer",
+  "common_names": ["PTFE", "Teflon", "polytetrafluoroethylene"],
+  "color_hex": "#f5f5f0",
+  "mechanical": {
+    "E_GPa": 0.5,
+    "G_GPa": 0.14,
+    "nu": 0.46,
+    "yield_MPa": 13,
+    "ultimate_MPa": 31,
+    "elongation_pct": 300
+  },
+  "thermal": {
+    "alpha_per_K": 126e-6,
+    "k_W_mK": 0.25,
+    "cp_J_kgK": 1050,
+    "T_min_C": -200,
+    "T_max_C": 260
+  },
+  "physical": {
+    "rho_kg_m3": 2200
+  },
+  "callout": "PTFE",
+  "notes": "Ultra-high molecular weight fluoropolymer with exceptional chemical resistance and the lowest coefficient of friction of any solid. Used for seals, bearings, and liners. Source: MatWeb / DuPont Teflon (granular resin)."
+}

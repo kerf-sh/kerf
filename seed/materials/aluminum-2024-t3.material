@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "name": "Aluminum 2024-T3",
+  "category": "metal/aluminum/wrought",
+  "common_names": ["2024", "2024-T3", "Alclad 2024"],
+  "color_hex": "#cdbeb9",
+  "mechanical": {
+    "E_GPa": 73.1,
+    "G_GPa": 28,
+    "nu": 0.33,
+    "yield_MPa": 345,
+    "ultimate_MPa": 483,
+    "elongation_pct": 15
+  },
+  "thermal": {
+    "alpha_per_K": 23.2e-6,
+    "k_W_mK": 151,
+    "cp_J_kgK": 875,
+    "T_min_C": -196,
+    "T_max_C": 200
+  },
+  "physical": {
+    "rho_kg_m3": 2780
+  },
+  "callout": "Al 2024-T3",
+  "notes": "High-strength aluminum-copper alloy with excellent fatigue resistance. The premier aerospace airframe alloy. Clad with pure aluminum for corrosion resistance. Source: MatWeb / AMS spec (T3 temper)."
+}

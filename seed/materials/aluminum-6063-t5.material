@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "name": "Aluminum 6063-T5",
+  "category": "metal/aluminum/wrought",
+  "common_names": ["6063", "6063-T5", "Architectural aluminum"],
+  "color_hex": "#d0d5d9",
+  "mechanical": {
+    "E_GPa": 68.3,
+    "G_GPa": 25.8,
+    "nu": 0.33,
+    "yield_MPa": 145,
+    "ultimate_MPa": 186,
+    "elongation_pct": 12
+  },
+  "thermal": {
+    "alpha_per_K": 23.4e-6,
+    "k_W_mK": 176,
+    "cp_J_kgK": 900,
+    "T_min_C": -196,
+    "T_max_C": 150
+  },
+  "physical": {
+    "rho_kg_m3": 2700
+  },
+  "callout": "Al 6063-T5",
+  "notes": "Versatile extrusion alloy with excellent surface finish and corrosion resistance. Used for architectural trim,门窗, tubing, and consumer products. Source: MatWeb / ASM (T5 temper)."
+}

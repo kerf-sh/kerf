@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "name": "Beryllium Copper C17200",
+  "category": "metal/copper-alloy/beryllium-copper",
+  "common_names": ["C17200", "BeCu", "beryllium copper"],
+  "color_hex": "#d4a84b",
+  "mechanical": {
+    "E_GPa": 128,
+    "G_GPa": 49,
+    "nu": 0.3,
+    "yield_MPa": 1100,
+    "ultimate_MPa": 1240,
+    "elongation_pct": 4
+  },
+  "thermal": {
+    "alpha_per_K": 17.8e-6,
+    "k_W_mK": 105,
+    "cp_J_kgK": 418,
+    "T_min_C": -196,
+    "T_max_C": 300
+  },
+  "physical": {
+    "rho_kg_m3": 8250
+  },
+  "callout": "BeCu C17200",
+  "notes": "High-strength copper alloy precipitation-hardenable with beryllium. Combines high conductivity with excellent hardness and fatigue resistance. Used for springs, connectors, and nonsparking tools. Source: MatWeb / Brush Wellman (C17200 TH04)."
+}

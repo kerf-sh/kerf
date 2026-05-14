@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "name": "PEI (Ultem 1010)",
+  "category": "polymer/thermoplastic/polyetherimide",
+  "common_names": ["PEI", "Ultem", "polyetherimide", "GE Ultem 1010"],
+  "color_hex": "#d4c896",
+  "mechanical": {
+    "E_GPa": 3.2,
+    "G_GPa": 1.2,
+    "nu": 0.4,
+    "yield_MPa": 110,
+    "ultimate_MPa": 120,
+    "elongation_pct": 60
+  },
+  "thermal": {
+    "alpha_per_K": 56e-6,
+    "k_W_mK": 0.22,
+    "cp_J_kgK": 2210,
+    "T_min_C": -160,
+    "T_max_C": 200
+  },
+  "physical": {
+    "rho_kg_m3": 1270
+  },
+  "callout": "PEI Ultem 1010",
+  "notes": "High-performance amorphous thermoplastic with exceptional thermal stability (Tg=217°C) and strength. Used in aerospace, medical, and semiconductor. Source: Sabic (Ultem 1010 resin, unreinforced)."
+}

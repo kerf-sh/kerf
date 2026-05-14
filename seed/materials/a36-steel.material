@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "name": "ASTM A36 Structural Steel",
+  "category": "metal/steel/structural",
+  "common_names": ["A36", "ASTM A36", "SS400"],
+  "color_hex": "#8c8c8c",
+  "mechanical": {
+    "E_GPa": 200,
+    "G_GPa": 77,
+    "nu": 0.26,
+    "yield_MPa": 250,
+    "ultimate_MPa": 450,
+    "elongation_pct": 20
+  },
+  "thermal": {
+    "alpha_per_K": 11.7e-6,
+    "k_W_mK": 52,
+    "cp_J_kgK": 486,
+    "T_min_C": -30,
+    "T_max_C": 400
+  },
+  "physical": {
+    "rho_kg_m3": 7850
+  },
+  "callout": "A36 Steel",
+  "notes": "The most common structural steel in the US. Excellent weldability and machinability. Used in buildings, bridges, and general fabrication. Source: MatWeb / ASTM A36 spec."
+}

@@ -26,8 +26,11 @@
 //     ambiguous.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Maximize2, RotateCcw, AlertTriangle, Layers, Eye, EyeOff } from 'lucide-react'
+import { Maximize2, RotateCcw, AlertTriangle, Layers, Eye, EyeOff, Zap, Loader, CheckCircle, ShieldAlert } from 'lucide-react'
 import { convertCircuitJsonToPcbSvg } from 'circuit-to-svg'
+import { runDRC } from '../lib/pcbDRC.js'
+import { orthogonalSnap, corner45 } from '../lib/pcbRouting.js'
+import { pourToSvgPath } from '../lib/copperPour.js'
 
 // Parse the library SVG and return innerHTML + viewBox. Same approach as
 // SchematicView; kept duplicated rather than extracted into a shared util
@@ -83,7 +86,7 @@ const LAYER_MODES = [
   { id: 'both',   label: 'Both',   color: '#a855f7' },
 ]
 
-export default function PCBView({ circuitJson, highlightRefdes = null, onSelectRefdes }) {
+export default function PCBView({ circuitJson, highlightRefdes = null, onSelectRefdes, onAutoroute = null, autorouteStatus = null }) {
   const containerRef = useRef(null)
   const innerTopRef = useRef(null)
   const innerBottomRef = useRef(null)
@@ -118,6 +121,35 @@ export default function PCBView({ circuitJson, highlightRefdes = null, onSelectR
   const [layerMode, setLayerMode] = useState('top')
   const [showSilkscreen, setShowSilkscreen] = useState(true)
   const [showDrills, setShowDrills] = useState(true)
+  const [showDRC, setShowDRC] = useState(false)
+  const [drcTooltip, setDrcTooltip] = useState(null)  // { x, y, message, kind }
+
+  // ---- Routing + pour tool state -------------------------------------------
+  const [activeTool, setActiveTool] = useState(null)  // null | 'route' | 'pour'
+  const [routeMode, setRouteMode] = useState(
+    () => (typeof localStorage !== 'undefined' && localStorage.getItem('pcb_route_mode')) || 'orthogonal'
+  )  // 'orthogonal' | '45' | 'free'
+  const [routeInProgress, setRouteInProgress] = useState(null)
+  // { netId, layer, widthMm, points: [{x, y, layer}] }
+  const [cursorPos, setCursorPos] = useState(null)  // {x, y} in board (SVG viewBox) coords
+  const [pourInProgress, setPourInProgress] = useState(null)
+  // { layer, vertices: [{x,y}] } — polygon being drawn
+  const [copperPours, setCopperPours] = useState([])
+  // committed pours: [{polygon:[{x,y}], layer, net_id, clearance_mm, holes:[]}]
+  const [showPourDialog, setShowPourDialog] = useState(false)
+  const [pendingPourVertices, setPendingPourVertices] = useState(null)
+
+  // DRC results — recomputed whenever circuitJson changes and DRC is enabled.
+  const drcResult = useMemo(() => {
+    if (!showDRC || !Array.isArray(circuitJson) || circuitJson.length === 0) {
+      return { errors: [], warnings: [] }
+    }
+    try {
+      return runDRC(circuitJson)
+    } catch {
+      return { errors: [], warnings: [] }
+    }
+  }, [circuitJson, showDRC])
 
   // Resize tracking.
   useEffect(() => {
@@ -285,6 +317,87 @@ export default function PCBView({ circuitJson, highlightRefdes = null, onSelectR
 
   const handleReset = useCallback(() => setView({ tx: 0, ty: 0, scale: 1 }), [])
 
+  // ---- Tool cursor tracking -------------------------------------------------
+  const handleSvgMouseMove = useCallback((e) => {
+    if (!containerRef.current) return
+    const r = containerRef.current.getBoundingClientRect()
+    const sx = (e.clientX - r.left - view.tx) / view.scale
+    const sy = (e.clientY - r.top - view.ty) / view.scale
+    setCursorPos({ x: sx, y: sy })
+  }, [view])
+
+  // ---- RouteTool click ------------------------------------------------------
+  const handleRouteClick = useCallback((e) => {
+    if (activeTool !== 'route' || !cursorPos) return
+    e.stopPropagation()
+    if (routeInProgress) {
+      const prev = routeInProgress.points[routeInProgress.points.length - 1]
+      let newPt = { ...cursorPos, layer: routeInProgress.layer }
+      if (routeMode === 'orthogonal') {
+        const snapped = orthogonalSnap(prev, cursorPos)
+        newPt = { ...snapped, layer: routeInProgress.layer }
+      } else if (routeMode === '45') {
+        const corners = corner45(prev, cursorPos)
+        const last = corners[corners.length - 1]
+        newPt = { ...last, layer: routeInProgress.layer }
+      }
+      setRouteInProgress(r => ({ ...r, points: [...r.points, newPt] }))
+    } else {
+      setRouteInProgress({
+        netId: null,
+        layer: layerMode === 'bottom' ? 'bottom_copper' : 'top_copper',
+        widthMm: 0.25,
+        points: [{ ...cursorPos, layer: layerMode === 'bottom' ? 'bottom_copper' : 'top_copper' }],
+      })
+    }
+  }, [activeTool, cursorPos, routeInProgress, routeMode, layerMode])
+
+  // ---- PourTool click -------------------------------------------------------
+  const handlePourClick = useCallback((e) => {
+    if (activeTool !== 'pour' || !cursorPos) return
+    e.stopPropagation()
+    if (pourInProgress) {
+      const first = pourInProgress.vertices[0]
+      const dist = Math.hypot(cursorPos.x - first.x, cursorPos.y - first.y)
+      // Close polygon when clicking near first vertex with >= 3 points
+      if (dist < 1.5 / view.scale && pourInProgress.vertices.length >= 3) {
+        setPendingPourVertices(pourInProgress.vertices)
+        setPourInProgress(null)
+        setShowPourDialog(true)
+      } else {
+        setPourInProgress(p => ({ ...p, vertices: [...p.vertices, { ...cursorPos }] }))
+      }
+    } else {
+      setPourInProgress({
+        layer: layerMode === 'bottom' ? 'bottom_copper' : 'top_copper',
+        vertices: [{ ...cursorPos }],
+      })
+    }
+  }, [activeTool, cursorPos, pourInProgress, view.scale, layerMode])
+
+  // ---- Keyboard handler for tool cancel/finish ------------------------------
+  useEffect(() => {
+    const onKey = (e) => {
+      if (activeTool === 'route') {
+        if (e.key === 'Escape') {
+          setRouteInProgress(null)
+          setActiveTool(null)
+        }
+        if (e.key === 'Enter' && routeInProgress && routeInProgress.points.length >= 2) {
+          setRouteInProgress(null)
+        }
+      }
+      if (activeTool === 'pour') {
+        if (e.key === 'Escape') {
+          setPourInProgress(null)
+          setActiveTool(null)
+        }
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [activeTool, routeInProgress])
+
   const hasContent = (topParsed.innerHTML || '').length > 0 || (bottomParsed.innerHTML || '').length > 0
 
   return (
@@ -304,8 +417,9 @@ export default function PCBView({ circuitJson, highlightRefdes = null, onSelectR
         height={size.h}
         viewBox={`0 0 ${size.w} ${size.h}`}
         className="block"
-        style={{ userSelect: 'none' }}
-        onClick={handleSvgClick}
+        style={{ userSelect: 'none', cursor: activeTool ? 'crosshair' : undefined }}
+        onMouseMove={handleSvgMouseMove}
+        onClick={(e) => { handleSvgClick(e); handleRouteClick(e); handlePourClick(e) }}
       >
         <defs>
           {/* PCB-style gridded backdrop (5mm). Same trick as SchematicView. */}
@@ -334,6 +448,46 @@ export default function PCBView({ circuitJson, highlightRefdes = null, onSelectR
             ref={innerTopRef}
             style={{ display: layerMode === 'bottom' ? 'none' : 'inline' }}
           />
+
+          {/* Committed copper pours (rendered below route preview) */}
+          {copperPours.map((pour, i) => (
+            <path
+              key={i}
+              d={pourToSvgPath(pour.polygon, pour.holes || [])}
+              fill={pour.layer === 'bottom_copper' ? 'rgba(59,130,246,0.22)' : 'rgba(239,68,68,0.22)'}
+              stroke={pour.layer === 'bottom_copper' ? '#3b82f6' : '#ef4444'}
+              strokeWidth={0.15 / view.scale}
+              fillRule="evenodd"
+            />
+          ))}
+
+          {/* PourTool preview — polygon being drawn */}
+          {activeTool === 'pour' && pourInProgress && pourInProgress.vertices.length >= 1 && (
+            <polyline
+              points={[...pourInProgress.vertices, cursorPos || pourInProgress.vertices[pourInProgress.vertices.length - 1]]
+                .map(p => `${p.x},${p.y}`).join(' ')}
+              fill="none"
+              stroke="#f59e0b"
+              strokeWidth={0.3 / view.scale}
+              strokeDasharray={`${1.5 / view.scale},${0.5 / view.scale}`}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          )}
+
+          {/* RouteTool preview — trace being drawn */}
+          {activeTool === 'route' && routeInProgress && routeInProgress.points.length >= 1 && cursorPos && (
+            <polyline
+              points={[...routeInProgress.points, cursorPos]
+                .map(p => `${p.x},${p.y}`).join(' ')}
+              fill="none"
+              stroke="#ffd166"
+              strokeWidth={0.25 / view.scale}
+              strokeDasharray={`${1 / view.scale},${0.5 / view.scale}`}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          )}
         </g>
       </svg>
 
@@ -406,10 +560,162 @@ export default function PCBView({ circuitJson, highlightRefdes = null, onSelectR
           {showDrills ? <Eye size={12} /> : <EyeOff size={12} />}
         </button>
         <span className="text-[10px] text-ink-500">Drill</span>
+        <span className="mx-1 h-4 w-px bg-ink-800" />
+        <button
+          type="button"
+          onClick={() => setShowDRC((s) => !s)}
+          className={`p-1.5 rounded flex items-center gap-1 ${
+            showDRC
+              ? drcResult.errors.length > 0
+                ? 'bg-red-900/40 text-red-300'
+                : 'bg-kerf-300/20 text-kerf-300'
+              : 'text-ink-500 hover:text-ink-300 hover:bg-ink-800'
+          }`}
+          title={`Toggle DRC overlay${drcResult.errors.length > 0 ? ` (${drcResult.errors.length} error${drcResult.errors.length > 1 ? 's' : ''})` : ''}`}
+        >
+          <ShieldAlert size={12} />
+          {showDRC && drcResult.errors.length > 0 && (
+            <span className="text-[9px] font-bold">{drcResult.errors.length}</span>
+          )}
+        </button>
+        <span className="text-[10px] text-ink-500">DRC</span>
       </div>
+
+      {/* DRC overlay — markers projected into SVG space via inverse transform */}
+      {showDRC && viewBox && (
+        <DRCOverlay
+          errors={drcResult.errors}
+          warnings={drcResult.warnings}
+          view={view}
+          viewBox={viewBox}
+          onTooltip={setDrcTooltip}
+        />
+      )}
+
+      {/* DRC tooltip */}
+      {drcTooltip && (
+        <div
+          className="absolute z-50 px-2 py-1.5 rounded bg-ink-900 border border-ink-700 shadow-lg text-xs text-ink-200 max-w-56 pointer-events-none"
+          style={{ left: drcTooltip.screenX + 8, top: drcTooltip.screenY + 8 }}
+        >
+          <div className={`font-semibold mb-0.5 ${drcTooltip.isError ? 'text-red-300' : 'text-yellow-300'}`}>
+            {drcTooltip.kind}
+          </div>
+          {drcTooltip.message}
+        </div>
+      )}
+
+      {/* Route + Pour tool panel (below layer bar, left side) */}
+      <div className="absolute top-12 left-2 flex flex-col gap-0.5 rounded-md bg-ink-900/90 border border-ink-800 backdrop-blur p-1 shadow-lg">
+        {/* Route tool button */}
+        <button
+          type="button"
+          onClick={() => { setActiveTool(t => t === 'route' ? null : 'route'); setRouteInProgress(null) }}
+          className={`px-2 py-1 text-[10px] font-semibold uppercase tracking-wider rounded ${
+            activeTool === 'route' ? 'bg-kerf-300 text-ink-950' : 'text-ink-300 hover:text-kerf-300 hover:bg-ink-800'
+          }`}
+          title="Route traces manually (click to place vertices, Enter/double-click to finish, Esc to cancel)"
+        >Route</button>
+        {activeTool === 'route' && (
+          <div className="flex flex-col gap-0.5 mt-0.5 border-t border-ink-700 pt-0.5">
+            {[['orthogonal', '90°'], ['45', '45°'], ['free', 'Free']].map(([m, label]) => (
+              <button
+                key={m}
+                type="button"
+                onClick={() => { setRouteMode(m); if (typeof localStorage !== 'undefined') localStorage.setItem('pcb_route_mode', m) }}
+                className={`px-2 py-0.5 text-[9px] rounded ${
+                  routeMode === m ? 'bg-kerf-300/30 text-kerf-300 font-semibold' : 'text-ink-400 hover:text-kerf-300'
+                }`}
+              >{label}</button>
+            ))}
+          </div>
+        )}
+        {/* Pour tool button */}
+        <button
+          type="button"
+          onClick={() => { setActiveTool(t => t === 'pour' ? null : 'pour'); setPourInProgress(null) }}
+          className={`px-2 py-1 text-[10px] font-semibold uppercase tracking-wider rounded ${
+            activeTool === 'pour' ? 'bg-amber-400 text-ink-950' : 'text-ink-300 hover:text-ink-100 hover:bg-ink-800'
+          }`}
+          title="Draw copper pour zone (click vertices, close by clicking near first vertex)"
+        >Pour</button>
+      </div>
+
+      {/* Pour dialog */}
+      {showPourDialog && pendingPourVertices && (
+        <div className="absolute inset-0 flex items-center justify-center bg-ink-950/70 z-50">
+          <div className="bg-ink-900 border border-ink-700 rounded-lg p-4 w-64 shadow-xl">
+            <div className="text-xs font-semibold text-ink-200 mb-2">New Copper Pour</div>
+            <div className="text-[11px] text-ink-400 mb-1">
+              {pendingPourVertices.length} vertices — layer: {layerMode === 'bottom' ? 'bottom_copper' : 'top_copper'}
+            </div>
+            <div className="text-[11px] text-ink-500 mb-3">Net: GND (default — edit CircuitJSON to change)</div>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setCopperPours(ps => [...ps, {
+                    polygon: pendingPourVertices,
+                    layer: layerMode === 'bottom' ? 'bottom_copper' : 'top_copper',
+                    net_id: 'GND',
+                    clearance_mm: 0.25,
+                    holes: [],
+                  }])
+                  setShowPourDialog(false)
+                  setPendingPourVertices(null)
+                  setActiveTool(null)
+                }}
+                className="flex-1 py-1 bg-kerf-300 text-ink-950 text-[11px] font-semibold rounded hover:bg-kerf-400"
+              >Add Pour</button>
+              <button
+                type="button"
+                onClick={() => { setShowPourDialog(false); setPendingPourVertices(null) }}
+                className="flex-1 py-1 bg-ink-800 text-ink-300 text-[11px] rounded hover:bg-ink-700"
+              >Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* View toolbar (top-right) */}
       <div className="absolute top-2 right-2 flex items-center gap-1 rounded-md bg-ink-900/90 border border-ink-800 backdrop-blur p-1 shadow-lg">
+        {onAutoroute && (
+          <>
+            <button
+              type="button"
+              onClick={onAutoroute}
+              disabled={autorouteStatus === 'running'}
+              title={
+                autorouteStatus === 'running' ? 'Autorouting…' :
+                autorouteStatus === 'done'    ? 'Autoroute complete — click to re-run' :
+                autorouteStatus === 'error'   ? 'Autoroute failed — click to retry' :
+                'Autoroute PCB traces via FreeRouting'
+              }
+              className={`flex items-center gap-1 px-2 py-1 rounded text-[10px] font-semibold uppercase tracking-wider transition-colors ${
+                autorouteStatus === 'running'
+                  ? 'bg-ink-800 text-ink-500 cursor-not-allowed'
+                  : autorouteStatus === 'done'
+                  ? 'bg-emerald-900/60 text-emerald-300 hover:bg-emerald-900 border border-emerald-800/50'
+                  : autorouteStatus === 'error'
+                  ? 'bg-red-900/60 text-red-300 hover:bg-red-900 border border-red-800/50'
+                  : 'bg-kerf-300/20 text-kerf-300 hover:bg-kerf-300/30 border border-kerf-300/30'
+              }`}
+            >
+              {autorouteStatus === 'running' ? (
+                <Loader size={11} className="animate-spin" />
+              ) : autorouteStatus === 'done' ? (
+                <CheckCircle size={11} />
+              ) : (
+                <Zap size={11} />
+              )}
+              {autorouteStatus === 'running' ? 'Routing…' :
+               autorouteStatus === 'done'    ? 'Routed' :
+               autorouteStatus === 'error'   ? 'Retry' :
+               'Autoroute'}
+            </button>
+            <span className="h-4 w-px bg-ink-800" />
+          </>
+        )}
         <button
           type="button"
           onClick={handleFit}
@@ -430,6 +736,66 @@ export default function PCBView({ circuitJson, highlightRefdes = null, onSelectR
           {Math.round(view.scale * 100)}%
         </span>
       </div>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// DRCOverlay — renders error/warning markers as colored circles in board space.
+// ---------------------------------------------------------------------------
+function DRCOverlay({ errors, warnings, view, viewBox, onTooltip }) {
+  const [vx, vy, vw, vh] = viewBox
+
+  // Convert a board coordinate (in viewBox units) to screen px.
+  const boardToScreen = (bx, by) => {
+    const nx = (bx - vx) / vw  // 0..1
+    const ny = (by - vy) / vh
+    // Apply the same transform as the SVG group:  tx + scale * (viewBox position)
+    const sx = view.tx + nx * vw * view.scale
+    const sy = view.ty + ny * vh * view.scale
+    return { sx, sy }
+  }
+
+  const markers = [
+    ...errors.map((e) => ({ ...e, isError: true })),
+    ...warnings.map((w) => ({ ...w, isError: false })),
+  ]
+
+  if (!markers.length) return null
+
+  return (
+    <div className="absolute inset-0 pointer-events-none">
+      {markers.map((m, i) => {
+        const { sx, sy } = boardToScreen(m.x, m.y)
+        const color = m.isError ? '#ef4444' : '#f59e0b'
+        return (
+          <div
+            key={i}
+            className="absolute pointer-events-auto cursor-pointer"
+            style={{
+              left: sx - 7,
+              top: sy - 7,
+              width: 14,
+              height: 14,
+            }}
+            onMouseEnter={(e) => onTooltip?.({
+              screenX: sx,
+              screenY: sy,
+              kind: m.kind,
+              message: m.message,
+              isError: m.isError,
+            })}
+            onMouseLeave={() => onTooltip?.(null)}
+          >
+            <svg width={14} height={14} viewBox="0 0 14 14">
+              <circle cx={7} cy={7} r={6} fill={color} fillOpacity={0.25} stroke={color} strokeWidth={1.5} />
+              <text x={7} y={10} textAnchor="middle" fontSize={8} fill={color} fontWeight="bold">
+                {m.isError ? '!' : '?'}
+              </text>
+            </svg>
+          </div>
+        )
+      })}
     </div>
   )
 }

@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "name": "Silicone Rubber",
+  "category": "polymer/elastomer/silicone",
+  "common_names": ["VMQ", "silicone rubber", "polydimethylsiloxane", "PDMS"],
+  "color_hex": "#c8c8c8",
+  "mechanical": {
+    "E_GPa": 0.008,
+    "G_GPa": 0.003,
+    "nu": 0.499,
+    "yield_MPa": 8,
+    "ultimate_MPa": 8,
+    "elongation_pct": 700
+  },
+  "thermal": {
+    "alpha_per_K": 200e-6,
+    "k_W_mK": 0.30,
+    "cp_J_kgK": 1750,
+    "T_min_C": -60,
+    "T_max_C": 230
+  },
+  "physical": {
+    "rho_kg_m3": 1200
+  },
+  "callout": "Silicone",
+  "notes": "Flexible elastomer with excellent high and low temperature range. Used in seals, medical devices, and food-grade applications. Source: MatWeb (filled silicone rubber VMQ)."
+}

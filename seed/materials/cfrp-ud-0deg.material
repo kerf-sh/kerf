@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "name": "CFRP Unidirectional 0°",
+  "category": "composite/cfrp/unidirectional",
+  "common_names": ["CFRP UD", "carbon fiber unidirectional", "carbon/epoxy"],
+  "color_hex": "#1a1a1a",
+  "mechanical": {
+    "E_GPa": 142,
+    "G_GPa": 5.5,
+    "nu": 0.28,
+    "yield_MPa": 1500,
+    "ultimate_MPa": 2400,
+    "elongation_pct": 0
+  },
+  "thermal": {
+    "alpha_per_K": -0.5e-6,
+    "k_W_mK": 5.0,
+    "cp_J_kgK": 740,
+    "T_min_C": -60,
+    "T_max_C": 150
+  },
+  "physical": {
+    "rho_kg_m3": 1600
+  },
+  "callout": "CFRP UD 0°",
+  "notes": "Unidirectional carbon fiber reinforced polymer with all fibers aligned in 0° direction. Maximum stiffness and strength along fiber axis. Used in aerospace structures and high-performance sporting goods. Source: MatWeb / Toray (T700S/2590 unidirectional prepreg)."
+}

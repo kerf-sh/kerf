@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "name": "Inconel 625",
+  "category": "metal/nickel-alloy/superalloy",
+  "common_names": ["Inconel 625", "Alloy 625", "N06625"],
+  "color_hex": "#b8b8b8",
+  "mechanical": {
+    "E_GPa": 208,
+    "G_GPa": 79,
+    "nu": 0.308,
+    "yield_MPa": 517,
+    "ultimate_MPa": 930,
+    "elongation_pct": 42
+  },
+  "thermal": {
+    "alpha_per_K": 12.8e-6,
+    "k_W_mK": 12.5,
+    "cp_J_kgK": 410,
+    "T_min_C": -253,
+    "T_max_C": 980
+  },
+  "physical": {
+    "rho_kg_m3": 8440
+  },
+  "callout": "Inconel 625",
+  "notes": "Ni-Cr-Mo-Nb superalloy with exceptional strength from room temp to 1000°F. Outstanding oxidation and corrosion resistance. Used in aerospace, chemical processing, and marine applications. Source: MatWeb / Special Metals datasheet."
+}

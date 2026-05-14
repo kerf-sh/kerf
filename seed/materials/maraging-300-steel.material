@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "name": "Maraging Steel 300",
+  "category": "metal/steel/maraging",
+  "common_names": ["Maraging 300", "18Ni300", "Vascomax 300"],
+  "color_hex": "#9a9a9a",
+  "mechanical": {
+    "E_GPa": 190,
+    "G_GPa": 75,
+    "nu": 0.3,
+    "yield_MPa": 2000,
+    "ultimate_MPa": 2100,
+    "elongation_pct": 10
+  },
+  "thermal": {
+    "alpha_per_K": 10.1e-6,
+    "k_W_mK": 18,
+    "cp_J_kgK": 460,
+    "T_min_C": -196,
+    "T_max_C": 500
+  },
+  "physical": {
+    "rho_kg_m3": 8000
+  },
+  "callout": "Maraging 300",
+  "notes": "High-strength maraging steel (18% Ni) with exceptional toughness. Precipitation-hardened at low temperatures. Used in aerospace, tooling, and high-performance fasteners. Source: MatWeb / ASM Maraging steels spec."
+}

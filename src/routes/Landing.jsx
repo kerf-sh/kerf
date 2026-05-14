@@ -71,7 +71,7 @@ function Hero() {
           <div>
             <span className="inline-flex items-center gap-2 rounded-full border border-ink-800 bg-ink-900/70 backdrop-blur px-3 py-1 text-xs text-ink-300 font-mono">
               <span className="w-1.5 h-1.5 rounded-full bg-kerf-300 animate-pulse" />
-              public beta · open source
+              open source · now shipping IFC
             </span>
 
             <h1 className="mt-4 font-display text-[2.6rem] sm:text-5xl lg:text-[4.25rem] font-semibold tracking-[-0.03em] leading-[1.02]">
@@ -90,7 +90,13 @@ function Hero() {
             <p className="mt-4 text-lg text-ink-300 leading-relaxed max-w-xl">
               Kerf is a chat-native CAD workspace. Write JSCAD, draft B-rep
               features, sketch with constraints, lay out PCBs, and ship real
-              engineering drawings — with an LLM editing the source for you.
+              engineering drawings — with an LLM editing the source for you.{' '}
+              <Link
+                to="/docs/whats-new"
+                className="text-kerf-300 underline underline-offset-2 hover:text-kerf-200 transition-colors"
+              >
+                See what shipped →
+              </Link>
             </p>
 
             <div className="mt-5 flex flex-wrap items-center gap-3">
@@ -350,19 +356,19 @@ function FactCard({ icon: Icon, title, body }) {
 
 const SHIPPED = [
   {
-    title: 'Workspaces (orgs)',
-    body: 'Multi-member containers with role-based access, slug routing under /w/:slug, and per-workspace billing in cloud.',
-    docHref: '/docs/workspaces',
+    title: 'Architecture: IFC + BIM',
+    body: 'New .bim text-DSL compiles to IFC4 via IfcOpenShell. Walls, slabs, spaces, levels, and site — viewed in Three.js via web-ifc.',
+    docHref: '/docs/bim-format',
   },
   {
-    title: 'Sketcher v2 polish',
-    body: 'Trim/extend/fillet 2D, mirror/pattern, ellipse/B-spline, multi-loop holes, external geometry, 3D backdrop.',
-    docHref: '/docs/sketcher',
+    title: 'Sketcher v2 — complete',
+    body: '6 new constraints, arc/circle edge projection, multi-loop holes, 3D backdrop. All tools wired and vitest-covered.',
+    docHref: '/docs/sketching',
   },
   {
-    title: 'Electronics + BOM rework',
-    body: 'tscircuit components/nets panel, Library ↔ Circuit linking, inline BOM with quantity overrides and distributor data.',
-    docHref: '/docs/electronics',
+    title: '55-material database',
+    body: 'Curated engineering materials covering metals, polymers, ceramics, and composites. Used by FEM, tolerance, Part defaults, and drawings.',
+    docHref: '/docs/whats-new',
   },
 ]
 

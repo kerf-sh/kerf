@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "name": "Chopped Carbon Fiber Reinforced PA",
+  "category": "composite/cfrp/short-fiber",
+  "common_names": ["CF-PA", "carbon fiber nylon", "short carbon fiber", "CF-reinforced PA"],
+  "color_hex": "#2a2a2a",
+  "mechanical": {
+    "E_GPa": 20,
+    "G_GPa": 6.0,
+    "nu": 0.3,
+    "yield_MPa": 180,
+    "ultimate_MPa": 220,
+    "elongation_pct": 2
+  },
+  "thermal": {
+    "alpha_per_K": 12.0e-6,
+    "k_W_mK": 3.5,
+    "cp_J_kgK": 1200,
+    "T_min_C": -40,
+    "T_max_C": 120
+  },
+  "physical": {
+    "rho_kg_m3": 1240
+  },
+  "callout": "CF-PA6",
+  "notes": "Injection-moldable short carbon fiber reinforced nylon 6. Significantly higher stiffness and strength vs. unfilled PA6 with improved thermal conductivity. Used in functional prototypes and lightweight brackets. Source: MatWeb / BASF (Ultramid CF30PA6)."
+}

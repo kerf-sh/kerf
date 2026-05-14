@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "name": "PMMA (Acrylic)",
+  "category": "polymer/thermoplastic/acrylic",
+  "common_names": ["PMMA", "acrylic", "polymethyl methacrylate", "Plexiglas"],
+  "color_hex": "#e0f0f5",
+  "mechanical": {
+    "E_GPa": 3.0,
+    "G_GPa": 1.4,
+    "nu": 0.35,
+    "yield_MPa": 70,
+    "ultimate_MPa": 76,
+    "elongation_pct": 5
+  },
+  "thermal": {
+    "alpha_per_K": 70e-6,
+    "k_W_mK": 0.21,
+    "cp_J_kgK": 1465,
+    "T_min_C": -40,
+    "T_max_C": 90
+  },
+  "physical": {
+    "rho_kg_m3": 1190
+  },
+  "callout": "PMMA",
+  "notes": "Optical-grade transparent thermoplastic with excellent UV resistance and clarity. 92% light transmission. Used in lenses, displays, and signage. Source: MatWeb (extruded sheet grade)."
+}

@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "name": "AISI 4340 Alloy Steel",
+  "category": "metal/steel/alloy",
+  "common_names": ["4340", "AISI 4340", "SAE 4340", "Nicroalloy"],
+  "color_hex": "#7a7a7a",
+  "mechanical": {
+    "E_GPa": 205,
+    "G_GPa": 80,
+    "nu": 0.29,
+    "yield_MPa": 785,
+    "ultimate_MPa": 980,
+    "elongation_pct": 12
+  },
+  "thermal": {
+    "alpha_per_K": 12.3e-6,
+    "k_W_mK": 44.5,
+    "cp_J_kgK": 475,
+    "T_min_C": -30,
+    "T_max_C": 425
+  },
+  "physical": {
+    "rho_kg_m3": 7850
+  },
+  "callout": "AISI 4340",
+  "notes": "Ni-Cr-Mo alloy steel with excellent toughness and fatigue resistance. Widely used in aircraft landing gear, crankshafts, and high-stress components. Source: MatWeb (normalized + tempered)."
+}

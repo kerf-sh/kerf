@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "name": "NBR (Nitrile Rubber)",
+  "category": "polymer/elastomer/nitrile",
+  "common_names": ["NBR", "nitrile butadiene rubber", "Buna-N", "NBR rubber"],
+  "color_hex": "#2a2a2a",
+  "mechanical": {
+    "E_GPa": 0.007,
+    "G_GPa": 0.002,
+    "nu": 0.499,
+    "yield_MPa": 20,
+    "ultimate_MPa": 20,
+    "elongation_pct": 400
+  },
+  "thermal": {
+    "alpha_per_K": 200e-6,
+    "k_W_mK": 0.25,
+    "cp_J_kgK": 2010,
+    "T_min_C": -35,
+    "T_max_C": 120
+  },
+  "physical": {
+    "rho_kg_m3": 1150
+  },
+  "callout": "NBR",
+  "notes": "Oil-resistant nitrile rubber with excellent fuel and mineral oil resistance. Used in seals, gaskets, and fuel lines. Source: MatWeb (NBR with ~34% acrylonitrile content)."
+}

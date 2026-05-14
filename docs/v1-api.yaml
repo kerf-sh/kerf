@@ -1,0 +1,282 @@
+openapi: 3.0.3
+info:
+  title: Kerf v1 API
+  version: 1.0.0
+  description: |
+    Kerf JSON-RPC and REST API for project management, file operations,
+    and system administration.
+
+    Authentication: include Bearer token in Authorization header.
+    Tokens obtained via POST /auth/login with email+password.
+
+servers:
+  - url: https://app.kerf.dev
+    description: Production
+  - url: http://localhost:8080
+    description: Local
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+security:
+  - BearerAuth: []
+
+paths:
+  /v1/rpc:
+    post:
+      operationId: rpcCall
+      summary: JSON-RPC 2.0 endpoint
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - jsonrpc
+                - method
+                - params
+                - id
+              properties:
+                jsonrpc:
+                  type: string
+                  const: "2.0"
+                  description: JSON-RPC version (must be "2.0")
+                method:
+                  type: string
+                  enum:
+                    - files.list
+                    - files.read
+                    - files.write
+                    - files.edit
+                    - files.create
+                    - files.delete
+                    - files.search
+                    - import_step
+                    - equations.read
+                    - equations.set
+                    - configurations.add
+                    - configurations.set_active
+                    - revisions.list
+                    - revisions.restore
+                    - docs.search
+                  description: RPC method name
+                params:
+                  type: object
+                  description: Method parameters (project_id required)
+                  required:
+                    - project_id
+                  properties:
+                    project_id:
+                      type: string
+                      format: uuid
+                  additionalProperties: true
+                id:
+                  oneOf:
+                    - type: string
+                    - type: number
+                    - type: 'null'
+                  description: Request identifier for response matching
+      responses:
+        '200':
+          description: JSON-RPC response (success or error)
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/RpcSuccess'
+                  - $ref: '#/components/schemas/RpcError'
+
+  /v1/tools:
+    get:
+      operationId: listTools
+      summary: List available tools for the authenticated user
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Tool list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tools:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: true
+
+  /auth/login:
+    post:
+      operationId: getToken
+      summary: Login with email and password to obtain access token
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - password
+              properties:
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+      responses:
+        '200':
+          description: Authentication successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  access_token:
+                    type: string
+                  refresh_token:
+                    type: string
+                  user:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                      email:
+                        type: string
+                      name:
+                        type: string
+                      account_role:
+                        type: string
+                  default_workspace:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                      slug:
+                        type: string
+                      name:
+                        type: string
+
+  /api/projects:
+    get:
+      operationId: listProjects
+      summary: List all projects for the authenticated user
+      responses:
+        '200':
+          description: List of projects
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: string
+                      format: uuid
+                    name:
+                      type: string
+                    workspace_id:
+                      type: string
+                    created_at:
+                      type: string
+                      format: date-time
+    post:
+      operationId: createProject
+      summary: Create a new project
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                workspace_id:
+                  type: string
+                  format: uuid
+      responses:
+        '201':
+          description: Project created
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /api/projects/{project_id}:
+    get:
+      operationId: getProject
+      summary: Get a specific project
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Project details
+          content:
+            application/json:
+              schema:
+                type: object
+
+components:
+  schemas:
+    RpcSuccess:
+      type: object
+      required:
+        - jsonrpc
+        - result
+        - id
+      properties:
+        jsonrpc:
+          type: string
+          const: "2.0"
+        result:
+          type: object
+          description: Method result (shape varies by method)
+        id:
+          oneOf:
+            - type: string
+            - type: number
+            - type: 'null'
+
+    RpcError:
+      type: object
+      required:
+        - jsonrpc
+        - error
+        - id
+      properties:
+        jsonrpc:
+          type: string
+          const: "2.0"
+        error:
+          type: object
+          required:
+            - code
+            - message
+          properties:
+            code:
+              type: integer
+              description: JSON-RPC error code (-32700 to -32603)
+            message:
+              type: string
+              description: Human-readable error message
+        id:
+          oneOf:
+            - type: string
+            - type: number
+            - type: 'null'

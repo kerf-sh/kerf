@@ -26,6 +26,7 @@ const SOURCES = [
     sourcePrefix: 'docs/',
     pages: {
       // Getting Started
+      'index':                 { group: 'Getting Started', order: -1, slug: 'index' },
       'getting-started':       { group: 'Getting Started', order: 0 },
       'concepts':              { group: 'Getting Started', order: 1 },
       // Modeling
@@ -38,6 +39,8 @@ const SOURCES = [
       'architecture':          { group: 'API & Reference', order: 0 },
       'llm-tools':             { group: 'API & Reference', order: 1 },
       'contributing':          { group: 'API & Reference', order: 2 },
+      // What's New
+      'whats-new':             { group: "What's New",      order: 0 },
       // Legal
       'license':               { group: 'Legal',           order: 0 },
       'terms':                 { group: 'Legal',           order: 1 },
@@ -55,6 +58,8 @@ const SOURCES = [
       'jscad':                 { group: 'Modeling',          order: 5, slug: 'jscad-format' },
       'assembly':              { group: 'Modeling',          order: 6, slug: 'assembly-format' },
       'drawing':               { group: 'Modeling',          order: 7, slug: 'drawing-format' },
+      // Architecture / BIM
+      'bim':                   { group: 'Architecture',      order: 0, slug: 'bim-format' },
       // Electronics
       'circuit':               { group: 'Electronics',       order: 0, slug: 'circuit-format' },
       // Library & BOM

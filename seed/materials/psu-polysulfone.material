@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "name": "Polysulfone",
+  "category": "polymer/thermoplastic/polysulfone",
+  "common_names": ["PSU", "polysulfone", "Udel"],
+  "color_hex": "#e0d8c0",
+  "mechanical": {
+    "E_GPa": 2.5,
+    "G_GPa": 0.9,
+    "nu": 0.37,
+    "yield_MPa": 74,
+    "ultimate_MPa": 70,
+    "elongation_pct": 50
+  },
+  "thermal": {
+    "alpha_per_K": 56e-6,
+    "k_W_mK": 0.26,
+    "cp_J_kgK": 2000,
+    "T_min_C": -100,
+    "T_max_C": 160
+  },
+  "physical": {
+    "rho_kg_m3": 1240
+  },
+  "callout": "PSU",
+  "notes": "Transparent high-performance thermoplastic with good thermal resistance (Tg=185°C). Used in medical devices, aerospace, and plumbing. Source: MatWeb / Solvay (Udel P-1700)."
+}

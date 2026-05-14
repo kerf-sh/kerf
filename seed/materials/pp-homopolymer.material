@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "name": "Polypropylene Homopolymer",
+  "category": "polymer/thermoplastic/polypropylene",
+  "common_names": ["PP", "polypropylene", "homo-PP"],
+  "color_hex": "#f2f0eb",
+  "mechanical": {
+    "E_GPa": 1.6,
+    "G_GPa": 0.57,
+    "nu": 0.42,
+    "yield_MPa": 33,
+    "ultimate_MPa": 38,
+    "elongation_pct": 150
+  },
+  "thermal": {
+    "alpha_per_K": 90e-6,
+    "k_W_mK": 0.22,
+    "cp_J_kgK": 1920,
+    "T_min_C": -20,
+    "T_max_C": 100
+  },
+  "physical": {
+    "rho_kg_m3": 910
+  },
+  "callout": "PP Homo",
+  "notes": "Versatile commodity thermoplastic with excellent chemical resistance and fatigue resistance. Higher stiffness than PE. Used in packaging, automotive, and consumer goods. Source: MatWeb (homopolymer injection molding grade)."
+}

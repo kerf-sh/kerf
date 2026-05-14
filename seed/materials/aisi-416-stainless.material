@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "name": "AISI 416 Free-Machining Stainless",
+  "category": "metal/stainless/martensitic",
+  "common_names": ["416", "AISI 416", "Type 416"],
+  "color_hex": "#a8a8a8",
+  "mechanical": {
+    "E_GPa": 200,
+    "G_GPa": 77,
+    "nu": 0.28,
+    "yield_MPa": 415,
+    "ultimate_MPa": 540,
+    "elongation_pct": 12
+  },
+  "thermal": {
+    "alpha_per_K": 9.9e-6,
+    "k_W_mK": 24.9,
+    "cp_J_kgK": 460,
+    "T_min_C": -30,
+    "T_max_C": 650
+  },
+  "physical": {
+    "rho_kg_m3": 7800
+  },
+  "callout": "AISI 416",
+  "notes": "Martensitic stainless with sulfur addition for free-machining. Excellent machinability (200% of 303). Used for screws, gears, valves, and pump components requiring corrosion resistance. Source: MatWeb / AISI 416 spec."
+}

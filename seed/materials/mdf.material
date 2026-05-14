@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "name": "MDF",
+  "category": "natural/wood/engineered",
+  "common_names": ["MDF", "medium density fiberboard", "LDF"],
+  "color_hex": "#c8b896",
+  "mechanical": {
+    "E_GPa": 4.0,
+    "G_GPa": 1.3,
+    "nu": 0.3,
+    "yield_MPa": 40,
+    "ultimate_MPa": 18,
+    "elongation_pct": 0
+  },
+  "thermal": {
+    "alpha_per_K": 7.0e-6,
+    "k_W_mK": 0.12,
+    "cp_J_kgK": 2500,
+    "T_min_C": -40,
+    "T_max_C": 100
+  },
+  "physical": {
+    "rho_kg_m3": 750
+  },
+  "callout": "MDF",
+  "notes": "Engineered wood composite made from fine wood fibers with adhesive. Excellent machinability and smooth surfaces. Used in furniture, cabinetry, and laser cutting. Source: MatWeb / NIST (standard MDF, ~750 kg/m3)."
+}

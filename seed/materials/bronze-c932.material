@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "name": "Bronze C932 Bearing Bronze",
+  "category": "metal/copper-alloy/bronze",
+  "common_names": ["C932", "SAE 660", "bearing bronze"],
+  "color_hex": "#b87333",
+  "mechanical": {
+    "E_GPa": 115,
+    "G_GPa": 44,
+    "nu": 0.31,
+    "yield_MPa": 152,
+    "ultimate_MPa": 310,
+    "elongation_pct": 20
+  },
+  "thermal": {
+    "alpha_per_K": 18.4e-6,
+    "k_W_mK": 59,
+    "cp_J_kgK": 376,
+    "T_min_C": -30,
+    "T_max_C": 260
+  },
+  "physical": {
+    "rho_kg_m3": 8780
+  },
+  "callout": "C932 Bronze",
+  "notes": "Tin-bearing bronze with excellent bearing and wear properties. Self-lubricating in many applications. Used for bushings, bearings, and worm gears. Source: MatWeb / ASTM B505 (C93200)."
+}

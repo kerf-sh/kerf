@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "name": "Southern Yellow Pine",
+  "category": "natural/wood/softwood",
+  "common_names": ["southern yellow pine", "SYP", "Pinus spp."],
+  "color_hex": "#d4a84b",
+  "mechanical": {
+    "E_GPa": 14.1,
+    "G_GPa": 1.4,
+    "nu": 0.3,
+    "yield_MPa": 50,
+    "ultimate_MPa": 60,
+    "elongation_pct": 0
+  },
+  "thermal": {
+    "alpha_per_K": 3.2e-6,
+    "k_W_mK": 0.14,
+    "cp_J_kgK": 2500,
+    "T_min_C": -40,
+    "T_max_C": 100
+  },
+  "physical": {
+    "rho_kg_m3": 560
+  },
+  "callout": "SYP",
+  "notes": "Fast-growing softwood with high strength-to-weight ratio. Used in construction framing, plywood, and pressure-treated lumber. Source: USDA Forest Products Lab (Pinus spp., 12% MC)."
+}

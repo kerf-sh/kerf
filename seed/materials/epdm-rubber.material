@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "name": "EPDM Rubber",
+  "category": "polymer/elastomer/epdm",
+  "common_names": ["EPDM", "ethylene propylene rubber", "EPR"],
+  "color_hex": "#404040",
+  "mechanical": {
+    "E_GPa": 0.003,
+    "G_GPa": 0.001,
+    "nu": 0.499,
+    "yield_MPa": 10,
+    "ultimate_MPa": 10,
+    "elongation_pct": 600
+  },
+  "thermal": {
+    "alpha_per_K": 160e-6,
+    "k_W_mK": 0.34,
+    "cp_J_kgK": 2100,
+    "T_min_C": -55,
+    "T_max_C": 150
+  },
+  "physical": {
+    "rho_kg_m3": 1100
+  },
+  "callout": "EPDM",
+  "notes": "Excellent weather and ozone resistance. Used in automotive weatherstripping, roofing, and coolant hoses. Not oil-resistant. Source: MatWeb (EPDM vulcanizate)."
+}

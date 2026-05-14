@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "name": "AISI 1095 High-Carbon Steel",
+  "category": "metal/steel/carbon",
+  "common_names": ["1095", "AISI 1095", "SAE 1095"],
+  "color_hex": "#8c8c8c",
+  "mechanical": {
+    "E_GPa": 206,
+    "G_GPa": 80,
+    "nu": 0.29,
+    "yield_MPa": 530,
+    "ultimate_MPa": 700,
+    "elongation_pct": 9
+  },
+  "thermal": {
+    "alpha_per_K": 11.3e-6,
+    "k_W_mK": 48,
+    "cp_J_kgK": 486,
+    "T_min_C": -30,
+    "T_max_C": 400
+  },
+  "physical": {
+    "rho_kg_m3": 7850
+  },
+  "callout": "AISI 1095",
+  "notes": "High-carbon steel for springs, knives, and cutlery. High carbon content (~0.95%) gives excellent hardness when heat-treated. Source: MatWeb / ASM Handbook."
+}

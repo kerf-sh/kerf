@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "name": "Red Oak",
+  "category": "natural/wood/hardwood",
+  "common_names": ["red oak", "Quercus rubra", "oak hardwood"],
+  "color_hex": "#c8a060",
+  "mechanical": {
+    "E_GPa": 12.4,
+    "G_GPa": 1.6,
+    "nu": 0.35,
+    "yield_MPa": 40,
+    "ultimate_MPa": 50,
+    "elongation_pct": 0
+  },
+  "thermal": {
+    "alpha_per_K": 4.5e-6,
+    "k_W_mK": 0.16,
+    "cp_J_kgK": 2500,
+    "T_min_C": -40,
+    "T_max_C": 100
+  },
+  "physical": {
+    "rho_kg_m3": 705
+  },
+  "callout": "Red Oak",
+  "notes": "Dense hardwood with excellent strength and workability. Used in furniture, cabinetry, and flooring. Source: USDA Forest Products Lab / MatWeb (Quercus rubra, clear wood, 12% MC)."
+}

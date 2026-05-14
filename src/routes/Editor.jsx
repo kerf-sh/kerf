@@ -23,6 +23,8 @@ import LibraryEditor from '../components/LibraryEditor.jsx'
 import MaterialEditor from '../components/MaterialEditor.jsx'
 import EquationsEditor from '../components/EquationsEditor.jsx'
 import ScriptEditor from '../components/ScriptEditor.jsx'
+import ToleranceView from '../components/ToleranceView.jsx'
+import TopoView from '../components/TopoView.jsx'
 import ConfigurationsPanel from '../components/ConfigurationsPanel.jsx'
 import ActivityTimeline from '../components/ActivityTimeline.jsx'
 import { useWorkspace, loadFilePartsForProject } from '../store/workspace.js'
@@ -125,6 +127,20 @@ function isScriptFile(file) {
   return n.endsWith('.script.ts') || n.endsWith('.script.py')
 }
 
+function isToleranceFile(file) {
+  if (!file) return false
+  if (file.kind === 'tolerance') return true
+  const n = (file.name || '').toLowerCase()
+  return n.endsWith('.tolerance')
+}
+
+function isTopoFile(file) {
+  if (!file) return false
+  if (file.kind === 'topo') return true
+  const n = (file.name || '').toLowerCase()
+  return n.endsWith('.topo')
+}
+
 export default function Editor() {
   const { projectId, fileId } = useParams()
   const navigate = useNavigate()
@@ -167,6 +183,8 @@ export default function Editor() {
     if (isPartFile(w.currentFile)) return
     if (isEquationsFile(w.currentFile)) return
     if (isScriptFile(w.currentFile)) return
+    if (isToleranceFile(w.currentFile)) return
+    if (isTopoFile(w.currentFile)) return
     if (runTimerRef.current) clearTimeout(runTimerRef.current)
     const code = w.currentFileContent
     const delay = runDebounceFor(code)
@@ -437,6 +455,8 @@ export default function Editor() {
   const materialFile = isMaterialFile(w.currentFile)
   const equationsFile = isEquationsFile(w.currentFile)
   const scriptFile = isScriptFile(w.currentFile)
+  const toleranceFile = isToleranceFile(w.currentFile)
+  const topoFile = isTopoFile(w.currentFile)
   // Resolver used by FeatureView to fetch sketch contents on demand. We
   // re-read the latest file content rather than relying on the cached
   // sketch parse from the workspace store (which may be stale if the user
@@ -838,6 +858,34 @@ export default function Editor() {
                 fileName={w.currentFile?.name}
                 file={w.currentFile}
                 onChange={(v) => w.editContent(v)}
+              />
+              {w.toast && (
+                <div className="absolute bottom-3 right-3 z-20 px-3 py-2 rounded-md bg-ink-900 border border-kerf-300/60 text-kerf-300 text-xs shadow-xl"
+                  onClick={() => w.dismissToast()}>
+                  {w.toast}
+                </div>
+              )}
+            </div>
+          ) : toleranceFile ? (
+            <div className="flex-1 min-h-0 relative">
+              <ToleranceView
+                content={w.currentFileContent}
+                fileName={w.currentFile?.name}
+                projectId={projectId}
+                fileId={fileId}
+              />
+              {w.toast && (
+                <div className="absolute bottom-3 right-3 z-20 px-3 py-2 rounded-md bg-ink-900 border border-kerf-300/60 text-kerf-300 text-xs shadow-xl"
+                  onClick={() => w.dismissToast()}>
+                  {w.toast}
+                </div>
+              )}
+            </div>
+          ) : topoFile ? (
+            <div className="flex-1 min-h-0 relative">
+              <TopoView
+                content={w.currentFileContent}
+                fileName={w.currentFile?.name}
               />
               {w.toast && (
                 <div className="absolute bottom-3 right-3 z-20 px-3 py-2 rounded-md bg-ink-900 border border-kerf-300/60 text-kerf-300 text-xs shadow-xl"

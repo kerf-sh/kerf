@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "name": "Birch Plywood",
+  "category": "natural/wood/engineered",
+  "common_names": ["birch plywood", "Baltic birch", "plywood"],
+  "color_hex": "#dcc896",
+  "mechanical": {
+    "E_GPa": 16.0,
+    "G_GPa": 1.8,
+    "nu": 0.36,
+    "yield_MPa": 45,
+    "ultimate_MPa": 55,
+    "elongation_pct": 0
+  },
+  "thermal": {
+    "alpha_per_K": 4.0e-6,
+    "k_W_mK": 0.14,
+    "cp_J_kgK": 2500,
+    "T_min_C": -40,
+    "T_max_C": 100
+  },
+  "physical": {
+    "rho_kg_m3": 680
+  },
+  "callout": "Birch Plywood",
+  "notes": "High-quality plywood with consistent void-free core. Used in furniture, laser cutting, and precision woodworking. Source: NIST / MatWeb (Baltic birch, 13-ply cross-banded)."
+}

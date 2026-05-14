@@ -55,5 +55,17 @@ backend/tmp/
 # Local storage backend (STEP files, uploads)
 .kerf-storage/
 
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+env/
+
 # Misc
 .cache/

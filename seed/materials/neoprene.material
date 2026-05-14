@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "name": "Neoprene (CR)",
+  "category": "polymer/elastomer/chloroprene",
+  "common_names": ["CR", "neoprene", "polychloroprene", "Neoprene G"],
+  "color_hex": "#505050",
+  "mechanical": {
+    "E_GPa": 0.005,
+    "G_GPa": 0.002,
+    "nu": 0.499,
+    "yield_MPa": 15,
+    "ultimate_MPa": 15,
+    "elongation_pct": 500
+  },
+  "thermal": {
+    "alpha_per_K": 180e-6,
+    "k_W_mK": 0.20,
+    "cp_J_kgK": 2200,
+    "T_min_C": -45,
+    "T_max_C": 100
+  },
+  "physical": {
+    "rho_kg_m3": 1350
+  },
+  "callout": "Neoprene CR",
+  "notes": "Versatile general-purpose elastomer with balanced oil resistance and weatherability. Used in wetsuits, industrial belts, and seals. Source: MatWeb (polychloroprene vulcanizate)."
+}
