@@ -1,0 +1,309 @@
+name: Release Artifacts
+
+# Builds and attaches file-type release assets to every v* tag release.
+# Complements release.yml (Docker image + GitHub Release creation) — see
+# CONTRIBUTING.md for the full release flow.
+#
+# Jobs:
+#   wheels        — Python wheels for all packages/* except kerf-sdk
+#   frontend      — Vite dist tarball
+#   install-sh    — pinned copy of install.sh
+#   sbom          — Software Bill of Materials (CycloneDX JSON or pip-freeze fallback)
+#   verify        — Assert all expected assets are present on the release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write   # upload release assets
+
+env:
+  PYTHON_VERSION: "3.11"
+  NODE_VERSION: "22"
+
+# ---------------------------------------------------------------------------
+# Job 1: Python wheels
+# ---------------------------------------------------------------------------
+jobs:
+  wheels:
+    name: Build Python wheels
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install build tool
+        run: pip install --quiet build
+
+      - name: Build wheels for all packages (except kerf-sdk)
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#v}"    # strip leading "v"
+          mkdir -p release-wheels
+
+          for pkg_dir in packages/kerf-*/; do
+            pkg=$(basename "$pkg_dir")
+            # kerf-sdk has its own PyPI publish flow; skip here
+            [[ "$pkg" == "kerf-sdk" ]] && continue
+
+            echo "::group::Building $pkg"
+            (
+              cd "$pkg_dir"
+              python -m build --wheel --outdir ../../release-wheels/
+            )
+            echo "::endgroup::"
+          done
+
+          echo "Built wheels:"
+          ls -lh release-wheels/
+
+      - name: Upload wheels as workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-wheels
+          path: release-wheels/*.whl
+          retention-days: 1
+
+      - name: Attach wheels to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          files: release-wheels/*.whl
+          # Creates the release if the sibling workflow hasn't yet; idempotent.
+
+# ---------------------------------------------------------------------------
+# Job 2: Frontend dist tarball
+# ---------------------------------------------------------------------------
+  frontend:
+    name: Build frontend dist tarball
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build frontend
+        run: npm run build
+        env:
+          # Inject the version so the app can display it
+          VITE_APP_VERSION: ${{ github.ref_name }}
+
+      - name: Package dist tarball
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          TARBALL="kerf-frontend-${VERSION}.tar.gz"
+          tar czf "$TARBALL" -C dist .
+          echo "TARBALL=$TARBALL" >> "$GITHUB_ENV"
+          ls -lh "$TARBALL"
+
+      - name: Upload tarball as workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: ${{ env.TARBALL }}
+          retention-days: 1
+
+      - name: Attach frontend tarball to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          files: ${{ env.TARBALL }}
+
+# ---------------------------------------------------------------------------
+# Job 3: install.sh — pinned copy for the release
+# ---------------------------------------------------------------------------
+  install-sh:
+    name: Attach install.sh to release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Stamp version into install.sh copy
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME}"   # keep the "v" prefix (e.g. v0.1.0)
+          cp install.sh "kerf-install-${VERSION}.sh"
+          # Substitute the placeholder __KERF_VERSION__ with the real tag
+          sed -i "s|__KERF_VERSION__|${VERSION}|g" "kerf-install-${VERSION}.sh"
+          echo "INSTALL_SH=kerf-install-${VERSION}.sh" >> "$GITHUB_ENV"
+
+      - name: Attach install.sh to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          files: ${{ env.INSTALL_SH }}
+
+# ---------------------------------------------------------------------------
+# Job 4: SBOM — CycloneDX JSON (pip-freeze fallback on tool failure)
+# ---------------------------------------------------------------------------
+  sbom:
+    name: Generate SBOM
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Set up Node ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+
+      - name: Install Python packages for SBOM scan
+        run: |
+          # Install all workspace packages so cyclonedx-py can see the full
+          # dependency graph. Use hatchling extras to get everything.
+          pip install --quiet -e ".[full]" 2>/dev/null || \
+            for d in packages/kerf-*/; do pip install --quiet -e "$d"; done
+
+      - name: Generate Python SBOM (CycloneDX)
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+
+          # Try cyclonedx-bom first (newer: cyclonedx-py package)
+          if pip install --quiet cyclonedx-py 2>/dev/null; then
+            cyclonedx-py environment \
+              --output-format JSON \
+              --outfile "kerf-python-sbom-${VERSION}.json" \
+              2>/dev/null && echo "PYTHON_SBOM=kerf-python-sbom-${VERSION}.json" >> "$GITHUB_ENV" \
+              || true
+          fi
+
+          # Fallback: pip-freeze manifest labelled as v1 SBOM
+          if [[ -z "${PYTHON_SBOM:-}" ]]; then
+            echo "cyclonedx-py unavailable or failed — using pip-freeze fallback"
+            pip freeze > "kerf-python-deps-${VERSION}.txt"
+            echo "PYTHON_SBOM=kerf-python-deps-${VERSION}.txt" >> "$GITHUB_ENV"
+          fi
+
+          echo "Python SBOM: ${PYTHON_SBOM}"
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Generate npm SBOM (CycloneDX)
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+
+          if npx --yes @cyclonedx/cyclonedx-npm \
+               --output-file "kerf-npm-sbom-${VERSION}.json" \
+               --output-format JSON \
+               2>/dev/null; then
+            echo "NPM_SBOM=kerf-npm-sbom-${VERSION}.json" >> "$GITHUB_ENV"
+          else
+            # Fallback: npm ls JSON
+            echo "cyclonedx-npm failed — using npm ls fallback"
+            npm ls --json > "kerf-npm-deps-${VERSION}.json" 2>/dev/null || true
+            echo "NPM_SBOM=kerf-npm-deps-${VERSION}.json" >> "$GITHUB_ENV"
+          fi
+
+          echo "npm SBOM: ${NPM_SBOM}"
+
+      - name: Upload SBOMs as workflow artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: |
+            kerf-python-sbom-*.json
+            kerf-python-deps-*.txt
+            kerf-npm-sbom-*.json
+            kerf-npm-deps-*.json
+          retention-days: 7
+
+      - name: Attach SBOMs to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          files: |
+            kerf-python-sbom-*.json
+            kerf-python-deps-*.txt
+            kerf-npm-sbom-*.json
+            kerf-npm-deps-*.json
+
+# ---------------------------------------------------------------------------
+# Job 5: Verify — confirm all expected assets are attached
+# ---------------------------------------------------------------------------
+  verify:
+    name: Verify release assets
+    runs-on: ubuntu-latest
+    needs: [wheels, frontend, install-sh, sbom]
+    steps:
+      - name: Check all expected assets are present
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="${TAG#v}"
+
+          echo "Waiting up to 60 s for release to be visible..."
+          for i in $(seq 1 12); do
+            if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets \
+               >/dev/null 2>&1; then
+              break
+            fi
+            echo "  attempt $i/12 — release not yet visible, retrying in 5 s"
+            sleep 5
+          done
+
+          echo "Fetching asset list for $TAG..."
+          ASSETS=$(gh release view "$TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --json assets \
+            --jq '[.assets[].name]')
+          echo "Assets present: $ASSETS"
+
+          MISSING=()
+
+          # Frontend tarball
+          EXPECTED_FRONTEND="kerf-frontend-${VERSION}.tar.gz"
+          echo "$ASSETS" | grep -q "$EXPECTED_FRONTEND" \
+            || MISSING+=("$EXPECTED_FRONTEND")
+
+          # install.sh copy
+          EXPECTED_INSTALL="kerf-install-${TAG}.sh"
+          echo "$ASSETS" | grep -q "$EXPECTED_INSTALL" \
+            || MISSING+=("$EXPECTED_INSTALL")
+
+          # At least one SBOM file
+          if ! echo "$ASSETS" | grep -qE "kerf-(python|npm)-(sbom|deps)-${VERSION}"; then
+            MISSING+=("SBOM (kerf-python-sbom-${VERSION}.json or fallback)")
+          fi
+
+          # At least one wheel (spot-check)
+          if ! echo "$ASSETS" | grep -qE "\.whl$"; then
+            MISSING+=("Python wheels (*.whl)")
+          fi
+
+          if [[ ${#MISSING[@]} -gt 0 ]]; then
+            echo "::error::Missing release assets:"
+            printf '  - %s\n' "${MISSING[@]}"
+            exit 1
+          fi
+
+          echo "All expected release assets are present."
+          echo ""
+          echo "Release URL:"
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json url --jq '.url'
