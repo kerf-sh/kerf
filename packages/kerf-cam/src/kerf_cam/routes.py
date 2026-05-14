@@ -121,6 +121,7 @@ class FiveAxisRequest(BaseModel):
     """Direct request body for POST /run-5axis."""
     cl_points: List[dict]                        # [{x,y,z,i,j,k}, ...]
     post: str = "linuxcnc"                       # "linuxcnc" | "fanuc"
+    mode: str = "constant_tilt"                  # "constant_tilt" | "3plus2"
     tool_number: int = 1
     feed_rapid_mm_min: float = 5000.0
     feed_cut_mm_min: float = 1000.0
@@ -238,11 +239,22 @@ async def run_cam(req: CAMRequest):
 async def run_5axis(req: FiveAxisRequest):
     """Direct 5-axis G-code emitter.
 
-    Accepts precomputed CL points (x, y, z, i, j, k) and emits G-code via
-    the chosen post-processor without requiring a STEP file.  For a full
-    STEP→CL→G-code pipeline use POST /run-cam with operation="5axis_finish".
+    Accepts precomputed CL points and emits G-code via the chosen post-processor
+    without requiring a STEP file.
+
+    mode="constant_tilt" (default)
+        CL points must have i/j/k tool-axis vectors (T3/T5 pipeline).
+        A/B rotary angles are emitted per-line.
+
+    mode="3plus2"
+        CL points are in the rotated frame (T4 pipeline); i/j/k on the first
+        point encodes the drive-face orientation.  A/B are emitted ONCE at the
+        top; body lines carry X/Y/Z only.
+
+    For a full STEP→CL→G-code pipeline use POST /run-cam with
+    operation="5axis_finish" or operation="3plus2".
     """
-    from kerf_cam.five_axis.gcode_constant_tilt import emit_gcode_constant_tilt, PostOpts
+    from kerf_cam.five_axis.gcode_constant_tilt import PostOpts
 
     if not req.cl_points:
         raise HTTPException(status_code=400, detail="cl_points must not be empty")
@@ -258,8 +270,16 @@ async def run_5axis(req: FiveAxisRequest):
         coolant=req.coolant,
     )
 
+    mode = req.mode.lower().strip()
+
     try:
-        gcode = emit_gcode_constant_tilt(req.cl_points, req.post, opts)
+        if mode == "3plus2":
+            from kerf_cam.five_axis.gcode_indexed_3_2 import emit_gcode_indexed_3_2
+            gcode = emit_gcode_indexed_3_2(req.cl_points, req.post, opts)
+        else:
+            # Default: constant_tilt
+            from kerf_cam.five_axis.gcode_constant_tilt import emit_gcode_constant_tilt
+            gcode = emit_gcode_constant_tilt(req.cl_points, req.post, opts)
     except (ValueError, NotImplementedError) as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -269,6 +289,7 @@ async def run_5axis(req: FiveAxisRequest):
         "gcode_b64": gcode_b64,
         "cl_point_count": len(req.cl_points),
         "post_processor": req.post,
+        "mode": mode,
         "warnings": [],
         "errors": [],
     }
