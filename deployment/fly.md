@@ -33,31 +33,42 @@ git clone https://github.com/kerf-sh/kerf.git
 cd kerf
 
 # 2. Create fly apps (one-time)
+#    MAIN (production):
 flyctl apps create kerf
 flyctl apps create kerf-workers
+#    DEV (staging):
+flyctl apps create kerf-dev
+flyctl apps create kerf-dev-workers
 
-# 3. Provision storage (one-time) — prints bucket name + access keys
-flyctl storage create kerf-blobs
+# 3. Provision storage (one-time) — one bucket per environment
+flyctl storage create kerf-blobs       --app kerf
+flyctl storage create kerf-blobs-dev   --app kerf-dev
 
-# 4. Copy + fill in secrets template
-cp .env.production.example .env.production
-$EDITOR .env.production    # paste real keys
+# 4. Copy + fill in the env templates
+cp .env.main.example .env.main
+cp .env.dev.example  .env.dev
+$EDITOR .env.main    # paste real keys (Paystack LIVE)
+$EDITOR .env.dev     # paste real keys (Paystack TEST)
 
-# 5. One-shot deploy: pushes secrets + deploys app + workers + runs migrations
-./scripts/deploy-fly.sh
+# 5. Deploy
+./scripts/deploy-fly.sh --dev      # staging first
+./scripts/deploy-fly.sh            # main (production) — prompts to confirm
 ```
 
-`scripts/deploy-fly.sh` reads `.env.production` (gitignored), pushes every
-value to fly as a secret on both the `kerf` and `kerf-workers` apps, then
-runs `flyctl deploy` against both configs and applies migrations.
+`scripts/deploy-fly.sh` reads `.env.main` (default) or `.env.dev` (with
+`--dev`), pushes every value to fly as a secret on the matching app +
+worker pair, then runs `flyctl deploy` against both configs and applies
+migrations. The script refuses to deploy if XXX placeholders remain in
+the env file.
 
 ## Subsequent deploys
 
 ```sh
-./scripts/deploy-fly.sh                 # full deploy
-./scripts/deploy-fly.sh --secrets-only  # just rotate secrets, no rebuild
-./scripts/deploy-fly.sh --app-only      # skip worker deploy
-./scripts/deploy-fly.sh --staging       # uses .env.staging + kerf-staging app
+./scripts/deploy-fly.sh                  # full main deploy (confirmation prompt)
+./scripts/deploy-fly.sh --dev            # full dev deploy
+./scripts/deploy-fly.sh --secrets-only   # rotate secrets, no rebuild
+./scripts/deploy-fly.sh --app-only       # skip worker deploy
+./scripts/deploy-fly.sh --dev --secrets-only  # combine: rotate dev secrets
 ```
 
 CI: GitHub Actions workflow at `.github/workflows/release.yml` runs

@@ -34,9 +34,9 @@ dist-ssr
 .env.main
 .env.*.local
 
-# Production secrets for fly.io deploy (commit only .env.production.example).
-.env.production
-.env.staging
+# fly.io deploy secrets — gitignored (commit only .env.dev.example +
+# .env.main.example templates). `.env.dev` and `.env.main` are already
+# ignored above; this comment block is the deployment-script contract.
 
 # Backend config (commit only kerf.example.toml).
 kerf.toml

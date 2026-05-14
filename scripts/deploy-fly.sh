@@ -2,39 +2,38 @@
 #
 # Deploy Kerf to fly.io.
 #
-# Reads secrets from .env.production (gitignored), pushes them to the
-# fly app + worker app, then runs `flyctl deploy` against both.
+# Reads secrets from `.env.main` (default) or `.env.dev` (with --dev),
+# pushes them to the fly app + worker app, then runs `flyctl deploy`
+# against both configs.
 #
 # Usage:
-#   ./scripts/deploy-fly.sh                # full deploy: secrets + apps
-#   ./scripts/deploy-fly.sh --secrets-only # just push secrets, no deploy
-#   ./scripts/deploy-fly.sh --app-only     # deploy app, skip worker
-#   ./scripts/deploy-fly.sh --staging      # use .env.staging instead
+#   ./scripts/deploy-fly.sh                # deploy MAIN (production)
+#   ./scripts/deploy-fly.sh --dev          # deploy DEV
+#   ./scripts/deploy-fly.sh --secrets-only # just push secrets, no rebuild
+#   ./scripts/deploy-fly.sh --app-only     # skip worker deploy
+#
+# Combine: `./scripts/deploy-fly.sh --dev --secrets-only`
 #
 # Prereqs:
 #   - flyctl installed and logged in (flyctl auth login)
-#   - .env.production exists (copy from .env.production.example)
-#   - fly apps created: `flyctl apps create kerf` + `flyctl apps create kerf-workers`
+#   - .env.main exists (copy from .env.main.example) — or .env.dev for --dev
+#   - fly apps created (one-time):
+#       MAIN: flyctl apps create kerf && flyctl apps create kerf-workers
+#       DEV:  flyctl apps create kerf-dev && flyctl apps create kerf-dev-workers
 
 set -euo pipefail
 
 # ── Argument parsing ─────────────────────────────────────────────────────────
+ENV_NAME="main"
 SECRETS_ONLY=false
 APP_ONLY=false
-ENV_FILE=".env.production"
-APP_NAME="kerf"
-WORKER_APP_NAME="kerf-workers"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --dev)          ENV_NAME="dev"; shift ;;
+    --main)         ENV_NAME="main"; shift ;;
     --secrets-only) SECRETS_ONLY=true; shift ;;
     --app-only)     APP_ONLY=true; shift ;;
-    --staging)
-      ENV_FILE=".env.staging"
-      APP_NAME="kerf-staging"
-      WORKER_APP_NAME="kerf-staging-workers"
-      shift
-      ;;
     -h|--help)
       sed -n '3,20p' "$0"
       exit 0
@@ -43,6 +42,21 @@ while [[ $# -gt 0 ]]; do
       echo "Unknown arg: $1"; exit 1 ;;
   esac
 done
+
+ENV_FILE=".env.${ENV_NAME}"
+if [[ "$ENV_NAME" == "main" ]]; then
+  APP_NAME="kerf"
+  WORKER_APP_NAME="kerf-workers"
+else
+  APP_NAME="kerf-${ENV_NAME}"
+  WORKER_APP_NAME="kerf-${ENV_NAME}-workers"
+fi
+
+echo "▸ environment: ${ENV_NAME}"
+echo "▸ env file:    ${ENV_FILE}"
+echo "▸ app:         ${APP_NAME}"
+echo "▸ workers:     ${WORKER_APP_NAME}"
+echo ""
 
 # ── Sanity checks ────────────────────────────────────────────────────────────
 if ! command -v flyctl >/dev/null 2>&1; then
@@ -57,13 +71,29 @@ fi
 
 if [[ ! -f "$ENV_FILE" ]]; then
   echo "error: $ENV_FILE not found"
-  echo "Copy .env.production.example to $ENV_FILE and fill in values."
+  echo "Copy ${ENV_FILE}.example to $ENV_FILE and fill in values."
   exit 1
 fi
 
+# Refuse to push a file that still has XXX placeholder values.
+if grep -qE '^[A-Z_]+=[^=]*XXX' "$ENV_FILE"; then
+  echo "error: $ENV_FILE still contains XXX placeholders."
+  echo "Replace these values before deploying:"
+  grep -nE '^[A-Z_]+=[^=]*XXX' "$ENV_FILE" | head -10
+  exit 1
+fi
+
+# ── Confirm prod deploys ────────────────────────────────────────────────────
+if [[ "$ENV_NAME" == "main" && "$SECRETS_ONLY" != "true" ]]; then
+  echo "▸ PRODUCTION deploy to $APP_NAME — continue? (yes/no)"
+  read -r confirm
+  if [[ "$confirm" != "yes" ]]; then
+    echo "aborted"
+    exit 1
+  fi
+fi
+
 # ── Load env file ────────────────────────────────────────────────────────────
-# `set -a` exports every variable assigned after it; `set +a` turns it off.
-# This way the env file's KEY=VALUE lines are all picked up.
 set -a
 # shellcheck disable=SC1090
 source "$ENV_FILE"
@@ -95,9 +125,7 @@ if [[ ${#MISSING[@]} -gt 0 ]]; then
   exit 1
 fi
 
-# ── Collect all KERF_* / LLM_* / CLOUD_* / etc. vars from the env file ──────
-# We push every non-empty var defined in the env file to fly secrets. The
-# parse below grabs `KEY=` lines (ignoring comments + blanks).
+# ── Collect all KEY= lines from the env file (skip comments + blanks) ──────
 SECRET_KEYS=$(grep -E '^[A-Z_][A-Z0-9_]*=' "$ENV_FILE" | sed 's/=.*//' | sort -u)
 
 # ── Push secrets to both apps ────────────────────────────────────────────────
@@ -118,8 +146,6 @@ push_secrets() {
     return
   fi
 
-  # --stage queues the secrets without restarting the app; the subsequent
-  # flyctl deploy picks them up.
   flyctl secrets set --app "$app" --stage "${args[@]}"
   echo "  ✓ ${#args[@]} secrets staged on $app"
 }
@@ -149,7 +175,7 @@ flyctl ssh console --app "$APP_NAME" \
   -C "python -m kerf_core.db.migrations.runner $DATABASE_URL"
 
 echo ""
-echo "✓ deploy complete."
+echo "✓ ${ENV_NAME} deploy complete."
 echo "  app:    https://$(flyctl info --app "$APP_NAME" --json | python -c 'import json,sys;print(json.load(sys.stdin)["Hostname"])')"
 echo "  status: flyctl status --app $APP_NAME"
 echo "  logs:   flyctl logs --app $APP_NAME"
