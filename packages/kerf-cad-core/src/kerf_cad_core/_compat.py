@@ -1,4 +1,4 @@
-"""Compatibility shims for running kerf_api tools outside of the legacy backend."""
+"""Compatibility shims for running kerf_cad_core outside of the legacy backend."""
 
 from __future__ import annotations
 
@@ -7,14 +7,14 @@ from dataclasses import dataclass
 from typing import Any, Callable
 
 
-_registry: list = []
-
-
 @dataclass
 class ToolSpec:
     name: str
     description: str
     input_schema: dict
+
+
+_registry: list = []
 
 
 def register(spec: "ToolSpec", write: bool = False):
@@ -34,7 +34,7 @@ def err_payload(msg: str, code: str) -> str:
 
 class ProjectCtx:
     def __init__(self, pool=None, project_id=None, user_id=None, storage=None,
-                 http_client=None, file_revisions_max: int = 200, role: str = "viewer"):
+                 http_client=None, file_revisions_max: int = 200, role: str = "owner"):
         self.pool = pool
         self.project_id = project_id
         self.user_id = user_id
@@ -42,3 +42,8 @@ class ProjectCtx:
         self.http_client = http_client
         self.file_revisions_max = file_revisions_max
         self.role = role
+
+
+async def resolve_path(ctx: "ProjectCtx", path: str) -> dict:
+    """Stub resolve_path for standalone use; real impl in tools.file_ops."""
+    return {"exists": True, "path": path}
