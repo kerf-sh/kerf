@@ -471,6 +471,13 @@ export const api = {
       `/api/projects/${projectId}/files/${fileId}/distributors/refresh`,
       { method: 'POST' },
     ),
+
+  // ---- Tolerance stack-up run ----
+  runTolerance: (projectId, fileId, { method = 'monte_carlo', samples = 10000, rss_k = 3.0 } = {}) =>
+    request(
+      `/api/projects/${projectId}/files/${fileId}/tolerance/run`,
+      { method: 'POST', body: { method, samples, rss_k } },
+    ),
 }
 
 // ---------------------------------------------------------------------------

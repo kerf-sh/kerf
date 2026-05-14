@@ -38,6 +38,12 @@ function KindIcon({ kind, name, open }) {
   if (kind === 'feature') return <Cylinder size={14} className={`${cls} text-amber-300`} />
   if (kind === 'circuit') return <CircuitBoard size={14} className={`${cls} text-cyan-edge`} />
   if (kind === 'equations') return <Variable size={14} className={`${cls} text-kerf-300`} />
+  if (kind === 'step-ref') return (
+    <span className="relative flex-shrink-0 inline-flex items-center">
+      <Box size={14} className="text-cyan-edge" />
+      <span className="ml-0.5 text-[9px] font-mono text-ink-300 leading-none">(ref)</span>
+    </span>
+  )
   const lower = (name || '').toLowerCase()
   if (lower.endsWith('.step') || lower.endsWith('.stp')) {
     return <Box size={14} className={`${cls} text-cyan-edge`} />
@@ -340,7 +346,7 @@ const KIND_ORDER = ['folder', 'file', 'sketch', 'assembly', 'drawing', 'feature'
 // buttons in the FileTree header. Shows the full union of canonical
 // kinds; STEP import is appended as a separate row. Closes on
 // click-outside / Escape.
-function CreateMenu({ onCreate, openImportPicker }) {
+function CreateMenu({ onCreate, openImportPicker, openKicadPicker }) {
   const [open, setOpen] = useState(false)
   const wrapRef = useRef(null)
   const visibleKinds = KIND_ORDER
@@ -405,6 +411,8 @@ function CreateMenu({ onCreate, openImportPicker }) {
           <div className="my-1 border-t border-ink-800" />
           <CreateRow icon={Upload} label="Upload STEP" hint="import binary CAD" color="text-cyan-edge"
             onClick={() => pick(() => openImportPicker?.())} />
+          <CreateRow icon={CircuitBoard} label="Import KiCad" hint=".kicad_sch / .kicad_pcb" color="text-cyan-edge"
+            onClick={() => pick(() => openKicadPicker?.())} />
         </div>
       )}
     </div>
@@ -462,7 +470,7 @@ function ContextMenu({ x, y, onClose, onRename, onDelete, onNewFile, onNewFolder
   )
 }
 
-export default function FileTree({ files, currentFileId, onSelect, onCreate, onRename, onDelete, onImportStep }) {
+export default function FileTree({ files, currentFileId, onSelect, onCreate, onRename, onDelete, onImportStep, onImportKicad }) {
   const byParent = useMemo(() => buildTree(files || []), [files])
   const roots = byParent.get('__root__') || []
   const [expanded, setExpanded] = useState(() => new Set(
@@ -470,12 +478,16 @@ export default function FileTree({ files, currentFileId, onSelect, onCreate, onR
   ))
   const [renamingId, setRenamingId] = useState(null)
   const [menu, setMenu] = useState(null)
+  const [kicadImporting, setKicadImporting] = useState(false)
+  const [kicadError, setKicadError] = useState(null)
   const fileInputRef = useRef(null)
+  const kicadInputRef = useRef(null)
   const importTargetRef = useRef(null) // parent_id at the time the picker opened
   // Stash the last-picked browser File alongside its parent so the upload
   // progress strip's "Retry" button can re-fire the import without making
   // the user re-pick the file.
   const lastPickRef = useRef(null) // {file, parentId} | null
+  const w = useWorkspace()
 
   const toggle = (id) => setExpanded((s) => {
     const next = new Set(s)
@@ -491,11 +503,53 @@ export default function FileTree({ files, currentFileId, onSelect, onCreate, onR
     }
   }
 
+  function openKicadPicker() {
+    if (kicadInputRef.current) {
+      kicadInputRef.current.value = ''
+      kicadInputRef.current.click()
+    }
+  }
+
   function onFilePicked(e) {
     const file = e.target.files?.[0]
     if (!file) return
     lastPickRef.current = { file, parentId: importTargetRef.current }
     onImportStep?.(file, importTargetRef.current)
+  }
+
+  async function onKicadFilePicked(e) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setKicadImporting(true)
+    setKicadError(null)
+    try {
+      if (onImportKicad) {
+        await onImportKicad(file)
+      } else {
+        // Default: call the API directly using the workspace project id
+        const { projectId, accessToken } = w
+        const API_URL = import.meta.env.VITE_API_URL || ''
+        const form = new FormData()
+        form.append('file', file, file.name)
+        const resp = await fetch(`${API_URL}/api/projects/${projectId}/imports/kicad`, {
+          method: 'POST',
+          headers: { authorization: `Bearer ${accessToken}` },
+          body: form,
+        })
+        if (!resp.ok) {
+          const err = await resp.json().catch(() => ({ detail: resp.statusText }))
+          throw new Error(err.detail || `HTTP ${resp.status}`)
+        }
+        const data = await resp.json()
+        w.setState({ toast: `KiCad imported → ${data.filename}` })
+        // Refresh file list
+        w.loadFiles?.()
+      }
+    } catch (err) {
+      setKicadError(err.message || 'KiCad import failed')
+    } finally {
+      setKicadImporting(false)
+    }
   }
 
   function retryLastImport() {
@@ -511,6 +565,7 @@ export default function FileTree({ files, currentFileId, onSelect, onCreate, onR
         <CreateMenu
           onCreate={onCreate}
           openImportPicker={() => openImportPicker(null)}
+          openKicadPicker={openKicadPicker}
         />
       </div>
       <input
@@ -520,6 +575,26 @@ export default function FileTree({ files, currentFileId, onSelect, onCreate, onR
         className="hidden"
         onChange={onFilePicked}
       />
+      <input
+        ref={kicadInputRef}
+        type="file"
+        accept=".kicad_sch,.kicad_pcb,.zip"
+        className="hidden"
+        onChange={onKicadFilePicked}
+      />
+      {kicadImporting && (
+        <div className="flex items-center gap-2 px-3 py-1.5 bg-ink-850 border-b border-ink-700 text-[11px] text-ink-300">
+          <Loader2 size={12} className="animate-spin text-kerf-300 shrink-0" />
+          <span>Importing KiCad…</span>
+        </div>
+      )}
+      {kicadError && (
+        <div className="flex items-center gap-2 px-3 py-1.5 bg-red-950/40 border-b border-red-700/50 text-[11px] text-red-200">
+          <AlertCircle size={12} className="shrink-0" />
+          <span className="flex-1 truncate">{kicadError}</span>
+          <button type="button" onClick={() => setKicadError(null)} className="hover:text-red-100"><X size={11} /></button>
+        </div>
+      )}
       <UploadProgressStrip onRetry={retryLastImport} />
       <div
         className="flex-1 overflow-auto py-1 min-h-0"

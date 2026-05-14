@@ -162,6 +162,6 @@ The export button on the editor toolbar produces:
 
 ## Wire format
 
-Full schema in `CONTRACT.md` under "Drawing files".
+Full schema in `backend/llm_docs/drawing.md`.
 
 Next: [cloud.md](./cloud.md)

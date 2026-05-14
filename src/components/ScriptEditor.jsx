@@ -66,12 +66,18 @@ export default function ScriptEditor({ content, fileName, file, onChange }) {
             <Terminal size={12} className="text-cyan-400 shrink-0 mt-0.5" />
             <div>
               <div className="font-medium text-cyan-300">
-                Python scripting — server-side execution
+                Run on your machine via kerf-sdk
               </div>
-              <div className="text-cyan-200/70 mt-0.5">
-                Use <code className="font-mono text-cyan-100">pip install kerf-sdk</code> to
-                interact with this workspace. The server executes Python scripts
-                on demand via the JSON-RPC endpoint.
+              <div className="text-cyan-200/70 mt-0.5 space-y-1">
+                <div>
+                  Edit in your own IDE, then run against this workspace over HTTP/JSON-RPC:
+                </div>
+                <code className="block font-mono text-[10px] text-cyan-100 bg-cyan-950/40 rounded px-2 py-1 mt-1 whitespace-pre">
+                  {`pip install kerf-sdk\nkerf run ${fileName || 'script.script.py'} --project <project-id>`}
+                </code>
+                <div className="text-cyan-200/60">
+                  Works against local install (<span className="font-mono">localhost:8080</span>) or cloud.
+                </div>
               </div>
             </div>
           </div>

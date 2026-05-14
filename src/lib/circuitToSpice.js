@@ -1,11 +1,11 @@
 /**
  * circuitToSpice — pure CircuitJSON → SPICE `.cir` netlist emitter.
  *
- * Phase 1 of the Electronics SPICE roadmap: a hermetic, side-effect-free
- * transform from tscircuit's compiled CircuitJSON array to a SPICE deck
- * string. No engine, no worker, no UI. Engine integration (ngspice-wasm),
- * the `.simulation` file kind, the SimulationView panel, and the
- * `run_simulation` LLM tool are all deferred.
+ * Pure, hermetic, side-effect-free transform from tscircuit's compiled
+ * CircuitJSON array to a SPICE deck string. No engine, no worker, no UI.
+ * Engine execution runs server-side on the `pyworker` ngspice subprocess
+ * (see `POST /run-spice`); the `.simulation` file kind, SimulationView
+ * panel, and `run_simulation` LLM tool consume the netlist this emits.
  *
  * Recognised `source_component.ftype` values (verified against
  * `node_modules/@tscircuit/core` + `node_modules/circuit-json`):

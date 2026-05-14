@@ -5,7 +5,7 @@
 // completes — otherwise we'd flash a non-compact / motion-on render on
 // every nav.
 //
-// Shape contract (mirrors backend/internal/handlers/me.go allowedPrefKeys):
+// Shape contract (mirrors backend/routes/api.py allowed_pref_keys):
 //   default_model: string  (e.g. "claude-opus-4-7")
 //   units:         "mm" | "cm" | "inches"
 //   autosave_delay_ms: 250..2000

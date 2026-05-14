@@ -1,7 +1,7 @@
 # LLM tools
 
-The catalog of tools chat can call. Each tool is a Go function in
-`backend/internal/tools/`; the agent loop dispatches to it synchronously and
+The catalog of tools chat can call. Each tool is a Python function in
+`backend/tools/`; the agent loop dispatches to it via asyncio and
 streams results back to the model.
 
 The surface is intentionally **small and stable**. Domain-specific edit
@@ -87,9 +87,9 @@ Pages currently in the corpus:
 - `jscad.md` — JSCAD authoring conventions.
 - `index.md` — table of contents with one-line per page.
 
-The corpus is embedded into the binary at build time via `//go:embed`
-(see `backend/internal/llm/docs.go`). Adding or updating an authoring
-guide is a markdown edit + recompile — no schema changes, no migration.
+The corpus is loaded at startup via `importlib.resources`
+(see `backend/tools/docs.py`). Adding or updating an authoring
+guide is a markdown edit + server restart — no schema changes, no migration.
 
 ## Revisions
 
@@ -119,14 +119,15 @@ guide is a markdown edit + recompile — no schema changes, no migration.
 
 ## Where the source lives
 
-- Tool registry — `backend/internal/tools/tools.go`
-- Implementations — `*.go` files in the same directory
-- Authoring corpus — `backend/internal/llm/docs/*.md` (embedded into
-  the binary at build time)
-- Wire schema for tool calls / results — see `CONTRACT.md` "Tools"
+- Tool registry — `backend/tools/registry.py`
+- Implementations — per-domain files in `backend/tools/` (`file_ops.py`,
+  `object_ops.py`, `scaffold.py`, `revisions.py`, `validation.py`, etc.)
+- Authoring corpus — `backend/llm_docs/*.md` (loaded via
+  `importlib.resources` at startup)
+- Wire schema for tool calls / results — see `backend/llm_docs/` (per-kind specs) and `docs/v1-rpc.md`
 
 Adding a new tool is a one-file change: write the spec, write the
-executor, add an entry to `Registry` in `tools.go`. Adding a new
-authoring page is a single `.md` edit + recompile.
+executor, add an entry to `Registry` in `registry.py`. Adding a new
+authoring page is a single `.md` edit + server restart.
 
 Next: [getting-started.md](./getting-started.md)

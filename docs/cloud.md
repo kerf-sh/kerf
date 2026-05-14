@@ -17,7 +17,7 @@ This page is an overview. The hands-on build/deploy guide lives in
 |-------------------------------------------|----------------------------------------------------|
 | **Workshop** sharing                       | Public gallery + fork + like; needs hosted index   |
 | **Paystack billing** (USD-priced, ZAR-settled) | Payment integration; SA-incorporated business |
-| **Git** (commits, branches, merge, GitHub sync) | go-git backend + AES-GCM-encrypted GitHub tokens |
+| **Git** (commits, branches, merge, GitHub sync) | pygit2 backend + AES-GCM-encrypted GitHub tokens |
 | **Project thumbnails**                     | Client-renders on save, stored in object storage   |
 | **Usage tracking** (token + storage events) | Per-account meter, feeds the billing engine       |
 | **Quota middleware**                       | Free-tier storage cap, paid metered overage        |
@@ -45,7 +45,7 @@ storage, not gating sharing.
 - **FX:** USD→ZAR fetched daily into `cloud_fx_rates`. Charges convert at
   charge time using the latest rate plus a small spread.
 - **Token charges:** raw provider cost × 1.20 (20% markup), per-1M-token
-  rates in `backend/cloud/pricing/pricing.go`.
+  rates in `backend/cloud/pricing/pricing.py`.
 - **Storage:** $0.20 / GB-month, billed on max-of-month, 50 MB free for
   every account.
 - **Free tier:** unlimited projects, 50 MB storage, no project / file count
@@ -56,7 +56,7 @@ from it deduct in real time.
 
 ## Git
 
-The cloud tier embeds `go-git` against per-project bare repositories. Each
+The cloud tier uses `pygit2` against per-project bare repositories. Each
 file edit is a commit on the active branch; you get:
 
 - A multi-lane lattice graph view of branches.
@@ -94,7 +94,7 @@ npm run build:cloud
 ```
 
 Frontend reads the cloud flag from `/api/config` at runtime; backend reads
-`-tags=cloud`.
+the `KERF_CLOUD=1` env var.
 
 Full deploy / migrations / pricing references in
 [cloud/README.md](../cloud/README.md).

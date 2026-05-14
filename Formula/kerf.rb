@@ -20,8 +20,8 @@ class Kerf < Formula
   license "MIT"
   head "https://github.com/imranp/kerf.git", branch: "main"
 
-  depends_on "go" => :build
   depends_on "node" => :build
+  depends_on "python@3.12"
   depends_on "postgresql@16"
 
   def install
@@ -29,18 +29,23 @@ class Kerf < Formula
     system "npm", "install"
     system "npm", "run", "build:web"
 
-    # Build the OSS server binary (the cloud variant lives in the proprietary
-    # `cloud/` tree and is not packaged via Homebrew).
-    cd "backend" do
-      system "go", "build",
-             "-ldflags", "-s -w -X main.version=#{version}",
-             "-o", buildpath/"kerf",
-             "./cmd/server"
-    end
+    # Set up Python virtualenv and install dependencies.
+    python3 = Formula["python@3.12"].opt_bin/"python3.12"
+    system python3, "-m", "venv", libexec/"venv"
+    system libexec/"venv/bin/pip", "install", "-r", "backend/requirements.txt"
 
-    bin.install buildpath/"kerf"
+    # Copy backend source into libexec.
+    cp_r "backend", libexec/"backend"
+
+    # Install wrapper script.
+    (bin/"kerf").write <<~EOS
+      #!/bin/bash
+      export PYTHONPATH="#{libexec}/backend"
+      exec "#{libexec}/venv/bin/uvicorn" main:app --host 0.0.0.0 --port "${KERF_PORT:-8080}" "$@"
+    EOS
+    chmod 0755, bin/"kerf"
+
     pkgshare.install "kerf.example.toml"
-    pkgshare.install "scripts/init-config.mjs"
   end
 
   def post_install
@@ -57,13 +62,13 @@ class Kerf < Formula
   end
 
   service do
-    run [opt_bin/"kerf", "--config", "#{ENV["HOME"]}/.config/kerf/config.toml"]
+    run [opt_bin/"kerf"]
     keep_alive true
     log_path var/"log/kerf.log"
     error_log_path var/"log/kerf.err"
   end
 
   test do
-    assert_match "Usage of", shell_output("#{bin}/kerf -h 2>&1", 2)
+    assert_predicate bin/"kerf", :exist?
   end
 end

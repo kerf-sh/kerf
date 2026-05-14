@@ -11,8 +11,9 @@
 //                warnings: [], errors: [] } }
 //
 // Uses the run_simulation tool (via /api/projects/{pid}/files/{fid}/sim) to
-// enqueue ngspice batch jobs on the backend. Polls sim_job_status until
-// the job completes, then writes results back to the .simulation file.
+// enqueue ngspice batch jobs on the pyworker compute sidecar. Polls
+// sim_job_status until the job completes, then writes results back to the
+// .simulation file.
 
 import { useEffect, useRef, useState } from 'react'
 import { Activity, AlertTriangle, BarChart3, Loader2, Play, TableProperties } from 'lucide-react'
@@ -22,40 +23,6 @@ import { useAuth } from '../store/auth.js'
 const API_URL = import.meta.env.VITE_API_URL || ''
 
 const PALETTE = ['#f59e0b', '#22d3ee', '#a78bfa', '#34d399', '#f472b6']
-
-export const ENGINE_PENDING_WARNING = 'Engine pending — ngspice-wasm not yet wired.'
-
-/**
- * Idempotently append the engine-pending warning to a parsed `.simulation`
- * document. Returns a *new* object suitable for `JSON.stringify` + persisting
- * via the standard `editContent` action. Treats `results` defensively so
- * malformed-but-still-object payloads still produce a sane shape.
- *
- * Pure helper extracted so the stub Run flow stays testable without the DOM.
- *
- * @param {object} parsed The raw `JSON.parse(content)` value.
- * @returns {object} A shallow clone with `results.warnings` containing the
- *                   pending sentinel exactly once and `results.waveforms`
- *                   coerced to `[]` (the stub run produces no waveforms).
- */
-export function addEnginePendingWarning(parsed) {
-  const base = (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) ? parsed : {}
-  const r = (base.results && typeof base.results === 'object' && !Array.isArray(base.results)) ? base.results : {}
-  const warnings = Array.isArray(r.warnings) ? r.warnings.slice() : []
-  const errors = Array.isArray(r.errors) ? r.errors.slice() : []
-  if (!warnings.includes(ENGINE_PENDING_WARNING)) {
-    warnings.push(ENGINE_PENDING_WARNING)
-  }
-  return {
-    ...base,
-    results: {
-      ...r,
-      waveforms: [],
-      warnings,
-      errors,
-    },
-  }
-}
 
 /**
  * Parse a `.simulation` JSON string into a normalized read-only shape.
@@ -219,8 +186,10 @@ export default function SimulationView({ content, fileName }) {
       w.setState({ toast: 'Cannot run simulation: file is not valid JSON.' })
       return
     }
+
     setRunning(true)
     setJobStatus({ status: 'queued' })
+
     try {
       const token = useAuth.getState().accessToken
       const res = await fetch(`${API_URL}/api/projects/${w.projectId}/files/${w.currentFileId}/sim`, {
@@ -404,7 +373,7 @@ export default function SimulationView({ content, fileName }) {
             )}
             {results.waveforms.length === 0 ? (
               <div className="text-[11px] text-ink-500 italic">
-                Engine pending — re-run when ngspice-wasm lands.
+                No results yet — click Run to simulate via ngspice on the pyworker sidecar.
               </div>
             ) : (
               <WaveformChart waveforms={results.waveforms} />

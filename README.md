@@ -11,7 +11,6 @@ JSCAD code · OpenCascade B-rep features · planegcs sketcher · tscircuit elect
 [![License: MIT](https://img.shields.io/badge/License-MIT-FFD633.svg?style=flat-square)](LICENSE)
 [![Made in](https://img.shields.io/badge/Built%20in-Durban%20%F0%9F%87%BF%F0%9F%87%A6-1f2937?style=flat-square)](https://kerf.app)
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome-FFD633.svg?style=flat-square)](#contributing)
-[![Single binary](https://img.shields.io/badge/single%20binary-~32%20MB-1f2937?style=flat-square)](#install)
 
 [Website](https://kerf.app) · [Docs](https://kerf.app/docs) · [Roadmap](./ROADMAP.md) · [Contributing](#contributing)
 
@@ -37,7 +36,7 @@ JSCAD code · OpenCascade B-rep features · planegcs sketcher · tscircuit elect
 
 ## What it is
 
-A single workspace for mechanical, electronics, drawings, and library parts — written entirely in code (JSCAD / `.feature` JSON / `.circuit.tsx` / `.sketch` / `.drawing`) so an LLM can read, diff, and edit it. Multi-domain projects via free-form tags. Browser-native. Single-binary local install (~32 MB) or hosted at [kerf.app](https://kerf.app).
+A single workspace for mechanical, electronics, drawings, and library parts — written entirely in code (JSCAD / `.feature` JSON / `.circuit.tsx` / `.sketch` / `.drawing`) so an LLM can read, diff, and edit it. Multi-domain projects via free-form tags. Browser-native. Local install or hosted at [kerf.app](https://kerf.app).
 
 ## Why
 
@@ -53,7 +52,7 @@ A single workspace for mechanical, electronics, drawings, and library parts — 
 
 [kerf.app](https://kerf.app) — sign up, you get 50 MB free, top up with credits when you need more LLM tokens or storage.
 
-### Local (single binary)
+### Local
 
 ```sh
 # Homebrew (macOS / Linux)
@@ -68,7 +67,7 @@ kerf
 # → http://localhost:8080
 ```
 
-In local mode the binary auto-creates a single user and skips the login screen entirely (`[server].local_mode = true` is the default).
+In local mode the server auto-creates a single user and skips the login screen entirely (`[server].local_mode = true` is the default).
 
 ### From source
 
@@ -76,38 +75,38 @@ In local mode the binary auto-creates a single user and skips the login screen e
 git clone https://github.com/imranp/kerf
 cd kerf
 npm install
-npm run dev          # vite :5173 + go :8080
+npm run dev          # vite :5173 + uvicorn :8080
 ```
 
-You'll need Go 1.24+, Node 22+, and Postgres 14+.
+You'll need Python 3.11+, Node 22+, and Postgres 14+.
 
 ## Build
 
 ```sh
-npm run build              # full single binary at ./kerf — embeds the SPA via go:embed
-npm run build:web          # just the Vite frontend (outputs to backend/internal/web/dist)
-npm run build:api          # just the Go backend
+npm run build              # full production build — compiles the SPA via Vite
+npm run build:web          # just the Vite frontend (outputs to backend/web/dist)
+npm run build:api          # install Python dependencies (pip install -r backend/requirements.txt)
 npm run build:icons        # regenerate favicon set + OG image from public/favicon.svg
 npm run build:docs         # rebuild public/docs-manifest.json from the markdown corpus
 ```
 
 ### Build flags
 
-The Go backend uses build tags to gate the optional cloud bundle. Default is **OSS**.
+The Python backend uses environment variables and optional feature flags to gate the cloud bundle. Default is **OSS**.
 
 ```sh
 # OSS build (default) — single-user local install, no billing, no Workshop
-go build -o kerf ./backend/cmd/server
+cd backend && pip install -r requirements.txt && uvicorn main:app --reload
 
 # Cloud build — adds Workshop sharing, Paystack billing, git, transactional email
-go build -tags=cloud -o kerf-cloud ./backend/cmd/server
+KERF_CLOUD=true uvicorn main:app --reload
 
 # Or via npm
 npm run build              # OSS
 npm run build:cloud        # cloud
 ```
 
-The same source tree builds both. Cloud-only code lives under `backend/cloud/`, `cloud/`, `src/cloud/` and is compiled in only when the `cloud` build tag is set. The OSS binary cannot accidentally pull in cloud code.
+The same source tree runs both. Cloud-only code lives under `backend/cloud/`, `cloud/`, `src/cloud/` and is activated only when the `KERF_CLOUD=true` env var is set. The OSS install cannot accidentally pull in cloud code.
 
 ### Configuration
 
@@ -142,7 +141,6 @@ Full schema: see [`kerf.example.toml`](./kerf.example.toml).
 | Git (commits / branches / merge / GitHub sync) | ✅ |
 | STEP import/export, chunked resumable uploads, server-side tessellation | ✅ |
 | File revisions (Cmd+Z, full history drawer) | ✅ |
-| Single-binary build (~32 MB, embedded frontend) | ✅ |
 | Filesystem / S3 / R2 / MinIO storage | ✅ |
 | 🔮 NURBS surfacing for jewelry (sweep2, networkSrf, blendSrf) | planned |
 | 🔮 SPICE simulation, RF, autorouting (electronics) | planned |
@@ -154,13 +152,15 @@ The full ROADMAP — shipped, in-flight, next, planned — is in [ROADMAP.md](./
 
 ```
 backend/
-├── cmd/server/        — HTTP API entrypoint
-├── cmd/migrate/       — schema migrator
-├── cmd/test/          — integration test runner
-├── internal/          — handlers, auth, storage, LLM, tools
-├── internal/web/dist/ — embedded Vite bundle (built by build:web)
-├── migrations/        — OSS schema
-└── cloud/             — cloud-tier handlers (build-tagged)
+├── main.py            — FastAPI entrypoint (uvicorn main:app)
+├── routes/            — API route handlers (auth, projects, files, chat, …)
+├── tools/             — LLM-callable tool implementations
+├── db/                — asyncpg connection pool + query helpers
+├── workers/           — background async task workers
+├── distributors/      — distributor price-sync workers
+├── web/dist/          — Vite bundle (built by build:web; served by FastAPI)
+├── migrations/        — Alembic schema migrations
+└── cloud/             — cloud-tier handlers (KERF_CLOUD-gated)
 
 src/
 ├── components/        — React components
@@ -173,7 +173,7 @@ cloud/                 — top-level cloud bundle metadata
 docs/                  — public-facing docs (rendered at /docs)
 public/                — static assets (icons, OG image, screenshots, planegcs.wasm)
 ROADMAP.md             — direction
-CONTRACT.md            — API + data model spec
+docs/architecture.md   — API + data model spec
 ```
 
 ## Tech stack
@@ -182,7 +182,7 @@ CONTRACT.md            — API + data model spec
 - **Sketcher**: planegcs (FreeCAD's solver, compiled to WASM)
 - **B-rep kernel**: OpenCascade.js (~15 MB compressed wasm, lazy-chunked)
 - **Electronics**: tscircuit (TSX → CircuitJSON), circuit-to-svg
-- **Backend**: Go 1.24, chi, pgx, JWT, `golang.org/x/oauth2/google`
+- **Backend**: Python 3.11, FastAPI, asyncpg, SQLAlchemy, Alembic, PyJWT, `httpx`
 - **DB**: Postgres 14+ (Supabase-compatible)
 - **LLM**: multi-provider — Anthropic, OpenAI, Moonshot, Gemini (default `claude-opus-4-7`)
 - **Cloud-only**: Paystack (USD-priced, ZAR-settled), bunny.net CDN, go-git
@@ -192,9 +192,9 @@ CONTRACT.md            — API + data model spec
 ```sh
 # Backend integration scenarios (boots a real server + Postgres)
 createdb kerf_test
-KERF_TEST_DATABASE_URL='postgres://localhost/kerf_test?sslmode=disable' \
-  go run ./backend/cmd/test
-# → 14 scenarios, ~450 assertions
+DATABASE_URL='postgres://localhost/kerf_test?sslmode=disable' \
+  pytest backend/tests/
+# → integration scenarios covering auth, projects, files, chat
 
 # Frontend unit tests (vitest)
 npm test
@@ -209,11 +209,11 @@ npm run lint
 PRs welcome. Pick anything marked `📋 next` or `🔮 planned` in [ROADMAP.md](./ROADMAP.md). For larger work, open an issue first so we can align scope.
 
 - **Style**: ESLint + Prettier defaults. Match the surrounding code; we don't bikeshed.
-- **Tests**: every PR that touches a backend handler should add or extend a scenario in `backend/cmd/test/scenarios/`. Frontend changes: add a vitest if the logic isn't UI-only.
+- **Tests**: every PR that touches a backend handler should add or extend a test in `backend/tests/`. Frontend changes: add a vitest if the logic isn't UI-only.
 - **Commits**: imperative tense, ~70 chars (`fix sketcher line-tool double-commit`).
-- **The LLM edits source files directly.** If you add a new file kind or feature, also add a `backend/internal/llm/docs/<topic>.md` so the model knows about it. The doc-search tool indexes that directory automatically.
+- **The LLM edits source files directly.** If you add a new file kind or feature, also add a `backend/llm_docs/<topic>.md` so the model knows about it. The doc-search tool indexes that directory automatically.
 
-See [CONTRACT.md](./CONTRACT.md) for the API + data model spec — the source of truth for cross-cutting changes.
+See [docs/architecture.md](./docs/architecture.md) for the API + data model spec — the source of truth for cross-cutting changes.
 
 ## License
 
@@ -225,7 +225,7 @@ Built in Durban 🇿🇦 by a small team. Engineered for engineers everywhere.
 
 - [Docs](https://kerf.app/docs) — getting started, concepts, sketching, assemblies, drawings, electronics
 - [ROADMAP.md](./ROADMAP.md) — shipped · in-flight · next · planned
-- [CONTRACT.md](./CONTRACT.md) — full API + data model
+- [docs/architecture.md](./docs/architecture.md) — full API + data model
 - [backend/README.md](./backend/README.md) — backend developer guide
 - [cloud/README.md](./cloud/README.md) — hosted-tier build/deploy notes
 - [Issues](https://github.com/imranp/kerf/issues) · [Discussions](https://github.com/imranp/kerf/discussions)

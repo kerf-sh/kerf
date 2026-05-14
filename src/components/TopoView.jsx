@@ -85,6 +85,7 @@ export function parseTopo(content) {
     errors: Array.isArray(r.errors) ? r.errors : [],
     output_mesh_file_id:
       typeof r.output_mesh_file_id === 'string' ? r.output_mesh_file_id : null,
+    density_field: Array.isArray(r.density_field) ? r.density_field : null,
   }
   return { kind: 'ok', spec, results }
 }
@@ -280,6 +281,9 @@ export default function TopoView({ content, fileName }) {
                     mono
                   />
                 </div>
+                {results.density_field && results.density_field.length > 0 && (
+                  <DensityFieldHeatmap densityField={results.density_field} />
+                )}
                 {results.output_mesh_file_id && (
                   <DensityMeshViewer meshFileId={results.output_mesh_file_id} />
                 )}
@@ -429,6 +433,82 @@ function SectionHeading({ children }) {
   return (
     <div className="mb-2 text-[10px] uppercase tracking-wider text-ink-500 font-medium">
       {children}
+    </div>
+  )
+}
+
+/**
+ * DensityFieldHeatmap — 2D X-Y projection of a SIMP density field.
+ * Groups elements by (x, y) grid cell, averages rho per cell.
+ * Renders as an SVG grid where color encodes density (0=transparent, 1=kerf-300).
+ */
+function DensityFieldHeatmap({ densityField }) {
+  if (!densityField || densityField.length === 0) return null
+
+  const GRID = 30  // max grid resolution
+  const CELL = 8   // SVG pixels per cell
+
+  // Find bounding box
+  let xMin = Infinity, xMax = -Infinity
+  let yMin = Infinity, yMax = -Infinity
+  for (const pt of densityField) {
+    if (pt.x < xMin) xMin = pt.x
+    if (pt.x > xMax) xMax = pt.x
+    if (pt.y < yMin) yMin = pt.y
+    if (pt.y > yMax) yMax = pt.y
+  }
+  const xRange = xMax - xMin || 1
+  const yRange = yMax - yMin || 1
+
+  // Bin into grid
+  const grid = new Map()
+  const gridCount = new Map()
+  for (const pt of densityField) {
+    const gx = Math.min(GRID - 1, Math.floor(((pt.x - xMin) / xRange) * GRID))
+    const gy = Math.min(GRID - 1, Math.floor(((pt.y - yMin) / yRange) * GRID))
+    const key = `${gx},${gy}`
+    grid.set(key, (grid.get(key) || 0) + pt.rho)
+    gridCount.set(key, (gridCount.get(key) || 0) + 1)
+  }
+
+  const cells = []
+  for (const [key, sum] of grid.entries()) {
+    const [gx, gy] = key.split(',').map(Number)
+    const avg = sum / gridCount.get(key)
+    cells.push({ gx, gy, rho: avg })
+  }
+
+  const svgW = GRID * CELL
+  const svgH = GRID * CELL
+
+  return (
+    <div className="space-y-1.5">
+      <div className="text-[10px] uppercase tracking-wider text-ink-500 font-medium">
+        Density Field (X-Y projection)
+      </div>
+      <div className="bg-ink-900 border border-ink-800 rounded p-2 inline-block">
+        <svg width={svgW} height={svgH} viewBox={`0 0 ${svgW} ${svgH}`}>
+          {cells.map(({ gx, gy, rho }) => {
+            const alpha = Math.max(0, Math.min(1, rho))
+            // kerf-300 ≈ #3ecfb2
+            const r = Math.round(62 * alpha)
+            const g = Math.round(207 * alpha)
+            const b = Math.round(178 * alpha)
+            return (
+              <rect
+                key={`${gx},${gy}`}
+                x={gx * CELL}
+                y={(GRID - 1 - gy) * CELL}
+                width={CELL - 1}
+                height={CELL - 1}
+                fill={`rgb(${r},${g},${b})`}
+                opacity={alpha > 0.05 ? 1 : 0}
+              />
+            )
+          })}
+        </svg>
+      </div>
+      <div className="text-[10px] text-ink-600">Dark = void · Teal = solid</div>
     </div>
   )
 }

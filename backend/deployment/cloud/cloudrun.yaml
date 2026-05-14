@@ -1,0 +1,102 @@
+# Cloud Run Service Configuration
+# Deploy with: gcloud run services replace service.yaml
+
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: kerf-api
+  annotations:
+    run.googleapis.com/ingress: internal-and-cloud-load-balancing
+spec:
+  template:
+    metadata:
+      annotations:
+        autoscaling.knative.dev/minScale: "1"
+        autoscaling.knative.dev/maxScale: "10"
+        run.googleapis.com/execution-mode: concurrency
+    spec:
+      containerConcurrency: 80
+      timeoutSeconds: 300
+      serviceAccountName: kerf-api@PROJECT.iam.gserviceaccount.com
+      containers:
+        - image: gcr.io/PROJECT/kerf-api:latest
+          ports:
+            - containerPort: 8080
+          env:
+            - name: ENV
+              value: "cloud"
+            - name: PORT
+              value: "8080"
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: kerf-secrets
+                  key: database-url
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: kerf-secrets
+                  key: jwt-secret
+            - name: PASSWORD_PEPPER
+              valueFrom:
+                secretKeyRef:
+                  name: kerf-secrets
+                  key: password-pepper
+            - name: STORAGE_BACKEND
+              value: "s3"
+            - name: S3_BUCKET
+              value: "kerf-storage"
+            - name: S3_REGION
+              value: "us-east-1"
+            - name: S3_ENDPOINT
+              value: "https://s3.us-east-1.amazonaws.com"
+            - name: CDN_BASE_URL
+              value: ""
+            - name: GOOGLE_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: kerf-secrets
+                  key: google-client-id
+            - name: GOOGLE_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: kerf-secrets
+                  key: google-client-secret
+            - name: ANTHROPIC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: kerf-secrets
+                  key: anthropic-api-key
+            - name: LOCAL_MODE
+              value: "false"
+            - name: CLOUD_ENABLED
+              value: "true"
+          resources:
+            limits:
+              cpu: "2"
+              memory: 2Gi
+            requests:
+              cpu: "500m"
+              memory: 512Mi
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 30
+            failureThreshold: 3
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 12
+          volumeMounts:
+            - name: temp-storage
+              mountPath: /tmp
+      volumes:
+        - name: temp-storage
+          emptyDir:
+            medium: Memory
+            sizeLimit: 512Mi

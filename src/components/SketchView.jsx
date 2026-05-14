@@ -1587,6 +1587,19 @@ function SketchEntities({ sketch, view, worldToScreen, selection, conflicts, sta
             />
           )
         }
+        if (e.curveType === 'polyline' && Array.isArray(e.points) && e.points.length >= 2) {
+          const ptsStr = e.points.map((p) => {
+            const s = worldToScreen(p.x, p.y)
+            return `${s.x},${s.y}`
+          }).join(' ')
+          return (
+            <polyline key={e.id}
+              points={ptsStr}
+              stroke={col} strokeWidth={1.5} strokeDasharray="4 3"
+              fill="none" data-id={e.id}
+            />
+          )
+        }
         return null
       })}
       {/* Points (drawn last so they sit on top) */}
@@ -2241,6 +2254,49 @@ function NumField({ label, value, onChange }) {
 }
 
 // ---------------------------------------------------------------------------
+// 2D curve-fitting helpers (used for classifying projected edge chains).
+
+function fitCircle2D(points) {
+  if (!points || points.length < 3) return { ok: false }
+  const n = points.length
+  let sumX = 0, sumY = 0, sumX2 = 0, sumY2 = 0, sumXY = 0, sumX3 = 0, sumY3 = 0, sumX2Y = 0, sumXY2 = 0
+  for (const p of points) {
+    const x = p.x, y = p.y, x2 = x * x, y2 = y * y, xy = x * y
+    sumX += x; sumY += y; sumX2 += x2; sumY2 += y2; sumXY += xy
+    sumX3 += x * x2; sumY3 += y * y2; sumX2Y += x2 * y; sumXY2 += x * y2
+  }
+  const d = n * sumX2 - sumX * sumX
+  if (Math.abs(d) < 1e-12) return { ok: false }
+  const e = n * sumY2 - sumY * sumY
+  if (Math.abs(e) < 1e-12) return { ok: false }
+  const f = n * sumXY - sumX * sumY
+  if (Math.abs(f) < 1e-12) return { ok: false }
+  const g = n * sumX3 + n * sumXY2 - sumX * sumX2 - sumY * sumXY
+  const h = n * sumY3 + n * sumX2Y - sumY * sumY2 - sumX * sumXY
+  const denom = d * e - f * f
+  if (Math.abs(denom) < 1e-12) return { ok: false }
+  const D = (g * f - h * d) / denom
+  const E = (h * f - g * e) / denom
+  const F = -(sumX2 + sumY2 + D * sumX + E * sumY) / n
+  const cx = -D / 2, cy = -E / 2
+  const radius = Math.sqrt(D * D / 4 + E * E / 4 - F)
+  let maxResidual = 0
+  for (const p of points) {
+    const dx = p.x - cx, dy = p.y - cy
+    const residual = Math.abs(Math.sqrt(dx * dx + dy * dy) - radius)
+    if (residual > maxResidual) maxResidual = residual
+  }
+  return { ok: true, center: { x: cx, y: cy }, radius, maxResidual }
+}
+
+function chainIsClosed(chain2D, tol = 0.01) {
+  if (!chain2D || chain2D.length < 3) return false
+  const p0 = chain2D[0], pN = chain2D[chain2D.length - 1]
+  const dx = pN.x - p0.x, dy = pN.y - p0.y
+  return Math.sqrt(dx * dx + dy * dy) < tol
+}
+
+// ---------------------------------------------------------------------------
 // 3D backdrop — three.js scene rendered behind the SVG, showing the
 // `sketch.visible_3d` parts at semi-transparent reference opacity. The
 // camera is locked to the sketch plane (XY for v2). Re-renders on parts /
@@ -2391,12 +2447,92 @@ function SketchBackdrop3D({ sketch, view, loadParts, tool, onProjectEdge }) {
             })
             const mesh = new THREE.Mesh(geom, mat)
             meshGroup.add(mesh)
-            // Wireframe edges for definition.
-            const eg = new THREE.EdgesGeometry(geom, 25)
-            const edgeMat = new THREE.LineBasicMaterial({
+            // Build coarse wireframe for display (threshold 25).
+            const egCoarse = new THREE.EdgesGeometry(geom, 25)
+            const edgeMatCoarse = new THREE.LineBasicMaterial({
               color: 0x8aa9ce, transparent: true, opacity: 0.45, depthWrite: false,
             })
-            edgeGroup.add(new THREE.LineSegments(eg, edgeMat))
+            edgeGroup.add(new THREE.LineSegments(egCoarse, edgeMatCoarse))
+            // Build fine wireframe for picking (threshold 1) and chain extraction.
+            const egFine = new THREE.EdgesGeometry(geom, 1)
+            const posAttr = egFine.attributes.position
+            const numSegsFine = posAttr.count / 2
+            // Index endpoints by quantized position.
+            const quantize = (v) => `${Math.round(v.x * 1000)},${Math.round(v.y * 1000)},${Math.round(v.z * 1000)}`
+            const endpointToSegs = new Map()
+            for (let i = 0; i < numSegsFine; i++) {
+              const iA = i * 2, iB = i * 2 + 1
+              const keyA = quantize(new THREE.Vector3(posAttr.getX(iA), posAttr.getY(iA), posAttr.getZ(iA)))
+              const keyB = quantize(new THREE.Vector3(posAttr.getX(iB), posAttr.getY(iB), posAttr.getZ(iB)))
+              if (!endpointToSegs.has(keyA)) endpointToSegs.set(keyA, [])
+              if (!endpointToSegs.has(keyB)) endpointToSegs.set(keyB, [])
+              endpointToSegs.get(keyA).push(i)
+              endpointToSegs.get(keyB).push(i)
+            }
+            // Build per-segment tangent vectors.
+            const tangents = new Array(numSegsFine)
+            for (let i = 0; i < numSegsFine; i++) {
+              const iA = i * 2, iB = i * 2 + 1
+              const vA = new THREE.Vector3(posAttr.getX(iA), posAttr.getY(iA), posAttr.getZ(iA))
+              const vB = new THREE.Vector3(posAttr.getX(iB), posAttr.getY(iB), posAttr.getZ(iB))
+              tangents[i] = new THREE.Vector3().subVectors(vB, vA).normalize()
+            }
+            // Walk chains: greedy walk across endpoints with valence==2 and continuous tangents.
+            const visited = new Uint8Array(numSegsFine)
+            const chains = []
+            const segToChain = new Int32Array(numSegsFine).fill(-1)
+            const COS_35 = Math.cos(Math.PI / 180 * 35)
+            for (let startSeg = 0; startSeg < numSegsFine; startSeg++) {
+              if (visited[startSeg]) continue
+              const pts = []
+              let forward = true
+              let seg = startSeg
+              while (seg >= 0 && !visited[seg]) {
+                visited[seg] = 1
+                segToChain[seg] = chains.length
+                const iA = seg * 2, iB = seg * 2 + 1
+                const vA = new THREE.Vector3(posAttr.getX(iA), posAttr.getY(iA), posAttr.getZ(iA))
+                const vB = new THREE.Vector3(posAttr.getX(iB), posAttr.getY(iB), posAttr.getZ(iB))
+                if (forward) {
+                  pts.push(vA.clone())
+                } else {
+                  pts.push(vB.clone())
+                }
+                // Determine endpoints and extend.
+                const endKey = forward
+                  ? quantize(new THREE.Vector3(posAttr.getX(iB), posAttr.getY(iB), posAttr.getZ(iB)))
+                  : quantize(new THREE.Vector3(posAttr.getX(iA), posAttr.getY(iA), posAttr.getZ(iA)))
+                const neighbors = endpointToSegs.get(endKey) || []
+                let nextSeg = -1
+                for (const nb of neighbors) {
+                  if (nb === seg || visited[nb]) continue
+                  // Check valence==2 at the far endpoint.
+                  const nbIA = nb * 2, nbIB = nb * 2 + 1
+                  const nbKeyA = quantize(new THREE.Vector3(posAttr.getX(nbIA), posAttr.getY(nbIA), posAttr.getZ(nbIA)))
+                  const nbKeyB = quantize(new THREE.Vector3(posAttr.getX(nbIB), posAttr.getY(nbIB), posAttr.getZ(nbIB)))
+                  const nbEndKey = nbKeyA === endKey ? nbKeyB : nbKeyA
+                  const nbEndValence = (endpointToSegs.get(nbEndKey) || []).filter(s => !visited[s] || s === nb).length
+                  // Check tangent continuity.
+                  const dot = tangents[seg].dot(tangents[nb])
+                  if (dot > COS_35) {
+                    nextSeg = nb
+                    forward = (nbKeyA === endKey)
+                    break
+                  }
+                }
+                seg = nextSeg
+              }
+              if (pts.length >= 2) {
+                chains.push({ points: pts })
+              }
+            }
+            // Attach chains to fine LineSegments for pick resolution.
+            const edgeMatFine = new THREE.LineBasicMaterial({ visible: false })
+            const fineSegs = new THREE.LineSegments(egFine, edgeMatFine)
+            fineSegs.userData.chains = chains
+            fineSegs.userData.segToChain = segToChain
+            fineSegs.userData.partMatrixWorld = mesh.matrixWorld
+            edgeGroup.add(fineSegs)
           }
         } catch (err) {
           console.warn('SketchBackdrop3D: load failed', fileId, err)
@@ -2407,7 +2543,8 @@ function SketchBackdrop3D({ sketch, view, loadParts, tool, onProjectEdge }) {
     return () => { cancelled = true }
   }, [visibleIds, loadParts])
 
-  // Handle click for project_edge tool — raycast against meshes to pick an edge.
+  // Handle click for project_edge tool — raycast against edge LineSegments to pick
+  // an edge and project both endpoints onto the sketch 2D plane.
   useEffect(() => {
     const mount = mountRef.current
     if (!mount) return
@@ -2416,34 +2553,111 @@ function SketchBackdrop3D({ sketch, view, loadParts, tool, onProjectEdge }) {
       const s = stateRef.current
       if (!s) return
       const rect = mount.getBoundingClientRect()
-      const x = ((e.clientX - rect.left) / rect.width) * 2 - 1
-      const y = -((e.clientY - rect.top) / rect.height) * 2 + 1
+      const ndcX = ((e.clientX - rect.left) / rect.width) * 2 - 1
+      const ndcY = -((e.clientY - rect.top) / rect.height) * 2 + 1
       const raycaster = new THREE.Raycaster()
-      raycaster.setFromCamera({ x, y }, s.camera)
-      // Intersect against edge geometry (LineSegments in edgeGroup).
+      raycaster.params.Line = { threshold: 2 }
+      raycaster.setFromCamera({ x: ndcX, y: ndcY }, s.camera)
       const hits = raycaster.intersectObjects(s.edgeGroup.children, true)
-      if (hits.length > 0) {
-        const hit = hits[0]
-        // For now, create a simple line external curve at the hit point.
-        // A full implementation would extract the actual edge curve from the source geometry.
-        const pt = hit.point
+      if (hits.length === 0) return
+      const hit = hits[0]
+      const geom = hit.object.geometry
+      const posAttr = geom?.attributes?.position
+      if (!posAttr) return
+      const segIdx = hit.faceIndex ?? 0
+
+      // Helper: project a world-space THREE.Vector3 onto the sketch 2D plane.
+      function project2D(pt) {
         const frame = faceFrame
         if (frame) {
-          // Project hit point onto the face plane to get 2D coordinates.
           const [ox, oy, oz] = frame.origin
           const [ux, uy, uz] = frame.uDir
           const [vx, vy, vz] = frame.vDir
-          // Vector from origin to hit point.
           const dx = pt.x - ox, dy = pt.y - oy, dz = pt.z - oz
-          const u = dx * ux + dy * uy + dz * uz
-          const v = dx * vx + dy * vy + dz * vz
-          onProjectEdge?.({
-            fileId: visibleIds[0] || '',
-            edgeId: 'edge',
-            curveData: { curveType: 'circle', center: { x: 0, y: 0 }, radius: Math.hypot(u, v) },
+          return { x: dx * ux + dy * uy + dz * uz, y: dx * vx + dy * vy + dz * vz }
+        }
+        return { x: pt.x, y: pt.y }
+      }
+
+      const chains = hit.object.userData.chains
+      const segToChain = hit.object.userData.segToChain
+      const partMatrixWorld = hit.object.userData.partMatrixWorld
+
+      if (chains && segToChain && partMatrixWorld) {
+        // Chain-based curve classification.
+        const chainIdx = segToChain[segIdx]
+        if (chainIdx >= 0 && chainIdx < chains.length) {
+          const chain = chains[chainIdx]
+          // Project all points to 2D.
+          const chain2D = chain.points.map((pt) => {
+            const wp = pt.clone().applyMatrix4(partMatrixWorld)
+            return project2D(wp)
           })
+          // Defensive downsampling for large chains.
+          const pts2D = chain2D.length > 512
+            ? chain2D.filter((_, i) => i % Math.ceil(chain2D.length / 64) === 0)
+            : chain2D
+          if (pts2D.length < 2) return
+          if (pts2D.length === 2) {
+            onProjectEdge?.({
+              fileId: visibleIds[0] || '',
+              edgeId: `edge_${segIdx}_chain${chainIdx}`,
+              curveData: { curveType: 'line', p1: pts2D[0], p2: pts2D[1] },
+            })
+            return
+          }
+          const fit = fitCircle2D(pts2D)
+          const closed = chainIsClosed(pts2D, 0.01)
+          const tol = Math.max(0.01, fit.radius * 0.005)
+          if (fit.ok && fit.maxResidual <= tol) {
+            const { center, radius } = fit
+            if (closed) {
+              onProjectEdge?.({
+                fileId: visibleIds[0] || '',
+                edgeId: `edge_${segIdx}_chain${chainIdx}`,
+                curveData: { curveType: 'circle', center, radius },
+              })
+            } else {
+              const p0 = pts2D[0], pN = pts2D[pts2D.length - 1]
+              let startAngle = Math.atan2(p0.y - center.y, p0.x - center.x)
+              let endAngle = Math.atan2(pN.y - center.y, pN.x - center.x)
+              // Signed area to determine sweep direction.
+              let area = 0
+              for (let i = 0; i < pts2D.length - 1; i++) {
+                area += pts2D[i].x * pts2D[i + 1].y - pts2D[i + 1].x * pts2D[i].y
+              }
+              const sweepCCw = area >= 0
+              onProjectEdge?.({
+                fileId: visibleIds[0] || '',
+                edgeId: `edge_${segIdx}_chain${chainIdx}`,
+                curveData: { curveType: 'arc', center, radius, startAngle, endAngle, sweepCCw },
+              })
+            }
+          } else {
+            onProjectEdge?.({
+              fileId: visibleIds[0] || '',
+              edgeId: `edge_${segIdx}_chain${chainIdx}`,
+              curveData: { curveType: 'polyline', points: pts2D },
+            })
+          }
+          return
         }
       }
+
+      // Fallback: single segment line.
+      const iA = segIdx * 2
+      const iB = segIdx * 2 + 1
+      const vA = new THREE.Vector3(posAttr.getX(iA), posAttr.getY(iA), posAttr.getZ(iA))
+      const vB = new THREE.Vector3(posAttr.getX(iB), posAttr.getY(iB), posAttr.getZ(iB))
+      vA.applyMatrix4(hit.object.matrixWorld)
+      vB.applyMatrix4(hit.object.matrixWorld)
+      const p1 = project2D(vA)
+      const p2 = project2D(vB)
+      onProjectEdge?.({
+        fileId: visibleIds[0] || '',
+        edgeId: `edge_${segIdx}`,
+        curveData: { curveType: 'line', p1, p2 },
+      })
     }
     mount.addEventListener('click', onClick)
     return () => mount.removeEventListener('click', onClick)

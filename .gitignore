@@ -48,6 +48,7 @@ backend/tmp/
 # Compiled Go binaries (built into repo root and backend/)
 /kerf
 /kerf-cloud
+/kerf-oss
 /backend/server
 /backend/test
 /backend/migrate

@@ -30,7 +30,7 @@
 // so the editor and consumers can render them as "—" without guessing.
 //
 // The backend mirrors this shape in
-// backend/internal/tools/material_tools.go (`materialDoc`); keep the two
+// backend/tools/material.py (`MaterialDoc`); keep the two
 // definitions in sync.
 
 const MECHANICAL_KEYS = [

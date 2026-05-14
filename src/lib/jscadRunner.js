@@ -1,6 +1,6 @@
 // Run a user's JSCAD source and return parts.
 //
-// Convention (see CONTRACT.md / seed file): the user's file's default export is
+// Convention (see backend/llm_docs/jscad.md / seed file): the user's file's default export is
 //   function (modeling) { return [{id, geom}, ...] }
 // This avoids depending on importmap / module resolution at runtime — we just
 // hand them the @jscad/modeling namespace.

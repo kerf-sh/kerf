@@ -10,7 +10,7 @@ license that applies to the rest of this repo. See `cloud/LICENSE`.
 | Path                  | License     | Purpose                                    |
 | --------------------- | ----------- | ------------------------------------------ |
 | `LICENSE` (root)      | MIT         | Covers OSS code (everything below)         |
-| `backend/**`          | MIT         | Go API server, LLM proxy, file storage     |
+| `backend/**`          | MIT         | Python (FastAPI) API server, LLM proxy, file storage |
 | `src/**`              | MIT         | React frontend                             |
 | `cloud/LICENSE`       | proprietary | Terms for everything cloud-marked          |
 | `backend/cloud/**`    | proprietary | Paystack billing, FX, quotas, usage events |
@@ -23,17 +23,18 @@ contribute back, or run it in BYO-keys mode without paying us. The cloud/
 directory holds the things that turn it into a paid hosted service —
 mainly: payments (Paystack), per-user quotas, exchange rates, and usage
 metering. None of those need to exist in the OSS build, so they live behind
-a Go build tag and a Vite env flag.
+a Python feature flag (KERF_CLOUD_ENABLED) and a Vite env flag.
 
 ## Building the OSS server (no cloud)
 
 ```bash
 cd backend
-go build -o ../kerf-oss ./cmd/server
-./kerf-oss --env=local
+python3.12 -m venv venv
+./venv/bin/pip install -r requirements.txt
+./venv/bin/uvicorn main:app --host 0.0.0.0 --port 8080
 ```
 
-The resulting binary contains zero cloud code. There is no billing, no
+The resulting server contains zero cloud code. There is no billing, no
 quotas, no Paystack — users either configure provider API keys via env
 (self-host) or paste their own keys in a settings panel (BYO mode, when
 `AUTH_OPTIONAL=true`).
@@ -42,8 +43,9 @@ quotas, no Paystack — users either configure provider API keys via env
 
 ```bash
 cd backend
-go build -tags=cloud -o ../kerf-cloud ./cmd/server
-./kerf-cloud --env=main
+python3.12 -m venv venv
+./venv/bin/pip install -r requirements.txt
+KERF_CLOUD_ENABLED=true ./venv/bin/uvicorn main:app --host 0.0.0.0 --port 8080
 ```
 
 This adds Paystack handlers, quota middleware, and usage tracking.
@@ -66,18 +68,15 @@ Two independent commands, two independent tracking tables:
 
 ```bash
 # OSS schema (required first)
-go build -o ../kerf-migrate ./cmd/migrate
-./kerf-migrate
+cd backend
+alembic upgrade head
 
-# Cloud schema (refuses to run unless OSS schema is in place)
-go build -tags=cloud -o ../kerf-migrate-cloud ./cloud/cmd/migrate
-./kerf-migrate-cloud
+# Cloud schema (applies additional cloud migrations when KERF_CLOUD_ENABLED=true)
+KERF_CLOUD_ENABLED=true alembic upgrade head
 ```
 
-- OSS migrate embeds `backend/migrations/*.sql`, tracks in `schema_migrations`.
-- Cloud migrate embeds `backend/cloud/migrations/*.sql`, tracks in `cloud_schema_migrations`.
-- Each binary travels with its own SQL — no runtime file-path lookups,
-  works after `brew install` or a curl-installed release.
+- OSS migrate applies migrations in `backend/alembic/versions/`, tracks in `alembic_version`.
+- Cloud migrate applies additional cloud migrations when `KERF_CLOUD_ENABLED=true`.
 
 From the repo root, npm shortcuts: `npm run migrate`, `npm run migrate:cloud`, `npm run migrate:all`.
 
@@ -91,20 +90,20 @@ the legacy `content` column when `content_gz` is NULL).
 A separate, **opt-in** command repacks legacy rows so they no longer
 consume their full plaintext size:
 
-```bash
-go build -o ../kerf-migrate-revisions ./cmd/migrate-revisions
+**Note:** `backend.scripts.migrate_revisions` is TODO — the script has not yet been ported from Go.
 
+```bash
 # Dry run — reports how many rows would be touched.
-./kerf-migrate-revisions --dry-run
+python -m backend.scripts.migrate_revisions --dry-run
 
 # Compress every row's content into content_gz, leave the legacy
 # `content` column populated as a safety net.
-./kerf-migrate-revisions
+python -m backend.scripts.migrate_revisions
 
 # Same, but additionally clear the legacy column once the gzip
 # roundtrip has been verified for each row. Use only after confirming a
 # successful run on a non-prod replica first.
-./kerf-migrate-revisions --prune-legacy
+python -m backend.scripts.migrate_revisions --prune-legacy
 ```
 
 The command is idempotent — re-running on an up-to-date DB is a no-op
@@ -198,9 +197,8 @@ via AES-GCM with a key derived from `cfg.JWTSecret`:
 | `cloud_github_tokens`       | Per-user GitHub OAuth access tokens (cloud) | `cloud:github-token`           |
 | `distributor_credentials`   | Operator-configured distributor API keys    | `distributor-credentials`      |
 
-The shared helper lives at `backend/internal/auth/encrypt.go` (the
-older `backend/cloud/git/encrypt.go` is a thin re-export, kept for
-the cloud build's import graph).
+The shared helper lives at `backend/utils/encrypt.py` — `encrypt_secret`
+and `decrypt_secret`, both keyed by `SHA-256("kerf:enc:<domain>:<jwt_secret>")`.
 
 **Rotating `JWT_SECRET` invalidates every encrypted row.** This is
 intentional — the secret IS the key, and there's no way to re-derive
@@ -385,9 +383,10 @@ The `kerf library-import` command takes a YAML manifest and upserts
 a publisher user, a project to hold the Parts, and one Part file per
 manifest entry:
 
+**Note:** `backend.scripts.library_import` is TODO — not yet ported from Go.
+
 ```bash
-go build -o ../kerf-library-import ./cmd/library-import
-./kerf-library-import --manifest ../samples/libraries/adafruit-sensors.yaml
+python -m backend.scripts.library_import --manifest samples/libraries/adafruit-sensors.yaml
 ```
 
 Pass `--dry-run` to see the plan without writing. Re-running the

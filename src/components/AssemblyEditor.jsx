@@ -1,6 +1,6 @@
 // AssemblyEditor — visual editor for an assembly file's components.
 //
-// Vocabulary (CONTRACT.md): a Part is a whole .jscad file; an Object is one
+// Vocabulary (docs/architecture.md): a Part is a whole .jscad file; an Object is one
 // entry in its exported array; a Component is an Assembly's instance of a
 // single Object placed at a transform.
 //
@@ -399,10 +399,10 @@ export default function AssemblyEditor({
       // tuple — they decompose to identity now, but since we share the object
       // reference, edits to one will propagate. We don't actually share state
       // across rows (that would be confusing for editing); we just start them
-      // all at identity. The "rigid" affordance is documented in CONTRACT.md
+      // all at identity. The "rigid" affordance is documented in docs/architecture.md
       // and is implemented by giving every row an identical transform JSON.
       // Drag-to-move on one component still moves only that one — to keep
-      // them locked, the user composes a parent assembly. (See CONTRACT.md.)
+      // them locked, the user composes a parent assembly. (See docs/architecture.md.)
       const sharedTransform = rigid ? { position: [0, 0, 0], rotationDeg: [0, 0, 0], scale: 1 } : null
       for (const oid of objectIds) {
         let id = `${baseName}-${oid}`
@@ -555,6 +555,8 @@ export default function AssemblyEditor({
         components={rows}
         onChangeMates={onChangeMates}
         onToast={onToast}
+        projectId={projectId}
+        fileId={currentFileId}
       />
 
       {/* Inline BOM panel — collapsible region. Lazy-loads on first expand

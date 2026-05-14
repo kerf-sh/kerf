@@ -1,6 +1,6 @@
 // equations.js — parse + evaluate `.equations` JSON files.
 //
-// File shape (mirrors backend/internal/llm/docs/equations.md):
+// File shape (mirrors backend/llm_docs/equations.md):
 //
 //   { "version": 1, "params": [
 //     { "name": "wall", "expr": "2",     "unit": "mm", "comment": "Default" },

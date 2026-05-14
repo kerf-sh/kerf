@@ -300,6 +300,26 @@ export const library = {
       payloadSize: (body && Number(body.payload_size_bytes)) || 0,
     }
   },
+
+  /** GET /api/projects/:pid/files/:fid/diff?against=<rev> — returns component count
+   *  delta + BOM total delta vs a revision (or the immediately preceding one if
+   *  the rev id is omitted). Used by the assembly editor's 'out of date' chip
+   *  tooltip (ROADMAP row 68 Phase 3). Returns { componentsAdded, componentsRemoved,
+   *  componentsDelta, bomTotalDeltaUsd, against } — re-cased from the snake_case
+   *  backend payload. Throws ApiError on non-200. */
+  async diffFile({ projectId, fileId, against }) {
+    const qs = against ? `?against=${encodeURIComponent(against)}` : ''
+    const body = await request(
+      `/api/projects/${encodeURIComponent(projectId)}/files/${encodeURIComponent(fileId)}/diff${qs}`,
+    )
+    return {
+      componentsAdded: (body && body.components_added) || 0,
+      componentsRemoved: (body && body.components_removed) || 0,
+      componentsDelta: (body && body.components_delta) || 0,
+      bomTotalDeltaUsd: body && body.bom_total_delta_usd != null ? Number(body.bom_total_delta_usd) : null,
+      against: (body && body.against) || null,
+    }
+  },
 }
 
 // ---- Admin: Library submissions queue ----

@@ -1,6 +1,6 @@
 // Assembly content + matrix helpers.
 //
-// Terminology (locked in by CONTRACT.md):
+// Terminology (locked in by docs/architecture.md):
 //   - **Object**: one entry in a `.jscad` file's exported array, identified
 //     by its `id` field. Clickable in the renderer.
 //   - **Part**: a whole `.jscad` file. Contains 1+ Objects.

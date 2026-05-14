@@ -38,8 +38,8 @@
 //     metadata?: Record<string, any>,
 //   }
 //
-// The backend mirrors this shape in backend/internal/tools/part_tools.go
-// (`partDoc`); keep the two definitions in sync.
+// The backend mirrors this shape in backend/tools/material.py
+// (`PartDoc`); keep the two definitions in sync.
 
 export const PART_VISIBILITY_VALUES = ['private', 'unlisted', 'public']
 

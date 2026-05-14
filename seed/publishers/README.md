@@ -7,8 +7,7 @@ out of the box.
 
 ## What this seeds
 
-Running `npm run seed:publishers` (or `go run ./cmd/seed-publishers` from
-`backend/`) is **idempotent** and produces the following rows on first run:
+Running `npm run seed:publishers` (or `python -m backend.seed.publishers` once the runner exists — **TODO: not yet ported from Go**) is **idempotent** and produces the following rows on first run:
 
 1. A `users` row with:
    - `id = 6b657266-0000-4000-8000-000000000001` (the literal ASCII bytes
@@ -23,9 +22,9 @@ Running `npm run seed:publishers` (or `go run ./cmd/seed-publishers` from
 3. A `projects` row called `Common Components`, `visibility = 'public'`,
    inside the `kerf-system` workspace.
 4. One `files` row per `parts/*.json` in this directory, `kind='part'`,
-   `content` set to the JSON-encoded `partDoc` (the same shape Kerf reads
+   `content` set to the JSON-encoded `PartDoc` (the same shape Kerf reads
    when a `.part` file is opened in the editor — see
-   `backend/internal/tools/part_tools.go`).
+   `backend/tools/material.py`).
 
 Re-running the script never duplicates rows: users / workspaces / projects
 upsert by their stable identifiers; parts upsert by `(project_id, name)`
@@ -44,8 +43,8 @@ seed/publishers/
     └── capacitor-10uf-0805.json
 ```
 
-Each file under `parts/` is a JSON document conforming to `partDoc`
-(`backend/internal/tools/part_tools.go`). The minimum viable set of fields
+Each file under `parts/` is a JSON document conforming to `PartDoc`
+(`backend/tools/material.py`). The minimum viable set of fields
 is `version`, `name`, and `distributors`; everything else is optional but
 recommended (`description`, `category`, `manufacturer`, `mpn`, `value`,
 `visibility`, `metadata`).

@@ -679,6 +679,7 @@ export default function PCBView({ circuitJson, highlightRefdes = null, onSelectR
 
       {/* View toolbar (top-right) */}
       <div className="absolute top-2 right-2 flex items-center gap-1 rounded-md bg-ink-900/90 border border-ink-800 backdrop-blur p-1 shadow-lg">
+        {/* Autoroute button — only shown when caller passes onAutoroute */}
         {onAutoroute && (
           <>
             <button

@@ -104,8 +104,8 @@ function Hero() {
                 Try it free
                 <ArrowRight size={16} />
               </Button>
-              <Button as={Link} to="/docs/install" variant="outline" size="lg">
-                Install locally
+              <Button as={Link} to="/docs/quickstart/python-sdk" variant="outline" size="lg">
+                Python SDK docs
               </Button>
             </div>
 
@@ -171,7 +171,7 @@ function HeroBackdrop() {
 function LogoStrip() {
   // The "trusted by" strip is honest: list the technologies under the
   // hood, not vapor logos. Pure typographic, low-key.
-  const items = ['JSCAD', 'OpenCascade', 'tscircuit', 'planegcs', 'TechDraw', 'Three.js']
+  const items = ['JSCAD', 'OpenCascade', 'tscircuit', 'planegcs', 'TechDraw', 'Three.js', 'KiCad', 'OpenSCAD']
   return (
     <div className="mt-10 lg:mt-12 flex flex-col items-center gap-3">
       <p className="text-[10px] font-mono uppercase tracking-[0.2em] text-ink-500">

@@ -14,8 +14,25 @@ const BG_COLOR = 0x0f1115 // ink-900
 const KERF_YELLOW = 0xffd633
 const INK_300 = 0x8a93a6
 
+// NURBS surface tessellation note:
+//
+// NURBS surfaces authored via feature_sweep2 / feature_network_srf /
+// feature_blend_srf (and the sweep1 starter) are evaluated by the OCCT worker
+// (occtWorker.js) using OpenCascade.js operations:
+//   sweep2      → BRepOffsetAPI_MakePipeShell
+//   network_srf → GeomFill_BSplineCurves / BRepOffsetAPI_ThruSections
+//   blend_srf   → BRepFill_Filling
+//
+// The resulting B-rep shape is tessellated by OCCT into a triangle mesh
+// (BRepMesh_IncrementalMesh) and returned as a BufferGeometry, which is then
+// resolved here. The Python NurbsSurface objects in backend/geom/ are the
+// LLM-accessible manipulation layer; they do not drive rendering directly.
+//
+// Phase 4 scope: surface creation + display. NURBS trimming and boolean ops
+// on NURBS require a deeper OCCT NURBS kernel integration and are out of scope.
+
 // Resolve any of:
-//   - Three.js BufferGeometry (already tessellated, e.g. from STEP)
+//   - Three.js BufferGeometry (already tessellated, e.g. from STEP or OCCT worker)
 //   - JSCAD Geom3 (polygon list, runJscad output)
 // → BufferGeometry. We never mutate the input — JSCAD path always creates new.
 function resolveGeometry(geom) {

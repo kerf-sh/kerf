@@ -38,7 +38,7 @@ The unit of editing. Every File has a `kind`:
 
 Text files keep their content in Postgres directly. Binary files (today: STEP)
 keep a pointer; the bytes live in the configured Storage backend (local disk,
-S3/R2/MinIO, or filesystem-mirrored). See `CONTRACT.md` for the wire shapes.
+S3/R2/MinIO, or filesystem-mirrored). See `docs/architecture.md` for the wire shapes.
 
 Every text edit appends a row to `file_revisions`, capped at 200 per file. The
 File History drawer (and Cmd+Z) reads from there. Deletes are soft — the row
@@ -125,7 +125,7 @@ OpenCASCADE, giving real B-rep features (precise fillets, lossless STEP
 export, edge identity for selection-driven ops). Both kernels coexist in a
 project on a per-file basis.
 
-The full vocabulary is locked in `CONTRACT.md`. Anything that disagrees with
+The full vocabulary is locked in `docs/architecture.md` + the per-kind specs under `backend/llm_docs/`. Anything that disagrees with
 this doc is a bug — open an issue.
 
 Next: [sketching.md](./sketching.md)

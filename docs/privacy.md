@@ -132,10 +132,10 @@ information, we'll usually pick that path.
 
 Every line of code that runs the hosted service is in the
 [public GitHub repo](https://github.com/imranp/kerf). If you want to know
-exactly what gets logged when, the file is `backend/internal/middleware/`;
-if you want to see what context goes to the LLM, that's
-`backend/internal/llm/`. There's no second secret repo — the whole thing is
-auditable.
+exactly what gets logged when, the file is `backend/routes/` (middleware
+lives in route dependencies); if you want to see what context goes to the
+LLM, that's `backend/llm.py`. There's no second secret repo — the whole
+thing is auditable.
 
 ## Changes to this policy
 

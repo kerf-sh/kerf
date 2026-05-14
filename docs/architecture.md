@@ -6,16 +6,16 @@ How Kerf is wired end to end — from a chat message to a re-rendered model.
 
 ```
 ┌───────────────────────────┐         ┌────────────────────────────┐
-│        Browser            │         │     Go binary (kerf)       │
+│        Browser            │         │     Python server (kerf)      │
 │                           │         │                            │
-│  React + Vite + Three.js  │ ◄─────► │  chi router · pgx · auth   │
+│  React + Vite + Three.js  │ ◄─────► │  FastAPI · asyncpg · auth   │
 │  Monaco · planegcs · OCCT │   HTTP  │  Storage · LLM clients     │
 │  IndexedDB mesh cache     │         │  Tool registry · Agent loop│
 │  Web Worker (JSCAD eval)  │         │  Embedded Vite bundle      │
 └───────────────────────────┘         └─────────────┬──────────────┘
                                                     │
                                        ┌────────────┴─────────────┐
-                                       │     Postgres (pgx)       │
+                                       │     Postgres (asyncpg)       │
                                        │  users / projects /      │
                                        │  files / file_revisions  │
                                        │  chat_threads / messages │
@@ -34,16 +34,17 @@ Single binary. Single Postgres. Pluggable storage. Pluggable LLM provider.
 
 `npm run build` runs:
 
-1. `vite build` → frontend bundle into `backend/internal/web/dist/`
-2. `go build ./cmd/server` → Go binary, with the `dist/` tree embedded via
-   `//go:embed`
+1. `vite build` → frontend bundle into `backend/static/dist/`
+2. The Python server is started with `uvicorn backend.main:app`; static files
+   are served from `backend/static/dist/` via FastAPI's StaticFiles mount.
 
-The result is one ~32 MB binary. No node_modules at runtime, no static-asset
-server, no separate frontend host. `./kerf --config ./kerf.toml` boots
-everything: API + SPA + agent loop on `:8080`.
+The result is a single Python process. No node_modules at runtime, no
+static-asset server, no separate frontend host. `uvicorn backend.main:app`
+(or `./kerf --config ./kerf.toml`) boots everything: API + SPA + agent loop
+on `:8080`.
 
-The cloud build (`-tags=cloud`) layers Paystack, billing UI, Workshop, and git
-on top. OSS builds compile zero cloud code.
+The cloud build (`KERF_CLOUD=1`) layers Paystack, billing UI, Workshop, and
+git on top. OSS builds include zero cloud code.
 
 ## Frontend
 
@@ -69,13 +70,13 @@ the source size.
 
 ## Backend
 
-- **chi** for routing. JSON in, JSON out.
-- **pgx** straight to Postgres, no ORM.
+- **FastAPI** for routing. JSON in, JSON out.
+- **asyncpg** + **SQLAlchemy (async)** for Postgres access.
 - **JWT** access tokens + opaque refresh tokens (rotated on use).
-- **Google OAuth** via `golang.org/x/oauth2/google`.
-- **TOML config** (`pelletier/go-toml/v2`) — single `kerf.toml` source of
+- **Google OAuth** via `authlib`.
+- **TOML config** (`tomllib` / `tomli`) — single `kerf.toml` source of
   truth.
-- **LLM clients** — provider-agnostic interface; concrete clients for
+- **LLM clients** — provider-agnostic ABC; concrete clients for
   Anthropic, OpenAI, Moonshot, Gemini. Switching providers is a config
   change.
 
@@ -99,7 +100,7 @@ individual rows. The whole loop is one HTTP request.
 
 ### Storage abstraction
 
-`internal/storage` defines a `Storage` interface; concrete backends:
+`backend/storage` defines a `Storage` ABC (abstract base class); concrete backends:
 
 - **local** — disk under `./.kerf-storage`. The auth-protected
   `/api/blobs/{key}` route serves bytes.
@@ -141,14 +142,14 @@ deliver.
 
 ## Build tags as feature flags
 
-Cloud features compile in or out via Go build tags + Vite env vars. There's
-no runtime feature-flag system — flags are decided at build time, the
-binary is whichever it is. Users who want the cloud surface either run our
-hosted build or build their own with `-tags=cloud`.
+Cloud features are enabled via the `KERF_CLOUD=1` environment variable and
+Vite env vars. There is no runtime feature-flag system — the flag is read at
+server startup. Users who want the cloud surface either run our hosted build
+or set `KERF_CLOUD=1` themselves.
 
 ## Where to dive deeper
 
-- **API + data model** — [CONTRACT.md](../CONTRACT.md). Source of truth.
+- **API + data model** — this document, plus per-kind schemas under `backend/llm_docs/`.
 - **Roadmap + philosophy** — [ROADMAP.md](../ROADMAP.md). Direction.
 - **Backend internals** — [backend/README.md](../backend/README.md).
 - **Cloud build & pricing** — [cloud/README.md](../cloud/README.md).

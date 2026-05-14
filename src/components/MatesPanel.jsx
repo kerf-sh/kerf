@@ -1,10 +1,10 @@
 // MatesPanel — collapsible panel for 3D assembly mate constraints.
 //
 // Props:
-//   assembly   — parsed assembly object ({ mates: [...], components: [...] })
-//   onMatesChange(newMates)  — called when mates list changes
-//   projectId  — string UUID
-//   fileId     — string UUID
+//   mates         — array of mate objects
+//   components    — array of component rows (for display reference)
+//   onChangeMates — called when mates list changes
+//   onToast       — optional (mate solve errors are shown inline, not as toasts)
 //
 // Each mate: { id, type, a:{component_id, feature, feature_id}, b:{...}, value?, unit? }
 
@@ -28,7 +28,7 @@ const EMPTY_FORM = {
   unit: 'mm',
 }
 
-export default function MatesPanel({ assembly, onMatesChange, projectId, fileId }) {
+export default function MatesPanel({ mates = [], components = [], onChangeMates, onToast, projectId, fileId }) {
   const [open, setOpen] = useState(false)
   const [adding, setAdding] = useState(false)
   const [form, setForm] = useState(EMPTY_FORM)
@@ -36,11 +36,9 @@ export default function MatesPanel({ assembly, onMatesChange, projectId, fileId 
   const [solveResult, setSolveResult] = useState(null)
   const [solveError, setSolveError] = useState(null)
 
-  const mates = (assembly && Array.isArray(assembly.mates)) ? assembly.mates : []
-
   function handleDelete(mateId) {
     const newMates = removeMate(mates, mateId)
-    onMatesChange(newMates)
+    onChangeMates(newMates)
   }
 
   function handleAdd() {
@@ -55,7 +53,7 @@ export default function MatesPanel({ assembly, onMatesChange, projectId, fileId 
       mate.unit = form.unit
     }
     const newMates = addMate(mates, mate)
-    onMatesChange(newMates)
+    onChangeMates(newMates)
     setAdding(false)
     setForm(EMPTY_FORM)
     // Trigger solve

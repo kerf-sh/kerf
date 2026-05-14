@@ -6,8 +6,6 @@ import { describe, it, expect } from 'vitest'
 import {
   parseSimulation,
   normalizeWaveforms,
-  addEnginePendingWarning,
-  ENGINE_PENDING_WARNING,
 } from '../components/SimulationView.jsx'
 
 describe('parseSimulation', () => {
@@ -217,51 +215,3 @@ describe('normalizeWaveforms', () => {
   })
 })
 
-describe('addEnginePendingWarning', () => {
-  it('adds the engine-pending warning when results.warnings is missing', () => {
-    const out = addEnginePendingWarning({
-      version: 1,
-      circuit_file_id: 'c1',
-      analysis: { type: 'transient' },
-    })
-    expect(out.results.warnings).toEqual([ENGINE_PENDING_WARNING])
-    expect(out.results.waveforms).toEqual([])
-    expect(out.results.errors).toEqual([])
-    // Top-level fields are preserved.
-    expect(out.version).toBe(1)
-    expect(out.circuit_file_id).toBe('c1')
-    expect(out.analysis).toEqual({ type: 'transient' })
-  })
-
-  it('does not duplicate the warning across repeated invocations', () => {
-    const a = addEnginePendingWarning({ version: 1 })
-    const b = addEnginePendingWarning(a)
-    const c = addEnginePendingWarning(b)
-    expect(c.results.warnings).toEqual([ENGINE_PENDING_WARNING])
-  })
-
-  it('preserves pre-existing warnings and appends the sentinel exactly once', () => {
-    const out = addEnginePendingWarning({
-      version: 1,
-      results: { warnings: ['no .tran convergence'], errors: [], waveforms: [] },
-    })
-    expect(out.results.warnings).toEqual([
-      'no .tran convergence',
-      ENGINE_PENDING_WARNING,
-    ])
-  })
-
-  it('leaves results.errors untouched while clearing waveforms', () => {
-    const out = addEnginePendingWarning({
-      version: 1,
-      results: {
-        errors: ['ngspice exited 1'],
-        warnings: [],
-        waveforms: [{ name: 'VOUT', x: [0, 1], y: [0, 1] }],
-      },
-    })
-    expect(out.results.errors).toEqual(['ngspice exited 1'])
-    expect(out.results.waveforms).toEqual([])
-    expect(out.results.warnings).toEqual([ENGINE_PENDING_WARNING])
-  })
-})

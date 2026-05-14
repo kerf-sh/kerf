@@ -17,23 +17,25 @@ npm run init               # writes kerf.toml from the example
 # Edit kerf.toml: set [auth].optional = true and one [llm.<provider>].api_key
 
 npm run migrate            # apply OSS migrations
-npm run dev                # vite :5173 + go server :8080
+npm run dev                # vite :5173 + python server :8080
 ```
 
-Open <http://localhost:5173>. Hot reload runs on the frontend; the Go server
-restarts on file change via `concurrently` + your editor's save.
+Open <http://localhost:5173>. Hot reload runs on the frontend; the Python server
+restarts on file change via `uvicorn --reload` (handled by `npm run dev`).
 
 ## Repo layout
 
 ```
-backend/                Go API (MIT)
-  cmd/server/             entry point
-  cmd/migrate/            schema migrator
-  cmd/test/               integration test runner (OSS scenarios)
-  internal/               handlers, auth, storage, LLM clients, tools
-  internal/web/dist/      embedded Vite build output
-  migrations/             OSS schema, *_init.sql etc.
-  cloud/                  PROPRIETARY — build-tagged with `cloud`
+backend/                Python API (MIT)
+  main.py                 entry point
+  routes/                 FastAPI routers
+  db/                     SQLAlchemy models, alembic migrations
+  tools/                  LLM tool registry + implementations
+  llm.py                  LLM provider clients
+  llm_docs/               embedded authoring corpus (markdown)
+  storage/                storage backends (local / S3 / filesystem)
+  static/dist/            embedded Vite build output
+  cloud/                  PROPRIETARY — enabled via KERF_CLOUD=1
 src/                    React + Vite frontend (MIT)
   components/             shared UI
   routes/                 page-level routes
@@ -58,29 +60,29 @@ open an issue first.
 
 The split is enforced at build time:
 
-- Backend: cloud code is gated by `//go:build cloud`. The OSS binary
-  (`go build ./cmd/server`) compiles zero cloud code. Cloud builds use
-  `go build -tags=cloud ./cmd/server`.
+- Backend: cloud code is gated by the `KERF_CLOUD=1` environment variable.
+  The OSS server (`uvicorn backend.main:app`) includes zero cloud code unless
+  `KERF_CLOUD=1` is set. Cloud builds use `KERF_CLOUD=1 uvicorn backend.main:app`.
 - Frontend: cloud routes mount only when `VITE_CLOUD=1` (used by
   `npm run build:cloud`). The OSS build excludes `src/cloud/` entirely.
 - Migrations: separate trackers (`schema_migrations` vs.
-  `cloud_schema_migrations`); cloud migrations refuse to run unless OSS is
+  `cloud_schema_migrations`); cloud alembic migrations refuse to run unless OSS is
   applied first.
 
 ## npm scripts
 
 | Script                   | What it does                                           |
 |--------------------------|--------------------------------------------------------|
-| `npm run dev`            | Vite (:5173) + Go server (:8080)                       |
+| `npm run dev`            | Vite (:5173) + Python server (:8080)                   |
 | `npm run init`           | Copy `kerf.example.toml` → `kerf.toml` (idempotent)    |
 | `npm run migrate`        | Apply pending OSS migrations                           |
-| `npm run migrate:cloud`  | Apply cloud migrations (requires `-tags=cloud`)        |
+| `npm run migrate:cloud`  | Apply cloud migrations (requires `KERF_CLOUD=1`)       |
 | `npm run migrate:all`    | OSS then cloud                                         |
 | `npm run migrate:reset`  | Drop schema + re-apply OSS migrations                  |
-| `npm run build`          | OSS single binary at `./kerf`                          |
-| `npm run build:web`      | Frontend bundle only (into `backend/internal/web/dist/`) |
-| `npm run build:api`      | Go binary only (assumes web is built)                  |
-| `npm run build:cloud`    | Cloud single binary at `./kerf-cloud`                  |
+| `npm run build`          | OSS Python server build                                |
+| `npm run build:web`      | Frontend bundle only (into `backend/static/dist/`)       |
+| `npm run build:api`      | Python server only (assumes web is built)              |
+| `npm run build:cloud`    | Cloud Python server build                              |
 | `npm run start`          | Run the built binary                                   |
 | `npm run lint`           | ESLint                                                 |
 
@@ -98,13 +100,13 @@ Schema in `kerf.example.toml`. Notable knobs:
 
 ## Testing
 
-The backend's `cmd/test/` runs end-to-end scenarios against a real Postgres
-+ HTTP server. There are two suites:
+The backend's `backend/tests/` runs end-to-end scenarios against a real
+Postgres + HTTP server. There are two suites:
 
-- **OSS suite** — `go run ./cmd/test`. Currently 4 scenarios (auth,
+- **OSS suite** — `pytest backend/tests/`. Currently 4 scenarios (auth,
   projects/files, chat agent loop, share links).
-- **Cloud suite** — `go run -tags=cloud ./cmd/test`. 4 scenarios layered on
-  top (Workshop, Paystack, git, usage).
+- **Cloud suite** — `KERF_CLOUD=1 pytest backend/tests/`. 4 scenarios
+  layered on top (Workshop, Paystack, git, usage).
 
 Both surface real bugs — they're not smoke tests. Add a scenario alongside
 any feature change that touches data shapes, the agent loop, or auth.
@@ -113,7 +115,7 @@ Frontend has no automated test suite yet — assume manual smoke testing.
 
 ## Code style
 
-- **Go:** stdlib `gofmt`. No linter beyond what `go vet` catches.
+- **Python:** `ruff format` for formatting, `ruff check` for linting. No custom rules beyond the defaults.
 - **JS:** `npm run lint` is ESLint with the React + hooks rules. Tailwind
   utility-classes only — no custom CSS modules.
 - **Commits:** small and well-scoped. The CONTRACT-touching changes need

@@ -244,7 +244,7 @@ def _compile(bim_content: str, warnings: list) -> bytes:
     _rel_aggregates(model, ifcopenshell.guid, project, [site])
     _rel_aggregates(model, ifcopenshell.guid, site, [building])
 
-    # -- levels -> storeys --
+    # -- levels → storeys --
     levels = doc.get("levels", [])
     if not levels:
         levels = [{"name": "L1", "elevation": 0}]

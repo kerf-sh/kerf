@@ -5,7 +5,7 @@
 // Free-text entries are accepted everywhere.
 //
 // The single source of truth on the backend (LLM hints) lives in
-// backend/internal/llm/llm.go — `tagKindHints`. Keep them in rough sync
+// backend/llm.py — `TAG_KIND_HINTS`. Keep them in rough sync
 // when adding a new preset, but they don't have to be byte-identical.
 
 import {
@@ -110,7 +110,7 @@ export const TAG_PRESETS = [
 ]
 
 // STARTER_OPTIONS is the dropdown contents for the create dialog's starter
-// picker. Mirrors backend/internal/handlers/starter.go's StarterFor switch.
+// picker. Mirrors backend/routes/projects.py's starter_for function.
 export const STARTER_OPTIONS = [
   {
     id: 'jscad',

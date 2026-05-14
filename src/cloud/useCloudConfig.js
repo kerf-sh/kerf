@@ -3,7 +3,7 @@
 // either the OSS frontend (will just see cloudEnabled=false defaults) or
 // the cloud bundle.
 //
-// Shape returned by /api/config (per CONTRACT.md):
+// Shape returned by /api/config (per docs/architecture.md):
 //   {
 //     cloud_enabled: bool,
 //     google_client_id?: string,

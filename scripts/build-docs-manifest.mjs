@@ -1,4 +1,4 @@
-// Walks the two docs corpora — `backend/internal/llm/docs/*.md` (the
+// Walks the two docs corpora — `backend/llm_docs/*.md` (the
 // LLM-authoring guides we expose to humans too) and the top-level `docs/*.md`
 // (long-form articles + legal) — and writes `public/docs-manifest.json`.
 //
@@ -49,8 +49,8 @@ const SOURCES = [
   },
   // LLM-authoring corpus — file-format references that humans will also want.
   {
-    dir: 'backend/internal/llm/docs',
-    sourcePrefix: 'backend/internal/llm/docs/',
+    dir: 'backend/llm_docs',
+    sourcePrefix: 'backend/llm_docs/',
     pages: {
       // Modeling
       'sketch':                { group: 'Modeling',          order: 1, slug: 'sketch-format' },

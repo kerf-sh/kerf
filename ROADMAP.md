@@ -2,7 +2,7 @@
 
 This is the public roadmap for Kerf, an open-source chat-driven CAD tool. It
 captures shipped capabilities, in-flight work, and the bigger phases ahead.
-The data-model + API spec lives in [CONTRACT.md](./CONTRACT.md); this
+The data-model + API spec lives in [docs/architecture.md](./docs/architecture.md); this
 document is about *direction*, not interface details.
 
 Kerf is dual-licensed: the OSS core (everything outside `cloud/`,
@@ -40,23 +40,23 @@ local install, optional hosted tier with billing + workshop sharing + git.
 | **Drawing snap + projection visibility** | ✅ shipped | Endpoint / midpoint / center / intersection snap end-to-end. Helpers `extractSnapTargets` / `resolveSnap` / `snapLabel` in `src/lib/drawingSnap.js` (20-assertion vitest); integration in `DrawingView.jsx` covers all snap-aware tools (linear / aligned / radius / diameter / baseline / chain / ordinate / angular / measure / leader / centerline / break / surface_finish / weld / gdt / balloon) with zoom-aware tolerance, Alt-key bypass, localStorage `snapEnabled` toggle, kind-specific glyphs. |
 | **Feature panel: Pad / Pocket / Revolve** | ✅ shipped | OCCT Phase 2/3 complete: `feature_pad` / `feature_pocket` / `feature_revolve` LLM tools + `feature_*` toolbar in `FeatureView.jsx`; full B-rep ops (Hole, Fillet, Chamfer, Shell, Sweep1/2, NetworkSrf, BlendSrf, RotateFace, Push-Pull, LinearPattern, PolarPattern, MirrorPattern); face/edge gumball direct-modeling; integration scenarios in `feature_files.go`. |
 | **Cloud git → object-storage Storer** | ✅ shipped | `S3GitStorer` pluggable go-git Storer backed by R2/S3. Stateless serverless deploys — no local disk required. moto integration tests pass (bucket create → init → pack + ref round-trip). |
-| **Large-file handling for git sync (STEP / binary imports)** | ✅ shipped | **Phase 1 shipped**: migration `033_step_ref_kind.sql` adds the `.step-ref` pointer kind; files >= 5 MB are committed as a small JSON pointer (`{hash, size, original_name}`) content-addressed into object storage; Kerf's import path resolves the pointer transparently via CDN. Original design: Imported STEPs and other large binaries would bloat git history if committed directly. **Phase 1 — pointer-in-object-storage:** content-hash the blob into the existing `derived_artifacts`-style storage, commit only a small `.step-ref` JSON pointer (`{hash, size, original_name}`). GitHub sync stays lightweight; Kerf's import path resolves the pointer transparently via the CDN. No `.gitattributes` plumbing, no LFS quota, no go-git LFS dance. **Phase 2 (only if clone-outside-Kerf demand emerges):** Git LFS via direct Batch API — implement the 3-line pointer format + ~2 HTTP endpoints in the go-git sync path to preserve the single-binary install (no `git-lfs` CLI dep, no vendoring the ~tens-of-MB `git-lfs/git-lfs` library). Migration Phase 1→2 is a one-shot converter (read `.step-ref` → push blob to LFS server → rewrite as LFS pointer + `.gitattributes`); resolver gains a second branch. |
+| **Large-file handling for git sync (STEP / binary imports)** | ✅ shipped | **Phase 1 shipped**: migration `033_step_ref_kind.sql` adds the `.step-ref` pointer kind; files ≥ 5 MB are committed as a small JSON pointer (`{hash, size, original_name}`) content-addressed into object storage. Kerf's import path resolves the pointer transparently via CDN. Git history stays lean. **Phase 2 (only if clone-outside-Kerf demand emerges):** Git LFS via direct Batch API — implement the 3-line pointer format + ~2 HTTP endpoints in the go-git sync path. |
 | **Test scenarios: assembly + sketcher + drawing** | ✅ shipped | `backend/cmd/test/scenarios/{sketcher,drawings,cross_project_parts}.go` cover OSS integration; cloud-side `scenario_workshop_{parts,listings,verified_filter}.go` + `scenario_library_part_detail.go` round out the picture. |
 | **Sketcher v2 improvements** | ✅ shipped | Trim, extend, ellipse, B-spline (cubic), fillet (2-line corner UI), mirror, linear pattern, polar pattern; 6 new constraints (horizontal distance, vertical distance, symmetric, block, equal angle, parallel lines); arc/circle edge projection for external geometry; multi-loop holes in extrude pockets; 3D backdrop overlay. Pure helpers in `src/lib/sketchOps.js` / `sketchGeom2.js`, canvas tools wired in `SketchView.jsx`, LLM tools `sketch_trim` / `sketch_extend`, vitest + integration coverage. |
 | **Sketcher v1 fixes** | ✅ shipped | Live-tooling regression (line tool wiping `pendingPoints` on every solver round-trip, breaking the sketch→Pad/Pocket/Hole handoff) fixed in `6dc18ee` via the `lastSketchRef` pattern in `SketchView.jsx`: every locally-produced sketch reference is stashed before `onChange`/`onSolved` calls, and the resync `useEffect` only clears pending state when the incoming prop is a true external replacement (LLM restore / undo), not a self-write bounce-back. 757/757 vitest pass; `sketcher.test.js` covers solver integration + multi-click data flow + JSON round-trips; `sketchGeom2.test.js` covers the Pad handoff path. Follow-on `ac8d9e9` adds further tooling. Remaining nit: an OCCT end-to-end "line draw → solve → Pad → expected vertex count" integration test is still missing — moved to the [Sketcher v2 row]/test-coverage backlog. |
 | **Equations / global parameters** | ✅ shipped | `.equations` JSON kind; mathjs evaluator (`src/lib/equations.js`); EquationsEditor (full-bleed table); injected into JSCAD as `params` arg, `.feature` + `.sketch` via `${name}` placeholders; backend `read_equations` / `set_equation` LLM tools + `docs/llm/equations.md`. Multi-file merge with last-loaded-wins. |
 | **Configurations / variants** | ✅ shipped | Per-file parameter overrides round-trip in `.part` / `.feature` / `.sketch` JSON (`{default_config, configurations:[{id, label, params}]}`); editor config dropdown + ConfigurationsPanel slide-out; assembly components pin via `config_id` (frontend `parseAssembly` + backend BOM both honor); BOM groups by `(file_id, config_id)` and surfaces a `config_label` chip in BOMTable; LLM tools `add_configuration` / `set_active_config` + `docs/llm/configurations.md`; integration scenario `configurations` covers Part round-trip, assembly references, BOM rollup, and tool repin/clear. |
 | **Materials database (`.material` Library kind)** | ✅ shipped | `.material` JSON file kind with mechanical/thermal/physical groups; MaterialEditor with grouped SI-unit fields; LLM tools `read_material` / `find_material_by_name` / `set_part_material` + `docs/llm/material.md`; `seed/materials/` + `npm run seed:materials` populates a curated `Materials Library` project owned by the system user. 55 curated engineering materials seeded (expanded from 20). Consumed downstream by FEM, tolerance, Part defaults, drawing callouts. |
-| **3D assembly mates (Tier 0 foundation)** | 🔮 planned | Coincident / concentric / parallel / perpendicular / distance / angle / tangent; SolveSpace solver (GPL3) subprocess; `mates: [...]` on `.assembly`; depends on Phase 3 |
+| **3D assembly mates (Tier 0 foundation)** | 🚧 in flight | Coincident / concentric / parallel / perpendicular / distance / angle / tangent; pure-Python `GeometricConstraintSolver` in `backend/tools/solvespace_wrapper.py` (gradient-descent, 100-iteration max); `mates: [...]` on `.assembly` with `add_mate` / `delete_mate` / `list_mates` / `solve_assembly` LLM tools; pyworker `POST /run-mates` delegates to solver; backend `POST /api/projects/{pid}/files/{fid}/solve-mates` with in-process fallback; `MatesPanel.jsx` (collapsible inline form — type selector, a/b ref inputs, delete, live solve result chip); AssemblyEditor already wires `onMatesChange`. Remaining: face/feature-id picker from actual BREP topology (Phase 2 — currently manual text input). |
 | **Scripting: `.script.py` via `kerf-sdk`** | 🚧 in flight | Python-first via external `kerf-sdk` on PyPI (MIT-licensed). Users run Python on their own machine — laptop, CI, internal server — and scripts talk to a Kerf instance (local or cloud) over HTTP/JSON-RPC against a versioned `/v1/` API. The RPC contract = the existing LLM tool registry (one source of truth, two callers). File kind generalized to `script` with an `extension` field (data, not enum) so future `.lua` / `.ts` / `.js` bindings drop in without a migration. **TypeScript explicitly rejected for v1** after evaluating Web Worker + esbuild-wasm: target users live in Python (cadquery, build123d, scipy, opencamlib, scikit-rf), running on the user's own machine sidesteps every sandbox / multi-tenancy / deploy problem, and the SDK still works against local-install or cloud. Hosted execution ("Run on Kerf compute") and second-language bindings (TS / Lua / Go / Rust against the same OpenAPI spec) are demand-gated S5/S6 — architecture supports them as alternative endpoints, not redesigns. Replaces earlier `.script.ts` Phase 1 stub. |
-| **`.feature` file kind + OCCT integration (Phase 2)** | ✅ shipped | Real B-rep features: Pad / Pocket / Revolve / Hole / Fillet / Chamfer / Shell / Sweep1 / Sweep2 / Loft / Push-Pull / RotateFace / LinearPattern / PolarPattern / MirrorPattern. `feature_*` LLM tools per op + `feature_files.go` integration scenario (60 assertions). Coexists with the JSCAD path; FeatureView toolbar gates Op palette, OCCT worker handles geometry, planegcs solves embedded sketches. |
+| **`.feature` file kind + OCCT integration (Phase 2)** | ✅ shipped | Real B-rep features: Pad / Pocket / Revolve / Hole / Fillet / Chamfer / Shell / Sweep1 / Sweep2 / Loft / Push-Pull / RotateFace / LinearPattern / PolarPattern / MirrorPattern. `feature_*` LLM tools per op + integration scenario (60 assertions). Coexists with the JSCAD path; FeatureView toolbar gates Op palette, OCCT worker handles geometry, planegcs solves embedded sketches. |
 | **Edge/face selection + direct modeling (Phase 3)** | ✅ shipped | Face + edge selection state in `FeatureRenderer.jsx` (`featureSelection: { faceIds, edgeIds }`), face gumball with translate/rotate handles emits `push_pull` / `rotate_face` nodes, edge gumball drag-to-fillet emits `feature_fillet` with the dragged radius. Bidirectional highlight panel↔schematic via `selectedCircuitComponentId`. Per-frame re-orient on camera orbit. |
-| **FEM: mechanical analysis** | 🔮 planned | **FEniCSx primary** (LGPL3, Python-native, active UK/US consortium dev, UFL differentiable, multiphysics-natural, GPU on roadmap); CalculiX kept as documented second-solver option behind same `pyworker` `/run-fem` route for FreeCAD-bit-exact compat + frictional contact when demanded. Gmsh for meshing in both. `.fem` file kind; F1 = linear static + modal + bonded contact; depends on Phase 3. |
-| **Tolerance stack-up** | 🔮 planned | 1D worst-case + RSS between two faces; walks dimension chain through mates; Monte-Carlo follow-on; depends on 3D mates |
-| **CAM toolpath generation** | 🔮 planned | OpenCAMlib (LGPL 2.1); 2.5D ops (face/contour/pocket/drill/profile); G-code with selectable post (LinuxCNC/GRBL/Mach3/Fanuc); `.cam` file kind; depends on Phase 2 |
-| **Topology optimization** | 🔮 planned | Density-field SIMP via FEniCSx's UFL differentiability (gradient-aware natively — much cleaner than a separate optimization wrapper around CalculiX). `.topo` file kind references `.feature` design space; "make it 30% lighter" demo; depends on FEM. |
-| **Architecture: IFC + text-DSL** | ✅ shipped | `.bim` text-DSL (or JSON) → IfcOpenShell IFC4 compiler → `.ifc` artifact → web-ifc/Three.js viewer (`BIMView.jsx`). Supports walls/slabs/spaces/openings/levels/site. pyworker `POST /compile-ifc` + `POST /compile-bim`. Backend tools: `create_bim`, `read_bim`, `compile_bim_to_ifc`, `read_ifc`. IfcOpenShell import gated with try/except — server boots without it. LLM doc page at `backend/internal/llm/docs/bim.md`. |
-| **NURBS surfacing (Phase 4)** | 🔮 planned | sweep1/sweep2/networkSrf/blendSrf, surface continuity. Rhino-tier territory. |
+| **FEM: mechanical analysis** | 🚧 in flight | **FEniCSx primary** (LGPL3, Python-native, active UK/US consortium dev, UFL differentiable, multiphysics-natural, GPU on roadmap); CalculiX kept as documented second-solver option behind same `pyworker` `/run-fem` route for FreeCAD-bit-exact compat + frictional contact when demanded. Gmsh for meshing in both. `.fem` file kind wired: `POST/GET /api/.../fem` + `/fem/status`, `fem_run` / `fem_job_status` LLM tools, `FEMView.jsx`, gmsh/dolfinx try/except gated. Remaining: dolfinx UFL form wiring + bonded contact. |
+| **Tolerance stack-up** | 🚧 in flight | `.tolerance` JSON file kind; `tolerance_stack` + `tolerance_monte_carlo` LLM tools; `worst_case` / `rss` / `monte_carlo` pure helpers in `backend/tools/tolerance.py`; `POST /api/projects/{pid}/files/{fid}/tolerance/run` API route (worst_case / rss / monte_carlo methods); frontend `src/lib/tolerance.js` (pure functions for in-browser compute); `ToleranceView.jsx` — dimension-chain table, WC+RSS summary cards, inline SVG histogram for Monte-Carlo output, Run button; wired in `Editor.jsx` for `.tolerance` file kind. `backend/llm_docs/tolerance.md` documents the full schema + all three methods. Remaining: automatic chain-walk through assembly mates (deferred to Phase 2 after full mates topology). |
+| **CAM toolpath generation** | 🚧 in flight | OpenCAMlib (LGPL 2.1); 2.5D ops (face/contour/pocket/drill/profile); G-code with selectable post (LinuxCNC/GRBL/Mach3/Fanuc); `.cam` file kind wired: `POST/GET /api/.../cam` + `/cam/status`, `cam_run` / `cam_job_status` LLM tools, `CAMView.jsx`, `llm_docs/cam.md`, opencamlib try/except gated with mock fallback. Remaining: STEP→STL conversion for real toolpath generation. |
+| **Topology optimization** | 🚧 in flight | Density-field SIMP via FEniCSx; `dolfinx` import gated with try/except so pyworker boots without it. `.topo` file kind wired; `topo_run` LLM tool; pyworker `POST /run-topo` — when dolfinx is available runs full SIMP loop (Heaviside filter, OC update, Heaviside projection, unit-cube mesh Phase 1); when not available returns `ENGINE_PENDING_WARNING` sentinel. `TopoView.jsx` renders spec params, results, `DensityFieldHeatmap` (SVG X-Y projection of density field), `DensityMeshViewer` (GLB when output_mesh_file_id is set); wired in `Editor.jsx` for `.topo` kind. `llm_docs/topo.md` documents schema + density_field result. Remaining: real mesh from `.feature` geometry (Phase 2, needs Gmsh wiring), marching-cubes → STEP export, multi-physics loads/BCs from feature metadata. |
+| **Architecture: IFC + text-DSL** | ✅ shipped | `.bim` text-DSL (or JSON) → IfcOpenShell IFC4 compiler → `.ifc` artifact → web-ifc/Three.js viewer (`BIMView.jsx`). Supports walls/slabs/spaces/openings/levels/site. pyworker `POST /compile-ifc` + `POST /compile-bim`. Backend tools: `create_bim`, `read_bim`, `compile_bim_to_ifc`, `read_ifc`. IfcOpenShell import gated with try/except — server boots without it. LLM doc page at `backend/llm_docs/bim.md`. |
+| **NURBS surfacing (Phase 4)** | 🚧 partial | sweep1/sweep2/networkSrf/blendSrf surface creation tools + display. Python NurbsSurface layer (`backend/geom/`). LLM tools `feature_sweep1/2/network_srf/blend_srf` + new `surface_continuity` query/enforce tool (C0/C1/C2 for sweeps/network; G0/G1/G2 for blend). `.surf` file kind documented. NURBS tessellated for display by OCCT worker. Scope = surface creation + display; NOT trimming/booleans on NURBS (deep OCCT kernel work out of scope). Full Rhino-tier is multi-year. |
 | **Phase 4a: jewelry-priority surfacing** | ✅ shipped | All three ops live in `src/lib/occtWorker.js`: `opSweep2` wraps `BRepOffsetAPI_MakePipeShell` with rail2 as auxiliary spine (Frenet fallback); `opNetworkSrf` tries `GeomFill_BSplineCurves` first, falls back to `BRepOffsetAPI_ThruSections` over U-curves with V-curves advisory; `opBlendSrf` uses `BRepFill_Filling` with two edge constraints, returns the blend face only. Continuity args: `C0/C1/C2` for networkSrf (default C1), `G0/G1/G2` for blendSrf (default G1). LLM tools `feature_sweep2` / `feature_network_srf` / `feature_blend_srf` registered in `surfacing_tools.go`. FeatureView toolbar entries under "Surfacing". `feature_files.go` scenario covers all three end-to-end (89 assertions total). |
 | **Phase 4b: direct face manipulation (gumball)** | ✅ shipped | Face gumball: 3 translate arrows + 3 rotate rings, anchored at face centroid; drag commits `push_pull` (translate) or `rotate_face` (rotation) feature nodes. Edge gumball: 1D radial handle perpendicular to selected edge; drag commits `feature_fillet` with dragged radius. Per-frame re-orient on camera orbit (rAF self-host). 7 vitest covering centroid/projection math; 8 backend assertions for `rotate_face` round-trip. |
 | **Auth-optional removal** | ✅ shipped | Local-mode-only: `[server].local_mode = true` (the OSS default) gates a new `POST /auth/bootstrap-local` endpoint that auto-creates a singleton user + workspace and returns a session, idempotent on subsequent calls. Frontend's `useCloudConfig` surfaces the flag; `App.jsx` calls `tryBootstrapLocal()` after the existing `/api/bootstrap` probe and redirects `/`, `/login`, `/signup` to `/projects` once authed. Cloud builds force `local_mode=false` and `/auth/bootstrap-local` returns 404 — multi-user signup/login is unchanged. Override at runtime via `KERF_LOCAL_MODE`. |
@@ -66,9 +66,9 @@ local install, optional hosted tier with billing + workshop sharing + git.
 | **Drop project types → free-form tags** | ✅ shipped | `projects.project_type` enum replaced by `projects.tags TEXT[]` with a GIN index. Migration backfills the old single value into a 1-element tags array. Create dialog renders preset tag chips (Mechanical / Electronics / Architecture / Jewelry / PCB / Robotics / Drone / Lighting) + a free-text input + an explicit Starter dropdown (`jscad` / `circuit` / `blank`). Workshop filter is a multi-select tag chip strip backed by repeatable `?tag=` URL params (ANDed). LLM prompt addendum reads the tags array. BRep stays a file kind (`.feature`), not a project type — compose freely with `.jscad`, `.circuit.tsx`, `.assembly` in the same project. |
 | **Electronics projects via tscircuit** | ✅ shipped | `.circuit.tsx` file kind, `circuitRunner.js` compiles via tscircuit core, `SchematicView` / `PCBView` / 3D-board viewer render via `circuit-to-svg` + JSCAD; LLM edits via `edit_file` against the TSX (doc page `circuit.md`). Drag-to-move components on schematic + PCB (snap 0.1 / 0.5mm; Alt disables snap), `appendComponent` / `nextRefdes` / `appendTrace` / `appendProbe` source-edit helpers, LibraryPicker for adding parts, V/I probe tool, bidirectional component highlight. |
 | **Cross-project parts (PCB-as-part in mechanical assembly)** | ✅ shipped | Phase 3 complete: `bulk_refresh` endpoint, `lock_assembly` + lockfile pattern, diff tooltip on out-of-date external components. Earlier phases — schema + resolver + LLM tool + UI tab + stale indicator + Update CTA: `external_ref` `{project_id, file_id, kind, pin}` slot on Components; `tracking_latest` (HEAD) or revision-pinned; `loadExternalParts(ref)` dispatch in `assembly.js`; `assembly_add_external_component` LLM tool; AssemblyEditor's "From project" picker (3-step modal) + emerald `↗ project-name` badge + amber "out of date" chip when source advances past `last_seen_updated_at` (click → `restampExternalRefSeen` acknowledges). Three artifact kinds wired (`board_3d` / `board_outline_2d` / `mesh`). Phase 2 cache shipped: `derived_artifacts` table + bidirectional `POST /api/projects/{pid}/files/{fid}/derived` lookup + `POST /derived/store` populate + `DELETE /derived` purge (16 MiB payload cap, ON CONFLICT idempotent). `board_outline_2d` shipped: `extractBoardOutline(circuitJson)` produces a real `.sketch` Geom2 polygon (3-tier fallback: explicit `pcb_board.outline` → `width×height` rectangle → 10×10mm placeholder). LLM doc page at `backend/internal/llm/docs/cross_project.md` + `derived_cache.md`. |
-| **Electronics: SPICE simulation** | 🚧 partial | Phase 1 substantially shipped: emitter (`src/lib/circuitToSpice.js` walks CircuitJSON → `.cir` netlist), schematic Probe tool (`appendProbe`/`removeProbe`/`renameProbe`/`parseProbes` + V/I toggle + visual indicator + rename UX), `injectProbeRecords` synthesises `simulation_probe` records at compile time, `.simulation` file kind with backend constraint + scenario, SimulationView read-only viewer with `parseSimulation` + `addEnginePendingWarning` + uPlot waveform charting (lazy chunk ~22KB gzip) + table-view toggle + Run CTA stub, `add_probe`/`remove_probe`/`rename_probe` LLM tools, doc pages at `backend/internal/llm/docs/probe.md` + `simulation.md`. **Remaining (out-of-scope for autonomous fires):** ngspice-wasm Web Worker engine + `run_simulation` LLM tool. |
-| **Electronics: RF simulation** | 🔮 planned | s-parameter / Smith-chart analysis via scikit-rf-style toolkit (port to TS or backend Python subprocess); openEMS for EM field solver later. Distinct from SPICE — typical SPICE is poor at >100MHz. |
-| **Electronics: autorouting** | 🔮 planned | Wrap FreeRouting (Java, GPL) as a backend subprocess; export tscircuit board outline + nets to Specctra DSN, route, import SES, write back to CircuitJSON. ML-based reroute (DeepPCB-style) is a phase-2 upgrade. |
+| **Electronics: SPICE simulation** | ✅ shipped | Server-side via `pyworker` `/run-spice` (ngspice subprocess) + `sim_jobs` table + `SPICEWorker` queue consumer + `POST /api/projects/{pid}/files/{fid}/sim` enqueue. Emitter (`src/lib/circuitToSpice.js` walks CircuitJSON → `.cir` netlist), schematic Probe tool (`appendProbe`/`removeProbe`/`renameProbe`/`parseProbes` + V/I toggle + visual indicator + rename UX), `injectProbeRecords` synthesises `simulation_probe` records at compile time, `.simulation` file kind with backend constraint + scenario, SimulationView with `parseSimulation` + uPlot waveform charting (lazy chunk ~22KB gzip) + table-view toggle, `add_probe`/`remove_probe`/`rename_probe` + `run_simulation` LLM tools, doc pages at `backend/llm_docs/probe.md` + `simulation.md`. Client-side WASM path deferred — no maintained `ngspice-wasm` package exists upstream; pyworker is OSS-installable. |
+| **Electronics: RF simulation** | ✅ shipped | S-parameter analysis via scikit-rf. `pyworker/routes/rf.py` computes VSWR, return loss dB, insertion loss dB, Rollett K, max available gain; Smith chart SVG via matplotlib. Backend LLM tools: `run_rf_study`, `rf_job_status`, `import_touchstone`. `.rf-study` file kind. `RFView.jsx` renders Smith chart + tabular metrics (min/center/max) + VSWR freq-domain plot. `backend/llm_docs/rf.md` covers full workflow. openEMS field solver: stub only (Phase 2). |
+| **Electronics: autorouting** | ✅ shipped | FreeRouting JAR integration. `pyworker/geom/freerouting.py`: jar auto-download+cache (`~/.cache/kerf/freerouting/FreeRouting.jar` from freerouting/freerouting v1.9.0), progress callback via `Popen` stream, configurable passes (`num_passes`), via budget (`max_vias`), layer-count arg. `pyworker/routes/autoroute.py`: CircuitJSON → Specctra DSN (`dsn_writer.py`) → FreeRouter subprocess → SES parse (`ses_reader.py`) → CircuitJSON with routes. Backend tool `autoroute_circuit` wired. `PCBView.jsx` gains Autoroute button (calls `onAutoroute`, shows running/done/error states). `pyworker/README.md` documents jar install. ML-based reroute (DeepPCB-style) is Phase 2. |
 | **Import: KiCad** | 🚧 in flight | **Tier 1 shipped**: `/import-kicad` pyworker route parses `.kicad_sch` / `.kicad_pcb` → `.circuit.tsx` first-cut. LLM tool `import_kicad` wired. File-tree ingest wired. **Tier 2** (symbol/footprint libraries → Kerf Library Parts; 3D models → `.step-ref` pointers) in progress. **Tier 3** (lossless round-trip + full layout fidelity) explicitly out of scope. See "Imports from external CAD/EDA tools" section at the bottom for the full plan. |
 | **Import: FreeCAD** | 📋 planned | Mechanical-CAD ingest. Closest kernel match to Kerf (both OpenCascade), most complex source data model. Tier 1: Part + PartDesign features → `.feature` + `.sketch` (BRep lifted directly, no re-evaluation). Tier 2: Sketcher constraints + Spreadsheet → `.equations` + TechDraw drawings + Materials Library. Tier 3 (organic): Python-macro migration positions kerf-sdk as natural next step. Other workbenches (FEM/Path/BIM) out of scope — users move to Kerf equivalents. See bottom section for full plan. |
 | **Import: OpenSCAD** | ✅ shipped | Browser-side parser (no `pyworker` dep) emits `.jscad` source preserving the parametric model. 18 vitest tests passing. Escape hatch: run OpenSCAD binary as a subprocess for exotic features (`surface()`, customizer hints), import resulting STL as mesh (lossy). |
@@ -83,7 +83,40 @@ local install, optional hosted tier with billing + workshop sharing + git.
 | **User avatars + CDN-backed images** | ✅ shipped | `users.avatar_storage_key` column (migration `1746576600000_user_avatar_storage.sql`). `POST /api/me/avatar` (multipart re-encodes JPEG q=85, stores at `users/<uid>/avatar.jpg`), `DELETE /api/me/avatar` for clearing. Google-OAuth-triggered avatar pull on first login. Storage abstraction with `CDNBaseURL` for cloud (bunny.net Pull Zone) vs local-via-blobs. |
 | **Workspaces (orgs) — multi-member containers** | ✅ shipped | `workspaces` + `workspace_members` tables (migration `1746577400000_workspaces.sql`); projects carry `workspace_id`; routes mounted under `/w/:workspaceSlug/{projects,settings,members}`. UI: `WorkspaceSwitcher` in the layout, `WorkspaceSettings` page (rename, slug, avatar), `WorkspaceMembers` (invite + role change). Cloud billing attaches to workspace via Paystack. Remaining nit: the internal `useWorkspace` zustand store still uses that name — renaming to `useEditor` is a non-trivial cross-component refactor and is deliberately deferred. |
 | **Project change timeline (with avatars)** | ✅ shipped | `GET /api/projects/:pid/activity` (handler in `internal/handlers/activity.go`) merges file_revisions + chat_messages + project mutations. `ActivityTimeline.jsx` with day-grouped feed + source-typed avatars. Surfaced in the Editor's right-panel slot (`rightPanel === 'activity'`); avatars resolved via `users.avatar_storage_key`. |
-| **Docs: ROADMAP + restructured /docs + landing revamp** | ✅ shipped | `docs/index.md` TOC, `docs/whats-new.md` sprint summary, 8 stale ROADMAP labels flipped (lines 42/43/45/49/58/63/68/72/74), `build-docs-manifest.mjs` updated with index + whats-new + bim-format entries, Landing hero badge updated + whats-new link + refreshed recently-shipped cards. |
+| **Rhino parity: NURBS surface depth** | 🔮 planned | Trim / untrim / split / join / explode / offset on NURBS surfaces; polysurface fluency (multi-face B-rep as one entity); curve-from-surface, isocurve, edge extraction, intersection curves; surface continuity (G0/G1/G2) tags on joined edges. ~20 new LLM tools in `feature_*` namespace. Foundation under most Rhino workflows; ~30% already shipped via Phase 4a/4b. See "Rhino-parity roadmap" section. |
+| **Rhino parity: 3DM file format** | 🔮 planned | Read + write of Rhino's native `.3dm` via [`rhino3dm`](https://github.com/mcneel/rhino3dm) (McNeel, free). Single highest-impact interop addition — unlocks the entire installed Rhino user base for migration. `pyworker` `/import-3dm` parses to a `.feature` + `.sketch` + `.surf` tree; `/export-3dm` round-trips. Drag-drop a .3dm onto the file tree → see your Rhino library inside Kerf. |
+| **Rhino parity: SubD modeling** | 🔮 planned | `.subd` file kind, Catmull-Clark via [OpenSubdiv](https://graphics.pixar.com/opensubdiv/) (Pixar, BSD). Ops: subdivide, smooth, crease edges, extrude/bevel faces. Conversion SubD ↔ NURBS ↔ mesh. Where Rhino 7+ is moving — covers industrial design + jewelry tags. ~10 LLM tools. |
+| **Rhino parity: layers + display modes** | 🔮 planned | `.workspace.json` per-project: layer hierarchy with visibility / color / material override; named display presets (wireframe / shaded / technical / rendered). Each file references a layer. LLM tools: `create_layer`, `set_layer_visibility`, `assign_to_layer`, `switch_display_mode`. |
+| **Rhino parity: mesh tools** | 🔮 planned | Quad remesh, decimate, smooth, repair, fill holes; fit surface to point cloud (reverse engineering). Server-side via pyworker (PyMesh or OpenMesh). LLM tools: `mesh_remesh`, `mesh_decimate`, `mesh_repair`, `mesh_fill_holes`, `surface_from_points`. |
+| **Rhino parity: parametric graph (Grasshopper-equivalent)** | 🔮 planned | New `.graph` file kind — node-based parametric pipeline (nodes + connections + parameter inputs). Each node = an LLM tool or built-in op. Re-evaluation on parameter change. Browser-side visual editor via React Flow. **The differentiator**: LLM authors / edits the graph as JSON; visual editor is a thin emitter over the same shape. Rhino's Grasshopper has no AI authoring layer. |
+| **Rhino parity: render-quality output** | 🔮 planned | Blender Cycles subprocess in `pyworker` → PNG/EXR. `.render` file kind: scene + camera + lights + materials referencing existing model. `POST /run-render` returns rendered image. Cloud-tier feature (heavy compute); OSS users run pyworker locally as today. |
+| **Rhino parity: drafting completeness** | 🔮 planned | Hatch patterns, leader lines, text annotations in drawings, dimension chains, multi-view layouts. Extends the existing `.drawing` file kind (TechDraw-flavored) toward print-ready output. Mostly frontend work + a few new LLM tools. |
+| **Rhino parity: curve depth** | 🔮 planned | ~30 curve ops Rhino has that Kerf doesn't: project curve to surface, intersect surface/curve, curve from edge, curve booleans, blend curve, match curve, curve offset 3D. Spread across all Rhino-parity phases — added as adjacent features need them. |
+| **Revit parity: categories + hosted refs** | 🔮 planned | Extend `.bim` DSL with explicit category enum (Wall / Floor / Roof / Door / Window / Room / Column / Beam / Stair / Railing) and `host_ref: <element_id>` field per record (door hosts on wall; move wall → door follows). Evaluator cascades transforms. Foundation for everything else Revit-flavored. |
+| **Revit parity: type vs instance params** | 🔮 planned | Per-element `type_ref: <type_id>` (shared across all instances of a type) + `params` (per-instance overrides). Schedules + bulk-edit operations key off type_ref. Matches Revit's family-type model precisely. |
+| **Revit parity: `.family.json` parametric components** | 🔮 planned | Library Part extension: reusable parametric component templates (parameter schema + 3D representation + host rules). Drop a "Window" family with width / height / glazing params, instances inherit. Replaces Revit's awkward dual-file Family Editor — families live as ordinary files in the same project tree. |
+| **Revit parity: `.schedule.json` live queries** | 🔮 planned | Query DSL over the `.bim` model (SQL-like spec) renders as auto-updating table. Door schedule / window schedule / room schedule / area schedule. LLM authors and edits queries trivially — "generate a schedule of all fire-rated walls grouped by level" is a one-shot prompt. |
+| **Revit parity: `.view.json` derived views** | 🔮 planned | Plan / section / elevation / 3D as saved views derived from one `.bim` model. `{kind, level?, cut_plane?, crop_box?, filters: [...]}`. No parallel state — re-runs re-compute. Each view stores annotation overlays (tags, dimensions, leaders) separately. |
+| **Revit parity: `.sheet.json` print-ready layouts** | 🔮 planned | Titleblock + view placements for output documentation. Multi-sheet sets. Revision clouds. PDF export via existing svg2pdf path. The bridge from model → contract documents. |
+| **Revit parity: phasing + filters** | 🔮 planned | Per-record `phase: 'existing'\|'new'\|'demo'` field for renovation workflows. View filters as rule expressions (`category=='wall' AND fire_rating>='2hr'`) drive per-view visibility / color override. Same filter DSL the LLM uses for schedules. |
+| **Revit parity: stairs + railings** | 🔮 planned | Geometrically intricate parametric families. Stair: run-rise-tread params, multi-flight, landing. Railing: balusters + handrail + posts. Implemented as families with a richer parametric graph than typical (uses Phase 4f `.graph` if available). |
+| **Revit parity: MEP routing** | 🔮 planned | `.duct.json` / `.pipe.json` / `.conduit.json` as 3D routes with diameter / material / system metadata. Pathfinding through walls / floors. Flow analysis hand-off to a CFD path (later). Maps cleanly onto Kerf's existing trace / route paradigm from electronics. |
+| **Revit parity: curtain wall** | 🔮 planned | Parametric grid of panels (mullions + glass). Implemented as a wall sub-type with `grid: {u_divisions, v_divisions, panel_type, mullion_type}`. Hard; large effort. |
+| **Schematic + PCB editor depth** | 🔮 planned | Manual trace routing (click-to-draw, orthogonal/45/free constraints, drag-segment, mid-point insert, T-junction); copper pours / ground planes (zone polygon with thermal connections to a chosen net; clearance rules; rebuild on net edit); full KiCad-equivalent layer system (top/inner1-30/bottom copper + top/bottom silkscreen/soldermask/paste + edge cuts + drill + fab + courtyard) with per-layer color + visibility toggle in a layers panel; UX polish (alignment guides, snap improvements, themed colors per layer, layer-stack preview, design-rule check). Robustness pass on drag handles, undo / redo across editors, paste-from-clipboard, multi-select. |
+| **FreeCAD parity: PartDesign feature depth** | 🔮 planned | Adds the FreeCAD PartDesign ops Kerf doesn't have: **Draft** (taper angle on selected faces, neutral plane), **Rib** (thin reinforcement wall from sketch + thickness), **Pad/Pocket with draft angle**, **Sweep with profile rotation along path**, **Loft with multiple guide curves**, **Helix** (parametric spring/thread coil — pitch / height / direction / cone half-angle), **Mirrored feature** (mirror an existing feature node about a face/plane), **Multi-transform** (compose patterns: linear×polar, mirror+linear). New LLM tools: `feature_draft`, `feature_rib`, `feature_helix`, `feature_mirror`, `feature_multi_transform`. |
+| **FreeCAD parity: Sketcher constraint depth** | 🔮 planned | Adds FreeCAD Sketcher ops still missing: **Carbon copy** (link a sketch's geometry into another sketch as driven references), **Convert to polyline / B-spline** (curve-type conversion in place), **Validation tools** (check for open contours, self-intersections, redundant constraints, dangling endpoints — surfaces results inline next to the offending entity), **Offset of selected geometry** (with positive / negative side), **Trim/extend at intersection** (smarter than current single-pick trim — auto-detects nearest intersection). LLM tools: `sketch_carbon_copy`, `sketch_convert_curve_type`, `sketch_validate`, `sketch_offset_selection`. |
+| **FreeCAD parity: sketch → 3D shortcuts** | 🔮 planned | Sketch-based features that take an in-place sketch and a body and apply an op in one step (FreeCAD's "active body" model). **Boss/Pad with draft** (one tool: sketch + extrusion direction + draft angle), **Cut from sketch** (subtract a sketched region from any face on the active body), **Sketch-driven hole pattern** (pick a sketch of points → hole feature at each point with shared params), **Loft between two sketches with mid-plane symmetric option**, **Sweep with rotation locked to path tangent**. LLM tools: `feature_boss_with_draft`, `feature_cut_from_sketch`, `feature_hole_pattern_from_sketch`. |
+| **FreeCAD parity: Draft workbench (2D CAD)** | 🔮 planned | Standalone 2D drafting workspace (orthogonal to Sketcher, which is feature-constrained). `.draft` file kind for site plans, schematic-style 2D diagrams, exploded views with annotation that aren't tied to a 3D model. Reuses dimension / hatching / annotation primitives from `.drawing`. AutoCAD-style commands: line / polyline / arc / circle / spline / offset / trim / fillet / chamfer / pattern / array. DXF read/write. |
+| **FreeCAD parity: inspection / model comparison** | 🔮 planned | Compare two `.feature` files (or a `.feature` to a `.mesh` scan) and emit a per-face/per-vertex deviation map with color gradient. Use case: verify that a manufactured part matches the design model. LLM tool: `compare_models`. |
+| **KiCad parity: hierarchical schematics** | 🔮 planned | Multi-sheet schematic support — top-level sheet contains "sheet symbols" that reference sub-sheets via global label / hierarchical-label propagation. `.circuit.tsx` extended with a `sub_sheets: [{name, file_id, ports}]` array. Each sub-sheet is its own `.circuit.tsx` file. Workshop / library pickers gain a "use as sub-sheet" CTA. LLM tools: `add_sub_sheet`, `wire_sheet_pins`. |
+| **KiCad parity: buses + differential pairs** | 🔮 planned | **Bus**: bundle of nets in the schematic (`DATA[7..0]`) rendered as a thick line; expand at endpoint to individual wires. CircuitJSON: `bus_definitions` array, `bus_join` ops. **Differential pair**: tagged pair of nets at the schematic level (`USB_DP`/`USB_DM`), routed together on the PCB with controlled-impedance constraints. LLM tools: `add_bus`, `add_differential_pair`. |
+| **KiCad parity: net classes + design rules** | 🔮 planned | **Net class**: named group of nets sharing trace width / clearance / via size / impedance (`Power`, `Signal`, `HighSpeed`). `.circuit.tsx` `net_classes` array assigns nets to classes. PCB DRC honors per-class rules. LLM tools: `define_net_class`, `assign_net_to_class`. |
+| **KiCad parity: length tuning + match** | 🔮 planned | **Length tuning**: serpentine / accordion / trombone meanders to lengthen a trace to a target length. Per-trace `target_length` annotation; UI displays delta. **Length matching across pairs**: differential-pair skew compensation. LLM tools: `add_length_target`, `length_tune_trace`. |
+| **KiCad parity: via stitching + teardrops** | 🔮 planned | **Via stitching**: drop a pattern of GND vias around the board edge or beneath a copper pour for impedance / shielding. UI: select a pour, "Add stitching" with pitch + via spec. **Teardrops**: smooth fillet from a trace into a pad/via to reduce stress concentration during manufacture. LLM tools: `add_via_stitching`, `apply_teardrops`. |
+| **KiCad parity: push-pull interactive routing** | 🔮 planned | When manually routing, dragging a new trace through an existing trace shoves the existing one aside (preserving net + clearance). Real-time DRC overlay during the drag. Modeled on KiCad's "shove" router. Requires the manual routing tool from "Schematic + PCB editor depth" to be live first. |
+| **KiCad parity: electrical rules check (ERC)** | 🔮 planned | Static analysis of the schematic: unconnected pins, duplicate refdes, conflicting net labels, output-to-output ties, missing power, pin-direction mismatches. Surface as warnings in `CircuitObjectsPanel.jsx` and a top-bar status chip. LLM tool: `run_erc`. |
+| **KiCad parity: per-pad mask/paste overrides** | 🔮 planned | Per-pad fields to override the default soldermask aperture and stencil-paste aperture (used for QFN exposed pads, custom paste reductions). Stored on the pad in the `.circuit.tsx` footprint record. Surfaced in the pad-properties popover. LLM tool: `set_pad_overrides`. |
+| **Docs: ROADMAP + restructured /docs + landing revamp** | ✅ shipped | `docs/index.md` TOC, `docs/whats-new.md` sprint summary, 8 stale ROADMAP labels flipped, `build-docs-manifest.mjs` updated with new entries, Landing hero revamped with "open source · now shipping IFC" badge and whats-new link. |
 
 Legend: ✅ shipped · 🚧 in flight · 📋 next · 🔮 planned (multi-quarter)
 
@@ -1050,12 +1083,17 @@ That's the wrong abstraction.
 Adds simulation as a first-class tab in the CircuitEditor, with results
 that visually overlay the existing schematic. Three-phase ramp:
 
-### Phase 1 — Transient + DC analysis (browser, ngspice-wasm)
+### Phase 1 — Transient + DC analysis (server-side via pyworker)
 
-- **Engine.** [ngspice](http://ngspice.sourceforge.net/) compiled to WebAssembly,
-  run in a dedicated Web Worker. Existing community ports
-  (`ngspice-wasm`, `eda-toolkit/wasm-spice`) are starting points; if none
-  are mature enough, we fork the closest one.
+- **Engine.** [ngspice](http://ngspice.sourceforge.net/) running as a subprocess
+  inside the `pyworker` compute sidecar (FastAPI on `:8090`). The
+  `POST /run-spice` route accepts a netlist + analysis spec, invokes
+  `ngspice -b`, parses the raw output, returns waveforms. Client-side
+  WebAssembly path evaluated and dropped — no maintained upstream npm
+  package (`ngspice-wasm`, `eda-toolkit/wasm-spice`, etc. all 404 as of
+  2026-05-14). pyworker is OSS, brew/pip installable, and already hosts
+  FEM/RF/CAM/tess for the same users, so the ops-cost argument that
+  drove the sidecar holds for SPICE too.
 - **Netlist emit.** A new `src/lib/circuitToSpice.js` walks the compiled
   CircuitJSON and emits a `.cir` netlist:
   - `source_resistor` → `R<refdes> n+ n- <ohms>`
@@ -1176,13 +1214,350 @@ autorouter:
 
 ---
 
-## Phase 4: Rhino-tier surfacing
+## Schematic + PCB editor depth
 
-Industrial-design-level workflows. Multi-quarter project, only if there's
-demand for it:
-- Sweep1 / Sweep2, network surfaces, blend surfaces, match surfaces.
-- Surface continuity analysis (G0/G1/G2/G3).
-- Optional SubD modeling via [OpenSubdiv](https://graphics.pixar.com/opensubdiv/).
+Auto-routing covers fast bring-up; serious electronics work needs manual
+control and a real layer stack. This section plans the work to bring the
+schematic and PCB editors to KiCad-feature-comparable while keeping every
+op LLM-authorable through CircuitJSON edits.
+
+### Phase 1 — Manual trace routing
+
+The user can route by hand: click to start at a pad / net, click to drop
+vertices, double-click / Enter to finish. Routing modes:
+
+- **Orthogonal** (90° only) — default, matches most PCB drafting.
+- **45° preferred** — orthogonal with 45° corner segments.
+- **Free** — any angle (RF / odd geometries).
+
+Operations:
+- Drag an existing segment to nudge; endpoints stay locked to vertices.
+- Insert a mid-point on hover (click a segment → split).
+- T-junction support (3-way connection at a vertex).
+- Drag a vertex through another trace → auto-merge nets if same net,
+  refuse if different net + show DRC warning.
+- Hover a pad → highlight all traces on that net.
+
+Data model in `.circuit.tsx`: append to the existing `traces` array.
+Each trace has `points: [{x, y, layer}]` and `net_id`. Already partly
+shipped via `appendTrace`.
+
+LLM tools: `route_trace_segments`, `delete_trace`, `split_trace`,
+`merge_traces`, `move_trace_vertex`.
+
+Frontend: a `RouteTool` state in `PCBView.jsx` with the click handlers,
+preview line, and the "press Esc to cancel / Enter to finish" UX.
+
+### Phase 2 — Copper pours / ground planes
+
+KiCad calls these "filled zones." A pour is a polygon region on a copper
+layer connected to a chosen net (typically GND). The pour fills the
+polygon minus clearance around traces and pads not on that net. Pads on
+the net get thermal-relief spokes.
+
+Data model:
+```jsonc
+{ "type": "copper_pour",
+  "polygon": [{x, y}, ...],
+  "layer": "top_copper" | "bottom_copper" | "inner_1" | ...,
+  "net_id": "GND",
+  "clearance_mm": 0.25,
+  "thermal_relief": { "gap": 0.25, "spoke_width": 0.5, "spoke_count": 4 },
+  "min_thickness_mm": 0.2,
+  "priority": 0
+}
+```
+
+Rebuild on:
+- Net membership change.
+- Trace add / move / delete in the polygon.
+- Pad add / move / delete.
+- Clearance rule change.
+
+Backend: a `compute_pour_fill(pour, board_state)` function in
+`pyworker/routes/pour.py` that returns the filled polygon (polygon-with-
+holes) as JSON. Uses [shapely](https://shapely.readthedocs.io/) for the
+polygon ops + thermal spoke generation.
+
+Frontend: a `PourTool` in `PCBView.jsx` — click vertices → close polygon
+→ select net + layer → render fill (transparent at design time, opaque
+on export).
+
+LLM tools: `add_copper_pour`, `delete_copper_pour`, `set_pour_net`.
+
+### Phase 3 — Full layer stack (KiCad-equivalent)
+
+Replace the current minimal layer model with a configurable layer stack
+mirroring KiCad's. Default 2-layer board; user can switch to 4 / 6 / 8 /
+... layers.
+
+Layer types (per IPC-2581 / ODB++ standard):
+
+| Group | Layers (per side or count) |
+|---|---|
+| Copper | `top_copper`, `inner_1` … `inner_30`, `bottom_copper` |
+| Silkscreen | `top_silk`, `bottom_silk` |
+| Soldermask | `top_mask`, `bottom_mask` |
+| Solder paste | `top_paste`, `bottom_paste` |
+| Drill | `drill_plated`, `drill_nonplated` |
+| Mechanical | `edge_cuts`, `courtyard`, `fab_notes` |
+
+Data model: `board.layer_stack` array, each entry `{name, type, color,
+visible, sublayer_order}`. Components / traces / pours / vias reference a
+layer by name.
+
+Frontend: a `LayersPanel` (collapsible right-rail or popout) with:
+- Visibility toggle (eye icon).
+- Color swatch (click to pick).
+- "Solo" mode (Alt-click eye → only this layer visible).
+- Drag to reorder.
+- "Layer stack preview" — 3D-isometric exploded view showing the physical
+  layer stack with thicknesses (FR4 dielectric between copper, etc.).
+
+LLM tools: `add_pcb_layer`, `set_layer_visibility`, `set_layer_color`,
+`reorder_layers`, `assign_to_layer`.
+
+### Phase 4 — UX polish
+
+- **Alignment guides**: dragging a component shows dashed alignment
+  lines to other components' centers / edges. Same as Figma / Sketch.
+- **Snap improvements**: snap to pad center, trace endpoint, trace
+  midpoint, grid intersection, layer-edge. Per-snap toggle in toolbar.
+- **Theming**: dark / light / oscilloscope (high-contrast) presets;
+  per-layer color overrides persist in user preferences.
+- **DRC overlay**: design rule check results as colored highlights
+  (red = error, amber = warning), click to jump to violation.
+- **Multi-select**: marquee select, Shift-click add, Ctrl-click toggle.
+- **Undo / redo**: extend the existing file-revisions history to the
+  per-edit grain for in-session ops; full-file revisions remain the
+  durable layer.
+- **Paste from clipboard**: copy selection → JSON to clipboard; paste
+  reconstitutes at cursor.
+
+### Phase 5 — DRC + manufacturing output
+
+- **DRC rules engine**: trace width minimum, via clearance, drill spacing,
+  silk-on-pad, copper-to-edge. Configurable per-design.
+- **Manufacturing export**: Gerber RS-274X (top/bottom/inner copper +
+  silk + mask + paste + drill), drill file (Excellon), pick-and-place
+  CSV, BOM CSV. `pyworker` `POST /export-gerber` using
+  [pcb-tools](https://pypi.org/project/pcb-tools/) or KiCad's command-line
+  via subprocess.
+- **3D board preview** improvements: render the actual layer stack with
+  correct dielectric thicknesses, soldermask transparency, silk overlay.
+  Reuses existing 3D viewer.
+
+### LLM-friendliness commitments
+
+- Every routing op is a CircuitJSON edit — the LLM can author a complete
+  routed board by emitting JSON.
+- Pours are fully declarative (polygon + rules + net); the fill geometry
+  is derived, never authored.
+- Layer assignments are string refs to a layer-stack registry; the LLM
+  reads the stack and references layers by name.
+- DRC rules are JSON; the LLM can propose rule changes ("set min trace
+  width to 0.15mm") via tool call.
+
+### Priority order
+
+1. **Phase 1** (manual routing) — users want it most; modest scope.
+2. **Phase 3** (layer stack) — enables Phase 2 properly; foundational.
+3. **Phase 2** (copper pours) — depends on layer stack.
+4. **Phase 4** (polish) — quality bar.
+5. **Phase 5** (DRC + Gerber) — productionize.
+
+---
+
+## Rhino-parity roadmap
+
+Strategic goal: bring Kerf to feature-equivalent with Rhino 7/8 for the
+common workflows (industrial design, jewelry, architectural concept), while
+keeping every operation LLM-authorable. The constraint that shapes
+everything: **every Rhino feature must round-trip through JSON edited by
+either UI tools or LLM tools.** Rhino's GUI commands externalize as nothing;
+Kerf's translate as file-kind ops. Most Rhino commands (loft / sweep /
+fillet / trim) already fit that shape. The friction is Rhino's free-hand
+edits (control-point drag, gumball drag) — for those, the UI emits a delta
+op, the file kind stores the op, evaluation produces geometry. Same pattern
+as the existing `.feature` system.
+
+### Phase 4a: surface-modeling foundation (~30% shipped)
+
+Already shipped under "Phase 4a: jewelry-priority surfacing":
+- `feature_sweep1` / `feature_sweep2` / `feature_network_srf` /
+  `feature_blend_srf` LLM tools wired through OCCT.
+- Continuity args (C0/C1/C2 for network, G0/G1/G2 for blend).
+- Face / edge gumball + Push-Pull / RotateFace / Fillet from selection.
+
+Remaining for Phase 4a:
+- **Trim / untrim / split / join / explode / offset** on NURBS surfaces.
+- **Polysurface fluency** — multi-face B-rep as one entity, with face
+  selection / regroup / explode round-trip.
+- **Curve-from-surface** ops: isocurve, edge extraction, intersection
+  curves (surface-surface, surface-curve).
+- **Surface continuity edges** — G0/G1/G2 tags on shared edges, persist
+  through saves, surface-continuity analysis tool.
+
+### Phase 4b: file interop — `.3dm` round-trip
+
+Single highest-impact addition for adoption. Via
+[`rhino3dm`](https://github.com/mcneel/rhino3dm) (McNeel, free):
+
+- `pyworker` `POST /import-3dm` — parses a `.3dm` into a tree of
+  `.feature` (NURBS BReps), `.sketch` (curves), `.surf` (standalone
+  surfaces), `.mesh` (meshes), with layer metadata.
+- `pyworker` `POST /export-3dm` — serializes selected files back to a
+  `.3dm` for hand-off to Rhino users.
+- LLM tool `import_3dm` + file-tree drag-drop hook.
+- Maps Rhino's named layers → Kerf's layer hierarchy (Phase 4d).
+
+Marketing demo: drag your `.3dm` library into Kerf and immediately see
+the model with the AI chat ready to edit it.
+
+### Phase 4c: SubD modeling
+
+`.subd` file kind, Catmull-Clark via
+[OpenSubdiv](https://graphics.pixar.com/opensubdiv/) (Pixar, BSD).
+SubD is where Rhino 7+ has been growing — covers industrial design + jewelry.
+
+- Ops: `subdivide`, `smooth_subd`, `crease_edge`, `extrude_face_subd`,
+  `bevel_edge_subd`, `extrude_along_face_normal`.
+- Conversion: `subd_to_nurbs`, `nurbs_to_subd`, `mesh_to_subd`,
+  `subd_to_mesh` (tessellate for display).
+- OpenSubdiv subprocess in `pyworker` for fast eval; in-browser
+  Catmull-Clark for interactive smoothness preview.
+
+### Phase 4d: layers + display modes
+
+Reusable across all file kinds. `.workspace.json` per-project:
+
+```jsonc
+{
+  "layers": [
+    { "id": "L01", "name": "Geometry", "visible": true, "color": "#ffffff",
+      "linetype": "continuous", "material_id": "mat_default" },
+    { "id": "L02", "name": "Reference", "visible": true, "color": "#888888",
+      "linetype": "dashed" }
+  ],
+  "display_modes": [
+    { "id": "shaded", "wireframe": false, "edges": true },
+    { "id": "technical", "wireframe": true, "edges": true, "silhouette": true },
+    { "id": "rendered", "shaded": true, "shadows": true }
+  ],
+  "active_display_mode": "shaded"
+}
+```
+
+Every file references a `layer_id`. LLM tools: `create_layer`,
+`set_layer_visibility`, `assign_to_layer`, `switch_display_mode`.
+
+### Phase 4e: mesh tools
+
+Mesh-domain ops complement NURBS for the import → clean → model bridge.
+
+- `mesh_remesh` (quad), `mesh_decimate`, `mesh_smooth`, `mesh_repair`,
+  `mesh_fill_holes`.
+- `surface_from_points` (Poisson reconstruction; reverse-engineering
+  workflow from scanned data).
+- Server-side via [PyMesh](https://pymesh.readthedocs.io/) or
+  [OpenMesh](https://www.graphics.rwth-aachen.de/software/openmesh/)
+  subprocess in `pyworker`.
+
+### Phase 4f: parametric graph (Grasshopper-equivalent)
+
+**The differentiator.** Rhino's Grasshopper is its moat for parametric
+designers. Kerf's `.graph` file kind goes one step further: **the LLM
+can author and edit the graph as JSON.** Rhino's Grasshopper has no AI
+authoring layer.
+
+- `.graph` JSON: `{nodes: [{id, op, params, inputs: [refs]}],
+  outputs: [refs]}`.
+- Each `op` resolves to either an existing LLM tool (`feature_sweep2`,
+  `sketch_offset`, `material.read`, etc.) or a built-in graph op
+  (`number_slider`, `series`, `panel`, `map_each`).
+- Re-evaluation on parameter change: traverse DAG, run each node, cache
+  intermediate results in `derived_artifacts`.
+- Browser-side visual editor via [React Flow](https://reactflow.dev/) —
+  drag nodes, connect ports, edit slider values. The editor is a thin
+  emitter over the same JSON shape the LLM produces.
+- LLM tools: `create_graph_node`, `connect_graph_nodes`,
+  `set_graph_param`, `evaluate_graph`.
+
+### Phase 4g: render-quality output
+
+Cloud-tier feature (heavy compute); OSS users run pyworker locally.
+
+- `pyworker` `POST /run-render` invokes Blender (headless) with Cycles.
+- `.render` file kind: `{scene: <file_id>, camera, lights[], materials_override,
+  resolution, samples, output_format}`.
+- Returns PNG / EXR via storage backend; thumbnail-cached.
+- LLM tool: `render_scene`.
+
+### Phase 4h: drafting completeness
+
+Extends existing `.drawing` file kind (TechDraw-flavored) toward print-ready:
+
+- Hatch patterns (named patterns from a `.hatch_library`), leader lines,
+  rich-text annotations, dimension chains spanning multiple sketches,
+  multi-view layouts with bordered crop regions.
+- Print preview at sheet size (A0–A4, ANSI A–E), PDF export via the
+  existing svg2pdf path.
+
+### Phase 4i: curve depth
+
+Spread across every other phase — added as adjacent features need them:
+
+- `curve_project_to_surface`, `curve_intersect_surface`,
+  `curve_from_edge`, `curve_boolean`, `curve_blend`, `curve_match`,
+  `curve_offset_3d`, `polyline_to_nurbs`, `curve_simplify`.
+
+### Architectural commitments
+
+These rules apply across all Rhino-parity phases:
+
+- **File-kind = data.** Every Rhino concept becomes a JSON file kind
+  with a schema in `backend/llm_docs/<kind>.md`. No exceptions.
+- **UI = thin emitter.** Gumballs, drag-handles, control-point editors
+  are visual ways to emit the same JSON op the LLM would write.
+- **Pyworker = compute.** Heavy NURBS / SubD / mesh ops live in
+  `pyworker` as Python; results returned via the same `/run-X` pattern
+  as FEM / SPICE / CAM.
+- **No black-box GUI state.** If a user can do it, the LLM can do it.
+  The reverse must also hold.
+
+### What Kerf has that Rhino doesn't (the moat)
+
+- AI-native — every Rhino op is also an LLM tool.
+- Cloud sync + collaboration built in (git-backed).
+- Open-source root, MIT.
+- Electronics + PCB integration (Rhino doesn't do circuits).
+- BOM + distributor pricing.
+- Web-native (no install for cloud users).
+- Library Parts ↔ Cross-project parts (Rhino's Blocks are simpler).
+- Parametric via `.equations` is competitive with Grasshopper for
+  scalar-driven design; `.graph` (Phase 4f) closes the visual gap.
+
+If Phase 4a–4f all ship, the positioning is:
+
+> Rhino-level geometry + Revit-level building info (separate IFC track) +
+> Grasshopper-level parametric + AI-authoring across all three — in one
+> open-source app, with cloud collab built in.
+
+No incumbent has all four.
+
+### Priority order (recommended)
+
+1. **Phase 4a remaining** (trim / untrim / split / join + polysurface) —
+   foundation under most Rhino workflows. Already 30% there.
+2. **Phase 4b** (`.3dm` round-trip) — single biggest adoption unlock.
+3. **Phase 4f** (`.graph`) — the differentiator. The LLM + visual-graph
+   combo is uniquely Kerf.
+4. **Phase 4c** (SubD) — closes the Rhino 7+ feature gap.
+5. **Phase 4d** (layers + display modes) — quality-of-life baseline.
+6. **Phase 4e** (mesh tools) — bridge from import to model.
+7. **Phase 4h** (drafting completeness) — print-ready output.
+8. **Phase 4g** (render) — defer until cloud monetization needs it.
+9. **Phase 4i** (curve depth) — ongoing, embedded in other phases.
 
 ---
 
@@ -1383,7 +1758,6 @@ add-on functionality for the hosted service.
 
 - **README.md** — front door, quickstart, build, links. *Improving.*
 - **ROADMAP.md** — this document.
-- **CONTRACT.md** — API + data model spec. Reference for agents and contributors.
 - **`docs/`** — extended guides (planned). Sketching, assemblies, drawings,
   cloud, contributing, architecture deep-dive.
 - **Landing page** (`src/routes/Landing.jsx`) — *being revamped.*

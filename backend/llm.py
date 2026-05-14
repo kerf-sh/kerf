@@ -1,0 +1,624 @@
+from __future__ import annotations
+
+import json
+from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
+from typing import Any
+
+
+SystemPrompt = """You are an expert CAD assistant helping a user iterate on a project that mixes JSCAD code, parametric sketches, B-rep features, assemblies, drawings, library parts, and (optionally) tscircuit electronics.
+
+PRIMARY DIRECTIVE: edit the user's existing files. The user normally has a working file (commonly /main.jscad) and wants you to modify IT. Do not create new files unless the user explicitly asks for one.
+
+Vocabulary (locked):
+- Part = a whole .jscad (or .feature or .step) file. Returns an array of Objects.
+- Object = one entry in a Part's exported [{id, geom}, ...] array, identified by its id ('base', 'peg', ...).
+- Component = an Assembly's instance of a single Object placed at a transform.
+Never call an Object a "Part" or vice versa.
+
+Workflow
+
+For .jscad files (the default):
+1. list_files() to see the layout.
+2. read_file on the relevant existing file (usually /main.jscad).
+3. edit_file with a unique-substring replace; or duplicate_object / delete_object for adding/removing entries in the [{id, geom}, ...] return.
+4. write_file only for whole-file rewrites.
+5. Summarize in 1-2 sentences. Do NOT paste the file back.
+
+For non-.jscad files (.sketch, .assembly, .drawing, .part, .feature, .circuit.tsx):
+1. search_kerf_docs("<topic>") — find the matching authoring guide.
+2. read_file('/docs/llm/<page>.md') — load the JSON shape and conventions.
+3. read_file on the project file you're editing.
+4. write_file or edit_file with the JSON / TSX patch.
+5. Summarize in 1-2 sentences.
+
+File kinds and their canonical extensions:
+- .jscad       — JSCAD code (kind='file'). Edit directly.
+- .sketch      — parametric 2D profile (kind='sketch'). Scaffold with create_sketch.
+- .assembly    — Components placed at transforms (kind='assembly'). Created with create_file kind='assembly'.
+- .drawing     — 2D technical drawing JSON (kind='drawing'). Created with create_file kind='drawing'.
+- .feature     — OCCT B-rep feature tree (kind='feature'). Scaffold with create_feature.
+- .part        — library metadata (kind='part'). Scaffold with create_part.
+- .circuit.tsx — tscircuit electronics (kind='circuit'). Scaffold with create_circuit.
+- .step        — binary CAD imports (kind='step'). Pull in via import_step.
+
+The create_* tools produce a canonical seed (correct version field, defaults, validators) you can't easily fake. After scaffolding, edit the resulting file's JSON via write_file / edit_file — see the corresponding /docs/llm/ page for the schema.
+
+Strict rules:
+- NEVER create a file when editing an existing one would work.
+- ALWAYS read a file before editing it.
+- For any non-.jscad kind, ALWAYS consult /docs/llm/<topic>.md before editing.
+- Reference Objects by their id; reference files by their absolute path or uuid as appropriate.
+- Don't paste file contents back to the user; describe the change.
+
+Examples:
+
+Edit a JSCAD Part:
+  User: "make the base 6mm taller"
+  list_files() ; read_file('/main.jscad')
+  edit_file('/main.jscad', 'size: [40, 40, 10]', 'size: [40, 40, 16]')
+  → "Raised the base to 16mm."
+
+Place a Component in an assembly:
+  User: "add the peg from /parts.jscad to my assembly"
+  search_kerf_docs("assembly component transform")    # finds assembly.md
+  read_file('/docs/llm/assembly.md')                  # JSON shape
+  read_file('/parts.jscad') ; read_file('/main.assembly')
+  edit_file('/main.assembly', '"components": []', '"components": [\n    {"id":"peg-1","file_id":"<uuid>","object_id":"peg","transform":[1,0,0,0, 0,1,0,0, 0,0,1,10, 0,0,0,1]}\n  ]')
+  → "Added one peg Component at z=10."
+
+Add a fillet in a feature tree:
+  User: "round the top edges, 1mm"
+  search_kerf_docs("fillet feature edge_filter")
+  read_file('/docs/llm/feature.md')
+  read_file('/bracket.feature')
+  edit_file to append {"id":"fil-1","op":"fillet","target_id":"<last>","edge_filter":"all","radius":1} to features[].
+  → "Added a 1mm fillet to every edge of the most-recent body."
+
+If unsure whether to edit or create, edit.
+
+Project tags: every project carries a free-form tags array (e.g. ["mechanical","electronics","jewelry"]). The agent loop prepends a one-line "Project tags: <comma-list>. Suggested file kinds: <list>." to every call so you know the active domain mix. Tune your defaults to the most specific tag — e.g. an "electronics" tag suggests preferring main.circuit.tsx and .circuit.tsx; "mechanical"/"jewelry"/"surfacing" suggest .jscad / .feature / .assembly. The API is permissive (any kind may be created in any project), so honor explicit user requests that cross domain boundaries instead of refusing."""
+
+
+tagKindHints = {
+    "mechanical": ["jscad", "sketch", "assembly", "drawing", "feature", "part"],
+    "electronics": ["circuit", "part", "drawing"],
+    "pcb": ["circuit", "part", "drawing"],
+    "architecture": ["jscad", "sketch", "drawing"],
+    "jewelry": ["jscad", "feature", "sketch"],
+    "surfacing": ["jscad", "feature"],
+    "robotics": ["jscad", "assembly", "circuit", "feature"],
+    "drone": ["jscad", "assembly", "circuit"],
+    "lighting": ["jscad", "circuit", "drawing"],
+}
+
+
+def build_project_tags_addendum(tags: list[str]) -> str:
+    """Build a system-prompt fragment naming active tags + suggested kinds."""
+    clean = [t.strip() for t in tags if t.strip()]
+    if not clean:
+        return ""
+
+    seen = set()
+    kinds = []
+    for t in clean:
+        for k in tagKindHints.get(t.lower(), []):
+            if k not in seen:
+                seen.add(k)
+                kinds.append(k)
+
+    out = f"\n\nProject tags: {', '.join(clean)}."
+    if kinds:
+        out += f" Suggested file kinds: {', '.join(kinds)}."
+    return out
+
+
+@dataclass
+class ToolCall:
+    id: str
+    name: str
+    arguments_json: str
+
+
+@dataclass
+class ToolSpec:
+    name: str
+    description: str = ""
+    input_schema: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class Message:
+    role: str
+    content: str
+    tool_calls: list[ToolCall] = field(default_factory=list)
+    tool_call_id: str = ""
+
+
+@dataclass
+class CompleteRequest:
+    model: str
+    system: str = ""
+    messages: list[Message] = field(default_factory=list)
+    max_tokens: int = 4096
+    temperature: float = 0.0
+    tools: list[ToolSpec] = field(default_factory=list)
+    tool_choice: str = "auto"
+
+
+@dataclass
+class CompleteResponse:
+    content: str
+    tool_calls: list[ToolCall] = field(default_factory=list)
+    stop_reason: str = "stop"
+    model_used: str = ""
+    input_tokens: int = 0
+    output_tokens: int = 0
+
+
+class Provider(ABC):
+    @abstractmethod
+    def complete(self, req: CompleteRequest) -> CompleteResponse:
+        raise NotImplementedError
+
+    @abstractmethod
+    def name(self) -> str:
+        raise NotImplementedError
+
+
+@dataclass
+class PartContext:
+    file_path: str
+    part_id: str
+    content: str
+
+
+@dataclass
+class HistoryMessage:
+    role: str
+    content: str
+
+
+def build_user_message(user_content: str, parts: list[PartContext]) -> str:
+    if not parts:
+        return user_content
+
+    lines = [user_content, "\n<context>"]
+    for p in parts:
+        lines.append(f'<file path="{p.file_path}" part_id="{p.part_id}">')
+        lines.append(p.content)
+        if not p.content.endswith("\n"):
+            lines.append("")
+        lines.append("</file>")
+    lines.append("</context>")
+    return "\n".join(lines)
+
+
+CATALOG = [
+    {"id": "claude-opus-4-7", "provider": "anthropic", "label": "Claude Opus 4.7", "context_window": 200_000},
+    {"id": "claude-sonnet-4-6", "provider": "anthropic", "label": "Claude Sonnet 4.6", "context_window": 200_000},
+    {"id": "claude-haiku-4-5", "provider": "anthropic", "label": "Claude Haiku 4.5", "context_window": 200_000},
+    {"id": "gpt-4o", "provider": "openai", "label": "GPT-4o", "context_window": 128_000},
+    {"id": "gpt-4o-mini", "provider": "openai", "label": "GPT-4o mini", "context_window": 128_000},
+    {"id": "o3-mini", "provider": "openai", "label": "o3-mini", "context_window": 200_000},
+    {"id": "kimi-k2-0905-preview", "provider": "moonshot", "label": "Kimi K2", "context_window": 256_000},
+    {"id": "moonshot-v1-128k", "provider": "moonshot", "label": "Moonshot v1 128k", "context_window": 128_000},
+    {"id": "moonshot-v1-32k", "provider": "moonshot", "label": "Moonshot v1 32k", "context_window": 32_000},
+    {"id": "gemini-2.5-pro", "provider": "gemini", "label": "Gemini 2.5 Pro", "context_window": 2_000_000},
+    {"id": "gemini-2.5-flash", "provider": "gemini", "label": "Gemini 2.5 Flash", "context_window": 1_000_000},
+]
+
+
+def lookup_model(model_id: str) -> dict | None:
+    for m in CATALOG:
+        if m["id"] == model_id:
+            return m
+    return None
+
+
+class LLMConfig:
+    def __init__(
+        self,
+        anthropic_api_key: str = "",
+        openai_api_key: str = "",
+        moonshot_api_key: str = "",
+        gemini_api_key: str = "",
+        default_model: str = "claude-opus-4-7",
+    ):
+        self.anthropic_api_key = anthropic_api_key
+        self.openai_api_key = openai_api_key
+        self.moonshot_api_key = moonshot_api_key
+        self.gemini_api_key = gemini_api_key
+        self.default_model = default_model or "claude-sonnet-4-6"
+
+
+class Registry:
+    def __init__(self, cfg: LLMConfig):
+        self.providers: dict[str, Provider] = {}
+        if cfg.anthropic_api_key:
+            self.providers["anthropic"] = AnthropicProvider(cfg.anthropic_api_key)
+        if cfg.openai_api_key:
+            self.providers["openai"] = OpenAIProvider(cfg.openai_api_key)
+        if cfg.moonshot_api_key:
+            self.providers["moonshot"] = MoonshotProvider(cfg.moonshot_api_key)
+        if cfg.gemini_api_key:
+            self.providers["gemini"] = GeminiProvider(cfg.gemini_api_key)
+        self.default_model = cfg.default_model or "claude-opus-4-7"
+
+    def available(self) -> list[dict]:
+        out = []
+        for m in CATALOG:
+            if m["provider"] in self.providers:
+                out.append(m)
+        return out
+
+    def default(self) -> str:
+        return self.default_model
+
+    def has_any(self) -> bool:
+        return len(self.providers) > 0
+
+    def resolve(self, model_id: str) -> tuple[Provider, str]:
+        info = lookup_model(model_id)
+        if info is None:
+            raise ValueError(f"unknown model {model_id!r}")
+        provider = self.providers.get(info["provider"])
+        if provider is None:
+            raise ValueError(f"provider {info['provider']!r} for model {model_id!r} is not configured")
+        return provider, info["id"]
+
+
+class AnthropicProvider(Provider):
+    def __init__(self, api_key: str):
+        self.api_key = api_key
+
+    def name(self) -> str:
+        return "anthropic"
+
+    def complete(self, req: CompleteRequest) -> CompleteResponse:
+        import anthropic
+        import httpx
+
+        client = anthropic.Anthropic(api_key=self.api_key, http_client=httpx.Client(timeout=120.0))
+
+        max_tokens = req.max_tokens if req.max_tokens > 0 else 4096
+
+        tools = None
+        if req.tools:
+            tools = [
+                {
+                    "name": t.name,
+                    "description": t.description,
+                    "input_schema": t.input_schema or {"type": "object", "properties": {}},
+                }
+                for t in req.tools
+            ]
+
+        tool_choice = None
+        if tools:
+            if req.tool_choice in ("", "auto"):
+                tool_choice = "auto"
+            elif req.tool_choice == "none":
+                tool_choice = "none"
+            else:
+                tool_choice = {"type": "tool", "name": req.tool_choice}
+
+        messages = []
+        i = 0
+        while i < len(req.messages):
+            m = req.messages[i]
+            if m.role == "tool":
+                tool_blocks = []
+                while i < len(req.messages) and req.messages[i].role == "tool":
+                    tm = req.messages[i]
+                    tool_blocks.append({
+                        "type": "tool_result",
+                        "tool_use_id": tm.tool_call_id,
+                        "content": tm.content,
+                    })
+                    i += 1
+                messages.append({"role": "user", "content": tool_blocks})
+                continue
+
+            if m.tool_calls:
+                content_blocks = []
+                if m.content.strip():
+                    content_blocks.append({"type": "text", "text": m.content})
+                for tc in m.tool_calls:
+                    content_blocks.append({
+                        "type": "tool_use",
+                        "id": tc.id,
+                        "name": tc.name,
+                        "input": json.loads(tc.arguments_json) if tc.arguments_json.strip() else {},
+                    })
+                messages.append({"role": m.role, "content": content_blocks})
+            else:
+                messages.append({"role": m.role, "content": m.content})
+            i += 1
+
+        response = client.messages.create(
+            model=req.model,
+            system=req.system,
+            max_tokens=max_tokens,
+            temperature=req.temperature if req.temperature > 0 else None,
+            messages=messages,
+            tools=tools,
+            tool_choice=tool_choice,
+        )
+
+        text_parts = []
+        tool_calls = []
+        for block in response.content:
+            if block.type == "text":
+                text_parts.append(block.text)
+            elif block.type == "tool_use":
+                tool_calls.append(ToolCall(
+                    id=block.id,
+                    name=block.name,
+                    arguments_json=json.dumps(block.input),
+                ))
+
+        stop_reason = response.stop_reason or "stop"
+        if stop_reason == "tool_use":
+            stop_reason = "tool_use"
+        elif stop_reason == "max_tokens":
+            stop_reason = "length"
+
+        return CompleteResponse(
+            content="".join(text_parts),
+            tool_calls=tool_calls,
+            stop_reason=stop_reason,
+            model_used=req.model,
+            input_tokens=response.usage.input_tokens,
+            output_tokens=response.usage.output_tokens,
+        )
+
+
+class OpenAIProvider(Provider):
+    def __init__(self, api_key: str):
+        self.api_key = api_key
+
+    def name(self) -> str:
+        return "openai"
+
+    def complete(self, req: CompleteRequest) -> CompleteResponse:
+        from openai import OpenAI
+        import httpx
+
+        client = OpenAI(api_key=self.api_key, http_client=httpx.Client(timeout=120.0))
+
+        tools = None
+        if req.tools:
+            tools = [
+                {"type": "function", "function": {
+                    "name": t.name,
+                    "description": t.description,
+                    "parameters": t.input_schema or {"type": "object", "properties": {}},
+                }}
+                for t in req.tools
+            ]
+
+        messages = []
+        for m in req.messages:
+            msg = {"role": m.role, "content": m.content}
+            if m.tool_calls:
+                msg["tool_calls"] = [
+                    {
+                        "id": tc.id,
+                        "function": {"name": tc.name, "arguments": tc.arguments_json},
+                        "type": "function",
+                    }
+                    for tc in m.tool_calls
+                ]
+            if m.tool_call_id:
+                msg["tool_call_id"] = m.tool_call_id
+            messages.append(msg)
+
+        extra_body = {}
+        if tools:
+            extra_body["tools"] = tools
+            if req.tool_choice and req.tool_choice != "auto":
+                extra_body["tool_choice"] = req.tool_choice
+
+        response = client.chat.completions.create(
+            model=req.model,
+            messages=messages,
+            max_tokens=req.max_tokens if req.max_tokens > 0 else None,
+            temperature=req.temperature if req.temperature > 0 else None,
+            **extra_body,
+        )
+
+        choice = response.choices[0]
+        text_parts = []
+        tool_calls = []
+
+        if choice.message.content:
+            text_parts.append(choice.message.content)
+
+        if choice.message.tool_calls:
+            for tc in choice.message.tool_calls:
+                tool_calls.append(ToolCall(
+                    id=tc.id,
+                    name=tc.function.name,
+                    arguments_json=tc.function.arguments,
+                ))
+
+        stop_reason = choice.finish_reason or "stop"
+
+        return CompleteResponse(
+            content="".join(text_parts),
+            tool_calls=tool_calls,
+            stop_reason=stop_reason,
+            model_used=response.model,
+            input_tokens=response.usage.prompt_tokens,
+            output_tokens=response.usage.completion_tokens,
+        )
+
+
+class MoonshotProvider(Provider):
+    def __init__(self, api_key: str):
+        self.api_key = api_key
+
+    def name(self) -> str:
+        return "moonshot"
+
+    def complete(self, req: CompleteRequest) -> CompleteResponse:
+        from openai import OpenAI
+
+        client = OpenAI(api_key=self.api_key, base_url="https://api.moonshot.cn/v1")
+
+        messages = []
+        for m in req.messages:
+            msg = {"role": m.role, "content": m.content}
+            if m.tool_calls:
+                msg["tool_calls"] = [
+                    {
+                        "id": tc.id,
+                        "function": {"name": tc.name, "arguments": tc.arguments_json},
+                        "type": "function",
+                    }
+                    for tc in m.tool_calls
+                ]
+            if m.tool_call_id:
+                msg["tool_call_id"] = m.tool_call_id
+            messages.append(msg)
+
+        tools = None
+        if req.tools:
+            tools = [
+                {"type": "function", "function": {
+                    "name": t.name,
+                    "description": t.description,
+                    "parameters": t.input_schema or {"type": "object", "properties": {}},
+                }}
+                for t in req.tools
+            ]
+
+        extra_body = {}
+        if tools:
+            extra_body["tools"] = tools
+
+        response = client.chat.completions.create(
+            model=req.model,
+            messages=messages,
+            max_tokens=req.max_tokens if req.max_tokens > 0 else None,
+            temperature=req.temperature if req.temperature > 0 else None,
+            **extra_body,
+        )
+
+        choice = response.choices[0]
+        text_parts = []
+        tool_calls = []
+
+        if choice.message.content:
+            text_parts.append(choice.message.content)
+
+        if choice.message.tool_calls:
+            for tc in choice.message.tool_calls:
+                tool_calls.append(ToolCall(
+                    id=tc.id,
+                    name=tc.function.name,
+                    arguments_json=tc.function.arguments,
+                ))
+
+        return CompleteResponse(
+            content="".join(text_parts),
+            tool_calls=tool_calls,
+            stop_reason=choice.finish_reason or "stop",
+            model_used=response.model,
+            input_tokens=response.usage.prompt_tokens,
+            output_tokens=response.usage.completion_tokens,
+        )
+
+
+class GeminiProvider(Provider):
+    def __init__(self, api_key: str):
+        self.api_key = api_key
+
+    def name(self) -> str:
+        return "gemini"
+
+    def complete(self, req: CompleteRequest) -> CompleteResponse:
+        import google.generativeai as genai
+
+        genai.configure(api_key=self.api_key)
+
+        model = genai.GenerativeModel(req.model)
+
+        contents = []
+        for m in req.messages:
+            if m.role == "user":
+                contents.append({"role": "user", "parts": [m.content]})
+            elif m.role == "assistant":
+                parts = []
+                if m.content.strip():
+                    parts.append(m.content)
+                for tc in m.tool_calls:
+                    parts.append({
+                        "function_call": {
+                            "name": tc.name,
+                            "args": json.loads(tc.arguments_json) if tc.arguments_json.strip() else {},
+                        }
+                    })
+                contents.append({"role": "model", "parts": parts})
+            elif m.role == "tool":
+                for tc in m.tool_calls:
+                    contents.append({
+                        "role": "user",
+                        "parts": [{
+                            "function_response": {
+                                "name": tc.name,
+                                "response": {"result": m.content},
+                            }
+                        }]
+                    })
+
+        tools = None
+        if req.tools:
+            tools = [{
+                "function_declarations": [
+                    {
+                        "name": t.name,
+                        "description": t.description,
+                        "parameters": t.input_schema or {"type": "object", "properties": {}},
+                    }
+                    for t in req.tools
+                ]
+            }]
+
+        generation_config = {}
+        if req.max_tokens > 0:
+            generation_config["max_output_tokens"] = req.max_tokens
+        if req.temperature > 0:
+            generation_config["temperature"] = req.temperature
+
+        response = model.generate_content(
+            contents,
+            system_instruction=req.system if req.system else None,
+            tools=tools,
+            generation_config=genai.types.GenerationConfig(**generation_config) if generation_config else None,
+        )
+
+        text_parts = []
+        tool_calls = []
+
+        for candidate in response.candidates:
+            for part in candidate.content.parts:
+                if hasattr(part, "text") and part.text:
+                    text_parts.append(part.text)
+                elif hasattr(part, "function_call") and part.function_call:
+                    fc = part.function_call
+                    tool_calls.append(ToolCall(
+                        id=f"call_{hash((fc.name, str(fc.args))) % 1000000}",
+                        name=fc.name,
+                        arguments_json=json.dumps(dict(fc.args)),
+                    ))
+
+        return CompleteResponse(
+            content="".join(text_parts),
+            tool_calls=tool_calls,
+            stop_reason="stop" if response.candidates else "length",
+            model_used=req.model,
+            input_tokens=0,
+            output_tokens=0,
+        )
