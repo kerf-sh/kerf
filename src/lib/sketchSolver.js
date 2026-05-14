@@ -279,6 +279,19 @@ function estimateDof(sketch) {
       case 'symmetric':
         dof -= 2
         break
+      case 'symmetric_over_line': {
+        // Decomposed into N p2p_symmetric_ppl calls (one per point pair).
+        // Each removes 2 DOFs. The number depends on the entity kinds:
+        //   point   → 1 pair  → -2 DOF
+        //   line    → 2 pairs → -4 DOF
+        //   circle  → 1 pair (centers) + 1 equal_radius → -3 DOF
+        //   arc     → 3 pairs (center, start, end) → -6 DOF
+        //   bezier  → n control-point pairs → -2n DOF
+        // We use 2 as a minimum lower bound for the badge; the actual solver
+        // removes more depending on entity shape.
+        dof -= 2
+        break
+      }
       case 'midpoint':
         // Two scalar conditions: on-line (1 DOF removed) + equidistant on
         // perp-bisector (1 DOF removed). Together they pin P to one point on L.
@@ -314,6 +327,59 @@ function estimateDof(sketch) {
     }
   }
   return dof
+}
+
+// ---------------------------------------------------------------------------
+// Composite-entity decomposition for symmetric_over_line.
+//
+// Returns an array of { p1, p2 } pairs — resolved point ids — where each pair
+// should be constrained as p2p_symmetric_ppl(p1, p2, line). The caller also
+// handles the equal_radius side-constraint for circles/arcs separately.
+//
+// Supported entity kinds:
+//   point   → 1 pair: (a.id, b.id)
+//   line    → 2 pairs: endpoints (a.p1↔b.p1, a.p2↔b.p2)
+//   circle  → 1 pair: centers (a.center↔b.center)  + equal_radius handled by caller
+//   arc     → 3 pairs: center + two endpoints        + equal_radius handled by caller
+//   bezier  → N pairs: each control_point[i] ↔ control_point[N-1-i]
+//             (mirror reverses point order so the curve shape reflects correctly)
+//   bspline → same as bezier (controls array)
+//
+// Arc mirroring reverses the start↔end pair because a reflection inverts
+// the winding: arc A's start maps to arc B's end and vice versa.
+function decomposeSymmetric(entA, entB, allEnts, resolve) {
+  const pairs = []
+  if (entA.type === 'point' && entB.type === 'point') {
+    pairs.push({ p1: resolve(entA.id), p2: resolve(entB.id) })
+  } else if (entA.type === 'line' && entB.type === 'line') {
+    pairs.push({ p1: resolve(entA.p1), p2: resolve(entB.p1) })
+    pairs.push({ p1: resolve(entA.p2), p2: resolve(entB.p2) })
+  } else if (entA.type === 'circle' && entB.type === 'circle') {
+    pairs.push({ p1: resolve(entA.center), p2: resolve(entB.center) })
+  } else if (entA.type === 'arc' && entB.type === 'arc') {
+    // Center ↔ center (both arcs share the same radius which we enforce via equal_radius).
+    pairs.push({ p1: resolve(entA.center), p2: resolve(entB.center) })
+    // Start/end are swapped on the reflected arc: A.start ↔ B.end, A.end ↔ B.start.
+    pairs.push({ p1: resolve(entA.start), p2: resolve(entB.end) })
+    pairs.push({ p1: resolve(entA.end),   p2: resolve(entB.start) })
+  } else if (entA.type === 'bezier' && entB.type === 'bezier') {
+    const cpsA = entA.control_points || []
+    const cpsB = entB.control_points || []
+    const n = Math.min(cpsA.length, cpsB.length)
+    for (let i = 0; i < n; i++) {
+      // Mirror reverses the control-point order: A[i] ↔ B[n-1-i].
+      pairs.push({ p1: resolve(cpsA[i]), p2: resolve(cpsB[n - 1 - i]) })
+    }
+  } else if (entA.type === 'bspline' && entB.type === 'bspline') {
+    const cpsA = entA.controls || []
+    const cpsB = entB.controls || []
+    const n = Math.min(cpsA.length, cpsB.length)
+    for (let i = 0; i < n; i++) {
+      pairs.push({ p1: resolve(cpsA[i]), p2: resolve(cpsB[n - 1 - i]) })
+    }
+  }
+  // Filter out degenerate pairs (same point on both sides — already on the line).
+  return pairs.filter((p) => p.p1 && p.p2 && p.p1 !== p.p2)
 }
 
 // Map our Sketch → a planegcs primitives + constraints array. We add the
@@ -534,6 +600,36 @@ function buildPlanegcsPrimitives(sketch) {
             id: nextId(), type: 'p2p_symmetric_ppp',
             p1_id: resolve(c.a), p2_id: resolve(c.b), p_id: resolve(c.through),
           })
+        }
+        break
+      }
+      case 'symmetric_over_line': {
+        // Mirror entity_a across construction_line_id so it becomes the mirror
+        // image of entity_b.
+        //
+        // planegcs provides p2p_symmetric_ppl(p1, p2, line) — the two points
+        // are mirror images across the line. We decompose composite entities
+        // into multiple such point-pair constraints via decomposeSymmetric.
+        //
+        // Schema: { type, entity_a_id, entity_b_id, construction_line_id }
+        if (!c.entity_a_id || !c.entity_b_id || !c.construction_line_id) break
+        const lineEnt = ent.find((x) => x.id === c.construction_line_id)
+        if (!lineEnt || lineEnt.type !== 'line') break
+        const entA = ent.find((x) => x.id === c.entity_a_id)
+        const entB = ent.find((x) => x.id === c.entity_b_id)
+        if (!entA || !entB) break
+        for (const pair of decomposeSymmetric(entA, entB, ent, resolve)) {
+          constraints.push({
+            id: nextId(), type: 'p2p_symmetric_ppl',
+            p1_id: pair.p1, p2_id: pair.p2, l_id: c.construction_line_id,
+          })
+        }
+        // For circle/arc: also enforce equal radii.
+        if ((entA.type === 'circle' || entA.type === 'arc') &&
+            (entB.type === 'circle' || entB.type === 'arc')) {
+          const rType = (entA.type === 'arc' && entB.type === 'arc')
+            ? 'equal_radius_aa' : 'equal_radius_cc'
+          constraints.push({ id: nextId(), type: rType, c1_id: c.entity_a_id, c2_id: c.entity_b_id })
         }
         break
       }

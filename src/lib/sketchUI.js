@@ -72,6 +72,7 @@ export function friendlyConstraintLabel(c) {
     case 'radius': return 'Radius'
     case 'diameter': return 'Diameter'
     case 'symmetric': return 'Symmetric about line'
+    case 'symmetric_over_line': return 'Symmetric over construction line'
     case 'block': return 'Locked in place'
     case 'point_on_line': return 'Point on line'
     case 'point_on_circle': return 'Point on circle'
@@ -112,6 +113,7 @@ export function constraintEntityRefs(c) {
     case 'radius':
     case 'diameter': return [c.circle]
     case 'symmetric': return [c.a, c.b, c.line]
+    case 'symmetric_over_line': return [c.entity_a_id, c.entity_b_id, c.construction_line_id].filter(Boolean)
     case 'block': return c.refs || []
     case 'point_on_line': return [c.point, c.line]
     case 'point_on_circle': return [c.point, c.circle]
