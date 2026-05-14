@@ -1,0 +1,82 @@
+{
+  "version": 1,
+  "sheets": [
+    {
+      "id": "sh-1",
+      "frame": {
+        "size": "A3",
+        "orientation": "landscape",
+        "title": "L-Bracket — Drawing",
+        "scale_label": "1:1",
+        "sheet_number": "1/1",
+        "template": "iso",
+        "author": "Kerf Example",
+        "date": "2026-05-14",
+        "notes": "All dimensions in mm",
+        "extra": {}
+      },
+      "views": [
+        {
+          "id": "v-front",
+          "source_file_id": "*",
+          "part_id": "*",
+          "projection": "front",
+          "scale": 2.0,
+          "position": [40, 120],
+          "show_hidden": false,
+          "show_silhouette": true,
+          "label": "FRONT",
+          "is_section": false
+        },
+        {
+          "id": "v-right",
+          "source_file_id": "*",
+          "part_id": "*",
+          "projection": "right",
+          "scale": 2.0,
+          "position": [180, 120],
+          "show_hidden": false,
+          "show_silhouette": true,
+          "label": "RIGHT",
+          "is_section": false
+        },
+        {
+          "id": "v-iso",
+          "source_file_id": "*",
+          "part_id": "*",
+          "projection": "iso",
+          "scale": 2.0,
+          "position": [100, 280],
+          "show_hidden": false,
+          "show_silhouette": true,
+          "label": "ISO",
+          "is_section": false
+        }
+      ],
+      "dimensions": [
+        {
+          "id": "d-1",
+          "view_id": "v-front",
+          "kind": "linear",
+          "a": { "x": 40, "y": 120 },
+          "b": { "x": 140, "y": 120 },
+          "offset": 8,
+          "value": "50"
+        },
+        {
+          "id": "d-2",
+          "view_id": "v-front",
+          "kind": "linear",
+          "a": { "x": 40, "y": 120 },
+          "b": { "x": 40, "y": 200 },
+          "offset": 8,
+          "value": "40"
+        }
+      ],
+      "annotations": [],
+      "centerlines": [],
+      "breaks": [],
+      "symbols": []
+    }
+  ]
+}

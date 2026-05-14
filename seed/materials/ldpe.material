@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "name": "LDPE",
+  "category": "polymer/thermoplastic/polyethylene",
+  "common_names": ["LDPE", "Low-Density Polyethylene"],
+  "color_hex": "#f4f0e8",
+  "mechanical": {
+    "E_GPa": 0.2,
+    "G_GPa": 0.07,
+    "nu": 0.45,
+    "yield_MPa": 10,
+    "ultimate_MPa": 15,
+    "elongation_pct": 300
+  },
+  "thermal": {
+    "alpha_per_K": 200e-6,
+    "k_W_mK": 0.33,
+    "cp_J_kgK": 2300,
+    "T_min_C": -50,
+    "T_max_C": 65
+  },
+  "physical": {
+    "rho_kg_m3": 925
+  },
+  "callout": "LDPE",
+  "notes": "Low-density polyethylene. Flexible, good chemical resistance, low water absorption. Source: MatWeb / Dow."
+}

@@ -206,6 +206,173 @@ function checkCopperToEdge(traces, pads, vias, board, rules) {
 }
 
 // -------------------------------------------------------------------
+// Check: dangling trace (endpoint not on any pad and not connected to
+//        another trace endpoint)
+// -------------------------------------------------------------------
+function checkDanglingTraces(traces, pads) {
+  const errors = []
+  const EPS = 1e-4  // mm snap tolerance
+
+  // Collect all pad positions
+  const padPositions = pads.map((p) => ({ x: p.x ?? 0, y: p.y ?? 0 }))
+
+  // Collect all trace endpoints
+  const endpoints = []
+  for (const trace of traces) {
+    const pts = trace.route ?? trace.points ?? []
+    if (pts.length < 2) continue
+    endpoints.push({ x: pts[0].x, y: pts[0].y, trace })
+    endpoints.push({ x: pts[pts.length - 1].x, y: pts[pts.length - 1].y, trace })
+  }
+
+  function onPad(x, y) {
+    return padPositions.some(
+      (p) => Math.abs(p.x - x) < EPS && Math.abs(p.y - y) < EPS,
+    )
+  }
+
+  function connectedToOtherTrace(x, y, selfTrace) {
+    return endpoints.some(
+      (ep) =>
+        ep.trace !== selfTrace &&
+        Math.abs(ep.x - x) < EPS &&
+        Math.abs(ep.y - y) < EPS,
+    )
+  }
+
+  // Deduplicate: report each dangling endpoint once per trace
+  for (const trace of traces) {
+    const pts = trace.route ?? trace.points ?? []
+    if (pts.length < 2) continue
+
+    const checkEnd = (pt, label) => {
+      const x = pt.x ?? 0
+      const y = pt.y ?? 0
+      if (!onPad(x, y) && !connectedToOtherTrace(x, y, trace)) {
+        errors.push({
+          x,
+          y,
+          kind: 'dangling_trace',
+          severity: 'error',
+          message: `Trace ${label} endpoint (${x.toFixed(3)}, ${y.toFixed(3)}) is not connected to a pad or another trace`,
+          trace_id: trace.pcb_trace_id ?? trace.id ?? null,
+        })
+      }
+    }
+
+    checkEnd(pts[0], 'start')
+    checkEnd(pts[pts.length - 1], 'end')
+  }
+
+  return errors
+}
+
+// -------------------------------------------------------------------
+// Check: net short — two pads on different nets connected by copper.
+//
+// Algorithm: union-find over trace endpoints + pad positions.  Pads
+// whose positions are < EPS apart (or connected through a chain of
+// traces) get merged into the same cluster.  If a cluster contains
+// pads from more than one distinct net_id, it is a net short.
+// -------------------------------------------------------------------
+function checkNetShorts(traces, pads) {
+  const errors = []
+  const EPS = 1e-4
+
+  // Only care about pads that have a net_id
+  const nettedPads = pads.filter((p) => p.net_id || p.net)
+
+  if (nettedPads.length < 2) return errors
+
+  // Nodes: each pad is a node; we also create transient nodes for trace
+  // endpoints that are coincident with pads.
+  const nodes = nettedPads.map((p, i) => ({
+    id: i,
+    x: p.x ?? 0,
+    y: p.y ?? 0,
+    net: p.net_id ?? p.net,
+    parent: i,
+  }))
+
+  function find(id) {
+    while (nodes[id].parent !== id) {
+      nodes[id].parent = nodes[nodes[id].parent].parent
+      id = nodes[id].parent
+    }
+    return id
+  }
+
+  function unite(a, b) {
+    const ra = find(a), rb = find(b)
+    if (ra !== rb) nodes[ra].parent = rb
+  }
+
+  // Two pads at the same location → same cluster (plated holes can share pos)
+  for (let i = 0; i < nodes.length; i++) {
+    for (let j = i + 1; j < nodes.length; j++) {
+      if (
+        Math.abs(nodes[i].x - nodes[j].x) < EPS &&
+        Math.abs(nodes[i].y - nodes[j].y) < EPS
+      ) {
+        unite(i, j)
+      }
+    }
+  }
+
+  // Walk each trace: if both endpoints land on pads, union those pads
+  for (const trace of traces) {
+    const pts = trace.route ?? trace.points ?? []
+    if (pts.length < 2) continue
+    const startX = pts[0].x ?? 0, startY = pts[0].y ?? 0
+    const endX = pts[pts.length - 1].x ?? 0, endY = pts[pts.length - 1].y ?? 0
+
+    const startHits = nodes
+      .map((n, i) => ({ i, n }))
+      .filter(({ n }) => Math.abs(n.x - startX) < EPS && Math.abs(n.y - startY) < EPS)
+
+    const endHits = nodes
+      .map((n, i) => ({ i, n }))
+      .filter(({ n }) => Math.abs(n.x - endX) < EPS && Math.abs(n.y - endY) < EPS)
+
+    for (const s of startHits) {
+      for (const e of endHits) {
+        unite(s.i, e.i)
+      }
+    }
+  }
+
+  // Check each cluster for mixed nets
+  const reported = new Set()
+  const clusters = new Map()
+  for (let i = 0; i < nodes.length; i++) {
+    const root = find(i)
+    if (!clusters.has(root)) clusters.set(root, [])
+    clusters.get(root).push(nodes[i])
+  }
+
+  for (const [, members] of clusters) {
+    const nets = [...new Set(members.map((m) => m.net))]
+    if (nets.length > 1) {
+      const key = nets.sort().join('|')
+      if (!reported.has(key)) {
+        reported.add(key)
+        const cx = members.reduce((s, m) => s + m.x, 0) / members.length
+        const cy = members.reduce((s, m) => s + m.y, 0) / members.length
+        errors.push({
+          x: cx,
+          y: cy,
+          kind: 'net_short',
+          severity: 'error',
+          message: `Net short: copper connects nets ${nets.join(', ')}`,
+        })
+      }
+    }
+  }
+
+  return errors
+}
+
+// -------------------------------------------------------------------
 // Main export: runDRC
 // -------------------------------------------------------------------
 
@@ -232,6 +399,8 @@ export function runDRC(circuitJson) {
     ...checkTraceWidth(traces, rules),
     ...checkViaClearance(vias, rules),
     ...checkDrillSpacing(vias, rules),
+    ...checkDanglingTraces(traces, pads),
+    ...checkNetShorts(traces, pads),
   ]
 
   const warnings = [

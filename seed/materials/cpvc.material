@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "name": "CPVC",
+  "category": "polymer/thermoplastic/pvc",
+  "common_names": ["CPVC", "Chlorinated PVC", "PVC-C"],
+  "color_hex": "#e8e4dc",
+  "mechanical": {
+    "E_GPa": 2.4,
+    "G_GPa": 0.9,
+    "nu": 0.35,
+    "yield_MPa": 50,
+    "ultimate_MPa": 55,
+    "elongation_pct": 20
+  },
+  "thermal": {
+    "alpha_per_K": 70e-6,
+    "k_W_mK": 0.16,
+    "cp_J_kgK": 900,
+    "T_min_C": -20,
+    "T_max_C": 95
+  },
+  "physical": {
+    "rho_kg_m3": 1560
+  },
+  "callout": "CPVC",
+  "notes": "Chlorinated PVC — higher heat deflection temperature than PVC. Excellent corrosion resistance. Source: MatWeb / Lubrizol FlowGuard."
+}

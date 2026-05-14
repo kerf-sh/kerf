@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "name": "Diode BAT54 SOT-23",
+  "description": "Schottky barrier diode, 30 V, 200 mA, SOT-23 SMD package. Low forward voltage drop, suitable for high-speed switching and protection circuits.",
+  "category": "Diodes",
+  "manufacturer": "Nexperia",
+  "mpn": "BAT54J",
+  "value": "BAT54",
+  "distributors": [
+    {"name": "digikey", "sku": "1727-2923-1-ND", "url": "https://www.digikey.com/en/products/detail/nexperia-usa-inc/BAT54J/2414675", "price_usd": 0.04, "stock": 15000},
+    {"name": "mouser", "sku": "771-BAT54J", "url": "https://www.mouser.com/ProductDetail/Nexperia/BAT54J", "price_usd": 0.036, "stock": 12000}
+  ],
+  "visibility": "public",
+  "metadata": {
+    "package": "SOT-23",
+    "type": "schottky",
+    "voltage_v": 30,
+    "current_a": 0.2
+  }
+}

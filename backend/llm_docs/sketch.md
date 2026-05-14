@@ -118,3 +118,81 @@ plus `equal_radius` between the arcs.
   3D backdrop alongside the sketch — usually leave empty when authoring.
 - Sketches are imported into JSCAD as:
   `import profile from "/path.sketch"` → returns a Geom2.
+
+---
+
+## Carbon-copy reference geometry
+
+Use `sketch_carbon_copy` to pull geometry from another sketch into the current
+one as **driven reference** (read-only). Reference entities carry:
+
+```json
+{
+  "id": "<cc_source>_<original_id>",
+  "type": "line",
+  "p1": "<cc_source>_<p1_id>",
+  "p2": "<cc_source>_<p2_id>",
+  "is_reference": true,
+  "construction": true,
+  "cc_source": "<source_sketch_id>",
+  "source_id": "<original_entity_id>"
+}
+```
+
+Key properties:
+- `is_reference: true` — entity is driven; the UI renders it in a distinct
+  colour and prevents direct editing.
+- `construction: true` — excluded from extrude / shape output.
+- `cc_source` — opaque string key identifying which source sketch this came
+  from. Used by `refreshCarbonCopies` to re-sync geometry.
+- `source_id` — the original entity id in the source sketch.
+- `unresolved: true` — set by `refreshCarbonCopies` when the source sketch is
+  no longer available; `sketch_validate` will flag this.
+
+The sketch also gains a top-level `cc_sources` array listing all source ids:
+
+```json
+{ "cc_sources": ["profiles_rect_sketch"] }
+```
+
+### Tool: `sketch_carbon_copy`
+
+```
+sketch_carbon_copy({
+  source_file_path,   // path to the source .sketch
+  target_file_path,   // path to the target .sketch (modified in-place)
+  entity_ids?,        // optional list of edge ids to copy (default: all)
+  translation?,       // { x?, y? } applied to copied coordinates
+  rotation_deg?       // rotation in degrees applied to copied coordinates
+})
+→ { ok, copied, cc_source }
+```
+
+Calling this multiple times for the same source replaces the previous copy
+(ids are stable, so existing constraints survive the refresh).
+
+---
+
+## Sketch validation
+
+Use `sketch_validate` before relying on a sketch in a feature operation.
+
+### Tool: `sketch_validate`
+
+```
+sketch_validate({ file_path })
+→ { errors: [...], warnings: [...] }
+```
+
+Each entry has `{ kind, severity, message, entity_id? }`.
+
+| `kind`                    | `severity` | Trigger                                                     |
+|---------------------------|------------|-------------------------------------------------------------|
+| `open_contour`            | error      | Edge loop has an endpoint connected to only one edge        |
+| `self_intersection`       | error      | Two non-adjacent edges cross each other                     |
+| `redundant_constraint`    | error      | Estimated DOF < 0 (over-constrained)                        |
+| `dangling_endpoint`       | warning    | Edge endpoint has no `coincident` or `fixed` constraint     |
+| `unresolved_external_ref` | error      | Reference entity's source sketch is missing or deleted      |
+
+A sketch with zero errors is safe to extrude. Warnings indicate incomplete
+constraint coverage but won't block feature evaluation.

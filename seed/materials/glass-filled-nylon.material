@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "name": "Glass-Filled Nylon 6 (PA6-GF30)",
+  "category": "composite/polyamide/glass-filled",
+  "common_names": ["PA6-GF30", "Glass-filled Nylon 6", "Nylon 6 30% GF"],
+  "color_hex": "#d8d4c8",
+  "mechanical": {
+    "E_GPa": 8.0,
+    "G_GPa": 2.9,
+    "nu": 0.35,
+    "yield_MPa": 130,
+    "ultimate_MPa": 180,
+    "elongation_pct": 5
+  },
+  "thermal": {
+    "alpha_per_K": 30e-6,
+    "k_W_mK": 0.35,
+    "cp_J_kgK": 1200,
+    "T_min_C": -30,
+    "T_max_C": 150
+  },
+  "physical": {
+    "rho_kg_m3": 1380
+  },
+  "callout": "PA6-GF30",
+  "notes": "Nylon 6 with 30% glass fiber reinforcement. Significantly increased stiffness and strength vs unfilled. Source: MatWeb / BASF Ultramid B3EG6."
+}

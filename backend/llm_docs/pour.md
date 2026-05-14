@@ -90,6 +90,64 @@ Reassign a pour to a different net (e.g. change from GND to VCC). Triggers a fil
 }
 ```
 
+### `set_pour_clearance`
+
+Update the copper-to-copper clearance of an existing pour. Larger clearance pulls copper further from non-net obstacles; smaller clearance fills more tightly.
+
+```json
+{
+  "file_id": "my-board.circuit.tsx",
+  "pour_index": 0,
+  "clearance_mm": 0.4
+}
+```
+
+- `pour_index`: zero-based index in `copper_pours`.
+- `clearance_mm`: non-negative number in mm. Typical range 0.1 – 1.0. Default 0.25.
+
+---
+
+## Worked examples
+
+### Example 1 — Full-board GND pour on top copper
+
+```json
+{
+  "tool": "add_copper_pour",
+  "args": {
+    "file_id": "my-board.circuit.tsx",
+    "pour": {
+      "polygon": [{"x": 0, "y": 0}, {"x": 80, "y": 0}, {"x": 80, "y": 60}, {"x": 0, "y": 60}],
+      "layer": "top_copper",
+      "net_id": "GND",
+      "clearance_mm": 0.25,
+      "thermal_relief": {"gap": 0.25, "spoke_width": 0.5, "spoke_count": 4},
+      "min_thickness_mm": 0.2,
+      "priority": 0
+    }
+  }
+}
+```
+
+Then call `POST /compute-pour-fill` with the returned pour + the current `board_state` (traces and pads). The response `filled_polygon` can be rendered directly as an SVG even-odd path.
+
+### Example 2 — Tighten clearance on an existing pour
+
+The board has a GND pour at index 0 but it is leaving too much dead copper around signal traces. Reduce clearance from 0.25 to 0.15 mm:
+
+```json
+{
+  "tool": "set_pour_clearance",
+  "args": {
+    "file_id": "my-board.circuit.tsx",
+    "pour_index": 0,
+    "clearance_mm": 0.15
+  }
+}
+```
+
+After the tool confirms `"updated": true`, trigger `POST /compute-pour-fill` to get updated geometry.
+
 ## Frontend PourTool
 
 In `PCBView.jsx`, the `PourTool` lets users click polygon vertices, close the polygon (double-click near first vertex when ≥3 vertices exist), then confirm the net and layer via a dialog. The committed pour is rendered as a semi-transparent filled polygon (red for top copper, blue for bottom copper) with an even-odd SVG path that shows holes.

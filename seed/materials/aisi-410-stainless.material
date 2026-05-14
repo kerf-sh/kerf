@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "name": "AISI 410 Stainless Steel",
+  "category": "metal/stainless/martensitic",
+  "common_names": ["410", "AISI 410", "martensitic stainless"],
+  "color_hex": "#c0c2c4",
+  "mechanical": {
+    "E_GPa": 200,
+    "G_GPa": 77,
+    "nu": 0.27,
+    "yield_MPa": 620,
+    "ultimate_MPa": 740,
+    "elongation_pct": 13
+  },
+  "thermal": {
+    "alpha_per_K": 10.8e-6,
+    "k_W_mK": 25.0,
+    "cp_J_kgK": 460,
+    "T_min_C": -30,
+    "T_max_C": 650
+  },
+  "physical": {
+    "rho_kg_m3": 7750
+  },
+  "callout": "410 SS",
+  "notes": "Martensitic stainless. Good corrosion resistance with high strength and hardness. Source: MatWeb / ASTM A240."
+}

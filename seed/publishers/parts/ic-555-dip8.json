@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "name": "IC 555 Timer DIP-8",
+  "description": "Precision timer IC, 555 monolithic timing circuit, DIP-8 through-hole package. Astable/monostable operation up to 500kHz.",
+  "category": "ICs",
+  "manufacturer": "Texas Instruments",
+  "mpn": "NE555P",
+  "value": "NE555",
+  "distributors": [
+    {"name": "digikey", "sku": "296-1412-5-ND", "url": "https://www.digikey.com/en/products/detail/texas-instruments/NE555P/671896", "price_usd": 0.45, "stock": 3000},
+    {"name": "mouser", "sku": "595-NE555P", "url": "https://www.mouser.com/ProductDetail/Texas-Instruments/NE555P", "price_usd": 0.41, "stock": 2500}
+  ],
+  "visibility": "public",
+  "metadata": {
+    "package": "DIP-8",
+    "type": "timer"
+  }
+}

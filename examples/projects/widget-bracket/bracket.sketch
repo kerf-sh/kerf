@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "plane": { "type": "base", "name": "XY" },
+  "entities": [
+    { "id": "origin", "type": "point", "x": 0, "y": 0 },
+    { "id": "p1",     "type": "point", "x": 50, "y": 0 },
+    { "id": "p2",     "type": "point", "x": 50, "y": 3 },
+    { "id": "p3",     "type": "point", "x": 3,  "y": 3 },
+    { "id": "p4",     "type": "point", "x": 3,  "y": 40 },
+    { "id": "p5",     "type": "point", "x": 0,  "y": 40 },
+    { "id": "l1",     "type": "line", "p1": "origin", "p2": "p1" },
+    { "id": "l2",     "type": "line", "p1": "p1",     "p2": "p2" },
+    { "id": "l3",     "type": "line", "p1": "p2",     "p2": "p3" },
+    { "id": "l4",     "type": "line", "p1": "p3",     "p2": "p4" },
+    { "id": "l5",     "type": "line", "p1": "p4",     "p2": "p5" },
+    { "id": "l6",     "type": "line", "p1": "p5",     "p2": "origin" }
+  ],
+  "constraints": [
+    { "id": "c1", "type": "coincident", "p1": "origin", "p2": "p1" },
+    { "id": "c2", "type": "h",          "line": "l1" },
+    { "id": "c3", "type": "v",          "line": "l2" },
+    { "id": "c4", "type": "distance_x", "p1": "origin", "p2": "p1", "value": 50 },
+    { "id": "c5", "type": "distance_y", "p1": "p1",     "p2": "p2", "value": 3 },
+    { "id": "c6", "type": "h",          "line": "l3" },
+    { "id": "c7", "type": "distance_x", "p1": "p2",     "p2": "p3", "value": 47 },
+    { "id": "c8", "type": "v",          "line": "l4" },
+    { "id": "c9", "type": "distance_y", "p1": "p3",     "p2": "p4", "value": 37 },
+    { "id": "c10","type": "h",          "line": "l5" },
+    { "id": "c11","type": "distance_y", "p1": "p4",     "p2": "p5", "value": 37 },
+    { "id": "c12","type": "v",          "line": "l6" }
+  ],
+  "visible_3d": [],
+  "solved": {},
+  "metadata": { "name": "L-bracket profile", "description": "L-shaped bracket with 50mm base leg and 40mm vertical leg, 3mm wall thickness" }
+}

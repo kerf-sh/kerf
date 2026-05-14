@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "name": "Balsa",
+  "category": "natural/wood/softwood",
+  "common_names": ["Balsa", "Ochroma pyramidale", "Balsa wood"],
+  "color_hex": "#e8dcc8",
+  "mechanical": {
+    "E_GPa": 2.0,
+    "G_GPa": 0.3,
+    "nu": 0.45,
+    "yield_MPa": 12,
+    "ultimate_MPa": 25,
+    "elongation_pct": 30
+  },
+  "thermal": {
+    "alpha_per_K": 8e-6,
+    "k_W_mK": 0.06,
+    "cp_J_kgK": 2000,
+    "T_min_C": -40,
+    "T_max_C": 60
+  },
+  "physical": {
+    "rho_kg_m3": 160
+  },
+  "callout": "Balsa",
+  "notes": "Balsa — extremely lightweight structural wood. High strength-to-weight ratio. Source: USDA Forest Products Lab / MatWeb."
+}

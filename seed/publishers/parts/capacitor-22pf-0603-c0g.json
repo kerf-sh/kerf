@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "name": "Capacitor 22pF 0603 C0G 50V",
+  "description": "Multi-layer ceramic chip capacitor, 22 pF, 50 V, C0G (NP0) dielectric, ±5%, 0603 SMD package.",
+  "category": "Capacitors",
+  "manufacturer": "Murata",
+  "mpn": "GRM1885C1H220JA01J",
+  "value": "22p",
+  "distributors": [
+    {"name": "digikey", "sku": "490-4787-1-ND", "url": "https://www.digikey.com/en/products/detail/murata-electronics/GRM1885C1H220JA01J/617230", "price_usd": 0.015, "stock": 12000},
+    {"name": "mouser", "sku": "963-GRM1885C1H220JA01J", "url": "https://www.mouser.com/ProductDetail/Murata-Electronics/GRM1885C1H220JA01J", "price_usd": 0.013, "stock": 10000}
+  ],
+  "visibility": "public",
+  "metadata": {
+    "package": "0603",
+    "dielectric": "C0G",
+    "voltage_v": 50,
+    "tolerance": "5%"
+  }
+}

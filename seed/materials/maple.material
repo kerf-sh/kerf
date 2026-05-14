@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "name": "Sugar Maple",
+  "category": "natural/wood/hardwood",
+  "common_names": ["Maple", "Sugar Maple", "Hard Maple", "Acer saccharum"],
+  "color_hex": "#d4b896",
+  "mechanical": {
+    "E_GPa": 12.6,
+    "G_GPa": 1.5,
+    "nu": 0.45,
+    "yield_MPa": 50,
+    "ultimate_MPa": 90,
+    "elongation_pct": 12
+  },
+  "thermal": {
+    "alpha_per_K": 4.5e-6,
+    "k_W_mK": 0.16,
+    "cp_J_kgK": 1900,
+    "T_min_C": -40,
+    "T_max_C": 80
+  },
+  "physical": {
+    "rho_kg_m3": 705
+  },
+  "callout": "Hard Maple",
+  "notes": "Sugar Maple — dense, hard hardwood. Excellent for flooring, furniture, and CNC machining. Source: USDA Forest Products Lab / MatWeb."
+}

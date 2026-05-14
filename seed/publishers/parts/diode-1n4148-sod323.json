@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "name": "Diode 1N4148 SOD-323",
+  "description": "Fast switching diode, 100 V, 200 mA, SOD-323 SMD package. Standard signal diode for general-purpose applications.",
+  "category": "Diodes",
+  "manufacturer": "ON Semiconductor",
+  "mpn": "1N4148XV3T1G",
+  "value": "1N4148",
+  "distributors": [
+    {"name": "digikey", "sku": "1N4148XV3T1GOSCT-ND", "url": "https://www.digikey.com/en/products/detail/on-semiconductor/1N4148XV3T1G/2443003", "price_usd": 0.05, "stock": 9000},
+    {"name": "mouser", "sku": "863-1N4148XV3T1G", "url": "https://www.mouser.com/ProductDetail/ON-Semiconductor/1N4148XV3T1G", "price_usd": 0.045, "stock": 7000}
+  ],
+  "visibility": "public",
+  "metadata": {
+    "package": "SOD-323",
+    "type": "switching",
+    "voltage_v": 100,
+    "current_a": 0.2
+  }
+}

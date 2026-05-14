@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "name": "LED Red 0603 SMD",
+  "description": "Standard red LED, 625 nm wavelength, 20 mA, 2.0 V typical forward voltage, 0603 SMD package.",
+  "category": "LEDs",
+  "manufacturer": "Kingbright",
+  "mpn": "APT1608SURCK",
+  "value": "red",
+  "distributors": [
+    {"name": "digikey", "sku": "754-1128-1-ND", "url": "https://www.digikey.com/en/products/detail/kingbright/APT1608SURCK/2208380", "price_usd": 0.08, "stock": 6000},
+    {"name": "mouser", "sku": "604-APT1608SURCK", "url": "https://www.mouser.com/ProductDetail/Kingbright/APT1608SURCK", "price_usd": 0.072, "stock": 5000}
+  ],
+  "visibility": "public",
+  "metadata": {
+    "package": "0603",
+    "color": "red",
+    "wavelength_nm": 625
+  }
+}

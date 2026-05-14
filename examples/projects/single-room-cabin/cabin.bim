@@ -1,0 +1,18 @@
+version=1
+name="Single Room Cabin"
+
+site { name: "Rural Site", lat: 45.0, lon: -122.0, elevation: 200 }
+
+level "L1" elevation=0
+
+wall on="L1" from=(0,0) to=(6000,0) height=2500 thickness=150
+wall on="L1" from=(6000,0) to=(6000,5000) height=2500 thickness=150
+wall on="L1" from=(6000,5000) to=(0,5000) height=2500 thickness=150
+wall on="L1" from=(0,5000) to=(0,0) height=2500 thickness=150
+
+opening in="wall_0" position=(2000,0) width=900 height=2100
+opening in="wall_2" position=(2500,0) width=1200 height=1500
+
+slab on="L1" boundary=[(0,0),(6000,0),(6000,5000),(0,5000)] thickness=200
+
+space on="L1" boundary=[(150,150),(5850,150),(5850,4850),(150,4850)] name="Main Room"

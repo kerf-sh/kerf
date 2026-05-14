@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "name": "Viton",
+  "category": "polymer/elastomer/fluoroelastomer",
+  "common_names": ["Viton", "FKM", "Fluoroelastomer"],
+  "color_hex": "#2a2a2a",
+  "mechanical": {
+    "E_GPa": 0.007,
+    "G_GPa": 0.002,
+    "nu": 0.48,
+    "yield_MPa": null,
+    "ultimate_MPa": 15,
+    "elongation_pct": 200
+  },
+  "thermal": {
+    "alpha_per_K": 180e-6,
+    "k_W_mK": 0.20,
+    "cp_J_kgK": 1900,
+    "T_min_C": -20,
+    "T_max_C": 200
+  },
+  "physical": {
+    "rho_kg_m3": 1800
+  },
+  "callout": "FKM Viton",
+  "notes": "Fluoroelastomer (FKM) — Viton is a DuPont brand name. Excellent resistance to fuels, oils, and chemicals. Source: MatWeb / DuPont Viton."
+}

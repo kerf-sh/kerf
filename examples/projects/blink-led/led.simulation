@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "circuit_file_id": "*",
+  "analysis": {
+    "type": "dc"
+  },
+  "probes": [
+    { "name": "V_LED", "kind": "V", "source_port_id": "net.LED_ANODE" },
+    { "name": "I_R1",  "kind": "I", "source_component_id": "R1" }
+  ],
+  "results": {
+    "waveforms": [],
+    "warnings": ["Engine pending — ngspice-wasm not yet wired."],
+    "errors": []
+  }
+}

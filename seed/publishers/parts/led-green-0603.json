@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "name": "LED Green 0603 SMD",
+  "description": "Standard green LED, 570 nm wavelength, 20 mA, 2.1 V typical forward voltage, 0603 SMD package.",
+  "category": "LEDs",
+  "manufacturer": "Kingbright",
+  "mpn": "APT1608CGCK",
+  "value": "green",
+  "distributors": [
+    {"name": "digikey", "sku": "754-1130-1-ND", "url": "https://www.digikey.com/en/products/detail/kingbright/APT1608CGCK/2208382", "price_usd": 0.08, "stock": 7000},
+    {"name": "mouser", "sku": "604-APT1608CGCK", "url": "https://www.mouser.com/ProductDetail/Kingbright/APT1608CGCK", "price_usd": 0.072, "stock": 5500}
+  ],
+  "visibility": "public",
+  "metadata": {
+    "package": "0603",
+    "color": "green",
+    "wavelength_nm": 570
+  }
+}

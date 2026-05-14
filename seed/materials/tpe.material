@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "name": "TPE",
+  "category": "polymer/thermoplastic/elastomer",
+  "common_names": ["TPE", "Thermoplastic Elastomer", "TPE-V"],
+  "color_hex": "#f6f4f0",
+  "mechanical": {
+    "E_GPa": 0.1,
+    "G_GPa": 0.035,
+    "nu": 0.48,
+    "yield_MPa": 5,
+    "ultimate_MPa": 15,
+    "elongation_pct": 500
+  },
+  "thermal": {
+    "alpha_per_K": 180e-6,
+    "k_W_mK": 0.18,
+    "cp_J_kgK": 1800,
+    "T_min_C": -50,
+    "T_max_C": 90
+  },
+  "physical": {
+    "rho_kg_m3": 1100
+  },
+  "callout": "TPE",
+  "notes": "General-purpose styrenic block copolymer TPE. Soft, flexible, reusable. Properties vary with grade; representative values shown. Source: MatWeb / Kraton."
+}

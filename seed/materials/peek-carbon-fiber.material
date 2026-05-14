@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "name": "Polyetheretherketone Carbon Fiber (PEEK-CF)",
+  "category": "composite/peek/carbon-fiber",
+  "common_names": ["PEEK CF", "Victrex PEEK-CF", "PEEK-CF30"],
+  "color_hex": "#1c1c1c",
+  "mechanical": {
+    "E_GPa": 14,
+    "G_GPa": 5,
+    "nu": 0.34,
+    "yield_MPa": 165,
+    "ultimate_MPa": 200,
+    "elongation_pct": 3
+  },
+  "thermal": {
+    "alpha_per_K": 20e-6,
+    "k_W_mK": 0.45,
+    "cp_J_kgK": 1100,
+    "T_min_C": -60,
+    "T_max_C": 250
+  },
+  "physical": {
+    "rho_kg_m3": 1300
+  },
+  "callout": "PEEK-CF",
+  "notes": "Carbon fiber-reinforced PEEK. High strength-to-weight, excellent chemical resistance. Source: MatWeb / Victrex."
+}

@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "name": "Aluminum 7075-T7351",
+  "category": "metal/aluminum/wrought",
+  "common_names": ["7075-T7351", "7075", "aircraft aluminum"],
+  "color_hex": "#cccfd4",
+  "mechanical": {
+    "E_GPa": 71.7,
+    "G_GPa": 27,
+    "nu": 0.33,
+    "yield_MPa": 420,
+    "ultimate_MPa": 490,
+    "elongation_pct": 7
+  },
+  "thermal": {
+    "alpha_per_K": 23.4e-6,
+    "k_W_mK": 155,
+    "cp_J_kgK": 900,
+    "T_min_C": -196,
+    "T_max_C": 175
+  },
+  "physical": {
+    "rho_kg_m3": 2840
+  },
+  "callout": "Al 7075-T7351",
+  "notes": "T7351 overaged temper — better stress corrosion cracking resistance than T6. High-strength structural alloy. Source: MatWeb / AMS 2770."
+}

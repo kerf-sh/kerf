@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "name": "Capacitor 4.7µF 0603 X7R 16V",
+  "description": "Multi-layer ceramic chip capacitor, 4.7 µF, 16 V, X7R dielectric, ±10%, 0603 SMD package.",
+  "category": "Capacitors",
+  "manufacturer": "Murata",
+  "mpn": "GRM188R71C475KE15J",
+  "value": "4.7u",
+  "distributors": [
+    {"name": "digikey", "sku": "490-10493-1-ND", "url": "https://www.digikey.com/en/products/detail/murata-electronics/GRM188R71C475KE15J/617225", "price_usd": 0.04, "stock": 5000},
+    {"name": "mouser", "sku": "963-GRM188R71C475KE15J", "url": "https://www.mouser.com/ProductDetail/Murata-Electronics/GRM188R71C475KE15J", "price_usd": 0.036, "stock": 4000}
+  ],
+  "visibility": "public",
+  "metadata": {
+    "package": "0603",
+    "dielectric": "X7R",
+    "voltage_v": 16,
+    "tolerance": "10%"
+  }
+}

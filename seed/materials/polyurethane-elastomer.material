@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "name": "Polyurethane Elastomer",
+  "category": "polymer/elastomer/polyurethane",
+  "common_names": ["PU", "Polyurethane", "Thermoplastic Polyurethane"],
+  "color_hex": "#e8e0d0",
+  "mechanical": {
+    "E_GPa": 0.02,
+    "G_GPa": 0.007,
+    "nu": 0.48,
+    "yield_MPa": 10,
+    "ultimate_MPa": 30,
+    "elongation_pct": 500
+  },
+  "thermal": {
+    "alpha_per_K": 160e-6,
+    "k_W_mK": 0.25,
+    "cp_J_kgK": 1700,
+    "T_min_C": -40,
+    "T_max_C": 100
+  },
+  "physical": {
+    "rho_kg_m3": 1200
+  },
+  "callout": "PUR Elastomer",
+  "notes": "Thermoplastic polyurethane elastomer (TPU). High abrasion resistance and load-bearing capacity. Source: MatWeb / Lubrizol Estane."
+}

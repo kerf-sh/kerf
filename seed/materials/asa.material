@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "name": "ASA",
+  "category": "polymer/thermoplastic/asa",
+  "common_names": ["ASA", "Acrylonitrile Styrene Acrylate"],
+  "color_hex": "#f5f0e8",
+  "mechanical": {
+    "E_GPa": 2.3,
+    "G_GPa": 0.85,
+    "nu": 0.38,
+    "yield_MPa": 45,
+    "ultimate_MPa": 55,
+    "elongation_pct": 15
+  },
+  "thermal": {
+    "alpha_per_K": 80e-6,
+    "k_W_mK": 0.16,
+    "cp_J_kgK": 1300,
+    "T_min_C": -40,
+    "T_max_C": 90
+  },
+  "physical": {
+    "rho_kg_m3": 1070
+  },
+  "callout": "ASA",
+  "notes": "Acrylonitrile Styrene Acrylate — UV and weather-resistant alternative to ABS. Good impact strength. Source: MatWeb / BASF Luran S."
+}

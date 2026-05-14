@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "name": "Acetal Homopolymer (POM-H)",
+  "category": "polymer/thermoplastic/polyacetal",
+  "common_names": ["POM-H", "Acetal Homopolymer", "Delrin"],
+  "color_hex": "#f2f0ec",
+  "mechanical": {
+    "E_GPa": 2.8,
+    "G_GPa": 1.1,
+    "nu": 0.35,
+    "yield_MPa": 70,
+    "ultimate_MPa": 75,
+    "elongation_pct": 40
+  },
+  "thermal": {
+    "alpha_per_K": 100e-6,
+    "k_W_mK": 0.30,
+    "cp_J_kgK": 1400,
+    "T_min_C": -40,
+    "T_max_C": 100
+  },
+  "physical": {
+    "rho_kg_m3": 1410
+  },
+  "callout": "POM-H",
+  "notes": "Acetal homopolymer (POM-H). Higher crystallinity than copolymer — slightly higher strength and stiffness but less chemical resistance. Source: MatWeb / DuPont Delrin."
+}

@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "name": "Nylon 12",
+  "category": "polymer/thermoplastic/polyamide",
+  "common_names": ["Nylon 12", "PA12", "Polyamide 12"],
+  "color_hex": "#f2efe9",
+  "mechanical": {
+    "E_GPa": 1.7,
+    "G_GPa": 0.6,
+    "nu": 0.38,
+    "yield_MPa": 50,
+    "ultimate_MPa": 65,
+    "elongation_pct": 35
+  },
+  "thermal": {
+    "alpha_per_K": 100e-6,
+    "k_W_mK": 0.23,
+    "cp_J_kgK": 1500,
+    "T_min_C": -40,
+    "T_max_C": 100
+  },
+  "physical": {
+    "rho_kg_m3": 1010
+  },
+  "callout": "PA12",
+  "notes": "Polyamide 12 — lowest water absorption of PA family. Excellent chemical and UV resistance. Source: MatWeb / EMS-Grilamid L25."
+}

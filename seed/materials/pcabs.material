@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "name": "PCABS",
+  "category": "polymer/thermoplastic/pcabs",
+  "common_names": ["PCABS", "PC-ABS blend", "polycarbonate ABS blend"],
+  "color_hex": "#e8e4dc",
+  "mechanical": {
+    "E_GPa": 2.3,
+    "G_GPa": 0.85,
+    "nu": 0.38,
+    "yield_MPa": 55,
+    "ultimate_MPa": 65,
+    "elongation_pct": 15
+  },
+  "thermal": {
+    "alpha_per_K": 75e-6,
+    "k_W_mK": 0.16,
+    "cp_J_kgK": 1300,
+    "T_min_C": -40,
+    "T_max_C": 100
+  },
+  "physical": {
+    "rho_kg_m3": 1120
+  },
+  "callout": "PCABS",
+  "notes": "Blend of polycarbonate and ABS — combines PC's toughness and heat resistance with ABS processability. Source: MatWeb / SABIC Cycoloy."
+}

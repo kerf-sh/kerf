@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "name": "AISI 316L Stainless Steel",
+  "category": "metal/stainless/austenitic",
+  "common_names": ["316L", "AISI 316L", "marine stainless"],
+  "color_hex": "#bfc2c6",
+  "mechanical": {
+    "E_GPa": 193,
+    "G_GPa": 77,
+    "nu": 0.29,
+    "yield_MPa": 175,
+    "ultimate_MPa": 490,
+    "elongation_pct": 40
+  },
+  "thermal": {
+    "alpha_per_K": 16.0e-6,
+    "k_W_mK": 14.0,
+    "cp_J_kgK": 500,
+    "T_min_C": -196,
+    "T_max_C": 425
+  },
+  "physical": {
+    "rho_kg_m3": 8000
+  },
+  "callout": "316L SS",
+  "notes": "Molybdenum-bearing austenitic stainless. Superior chloride pitting resistance vs 304L. Source: MatWeb / ASTM A240."
+}

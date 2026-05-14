@@ -178,3 +178,106 @@ def test_no_shapely_fallback():
     result = simple_pour_fill(SQUARE_10, [], [], "GND", 0.25)
     assert result["outer"] == SQUARE_10
     assert result["holes"] == []
+
+
+# ── LLM tool tests ────────────────────────────────────────────────────────────
+
+import json
+import asyncio
+import sys
+import os
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+
+from tools.pour import (
+    add_copper_pour,
+    delete_copper_pour,
+    set_pour_net,
+    set_pour_clearance,
+)
+
+_POLYGON = [{"x": 0, "y": 0}, {"x": 50, "y": 0}, {"x": 50, "y": 40}, {"x": 0, "y": 40}]
+
+
+def _run(coro):
+    return asyncio.run(coro)
+
+
+def test_add_copper_pour_happy_path():
+    args = json.dumps({
+        "file_id": "board.circuit.tsx",
+        "pour": {
+            "polygon": _POLYGON,
+            "layer": "top_copper",
+            "net_id": "GND",
+            "clearance_mm": 0.25,
+        },
+    })
+    result = json.loads(_run(add_copper_pour(None, args.encode())))
+    assert result.get("added") is True
+    assert result["net_id"] == "GND"
+    assert result["layer"] == "top_copper"
+    assert result["vertex_count"] == 4
+
+
+def test_add_copper_pour_missing_file_id():
+    args = json.dumps({"pour": {"polygon": _POLYGON, "layer": "top_copper", "net_id": "GND"}})
+    result = json.loads(_run(add_copper_pour(None, args.encode())))
+    assert "error" in result
+
+
+def test_add_copper_pour_bad_polygon():
+    args = json.dumps({
+        "file_id": "board.circuit.tsx",
+        "pour": {"polygon": [{"x": 0, "y": 0}], "layer": "top_copper", "net_id": "GND"},
+    })
+    result = json.loads(_run(add_copper_pour(None, args.encode())))
+    assert "error" in result
+
+
+def test_delete_copper_pour_by_index():
+    args = json.dumps({"file_id": "board.circuit.tsx", "pour_index": 0})
+    result = json.loads(_run(delete_copper_pour(None, args.encode())))
+    assert result.get("deleted") is True
+    assert result["pour_index"] == 0
+
+
+def test_delete_copper_pour_by_net_layer():
+    args = json.dumps({"file_id": "board.circuit.tsx", "net_id": "GND", "layer": "top_copper"})
+    result = json.loads(_run(delete_copper_pour(None, args.encode())))
+    assert result.get("deleted") is True
+    assert result["net_id"] == "GND"
+
+
+def test_delete_copper_pour_missing_identifier():
+    args = json.dumps({"file_id": "board.circuit.tsx"})
+    result = json.loads(_run(delete_copper_pour(None, args.encode())))
+    assert "error" in result
+
+
+def test_set_pour_net_happy_path():
+    args = json.dumps({"file_id": "board.circuit.tsx", "pour_index": 0, "net_id": "VCC"})
+    result = json.loads(_run(set_pour_net(None, args.encode())))
+    assert result.get("updated") is True
+    assert result["net_id"] == "VCC"
+
+
+def test_set_pour_clearance_happy_path():
+    args = json.dumps({"file_id": "board.circuit.tsx", "pour_index": 0, "clearance_mm": 0.5})
+    result = json.loads(_run(set_pour_clearance(None, args.encode())))
+    assert result.get("updated") is True
+    assert result["clearance_mm"] == pytest.approx(0.5)
+    assert result["pour_index"] == 0
+    assert "recompute" in result.get("note", "")
+
+
+def test_set_pour_clearance_negative_rejected():
+    args = json.dumps({"file_id": "board.circuit.tsx", "pour_index": 0, "clearance_mm": -0.1})
+    result = json.loads(_run(set_pour_clearance(None, args.encode())))
+    assert "error" in result
+
+
+def test_set_pour_clearance_missing_clearance():
+    args = json.dumps({"file_id": "board.circuit.tsx", "pour_index": 0})
+    result = json.loads(_run(set_pour_clearance(None, args.encode())))
+    assert "error" in result

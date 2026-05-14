@@ -1,6 +1,203 @@
 // copperPour.js — Pure geometry helpers for copper pour rendering.
 // No React or browser imports — safe to use in vitest and workers.
 
+const VALID_LAYERS = ['top_copper', 'bottom_copper', 'inner_1', 'inner_2']
+
+/**
+ * Validate a copper pour object. Returns { ok: boolean, errors: string[] }.
+ *
+ * @param {object} pour
+ * @returns {{ ok: boolean, errors: string[] }}
+ */
+export function validatePour(pour) {
+  const errors = []
+  if (!pour || typeof pour !== 'object') {
+    return { ok: false, errors: ['pour must be an object'] }
+  }
+  if (pour.type !== 'copper_pour') {
+    errors.push('type must be "copper_pour"')
+  }
+  if (!Array.isArray(pour.polygon) || pour.polygon.length < 3) {
+    errors.push('polygon must be an array of at least 3 {x, y} points')
+  } else {
+    for (let i = 0; i < pour.polygon.length; i++) {
+      const pt = pour.polygon[i]
+      if (typeof pt.x !== 'number' || typeof pt.y !== 'number') {
+        errors.push(`polygon[${i}] must have numeric x and y`)
+      }
+    }
+  }
+  if (!pour.layer) {
+    errors.push('layer is required')
+  } else if (!VALID_LAYERS.includes(pour.layer)) {
+    errors.push(`layer must be one of: ${VALID_LAYERS.join(', ')}`)
+  }
+  if (!pour.net_id || typeof pour.net_id !== 'string') {
+    errors.push('net_id must be a non-empty string')
+  }
+  if (pour.clearance_mm !== undefined && typeof pour.clearance_mm !== 'number') {
+    errors.push('clearance_mm must be a number')
+  }
+  if (pour.min_thickness_mm !== undefined && typeof pour.min_thickness_mm !== 'number') {
+    errors.push('min_thickness_mm must be a number')
+  }
+  if (pour.priority !== undefined && typeof pour.priority !== 'number') {
+    errors.push('priority must be a number')
+  }
+  if (pour.thermal_relief !== undefined) {
+    const tr = pour.thermal_relief
+    if (typeof tr !== 'object' || tr === null) {
+      errors.push('thermal_relief must be an object')
+    } else {
+      if (tr.gap !== undefined && typeof tr.gap !== 'number') errors.push('thermal_relief.gap must be a number')
+      if (tr.spoke_width !== undefined && typeof tr.spoke_width !== 'number') errors.push('thermal_relief.spoke_width must be a number')
+      if (tr.spoke_count !== undefined && (!Number.isInteger(tr.spoke_count) || tr.spoke_count < 2)) errors.push('thermal_relief.spoke_count must be an integer >= 2')
+    }
+  }
+  return { ok: errors.length === 0, errors }
+}
+
+/**
+ * Generate thermal relief spokes connecting a pad to the surrounding pour.
+ * Returns an array of line segments { x1, y1, x2, y2 }.
+ *
+ * @param {object} pour           - pour object (for context; unused directly here)
+ * @param {{ x: number, y: number }} padCenter
+ * @param {number} padRadius      - pad radius in mm
+ * @param {number} spokeCount     - number of spokes (typically 4)
+ * @param {number} spokeWidth     - width of each spoke in mm
+ * @param {number} gap            - gap between pad edge and start of spoke in mm
+ * @returns {Array<{ x1: number, y1: number, x2: number, y2: number }>}
+ */
+export function thermalReliefSpokes(pour, padCenter, padRadius, spokeCount, spokeWidth, gap) {
+  const cx = padCenter.x
+  const cy = padCenter.y
+  const spokes = []
+  const count = Math.max(2, Math.round(spokeCount))
+  for (let i = 0; i < count; i++) {
+    const angle = (2 * Math.PI * i) / count
+    const x1 = cx + (padRadius + gap) * Math.cos(angle)
+    const y1 = cy + (padRadius + gap) * Math.sin(angle)
+    const x2 = cx + (padRadius + gap + spokeWidth * 4) * Math.cos(angle)
+    const y2 = cy + (padRadius + gap + spokeWidth * 4) * Math.sin(angle)
+    spokes.push({ x1, y1, x2, y2 })
+  }
+  return spokes
+}
+
+/**
+ * Merge pours that share the same net_id and layer, combining overlapping polygons.
+ * Non-overlapping pours on the same net/layer are left as separate entries.
+ * Returns a new array (does not mutate input).
+ *
+ * @param {Array<object>} pours
+ * @returns {Array<object>}
+ */
+export function mergePours(pours) {
+  if (!Array.isArray(pours) || pours.length === 0) return []
+
+  // Group by net_id + layer
+  const groups = new Map()
+  for (const pour of pours) {
+    const key = `${pour.net_id}::${pour.layer}`
+    if (!groups.has(key)) groups.set(key, [])
+    groups.get(key).push(pour)
+  }
+
+  const result = []
+  for (const [, group] of groups) {
+    if (group.length === 1) {
+      result.push(group[0])
+      continue
+    }
+    // Try to merge overlapping polygons within the group
+    // Use a simple union: repeatedly merge polygons that share any vertex proximity
+    const merged = _mergePolygonGroup(group)
+    result.push(...merged)
+  }
+  return result
+}
+
+/**
+ * Attempt to union overlapping polygons in a group of same-net/layer pours.
+ * Uses a bounding-box overlap test to identify candidates, then builds a
+ * convex hull approximation for merged pairs. Non-overlapping pours are kept separate.
+ *
+ * @param {Array<object>} group
+ * @returns {Array<object>}
+ */
+function _mergePolygonGroup(group) {
+  // Work with mutable copies; track which have been consumed
+  const remaining = group.map((p, i) => ({ ...p, _idx: i }))
+  const out = []
+
+  while (remaining.length > 0) {
+    let base = remaining.shift()
+    let merged = true
+    while (merged) {
+      merged = false
+      for (let i = 0; i < remaining.length; i++) {
+        if (_polygonsOverlap(base.polygon, remaining[i].polygon)) {
+          // Merge: convex hull of combined vertices as approximation
+          const combined = [...base.polygon, ...remaining[i].polygon]
+          base = { ...base, polygon: _convexHull(combined) }
+          remaining.splice(i, 1)
+          merged = true
+          break
+        }
+      }
+    }
+    const { _idx, ...clean } = base
+    out.push(clean)
+  }
+  return out
+}
+
+/** Axis-aligned bounding-box overlap test for two polygons. */
+function _polygonsOverlap(a, b) {
+  const aMinX = Math.min(...a.map(p => p.x))
+  const aMaxX = Math.max(...a.map(p => p.x))
+  const aMinY = Math.min(...a.map(p => p.y))
+  const aMaxY = Math.max(...a.map(p => p.y))
+  const bMinX = Math.min(...b.map(p => p.x))
+  const bMaxX = Math.max(...b.map(p => p.x))
+  const bMinY = Math.min(...b.map(p => p.y))
+  const bMaxY = Math.max(...b.map(p => p.y))
+  return aMinX <= bMaxX && aMaxX >= bMinX && aMinY <= bMaxY && aMaxY >= bMinY
+}
+
+/**
+ * Compute 2D convex hull (Andrew's monotone chain).
+ * Returns CCW-wound polygon vertices.
+ *
+ * @param {Array<{x: number, y: number}>} pts
+ * @returns {Array<{x: number, y: number}>}
+ */
+function _convexHull(pts) {
+  const sorted = [...pts].sort((a, b) => a.x !== b.x ? a.x - b.x : a.y - b.y)
+  if (sorted.length <= 2) return sorted
+
+  function cross(O, A, B) {
+    return (A.x - O.x) * (B.y - O.y) - (A.y - O.y) * (B.x - O.x)
+  }
+
+  const lower = []
+  for (const p of sorted) {
+    while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) lower.pop()
+    lower.push(p)
+  }
+  const upper = []
+  for (let i = sorted.length - 1; i >= 0; i--) {
+    const p = sorted[i]
+    while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) upper.pop()
+    upper.push(p)
+  }
+  // Remove last point of each half because it's repeated
+  lower.pop()
+  upper.pop()
+  return [...lower, ...upper]
+}
+
 /**
  * Ray-casting point-in-polygon test.
  * Returns true if point p is strictly inside the polygon.

@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "name": "PFA",
+  "category": "polymer/thermoplastic/fluoropolymer",
+  "common_names": ["PFA", "Perfluoroalkoxy"],
+  "color_hex": "#f0ece8",
+  "mechanical": {
+    "E_GPa": 0.7,
+    "G_GPa": 0.25,
+    "nu": 0.46,
+    "yield_MPa": 15,
+    "ultimate_MPa": 30,
+    "elongation_pct": 300
+  },
+  "thermal": {
+    "alpha_per_K": 100e-6,
+    "k_W_mK": 0.25,
+    "cp_J_kgK": 1000,
+    "T_min_C": -200,
+    "T_max_C": 260
+  },
+  "physical": {
+    "rho_kg_m3": 2150
+  },
+  "callout": "PFA",
+  "notes": "Perfluoroalkoxy (PFA). Melt-processable fluoropolymer similar to PTFE but better translucency and mechanical properties. Source: MatWeb / DuPont PFA."
+}

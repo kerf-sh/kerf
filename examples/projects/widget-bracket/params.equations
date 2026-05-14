@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "params": [
+    { "name": "wall_thickness", "expr": "3",                "unit": "mm", "comment": "Bracket wall thickness" },
+    { "name": "hole_diameter",  "expr": "4",                "unit": "mm", "comment": "Mounting hole diameter" },
+    { "name": "mount_spacing",  "expr": "20",               "unit": "mm", "comment": "Horizontal spacing between holes" },
+    { "name": "leg_a",          "expr": "50",               "unit": "mm", "comment": "Base leg length" },
+    { "name": "leg_b",           "expr": "40",               "unit": "mm", "comment": "Vertical leg length" }
+  ]
+}

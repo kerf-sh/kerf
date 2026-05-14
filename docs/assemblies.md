@@ -1,135 +1,222 @@
 # Assemblies
 
-Compose Parts and Objects into a single placed scene.
+Compose multiple Parts into a single placed scene, define mating relationships between components, and manage bill-of-materials rollup across configurations.
 
-## Vocabulary refresher
+## Core concepts
 
-If these aren't immediate, read [concepts.md](./concepts.md) first.
+Read [concepts.md](./concepts.md) for the foundational vocabulary:
 
-- **Part** — a `.jscad` file. Default-exports a function that returns an array.
-- **Object** — one entry of that array. `{ id, geom }`. Click-handles in the viewport.
-- **Component** — an Assembly's instance of one Object placed at a 4×4 transform.
+- **Part** — a `.jscad` file that default-exports a function returning an array of Objects
+- **Object** — one `{ id, geom }` entry from a Part, with click-handles in the viewport
+- **Component** — an Assembly's instance of one Object, placed at a 4×4 transform
+- **Mate** — a constraint between two Components (coincident, distance, angle, etc.)
 
-## Create an assembly
+## The .assembly JSON format
 
-In the file tree: **New file → Assembly**. An empty `.assembly` opens in the
-Assembly Editor.
-
-<!-- screenshot: empty assembly with insert button highlighted -->
-
-The Editor shows:
-
-- Left: the Components list — one row per placed Component, with its source
-  Part / Object and current transform.
-- Center: a 3D viewport rendering the composed scene.
-- Right: a transform panel for the selected Component (position, rotation,
-  scale, parent).
-
-## Insert dialog
-
-Click **Add component**. A picker appears listing every other file in the
-project. Pick a Part:
-
-- **Single-Object Part** → added directly with identity transform.
-- **Multi-Object Part** → a modal opens listing every Object with checkboxes
-  (all checked by default), plus a **Place as rigid group** toggle.
-
-Confirming the modal creates one Component per checked Object. With the rigid
-group toggle on, every Component starts at the same transform — useful when
-you want to move a multi-Object Part as a unit. With it off, each Component
-gets the identity and you can scatter them individually.
-
-This mirrors OnShape's "Insert" UX, by design.
-
-## Transforms
-
-A Component's transform is a row-major 4×4 matrix (Three.js convention). The
-right-hand panel decomposes it into:
-
-- Position `(x, y, z)` in mm
-- Rotation `(rx, ry, rz)` in degrees, XYZ Euler order
-- Uniform scale (or per-axis if you need it)
-
-Editing any field triggers a re-render. Drag handles in the viewport for
-direct manipulation are on the roadmap.
-
-## Rigid groups
-
-A "rigid group" in Kerf is a soft convention: multiple Components sharing the
-same transform expression behave as a unit when you edit that one transform.
-There's no formal grouping primitive yet — moving the group means selecting
-all members and applying the same delta. The Insert dialog's rigid-group
-toggle just sets up that initial shared transform for you.
-
-## Editing the source Part from an Assembly
-
-Selecting a Component highlights its source Part in the file tree. Open the
-`.jscad` file, edit it, and the Assembly viewport re-renders the next time the
-JSCAD evaluation completes (worker, debounced).
-
-## ObjectsPanel: duplicate / delete an Object
-
-Inside a `.jscad` file, the Objects panel lists every Object. Each row has:
-
-- **Duplicate** — clones the Object entry inline in the source code, giving
-  the clone an `<id>-copy` id.
-- **Delete** — removes the Object entry entirely.
-
-Both go through the standard PATCH-with-revision path so they undo cleanly
-(Cmd+Z) and show up in History. The bracket-matching helper bails with a
-toast if your file isn't a clean `return [{id, geom}, …]` — wrap any
-generation logic in a function that returns the array literal at the top
-level.
-
-The same operations are exposed to chat as `duplicate_object` and
-`delete_object` tools.
-
-## Assemblies referencing assemblies
-
-Currently a Component must reference an `.jscad` Object. Nested assemblies
-(an Assembly that places another Assembly as a sub-tree) aren't supported
-yet — flatten the inner Assembly into Components in the outer one.
-
-## STEP-backed Components
-
-A `.step` file in the project shows up in the Insert picker like any other
-Part. The renderer triangulates the STEP server-side (planned — today it's
-client-side via `occt-import-js`) and treats each top-level body as an Object
-you can place.
-
-## Wire format
-
-An Assembly's `content` is JSON:
-
-```ts
-type Assembly = {
-  components: Array<{
-    id: string                     // unique within this assembly
-    file_id: string                // the source Part file
-    object_id: string              // an Object id from that Part
-    transform: number[16]          // row-major 4x4
-    params?: Record<string, any>   // optional Part-function params
-    visible?: boolean              // default true
-    color?: [number, number, number]   // optional 0–1 rgb override
-  }>
+```json
+{
+  "schema": "kerf.assembly.v1",
+  "config_id": "default",
+  "components": [
+    {
+      "id": "bracket_1",
+      "file_id": "part-uuid-bracket",
+      "object_id": "body",
+      "transform": [1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,10,1],
+      "params": {},
+      "visible": true,
+      "color": [0.8, 0.2, 0.2]
+    }
+  ],
+  "mates": [
+    {
+      "id": "mate_1",
+      "type": "coincident",
+      "entityA": { "component": "bracket_1", "face": 0 },
+      "entityB": { "component": "base_1", "face": 2 }
+    }
+  ]
 }
 ```
 
-Legacy assemblies that used `object_id: '*'` (place every Object) load via a
-back-compat shim and are migrated to one Component per Object on next save.
+### Field reference
+
+| Field         | Type       | Description                                       |
+|---------------|------------|---------------------------------------------------|
+| `config_id`   | string     | Identifies the configuration variant in use        |
+| `components`  | array      | All placed Components in this Assembly            |
+| `mates`       | array      | All mate constraints between Components           |
+
+## Components
+
+Each component entry specifies:
+
+```json
+{
+  "id": "bolt_1",
+  "file_id": "part-uuid-hex-bolt",
+  "object_id": "hex-head",
+  "transform": [1,0,0,0, 0,1,0,0, 0,0,1,0, 10,5,20,1],
+  "params": { "thread_pitch": 1.5 },
+  "visible": true,
+  "color": [0.5, 0.5, 0.5]
+}
+```
+
+- `id` — unique string within this Assembly
+- `file_id` — UUID of the source Part `.jscad` file
+- `object_id` — which Object from that Part to instantiate
+- `transform` — row-major 4×4 matrix (Three.js convention): position in elements [12,13,14], rotation/scale in the 3×3 upper-left
+- `params` — optional runtime parameters passed to the Part's export function
+- `visible` — render toggle (default `true`)
+- `color` — optional RGB override in 0–1 range
+
+## Transforms
+
+The 4×4 row-major matrix follows Three.js conventions:
+
+```
+[ r00, r01, r02, tx,
+  r10, r11, r12, ty,
+  r20, r21, r22, tz,
+  0,   0,   0,   1  ]
+```
+
+The right panel decomposes this into:
+
+- **Position** `(x, y, z)` — translation in mm
+- **Rotation** `(rx, ry, rz)` — XYZ Euler angles in degrees
+- **Scale** — uniform scalar (per-axis scale lives in the matrix's 3×3)
+
+Editing any field in the panel triggers an immediate re-render.
+
+## Mates
+
+The `mates` array defines geometric relationships between Components. Each mate type constrains degrees of freedom between a pair of component faces or features:
+
+### Mate types
+
+| Mate          | DOFs constrained              | Parameters                    |
+|---------------|-------------------------------|-------------------------------|
+| `coincident`  | 3 (translation) + 2 (rotation) | —                             |
+| `concentric`  | 3 (translation)               | —                             |
+| `parallel`    | 2 (rotation)                  | —                             |
+| `perpendicular`| 1 (rotation)                 | —                             |
+| `distance`    | 3 (translation)               | `value` (mm)                  |
+| `angle`       | 2 (rotation)                  | `value` (degrees)             |
+| `tangent`     | 2 (translation) + 1 (rotation)| `inside` (bool)               |
+
+```json
+{
+  "id": "slot_mate",
+  "type": "distance",
+  "entityA": { "component": "pin_1", "face": 1 },
+  "entityB": { "component": "slot_1", "face": 0 },
+  "value": 2
+}
+```
+
+### Mate entity reference
+
+Each `entityA` / `entityB` in a mate references:
+
+```json
+{ "component": "bolt_1", "face": 0 }
+```
+
+Face indices refer to the ordered face list of the component's underlying geometry.
+
+## Solver behavior
+
+The Assembly solver resolves all transforms such that every mate constraint is satisfied simultaneously. The solver:
+
+1. Builds a graph of Components and Mates
+2. Identifies rigid groups (subgraphs fully constrained by mates)
+3. Solves for remaining DOFs using the positional and rotational constraints
+4. Reports conflicts — two mates that cannot be satisfied together
+
+If the solver cannot converge, it reports the conflicting mates and leaves transforms unchanged.
+
+## Rigid groups
+
+When a set of Components is fully constrained by mates, they move together as a rigid group. Dragging one moves all members that share its mate chain.
+
+## Cross-project parts with `assembly_add_external_component`
+
+Reference a Part from another project in the current Assembly:
+
+```json
+{
+  "tool": "assembly_add_external_component",
+  "source_project_id": "project-uuid-other",
+  "source_file_id": "part-uuid-external",
+  "object_id": "body",
+  "transform": [1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,50,1],
+  "placed_id": "imported_bracket"
+}
+```
+
+External components are read-only in the current project. If the source project updates, the Assembly picks up the new geometry on next reload.
+
+## BOM rollup
+
+The Bill of Materials aggregates all Components across configurations:
+
+```json
+{
+  "config_id": "default",
+  "bom": [
+    {
+      "part_id": "part-uuid-hex-bolt",
+      "part_name": "hex-bolt.jscad",
+      "objects": ["hex-head", "thread"],
+      "quantity": 4,
+      "config_variants": { "M6x20": 2, "M6x35": 2 }
+    }
+  ]
+}
+```
+
+- `quantity` — total count across all configurations
+- `config_variants` — per `config_id` breakdown when multiple configurations exist
+
+## Configuration pinning with `config_id`
+
+The `config_id` field pins the Assembly to a specific named configuration. When a Part is instantiated with `params`, those params define the configuration variant. Swapping `config_id` loads a different variant set:
+
+```json
+{
+  "config_id": "rev-b",
+  "components": [
+    {
+      "id": "base_1",
+      "file_id": "part-uuid-base",
+      "object_id": "body",
+      "params": { "variant": "rev-b", "length": 150 }
+    }
+  ]
+}
+```
+
+Parts that do not define variants for a given `config_id` use their default parameters.
 
 ## LLM tools
 
-Chat can mutate assemblies via these tools (all editor+):
+| Tool                         | Purpose                                      |
+|------------------------------|----------------------------------------------|
+| `assembly_add`               | Place a new Component                        |
+| `assembly_add_external_component` | Reference a Part from another project |
+| `assembly_set_transform`     | Update a Component's position/rotation/scale |
+| `assembly_set_object`        | Change which Object a Component references   |
+| `assembly_remove_component`  | Delete a Component                           |
+| `assembly_add_mate`          | Add a mate constraint between two Components |
+| `assembly_remove_mate`       | Delete a mate                                |
+| `assembly_set_config`        | Change the active `config_id`                |
+| `duplicate_object`           | Clone an Object inside its source Part       |
+| `delete_object`              | Remove an Object from its source Part        |
 
-- `assembly_add` — place a new Component (`source_path`, `object_id`,
-  position/rotation/scale).
-- `assembly_set_transform` — update an existing Component's pose.
-- `assembly_set_object` — change which Object a Component references.
-- `assembly_remove_component` — delete a Component.
-- `duplicate_object` / `delete_object` — mutate the source Part itself.
+## Related
 
-A `*` wildcard is no longer accepted for `object_id` on writes — the LLM
-issues one `assembly_add` per Object, matching the human Insert flow.
-
-Next: [drawings.md](./drawings.md)
+- [Sketching](./sketching.md) — 2D profiles that become 3D Parts
+- [Parts & Objects](./concepts.md) — the JSCAD file model
+- [Drawings](./drawings.md) — 2D drawing output from assemblies

@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "name": "Black Walnut",
+  "category": "natural/wood/hardwood",
+  "common_names": ["Walnut", "Black Walnut", "Juglans nigra"],
+  "color_hex": "#8b6b4a",
+  "mechanical": {
+    "E_GPa": 11.5,
+    "G_GPa": 1.2,
+    "nu": 0.45,
+    "yield_MPa": 60,
+    "ultimate_MPa": 100,
+    "elongation_pct": 15
+  },
+  "thermal": {
+    "alpha_per_K": 5e-6,
+    "k_W_mK": 0.15,
+    "cp_J_kgK": 1800,
+    "T_min_C": -40,
+    "T_max_C": 80
+  },
+  "physical": {
+    "rho_kg_m3": 660
+  },
+  "callout": "Walnut",
+  "notes": "Black Walnut — prized furniture and woodworking hardwood. Moderate hardness, excellent stability. Source: USDA Forest Products Lab / MatWeb."
+}

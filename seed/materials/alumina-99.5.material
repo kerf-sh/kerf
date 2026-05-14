@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "name": "Alumina 99.5% (Al2O3)",
+  "category": "ceramic/oxide/alumina",
+  "common_names": ["Alumina 99.5", "Al2O3 99.5", "High-purity alumina"],
+  "color_hex": "#f0ede8",
+  "mechanical": {
+    "E_GPa": 370,
+    "G_GPa": 150,
+    "nu": 0.22,
+    "yield_MPa": null,
+    "ultimate_MPa": 300,
+    "elongation_pct": 0.5
+  },
+  "thermal": {
+    "alpha_per_K": 7.2e-6,
+    "k_W_mK": 35,
+    "cp_J_kgK": 880,
+    "T_min_C": 20,
+    "T_max_C": 1000
+  },
+  "physical": {
+    "rho_kg_m3": 3900
+  },
+  "callout": "Al2O3 99.5%",
+  "notes": "High-purity alumina ceramic. Excellent electrical insulation, thermal conductivity, and wear resistance. Source: MatWeb / McDanel Advanced Ceramic."
+}

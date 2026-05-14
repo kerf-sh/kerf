@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "name": "TPU 95A",
+  "category": "polymer/thermoplastic/elastomer",
+  "common_names": ["TPU 95A", "Thermoplastic Polyurethane 95A"],
+  "color_hex": "#f8f6f0",
+  "mechanical": {
+    "E_GPa": 0.21,
+    "G_GPa": 0.07,
+    "nu": 0.48,
+    "yield_MPa": 8,
+    "ultimate_MPa": 25,
+    "elongation_pct": 450
+  },
+  "thermal": {
+    "alpha_per_K": 150e-6,
+    "k_W_mK": 0.20,
+    "cp_J_kgK": 1700,
+    "T_min_C": -40,
+    "T_max_C": 100
+  },
+  "physical": {
+    "rho_kg_m3": 1150
+  },
+  "callout": "TPU 95A",
+  "notes": "Thermoplastic polyurethane, Shore 95A. Combines elasticity of橡胶 with thermoplastic processability. Source: MatWeb / BASF Elastollan."
+}

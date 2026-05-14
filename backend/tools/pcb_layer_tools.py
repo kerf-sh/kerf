@@ -23,14 +23,22 @@ PCB_ELEMENT_LAYER_RE = re.compile(
     re.DOTALL,
 )
 
-INNER_LAYER_NAMES = ['inner_1', 'inner_2', 'inner_3', 'inner_4', 'inner_5', 'inner_6']
+VALID_COPPER_COUNTS = {2, 4, 6, 8, 10, 12, 16, 20, 24, 30}
 
-COPPER_LAYERS_2 = ['top_copper', 'bottom_copper']
-COPPER_LAYERS_4 = ['top_copper', 'inner_1', 'inner_2', 'bottom_copper']
-COPPER_LAYERS_6 = ['top_copper', 'inner_1', 'inner_2', 'inner_3', 'inner_4', 'bottom_copper']
-COPPER_LAYERS_8 = ['top_copper', 'inner_1', 'inner_2', 'inner_3', 'inner_4', 'inner_5', 'inner_6', 'bottom_copper']
 
-LAYER_COUNTS = {2: COPPER_LAYERS_2, 4: COPPER_LAYERS_4, 6: COPPER_LAYERS_6, 8: COPPER_LAYERS_8}
+def _build_copper_layer_names(n):
+    """Return ordered copper layer name list for n-layer board."""
+    inner_count = max(0, n - 2)
+    return ['top_copper'] + [f'inner_{i}' for i in range(1, inner_count + 1)] + ['bottom_copper']
+
+
+LAYER_COUNTS = {n: _build_copper_layer_names(n) for n in VALID_COPPER_COUNTS}
+
+# Legacy aliases
+COPPER_LAYERS_2 = LAYER_COUNTS[2]
+COPPER_LAYERS_4 = LAYER_COUNTS[4]
+COPPER_LAYERS_6 = LAYER_COUNTS[6]
+COPPER_LAYERS_8 = LAYER_COUNTS[8]
 
 DEFAULT_LS_ENTRY = {
     'name': '',
@@ -435,12 +443,17 @@ async def run_assign_to_layer(ctx: ProjectCtx, args: bytes) -> str:
 
 set_board_layer_count_spec = ToolSpec(
     name="set_board_layer_count",
-    description="Set the total number of copper layers (2/4/6/8) on the board. Inner copper layers (inner_N) are auto-created between top_copper and bottom_copper. Updates board.layer_stack accordingly.",
+    description=(
+        "Set the total number of copper layers on the board. "
+        "Valid values: 2, 4, 6, 8, 10, 12, 16, 20, 24, 30. "
+        "Inner copper layers (inner_N) are auto-created between top_copper and bottom_copper, "
+        "preserving any existing color overrides. Updates board.layer_stack accordingly."
+    ),
     input_schema={
         "type": "object",
         "properties": {
             "file_content": {"type": "string"},
-            "layer_count": {"type": "integer", "enum": [2, 4, 6, 8]},
+            "layer_count": {"type": "integer", "enum": sorted(VALID_COPPER_COUNTS)},
         },
         "required": ["file_content", "layer_count"],
     },
@@ -457,8 +470,8 @@ async def run_set_board_layer_count(ctx: ProjectCtx, args: bytes) -> str:
     file_content = a.get("file_content", "")
     layer_count = int(a.get("layer_count", 2))
 
-    if layer_count not in (2, 4, 6, 8):
-        return err_payload("layer_count must be 2, 4, 6, or 8", "BAD_ARGS")
+    if layer_count not in VALID_COPPER_COUNTS:
+        return err_payload(f"layer_count must be one of {sorted(VALID_COPPER_COUNTS)}", "BAD_ARGS")
     if not file_content:
         return err_payload("file_content is required", "BAD_ARGS")
 
@@ -496,3 +509,67 @@ async def run_set_board_layer_count(ctx: ProjectCtx, args: bytes) -> str:
 
     new_content = _inject_layer_stack(file_content, merged)
     return ok_payload({"success": True, "updated_content": new_content, "message": f"layer_count set to {layer_count}; copper layers updated"})
+
+
+# ─── PCB-prefixed tool aliases ────────────────────────────────────────────────
+# These are the canonical names exposed to the LLM for PCB layer operations.
+# They delegate to the same implementation as the un-prefixed versions above.
+
+set_pcb_layer_visibility_spec = ToolSpec(
+    name="set_pcb_layer_visibility",
+    description="Toggle the visible flag for a named PCB layer in board.layer_stack.",
+    input_schema={
+        "type": "object",
+        "properties": {
+            "file_content": {"type": "string"},
+            "name": {"type": "string"},
+            "visible": {"type": "boolean"},
+        },
+        "required": ["file_content", "name", "visible"],
+    },
+)
+
+
+@register(set_pcb_layer_visibility_spec, write=True)
+async def run_set_pcb_layer_visibility(ctx: ProjectCtx, args: bytes) -> str:
+    return await run_set_layer_visibility(ctx, args)
+
+
+set_pcb_layer_color_spec = ToolSpec(
+    name="set_pcb_layer_color",
+    description="Set the color (hex string, e.g. '#ef4444') for a named PCB layer in board.layer_stack.",
+    input_schema={
+        "type": "object",
+        "properties": {
+            "file_content": {"type": "string"},
+            "name": {"type": "string"},
+            "color": {"type": "string"},
+        },
+        "required": ["file_content", "name", "color"],
+    },
+)
+
+
+@register(set_pcb_layer_color_spec, write=True)
+async def run_set_pcb_layer_color(ctx: ProjectCtx, args: bytes) -> str:
+    return await run_set_layer_color(ctx, args)
+
+
+reorder_pcb_layers_spec = ToolSpec(
+    name="reorder_pcb_layers",
+    description="Move a PCB layer by name to a new 0-based position in board.layer_stack.",
+    input_schema={
+        "type": "object",
+        "properties": {
+            "file_content": {"type": "string"},
+            "name": {"type": "string"},
+            "new_index": {"type": "integer"},
+        },
+        "required": ["file_content", "name", "new_index"],
+    },
+)
+
+
+@register(reorder_pcb_layers_spec, write=True)
+async def run_reorder_pcb_layers(ctx: ProjectCtx, args: bytes) -> str:
+    return await run_reorder_layers(ctx, args)

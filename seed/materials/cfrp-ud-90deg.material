@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "name": "CFRP Unidirectional 90deg",
+  "category": "composite/cfrp/unidirectional",
+  "common_names": ["CFRP-UD-90", "Carbon Fiber UD 90deg"],
+  "color_hex": "#1a1a1a",
+  "mechanical": {
+    "E_GPa": 10,
+    "G_GPa": 5,
+    "nu": 0.02,
+    "yield_MPa": 40,
+    "ultimate_MPa": 50,
+    "elongation_pct": 0.5
+  },
+  "thermal": {
+    "alpha_per_K": 0.5e-6,
+    "k_W_mK": 0.8,
+    "cp_J_kgK": 830,
+    "T_min_C": -50,
+    "T_max_C": 150
+  },
+  "physical": {
+    "rho_kg_m3": 1600
+  },
+  "callout": "CFRP UD 90°",
+  "notes": "Carbon fiber reinforced polymer, unidirectional lamina at 90° to load axis (transverse direction). Transverse modulus shown. Source: MatWeb / Torayca prepreg."
+}

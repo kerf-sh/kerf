@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "name": "LED Blue 0805 SMD",
+  "description": "Standard blue LED, 470 nm wavelength, 20 mA, 3.2 V typical forward voltage, 0805 SMD package.",
+  "category": "LEDs",
+  "manufacturer": "Kingbright",
+  "mpn": "APT3216SECK",
+  "value": "blue",
+  "distributors": [
+    {"name": "digikey", "sku": "754-1508-1-ND", "url": "https://www.digikey.com/en/products/detail/kingbright/APT3216SECK/2208395", "price_usd": 0.09, "stock": 5000},
+    {"name": "mouser", "sku": "604-APT3216SECK", "url": "https://www.mouser.com/ProductDetail/Kingbright/APT3216SECK", "price_usd": 0.081, "stock": 4000}
+  ],
+  "visibility": "public",
+  "metadata": {
+    "package": "0805",
+    "color": "blue",
+    "wavelength_nm": 470
+  }
+}

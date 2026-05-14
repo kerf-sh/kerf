@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "name": "Aluminum 6005A-T5",
+  "category": "metal/aluminum/wrought",
+  "common_names": ["6005A", "6005A-T5"],
+  "color_hex": "#d0d3d7",
+  "mechanical": {
+    "E_GPa": 68.9,
+    "G_GPa": 26,
+    "nu": 0.33,
+    "yield_MPa": 215,
+    "ultimate_MPa": 260,
+    "elongation_pct": 10
+  },
+  "thermal": {
+    "alpha_per_K": 23.4e-6,
+    "k_W_mK": 172,
+    "cp_J_kgK": 897,
+    "T_min_C": -196,
+    "T_max_C": 175
+  },
+  "physical": {
+    "rho_kg_m3": 2700
+  },
+  "callout": "Al 6005A-T5",
+  "notes": "Medium-strength aluminum alloy. Excellent extrusion performance. Often used for structural hollow shapes. Source: MatWeb / EN 573-3."
+}

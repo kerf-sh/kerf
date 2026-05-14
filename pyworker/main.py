@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 
-from pyworker.routes import fem, spice, topo, autoroute, tess, cam, ifc, import_kicad, import_freecad, rf, mates
+from pyworker.routes import fem, spice, topo, autoroute, tess, cam, ifc, import_kicad, import_freecad, rf, mates, pour
 
 app = FastAPI()
 
@@ -15,6 +15,7 @@ app.include_router(import_freecad.router, prefix="", tags=["import"])
 app.include_router(rf.router, prefix="", tags=["rf"])
 app.include_router(autoroute.router, prefix="", tags=["autoroute"])
 app.include_router(mates.router, prefix="", tags=["mates"])
+app.include_router(pour.router, prefix="", tags=["pour"])
 
 @app.get("/healthz")
 async def healthz():

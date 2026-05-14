@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "name": "IC LM358 SOIC-8",
+  "description": "Dual operational amplifier, wide supply range 3V-32V, unity-gain stable, SOIC-8 SMD package. General-purpose signal conditioning and filtering.",
+  "category": "ICs",
+  "manufacturer": "Texas Instruments",
+  "mpn": "LM358DR",
+  "value": "LM358",
+  "distributors": [
+    {"name": "digikey", "sku": "296-1391-1-ND", "url": "https://www.digikey.com/en/products/detail/texas-instruments/LM358DR/671893", "price_usd": 0.35, "stock": 4000},
+    {"name": "mouser", "sku": "595-LM358DR", "url": "https://www.mouser.com/ProductDetail/Texas-Instruments/LM358DR", "price_usd": 0.32, "stock": 3500}
+  ],
+  "visibility": "public",
+  "metadata": {
+    "package": "SOIC-8",
+    "type": "op-amp",
+    "channels": 2,
+    "supply_v_min": 3,
+    "supply_v_max": 32
+  }
+}

@@ -1,7 +1,7 @@
 """
 LLM tools for copper pour / ground plane management.
 
-Tools: add_copper_pour, delete_copper_pour, set_pour_net.
+Tools: add_copper_pour, delete_copper_pour, set_pour_net, set_pour_clearance.
 
 These tools are scaffolded — they validate input and return structured
 payloads. The actual pour fill is computed by pyworker POST /compute-pour-fill
@@ -222,4 +222,58 @@ async def set_pour_net(ctx: Any, args: bytes) -> str:
         "pour_index": a.get("pour_index"),
         "net_id": a.get("net_id"),
         "note": "Net updated. Trigger POST /compute-pour-fill to recompute fill.",
+    })
+
+
+# ── set_pour_clearance ────────────────────────────────────────────────────────
+
+set_pour_clearance_spec = ToolSpec(
+    name="set_pour_clearance",
+    description=(
+        "Update the clearance_mm of an existing copper pour. "
+        "Clearance controls the copper-free gap around traces and pads not on "
+        "the pour net. After updating, trigger POST /compute-pour-fill to recompute "
+        "fill geometry with the new clearance rules."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "file_id": {"type": "string"},
+            "pour_index": {
+                "type": "integer",
+                "description": "Zero-based index of the pour in copper_pours.",
+            },
+            "clearance_mm": {
+                "type": "number",
+                "description": "New clearance in mm. Typical range: 0.1 – 1.0. Default 0.25.",
+                "minimum": 0.0,
+            },
+        },
+        "required": ["file_id", "pour_index", "clearance_mm"],
+    },
+)
+
+
+@register(set_pour_clearance_spec, write=True)
+async def set_pour_clearance(ctx: Any, args: bytes) -> str:
+    try:
+        a = json.loads(args)
+    except Exception as e:
+        return err_payload(f"invalid args: {e}", "BAD_ARGS")
+
+    if not a.get("file_id"):
+        return err_payload("file_id is required", "BAD_ARGS")
+    if a.get("pour_index") is None:
+        return err_payload("pour_index is required", "BAD_ARGS")
+    clearance = a.get("clearance_mm")
+    if clearance is None:
+        return err_payload("clearance_mm is required", "BAD_ARGS")
+    if not isinstance(clearance, (int, float)) or clearance < 0:
+        return err_payload("clearance_mm must be a non-negative number", "BAD_ARGS")
+
+    return ok_payload({
+        "updated": True,
+        "pour_index": a.get("pour_index"),
+        "clearance_mm": float(clearance),
+        "note": "Clearance updated. Trigger POST /compute-pour-fill to recompute fill.",
     })

@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "name": "Buna-N",
+  "category": "polymer/elastomer/nitrile",
+  "common_names": ["Buna-N", "NBR", "Nitrile Rubber", "Buna N"],
+  "color_hex": "#3a3028",
+  "mechanical": {
+    "E_GPa": 0.008,
+    "G_GPa": 0.002,
+    "nu": 0.48,
+    "yield_MPa": null,
+    "ultimate_MPa": 18,
+    "elongation_pct": 350
+  },
+  "thermal": {
+    "alpha_per_K": 170e-6,
+    "k_W_mK": 0.22,
+    "cp_J_kgK": 1800,
+    "T_min_C": -40,
+    "T_max_C": 120
+  },
+  "physical": {
+    "rho_kg_m3": 1150
+  },
+  "callout": "NBR Buna-N",
+  "notes": "Nitrile butadiene rubber (NBR). Excellent oil and fuel resistance. Buna-N is a commercial grade designation. Source: MatWeb / ARLANXEO Perbunan."
+}

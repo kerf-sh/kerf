@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "name": "Silicon Nitride",
+  "category": "ceramic/nitride/silicon-nitride",
+  "common_names": ["Si3N4", "Silicon Nitride", "SiN"],
+  "color_hex": "#e8e4dc",
+  "mechanical": {
+    "E_GPa": 304,
+    "G_GPa": 123,
+    "nu": 0.27,
+    "yield_MPa": null,
+    "ultimate_MPa": 600,
+    "elongation_pct": 1
+  },
+  "thermal": {
+    "alpha_per_K": 3.2e-6,
+    "k_W_mK": 18,
+    "cp_J_kgK": 710,
+    "T_min_C": 20,
+    "T_max_C": 1000
+  },
+  "physical": {
+    "rho_kg_m3": 3240
+  },
+  "callout": "Si3N4",
+  "notes": "Reaction-bonded or hot-pressed silicon nitride. High fracture toughness, thermal shock resistance. Source: MatWeb / CoorsTek Si3N4."
+}

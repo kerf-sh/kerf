@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "name": "PVDF",
+  "category": "polymer/thermoplastic/fluoropolymer",
+  "common_names": ["PVDF", "Polyvinylidene Fluoride"],
+  "color_hex": "#f4f2ee",
+  "mechanical": {
+    "E_GPa": 1.5,
+    "G_GPa": 0.55,
+    "nu": 0.40,
+    "yield_MPa": 50,
+    "ultimate_MPa": 55,
+    "elongation_pct": 50
+  },
+  "thermal": {
+    "alpha_per_K": 130e-6,
+    "k_W_mK": 0.20,
+    "cp_J_kgK": 1400,
+    "T_min_C": -40,
+    "T_max_C": 135
+  },
+  "physical": {
+    "rho_kg_m3": 1780
+  },
+  "callout": "PVDF",
+  "notes": "Polyvinylidene fluoride. Semi-crystalline fluoropolymer with excellent chemical resistance and piezoelectric properties. Source: MatWeb / Arkema Kynar."
+}

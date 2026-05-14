@@ -53,6 +53,8 @@ describe('runDRC — empty / trivial', () => {
   it('no errors on a valid 2-trace board', () => {
     const json = [
       makeBoard(),
+      makePad('p1', 0, 0), makePad('p2', 10, 0),
+      makePad('p3', 0, 5), makePad('p4', 10, 5),
       makeTrace('t1', 0.20, [[0, 0], [10, 0]]),  // 0.20 >= 0.15 → ok
       makeTrace('t2', 0.25, [[0, 5], [10, 5]]),
     ]
@@ -134,6 +136,95 @@ describe('runDRC — copper to edge', () => {
     const json = [makeBoard({ width: 50, height: 50 }), makeTrace('t1', 0.2, [[5, 5], [45, 5]])]
     const { warnings } = runDRC(json)
     expect(warnings.filter((w) => w.kind === 'copper_to_edge')).toHaveLength(0)
+  })
+})
+
+describe('runDRC — dangling trace', () => {
+  it('no error when trace connects two pads', () => {
+    const json = [
+      makeBoard(),
+      makePad('p1', 0, 0),
+      makePad('p2', 10, 0),
+      makeTrace('t1', 0.2, [[0, 0], [10, 0]]),
+    ]
+    const { errors } = runDRC(json)
+    expect(errors.filter((e) => e.kind === 'dangling_trace')).toHaveLength(0)
+  })
+
+  it('flags a trace with no pad at either endpoint', () => {
+    const json = [
+      makeBoard(),
+      makeTrace('t1', 0.2, [[5, 5], [10, 5]]),  // no pads, no connecting traces
+    ]
+    const { errors } = runDRC(json)
+    const dangling = errors.filter((e) => e.kind === 'dangling_trace')
+    // Both endpoints are dangling
+    expect(dangling.length).toBeGreaterThanOrEqual(1)
+  })
+
+  it('flags trace with one connected end and one dangling end', () => {
+    // pad at start, nothing at end
+    const json = [
+      makeBoard(),
+      makePad('p1', 0, 0),
+      makeTrace('t1', 0.2, [[0, 0], [10, 0]]),
+    ]
+    const { errors } = runDRC(json)
+    const dangling = errors.filter((e) => e.kind === 'dangling_trace')
+    expect(dangling.length).toBeGreaterThanOrEqual(1)
+    expect(dangling[0].trace_id).toBe('t1')
+  })
+
+  it('no dangling error when two traces share an endpoint', () => {
+    const json = [
+      makeBoard(),
+      makePad('p1', 0, 0),
+      makePad('p2', 20, 0),
+      makeTrace('t1', 0.2, [[0, 0], [10, 0]]),
+      makeTrace('t2', 0.2, [[10, 0], [20, 0]]),
+    ]
+    const { errors } = runDRC(json)
+    expect(errors.filter((e) => e.kind === 'dangling_trace')).toHaveLength(0)
+  })
+})
+
+describe('runDRC — net short', () => {
+  function makePadWithNet(id, x, y, net) {
+    return { type: 'pcb_smtpad', pcb_smtpad_id: id, x, y, width: 1.5, height: 1.5, net_id: net }
+  }
+
+  it('no error when trace connects pads on the same net', () => {
+    const json = [
+      makeBoard(),
+      makePadWithNet('p1', 0, 0, 'GND'),
+      makePadWithNet('p2', 10, 0, 'GND'),
+      makeTrace('t1', 0.2, [[0, 0], [10, 0]]),
+    ]
+    const { errors } = runDRC(json)
+    expect(errors.filter((e) => e.kind === 'net_short')).toHaveLength(0)
+  })
+
+  it('flags a trace connecting pads on different nets', () => {
+    const json = [
+      makeBoard(),
+      makePadWithNet('p1', 0, 0, 'VCC'),
+      makePadWithNet('p2', 10, 0, 'GND'),
+      makeTrace('t1', 0.2, [[0, 0], [10, 0]]),
+    ]
+    const { errors } = runDRC(json)
+    expect(errors.some((e) => e.kind === 'net_short')).toBe(true)
+    expect(errors.find((e) => e.kind === 'net_short').message).toMatch(/GND|VCC/)
+  })
+
+  it('no short reported for pads without net_id', () => {
+    const json = [
+      makeBoard(),
+      makePad('p1', 0, 0),        // no net
+      makePad('p2', 10, 0),       // no net
+      makeTrace('t1', 0.2, [[0, 0], [10, 0]]),
+    ]
+    const { errors } = runDRC(json)
+    expect(errors.filter((e) => e.kind === 'net_short')).toHaveLength(0)
   })
 })
 

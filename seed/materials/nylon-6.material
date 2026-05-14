@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "name": "Nylon 6",
+  "category": "polymer/thermoplastic/polyamide",
+  "common_names": ["Nylon 6", "PA6", "Polyamide 6"],
+  "color_hex": "#f0ece4",
+  "mechanical": {
+    "E_GPa": 2.5,
+    "G_GPa": 0.9,
+    "nu": 0.35,
+    "yield_MPa": 70,
+    "ultimate_MPa": 85,
+    "elongation_pct": 30
+  },
+  "thermal": {
+    "alpha_per_K": 85e-6,
+    "k_W_mK": 0.25,
+    "cp_J_kgK": 1600,
+    "T_min_C": -30,
+    "T_max_C": 120
+  },
+  "physical": {
+    "rho_kg_m3": 1140
+  },
+  "callout": "PA6",
+  "notes": "Polyamide 6 (caprolactam). Good mechanical strength, wear resistance, and chemical resistance. Source: MatWeb / BASF Ultramid B."
+}

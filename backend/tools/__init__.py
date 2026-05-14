@@ -7,6 +7,8 @@ from . import (
     configurations,
     revisions,
     surfacing,
+    feature_draft,
+    feature_mirror,
     fem,
     cam,
     sim,
@@ -19,6 +21,9 @@ from . import (
     material,
     bim,
     pcb_layer_tools,
+    pcb_drc,
+    erc,
+    net_classes,
 )
 
 from .registry import Tool, ToolSpec, err_payload, ok_payload
