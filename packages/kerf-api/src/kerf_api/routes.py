@@ -3734,6 +3734,7 @@ def _workshop_image_row_to_dict(row, pid: str) -> dict:
         "width_px": row["width_px"],
         "height_px": row["height_px"],
         "bytes": row["bytes"],
+        "is_primary": bool(row["is_primary"]) if "is_primary" in row.keys() else False,
         "url": f"/api/projects/{pid}/workshop-images/{row['id']}/file",
         "created_at": row["created_at"].isoformat() if row["created_at"] else None,
     }
@@ -3757,10 +3758,11 @@ async def list_workshop_images(
 
         rows = await conn.fetch(
             """
-            select id, sort_order, storage_key, caption, width_px, height_px, bytes, created_at
+            select id, sort_order, storage_key, caption, width_px, height_px,
+                   bytes, is_primary, created_at
               from project_workshop_images
              where project_id = $1
-             order by sort_order asc, created_at asc
+             order by is_primary desc, sort_order asc, created_at asc
             """,
             uuid.UUID(pid),
         )
@@ -3860,7 +3862,7 @@ async def upload_workshop_image(
             insert into project_workshop_images
               (id, project_id, sort_order, storage_key, caption, width_px, height_px, bytes)
             values ($1, $2, $3, $4, $5, $6, $7, $8)
-            returning id, sort_order, storage_key, caption, width_px, height_px, bytes, created_at
+            returning id, sort_order, storage_key, caption, width_px, height_px, bytes, is_primary, created_at
             """,
             image_id,
             uuid.UUID(pid),
@@ -3959,7 +3961,7 @@ async def update_workshop_image(
             # No-op patch — return the row as-is.
             row = await conn.fetchrow(
                 """
-                select id, sort_order, storage_key, caption, width_px, height_px, bytes, created_at
+                select id, sort_order, storage_key, caption, width_px, height_px, bytes, is_primary, created_at
                   from project_workshop_images
                  where project_id = $1 and id = $2
                 """,
@@ -3977,7 +3979,7 @@ async def update_workshop_image(
             update project_workshop_images
                set {', '.join(sets)}
              where project_id = ${len(args) - 1} and id = ${len(args)}
-            returning id, sort_order, storage_key, caption, width_px, height_px, bytes, created_at
+            returning id, sort_order, storage_key, caption, width_px, height_px, bytes, is_primary, created_at
             """,
             *args,
         )
@@ -4024,6 +4026,88 @@ async def delete_workshop_image(
         except Exception:
             pass
         return {"deleted": True, "id": image_id}
+
+
+@router.post("/projects/{pid}/workshop-images/{image_id}/set-primary")
+async def set_primary_workshop_image(
+    pid: str,
+    image_id: str,
+    payload: dict = Depends(require_auth),
+):
+    """POST .../workshop-images/:id/set-primary — pin or unpin a gallery image
+    as the project's primary display thumbnail.
+
+    Calling this on a non-primary image sets it as the primary and clears the
+    previous primary (if any). Calling it on the already-primary image acts as
+    an unpin (is_primary → false), so no gallery image is primary and the
+    project falls back to the auto-captured thumbnail_storage_key.
+
+    The partial unique index `workshop_images_primary_uniq` enforces at most
+    one primary per project at the DB level; we drive the transition entirely
+    in SQL so no race window exists between the unset and the set.
+    """
+    uid = payload.get("sub")
+    pool = await get_pool_required()
+    async with pool.acquire() as conn:
+        ws_id = await project_workspace_id(pid)
+        if not ws_id:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="project not found")
+        role = await get_user_workspace_role(conn, ws_id, uid)
+        if not role:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="project not found")
+        if role == "viewer":
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="viewers cannot pin gallery images")
+
+        # Fetch the target image to check it exists and learn its current state.
+        existing = await conn.fetchrow(
+            """
+            select id, is_primary from project_workshop_images
+             where project_id = $1 and id = $2
+            """,
+            uuid.UUID(pid),
+            uuid.UUID(image_id),
+        )
+        if not existing:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="image not found")
+
+        currently_primary = bool(existing["is_primary"])
+
+        async with conn.transaction():
+            # Clear any existing primary for this project first.
+            await conn.execute(
+                """
+                update project_workshop_images
+                   set is_primary = false
+                 where project_id = $1 and is_primary = true
+                """,
+                uuid.UUID(pid),
+            )
+            # If the target was NOT already primary, promote it.
+            # If it WAS primary, the clear above already unpinned it — we
+            # leave it unpinned (toggle semantics).
+            if not currently_primary:
+                await conn.execute(
+                    """
+                    update project_workshop_images
+                       set is_primary = true
+                     where project_id = $1 and id = $2
+                    """,
+                    uuid.UUID(pid),
+                    uuid.UUID(image_id),
+                )
+
+        # Return the updated row.
+        row = await conn.fetchrow(
+            """
+            select id, sort_order, storage_key, caption, width_px, height_px,
+                   bytes, is_primary, created_at
+              from project_workshop_images
+             where project_id = $1 and id = $2
+            """,
+            uuid.UUID(pid),
+            uuid.UUID(image_id),
+        )
+        return _workshop_image_row_to_dict(row, pid)
 
 
 # Avatar (avatar.go)
@@ -4625,21 +4709,78 @@ async def import_kicad_file(
 # ---------------------------------------------------------------------------
 
 def _project_to_workshop_row(p: dict) -> dict:
-    """Normalise a DB project dict into the workshop wire shape."""
+    """Normalise a DB project dict into the workshop wire shape.
+
+    thumbnail resolution priority:
+      1. pinned primary gallery image  (primary_image_id is set)
+      2. auto-captured thumbnail_storage_key
+    The caller can pass either/both; we pick the best available and
+    expose it as `thumbnail_url` so the frontend doesn't branch.
+    """
+    pid = str(p["id"])
+
+    # Gallery-pinned primary image overrides the auto-captured thumbnail.
+    primary_image_id = p.get("primary_image_id")
+    if primary_image_id:
+        thumbnail_url = f"/api/projects/{pid}/workshop-images/{primary_image_id}/file"
+    elif p.get("thumbnail_storage_key"):
+        thumbnail_url = f"/api/projects/{pid}/thumbnail"
+    else:
+        thumbnail_url = None
+
     return {
-        "project_id": str(p["id"]),
+        "project_id": pid,
+        "slug": pid,  # slug == project_id for workshop routes
         "name": p.get("name", ""),
+        "title": p.get("name", ""),  # alias used by WorkshopListing
         "description": p.get("description", ""),
         "tags": list(p.get("tags") or []),
         "workspace_slug": p.get("workspace_slug", ""),
         "workspace_name": p.get("workspace_name", ""),
         "author_name": p.get("author_name", ""),
+        "author": {
+            "id": str(p["author_id"]) if p.get("author_id") else None,
+            "name": p.get("author_name") or p.get("workspace_name", ""),
+            "avatar_url": p.get("author_avatar_url"),
+            "is_verified_publisher": bool(p.get("is_verified_publisher", False)),
+        },
         "likes_count": int(p.get("likes_count") or 0),
         "liked_by_me": bool(p.get("liked_by_me", False)),
+        "forks_count": int(p.get("forks_count") or 0),
+        "file_count": int(p.get("file_count") or 0),
+        "total_bytes": int(p.get("total_bytes") or 0),
         "thumbnail_storage_key": p.get("thumbnail_storage_key"),
+        "thumbnail_url": thumbnail_url,
+        "primary_image_id": str(primary_image_id) if primary_image_id else None,
+        "published_at": p["created_at"].isoformat() if p.get("created_at") else None,
+        "last_edited": p["updated_at"].isoformat() if p.get("updated_at") else None,
         "created_at": p["created_at"].isoformat() if p.get("created_at") else None,
         "updated_at": p["updated_at"].isoformat() if p.get("updated_at") else None,
     }
+
+
+async def _enrich_with_primary_images(conn, rows: list) -> list:
+    """Batch-fetch the primary gallery image id for each project in rows and
+    inject it as `primary_image_id`. Single query regardless of page size."""
+    if not rows:
+        return rows
+    project_ids = [uuid.UUID(str(r["id"])) for r in rows]
+    primary_rows = await conn.fetch(
+        """
+        select project_id, id as image_id
+          from project_workshop_images
+         where project_id = ANY($1::uuid[])
+           and is_primary = true
+        """,
+        project_ids,
+    )
+    primary_map = {str(r["project_id"]): str(r["image_id"]) for r in primary_rows}
+    enriched = []
+    for r in rows:
+        d = dict(r) if not isinstance(r, dict) else r
+        d["primary_image_id"] = primary_map.get(str(d.get("id") or ""))
+        enriched.append(d)
+    return enriched
 
 
 @router.get("/workshop/")
@@ -4675,8 +4816,10 @@ async def workshop_list(
             offset=offset,
             viewer_user_id=viewer_id,
         )
+        rows = await _enrich_with_primary_images(conn, rows)
 
-    return {"rows": [_project_to_workshop_row(r) for r in rows], "page": page, "per_page": per_page}
+    listings = [_project_to_workshop_row(r) for r in rows]
+    return {"listings": listings, "rows": listings, "page": page, "per_page": per_page, "has_more": len(rows) >= per_page}
 
 
 @router.get("/workshop/parts")
@@ -4715,9 +4858,10 @@ async def workshop_get(
     pool = await get_pool_required()
     async with pool.acquire() as conn:
         project = await projects_queries.get_public_project(conn, project_id, viewer_user_id=viewer_id)
-
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
+        enriched = await _enrich_with_primary_images(conn, [project])
+        project = enriched[0]
 
     return _project_to_workshop_row(project)
 

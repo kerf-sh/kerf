@@ -225,6 +225,10 @@ export const api = {
       request(`/api/projects/${pid}/workshop-images/${id}`, { method: 'DELETE' }),
     update: (pid, id, patch) =>
       request(`/api/projects/${pid}/workshop-images/${id}`, { method: 'PATCH', body: patch }),
+    // Toggle this image as the gallery primary.  Calling it on the already-
+    // primary image unpins it (toggle semantics — matches the backend).
+    setPrimary: (pid, id) =>
+      request(`/api/projects/${pid}/workshop-images/${id}/set-primary`, { method: 'POST' }),
   },
 
   // ---- Files / Assemblies ----
