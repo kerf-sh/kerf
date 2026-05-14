@@ -102,16 +102,14 @@ export default function SketchToJscadIllustration({ className = '' }) {
           <text x="128" y="108" fill="#ff6bd4">from </text>
           <text x="148" y="108" fill="#7BB661">'./bracket.sketch'</text>
 
-          <text x="128" y="124" fill="#6bd4ff">export</text>
-          <text x="156" y="124" fill="#6bd4ff"> const</text>
-          <text x="180" y="124" fill="#b8bfcc"> main = () =&gt; (</text>
+          <text x="128" y="124" fill="#6bd4ff">export const</text>
+          <text x="180" y="124" fill="#b8bfcc">main = ()=&gt;</text>
           <text x="136" y="136" fill="#b8bfcc">extrudeLinear(</text>
-          <text x="136" y="146" fill="#b8bfcc">  {'{ '}</text>
-          <text x="148" y="146" fill="#b8bfcc">height: </text>
-          <text x="180" y="146" fill="#ffd633">20</text>
-          <text x="190" y="146" fill="#b8bfcc"> {'}'},</text>
+          <text x="136" y="146" fill="#b8bfcc">  {'{'} height: </text>
+          <text x="190" y="146" fill="#ffd633">20</text>
+          <text x="200" y="146" fill="#b8bfcc">{'}'},</text>
           <text x="136" y="156" fill="#b8bfcc">  profile</text>
-          <text x="136" y="166" fill="#b8bfcc">))</text>
+          <text x="136" y="166" fill="#b8bfcc">)</text>
         </g>
         {/* re-eval badge */}
         <g transform="translate(184, 48)">

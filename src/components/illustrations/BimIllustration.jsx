@@ -85,7 +85,7 @@ export default function BimIllustration({ className = '' }) {
         compile
       </text>
 
-      <text x="296" y="48" textAnchor="end" fontSize="7" fontFamily="ui-monospace, monospace" fill="#5a6275">
+      <text x="296" y="32" textAnchor="end" fontSize="7" fontFamily="ui-monospace, monospace" fill="#5a6275">
         IfcOpenShell
       </text>
     </svg>
