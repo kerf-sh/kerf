@@ -75,7 +75,7 @@ export default function Footer() {
             <Item to="/library">Library</Item>
             <Item to="/workshop">Workshop</Item>
             <Item to="/pricing">Pricing</Item>
-            <Item to="/docs/roadmap">Roadmap</Item>
+            <Item to="/roadmap">Roadmap</Item>
           </Col>
 
           <Col title="Resources">
