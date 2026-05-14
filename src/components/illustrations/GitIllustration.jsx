@@ -1,6 +1,8 @@
 /**
- * GitIllustration — clear git-graph metaphor on the left + a clean GitHub
- * sync tile on the right. Commit dots carry the graph SHAPE; minimal text.
+ * GitIllustration — git-graph metaphor on the left + clean GitHub sync tile
+ * on the right. Lane labels sit ABOVE each lane (not on the commit line)
+ * so they never overlap the graph; GitHub mark uses the canonical octocat
+ * silhouette path scaled to the tile.
  *
  * viewBox 320×200. Palette locked.
  */
@@ -9,14 +11,14 @@ export default function GitIllustration({ className = '' }) {
   const FEAT_A = '#6bd4ff'
   const FEAT_B = '#ff6bd4'
 
-  // Graph occupies the LEFT 60% of the card; GitHub tile sits in the RIGHT
-  // 35%. Lanes are evenly spaced vertically; main is the middle.
-  const LANE_MAIN_Y = 110
-  const LANE_A_Y = 78
-  const LANE_B_Y = 142
+  const LANE_MAIN_Y = 116
+  const LANE_A_Y = 82
+  const LANE_B_Y = 150
 
-  // Commit x positions along main lane. Kept inside x=[60, 200].
-  const X = [60, 88, 116, 144, 172, 200]
+  // Commit x positions along main lane. Left margin starts at x=42 so lane
+  // labels (right-anchored at x=38) sit in their own 16px gutter before the
+  // first commit, never touching the graph.
+  const X = [44, 72, 100, 128, 156, 184]
 
   return (
     <svg
@@ -41,21 +43,8 @@ export default function GitIllustration({ className = '' }) {
       </text>
       <line x1="22" y1="40" x2="298" y2="40" stroke="#1a1d24" strokeWidth="0.6" />
 
-      {/* lane labels — sit BEFORE the first commit so they never overlap the
-          graph; right-aligned to a vertical guide at x=54. */}
-      <g
-        fontSize="7"
-        fontFamily="ui-monospace, SFMono-Regular, monospace"
-        textAnchor="end"
-      >
-        <text x="54" y={LANE_A_Y + 3} fill={FEAT_A} opacity="0.9">feat/a</text>
-        <text x="54" y={LANE_MAIN_Y + 3} fill={MAIN}>main</text>
-        <text x="54" y={LANE_B_Y + 3} fill={FEAT_B} opacity="0.9">feat/b</text>
-      </g>
-
       {/* === branch curves === */}
       <g fill="none" strokeWidth="1.6" strokeLinecap="round">
-        {/* main lane — straight horizontal */}
         <line x1={X[0]} y1={LANE_MAIN_Y} x2={X[5]} y2={LANE_MAIN_Y} stroke={MAIN} />
 
         {/* feat/a: branch from main at X[1], merge back at X[4] */}
@@ -74,7 +63,20 @@ export default function GitIllustration({ className = '' }) {
           d={`M ${X[3]} ${LANE_MAIN_Y} C ${X[3] + 10} ${LANE_MAIN_Y}, ${X[4] - 10} ${LANE_B_Y}, ${X[4]} ${LANE_B_Y}`}
           stroke={FEAT_B}
         />
-        <line x1={X[4]} y1={LANE_B_Y} x2={X[5] - 6} y2={LANE_B_Y} stroke={FEAT_B} />
+        <line x1={X[4]} y1={LANE_B_Y} x2={X[5] - 4} y2={LANE_B_Y} stroke={FEAT_B} />
+      </g>
+
+      {/* lane labels sit ABOVE each lane so they never overlap the graph line.
+          Each label is offset 10px above its lane.  Labels are minimal and
+          right-aligned to x=38 to leave a clear 6px gutter before X[0]=44. */}
+      <g
+        fontSize="7"
+        fontFamily="ui-monospace, SFMono-Regular, monospace"
+        textAnchor="end"
+      >
+        <text x="38" y={LANE_A_Y - 7} fill={FEAT_A} opacity="0.9">feat/a</text>
+        <text x="38" y={LANE_MAIN_Y - 7} fill={MAIN}>main</text>
+        <text x="38" y={LANE_B_Y - 7} fill={FEAT_B} opacity="0.9">feat/b</text>
       </g>
 
       {/* === commit dots === */}
@@ -88,10 +90,9 @@ export default function GitIllustration({ className = '' }) {
       <CommitDot cx={X[3]} cy={LANE_A_Y} color={FEAT_A} />
 
       <CommitDot cx={X[4]} cy={LANE_B_Y} color={FEAT_B} />
-      <CommitDot cx={X[5] - 6} cy={LANE_B_Y} color={FEAT_B} tip />
+      <CommitDot cx={X[5] - 4} cy={LANE_B_Y} color={FEAT_B} tip />
 
-      {/* HEAD chip below the latest main commit so it doesn't crowd the
-          sync arrow at the top. */}
+      {/* HEAD chip below the latest main commit */}
       <g transform={`translate(${X[5] - 16}, ${LANE_MAIN_Y + 12})`}>
         <rect width="34" height="13" rx="2.5" fill="#0a0b0d" stroke={MAIN} strokeOpacity="0.75" />
         <text
@@ -107,30 +108,22 @@ export default function GitIllustration({ className = '' }) {
       </g>
 
       {/* === GitHub sync tile (right side) ===
-          Clean octocat-inspired mark: face circle + ears + smile + tentacle.
-          Sized to fit cleanly inside a 64×44 tile. */}
-      <g transform="translate(232, 70)">
-        <rect width="64" height="44" rx="6" fill="#0f1115" stroke="#1a1d24" />
-        <g transform="translate(8, 6)">
-          {/* head */}
-          <circle cx="16" cy="17" r="13" fill="#0a0b0d" stroke="#cbd0dc" strokeWidth="1.1" />
-          {/* ears */}
-          <path d="M 7 8 L 10 5 L 12 10 Z" fill="#cbd0dc" />
-          <path d="M 25 8 L 22 5 L 20 10 Z" fill="#cbd0dc" />
-          {/* eyes */}
-          <circle cx="12.5" cy="16" r="1.4" fill="#0a0b0d" />
-          <circle cx="19.5" cy="16" r="1.4" fill="#0a0b0d" />
-          {/* mouth */}
-          <path d="M 13 21 Q 16 23 19 21" fill="none" stroke="#cbd0dc" strokeWidth="0.9" strokeLinecap="round" />
-          {/* tentacle */}
-          <path d="M 16 30 Q 16 33 19 33 Q 22 33 22 30" fill="none" stroke="#cbd0dc" strokeWidth="0.9" strokeLinecap="round" />
+          Uses the canonical GitHub Mark path (24×24 source) scaled to 30×30
+          so it reads clearly as the GitHub logo. */}
+      <g transform="translate(228, 64)">
+        <rect width="70" height="56" rx="6" fill="#0f1115" stroke="#1a1d24" />
+        <g transform="translate(8, 8) scale(1.25)">
+          <path
+            d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"
+            fill="#cbd0dc"
+          />
         </g>
-        {/* GitHub label */}
+        {/* GitHub label + sync status */}
         <text
-          x="58"
-          y="18"
+          x="64"
+          y="22"
           textAnchor="end"
-          fontSize="8"
+          fontSize="9"
           fontFamily="ui-sans-serif, system-ui, sans-serif"
           fontWeight="600"
           fill="#cbd0dc"
@@ -138,8 +131,8 @@ export default function GitIllustration({ className = '' }) {
           GitHub
         </text>
         <text
-          x="58"
-          y="30"
+          x="64"
+          y="36"
           textAnchor="end"
           fontSize="7"
           fontFamily="ui-monospace, SFMono-Regular, monospace"
@@ -149,12 +142,12 @@ export default function GitIllustration({ className = '' }) {
         </text>
       </g>
 
-      {/* sync arrow from latest commit → tile (curved, dashed) */}
+      {/* sync arrow from latest commit → tile (dashed) */}
       <g stroke="#3a4150" strokeWidth="0.8" fill="none" strokeDasharray="2 2">
-        <path d={`M ${X[5] + 4} ${LANE_MAIN_Y - 4} Q 226 90 232 92`} />
+        <path d={`M ${X[5] + 4} ${LANE_MAIN_Y - 4} Q 210 96 228 92`} />
       </g>
 
-      {/* footer — pygit2 only (cloud-internal tech stripped) */}
+      {/* footer */}
       <text
         x="22"
         y="178"
