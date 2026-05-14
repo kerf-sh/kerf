@@ -1,17 +1,11 @@
-import gzip
 import json
 import uuid
 from kerf_chat.tools.registry import ToolSpec, err_payload, ok_payload, register
 from kerf_core.utils.context import ProjectCtx
-
-
-def gunzip_bytes(b: bytes) -> str:
-    if not b:
-        return ""
-    import io
-    r = gzip.GzipFile(fileobj=io.BytesIO(b))
-    out, _ = r.read()
-    return out.decode()
+from kerf_core.revisions import (
+    reconstruct_revision as _reconstruct_revision,
+    write_revision as _write_revision,
+)
 
 
 async def resolve_path(ctx: ProjectCtx, path: str) -> dict:
@@ -34,122 +28,22 @@ async def resolve_path(ctx: ProjectCtx, path: str) -> dict:
 
 
 async def reconstruct_revision(ctx: ProjectCtx, rev_id: uuid.UUID) -> str:
-    row = await ctx.pool.fetchrow(
-        "SELECT id, kind, parent_revision_id, content_gz, content FROM file_revisions WHERE id = $1",
-        rev_id,
-    )
-    if not row:
-        return ""
-
-    kind = row["kind"]
-    parent_id = row["parent_revision_id"]
-    gz = row["content_gz"]
-    plain = row["content"]
-
-    chain = [{"kind": kind, "parent_id": parent_id, "gz": gz, "plain": plain}]
-    while chain[0]["kind"] == "diff":
-        pid = chain[0]["parent_id"]
-        if pid is None:
-            break
-        prow = await ctx.pool.fetchrow(
-            "SELECT id, kind, parent_revision_id, content_gz, content FROM file_revisions WHERE id = $1",
-            pid,
-        )
-        if not prow:
-            break
-        chain.insert(0, {"kind": prow["kind"], "parent_id": prow["parent_revision_id"], "gz": prow["content_gz"], "plain": prow["content"]})
-
-    current = ""
-    if chain[0]["gz"]:
-        current = gunzip_bytes(chain[0]["gz"])
-    elif chain[0]["plain"]:
-        current = chain[0]["plain"]
-
-    for i in range(1, len(chain)):
-        delta = ""
-        if chain[i]["gz"]:
-            delta = gunzip_bytes(chain[i]["gz"])
-        elif chain[i]["plain"]:
-            delta = chain[i]["plain"]
-
-        diffs = compute_diff_delta(current, delta)
-        current = apply_diff_delta(current, diffs)
-
-    return current
-
-
-def compute_diff_delta(parent: str, child: str) -> str:
-    from difflib import unified_diff
-    diff = list(unified_diff([parent], [child], lineterm=""))
-    return "\n".join(diff)
-
-
-def apply_diff_delta(parent: str, delta: str) -> str:
-    import re
-    lines = delta.split("\n")
-    result = []
-    i = 0
-    while i < len(lines):
-        line = lines[i]
-        if line.startswith("@@"):
-            m = re.match(r'^@@ -(\d+)(?:,(\d+))? \+\d+(?:,(\d+))? @@', line)
-            if m:
-                old_start = int(m.group(1))
-                old_count = int(m.group(2)) if m.group(2) else 1
-                result.extend(parent.split("\n")[old_start - 1:old_start - 1 + old_count])
-                i += 1
-                while i < len(lines) and not lines[i].startswith("@@") and not lines[i].startswith("---"):
-                    if lines[i].startswith("+") and not lines[i].startswith("+++"):
-                        result.append(lines[i][1:])
-                    i += 1
-                continue
-        i += 1
-    return "\n".join(result)
+    """Thin wrapper so callers in this module don't need to import kerf_core directly."""
+    return await _reconstruct_revision(ctx.pool, rev_id)
 
 
 async def write_revision(ctx: ProjectCtx, file_id: str, content: str, source: str) -> uuid.UUID:
+    """Thin wrapper that threads ctx fields into the canonical implementation."""
     cap = ctx.file_revisions_max if ctx.file_revisions_max > 0 else 200
-    new_id = uuid.uuid4()
-    preview = content[:200] if len(content) > 200 else content
-    latest = await ctx.pool.fetchrow(
-        "SELECT id, kind FROM file_revisions WHERE file_id = $1 ORDER BY created_at DESC LIMIT 1",
-        file_id,
-    )
     user_id = ctx.user_id if ctx.user_id != uuid.UUID(int=0) else None
-    if latest is None or latest["kind"] == "base":
-        diffs_after = 0
-    else:
-        diffs_after = await ctx.pool.fetchval(
-            "SELECT COUNT(*) FROM file_revisions WHERE file_id = $1 AND kind = 'diff' AND created_at > COALESCE((SELECT MAX(created_at) FROM file_revisions WHERE file_id = $1 AND kind = 'base'), 'epoch'::timestamptz)",
-            file_id,
-        )
-    make_base = latest is None or diffs_after >= 20
-    import base64
-    if make_base:
-        gz = gzip.compress(content.encode())
-        await ctx.pool.execute(
-            "INSERT INTO file_revisions(id, file_id, content, content_gz, kind, source, user_id, content_preview) VALUES ($1, $2, $3, $4, 'base', $5, $6, $7)",
-            new_id, file_id, content, base64.b64encode(gz).decode(), source, user_id, preview,
-        )
-    else:
-        parent_content_row = await ctx.pool.fetchrow(
-            "SELECT content_gz FROM file_revisions WHERE id = $1",
-            latest["id"],
-        )
-        parent_content = content
-        if parent_content_row and parent_content_row["content_gz"]:
-            parent_content = gzip.decompress(parent_content_row["content_gz"]).decode()
-        delta = content
-        gz = gzip.compress(delta.encode())
-        await ctx.pool.execute(
-            "INSERT INTO file_revisions(id, file_id, content, content_gz, kind, parent_revision_id, source, user_id, content_preview) VALUES ($1, $2, '', $3, 'diff', $4, $5, $6, $7)",
-            new_id, file_id, base64.b64encode(gz).decode(), latest["id"], source, user_id, preview,
-        )
-    await ctx.pool.execute(
-        "DELETE FROM file_revisions WHERE file_id = $1 AND created_at < (SELECT created_at FROM file_revisions WHERE file_id = $1 ORDER BY created_at DESC OFFSET $2 LIMIT 1)",
-        file_id, cap,
+    return await _write_revision(
+        pool=ctx.pool,
+        file_id=file_id,
+        content=content,
+        source=source,
+        user_id=user_id,
+        cap=cap,
     )
-    return new_id
 
 
 list_revisions_spec = ToolSpec(
@@ -198,7 +92,7 @@ async def run_list_revisions(ctx: ProjectCtx, args: bytes) -> str:
 
     rows = await ctx.pool.fetch(
         """SELECT fr.id, fr.source, fr.user_id, u.name, fr.created_at,
-                  COALESCE(fr.content_preview, LEFT(fr.content, 200))
+                  COALESCE(fr.content_preview, LEFT(fr.content, 200)) AS content_preview
            FROM file_revisions fr
            LEFT JOIN users u ON u.id = fr.user_id
            WHERE fr.file_id = $1
@@ -210,9 +104,7 @@ async def run_list_revisions(ctx: ProjectCtx, args: bytes) -> str:
 
     revisions = []
     for row in rows:
-        user_id_str = None
-        if row["user_id"]:
-            user_id_str = str(row["user_id"])
+        user_id_str = str(row["user_id"]) if row["user_id"] else None
         user_name = row["name"] if row["name"] else None
         revisions.append({
             "id": str(row["id"]),
@@ -220,7 +112,7 @@ async def run_list_revisions(ctx: ProjectCtx, args: bytes) -> str:
             "user_id": user_id_str,
             "user_name": user_name,
             "created_at": row["created_at"].isoformat() if row["created_at"] else "",
-            "content_preview": row["coalesce"] or "",
+            "content_preview": row["content_preview"] or "",
         })
 
     return ok_payload({"revisions": revisions})
@@ -288,7 +180,6 @@ async def run_restore_revision(ctx: ProjectCtx, args: bytes) -> str:
         content, file_id, ctx.project_id,
     )
 
-    cap = ctx.file_revisions_max if ctx.file_revisions_max > 0 else 200
     new_rev = await write_revision(ctx, str(file_id), content, "restore")
 
     return ok_payload({
