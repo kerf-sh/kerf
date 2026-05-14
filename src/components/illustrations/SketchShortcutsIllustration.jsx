@@ -1,8 +1,8 @@
 /**
- * SketchShortcutsIllustration — single sketch profile on the left, three
- * FreeCAD-parity "sketch → 3D" shortcuts on the right (boss-with-draft,
- * cut-from-sketch, hole-pattern-from-sketch). Communicates the parametric
- * shortcut surface that lands a 2D profile straight into a B-rep feature.
+ * SketchShortcutsIllustration — single sketch profile on the left flowing into
+ * three FreeCAD-parity "sketch → 3D" shortcut outcomes on the right. Visual
+ * communicates the shape of the new feature ops; tool names live in the card
+ * body text, not in the illustration, so layout stays clean at small sizes.
  *
  * viewBox 320×200. Palette locked to ink-* / kerf-* (#ffd633 accent).
  */
@@ -16,183 +16,173 @@ export default function SketchShortcutsIllustration({ className = '' }) {
       aria-label="A sketch profile feeding three FreeCAD-parity shortcuts: boss with draft, cut from sketch, hole pattern from sketch"
     >
       <defs>
-        <pattern id="sks-grid" width="12" height="12" patternUnits="userSpaceOnUse">
-          <path d="M 12 0 L 0 0 0 12" fill="none" stroke="#14171c" strokeWidth="0.5" />
+        <pattern id="sks-grid" width="14" height="14" patternUnits="userSpaceOnUse">
+          <path d="M 14 0 L 0 0 0 14" fill="none" stroke="#14171c" strokeWidth="0.5" />
         </pattern>
+        <marker
+          id="sks-arrow"
+          viewBox="0 0 10 10"
+          refX="9"
+          refY="5"
+          markerWidth="6"
+          markerHeight="6"
+          orient="auto"
+        >
+          <path d="M0,1 L9,5 L0,9 Z" fill="#ffd633" />
+        </marker>
       </defs>
 
       {/* outer panel */}
       <rect x="8" y="14" width="304" height="172" rx="8" fill="#0a0b0d" stroke="#1a1d24" />
 
       {/* header strip */}
-      <text x="22" y="30" fontSize="8" fontFamily="ui-monospace, monospace" fill="#5a6275" letterSpacing="1.4">
+      <text x="22" y="32" fontSize="9" fontFamily="ui-monospace, SFMono-Regular, monospace" fill="#6a7185" letterSpacing="1.4">
         SKETCH → 3D SHORTCUTS
       </text>
-      <text x="298" y="30" textAnchor="end" fontSize="8" fontFamily="ui-monospace, monospace" fill="#3a4150" letterSpacing="1.2">
-        PartDesign parity
-      </text>
-      <line x1="22" y1="36" x2="298" y2="36" stroke="#1a1d24" strokeWidth="0.6" />
+      <line x1="22" y1="40" x2="298" y2="40" stroke="#1a1d24" strokeWidth="0.6" />
 
-      {/* === Left: sketch profile === */}
+      {/* === Left: sketch source === */}
       <g>
-        <rect x="22" y="44" width="100" height="128" rx="4" fill="#0a0b0d" stroke="#1a1d24" />
-        <rect x="22" y="44" width="100" height="128" fill="url(#sks-grid)" />
+        <rect x="22" y="52" width="108" height="120" rx="4" fill="#0a0b0d" stroke="#1a1d24" />
+        <rect x="22" y="52" width="108" height="120" fill="url(#sks-grid)" />
 
         {/* origin axes */}
-        <line x1="32" y1="108" x2="112" y2="108" stroke="#3a4150" strokeWidth="0.6" strokeDasharray="2 3" />
-        <line x1="44" y1="54" x2="44" y2="162" stroke="#3a4150" strokeWidth="0.6" strokeDasharray="2 3" />
-        <circle cx="44" cy="108" r="2" fill="#0a0b0d" stroke="#5a6275" strokeWidth="0.8" />
+        <line x1="32" y1="112" x2="120" y2="112" stroke="#3a4150" strokeWidth="0.5" strokeDasharray="2 3" />
+        <line x1="48" y1="62" x2="48" y2="162" stroke="#3a4150" strokeWidth="0.5" strokeDasharray="2 3" />
 
-        {/* fully-constrained profile (green = solved) — rounded rect with hole pattern */}
+        {/* fully-constrained profile (green = solved) */}
         <g stroke="#7BB661" strokeWidth="1.4" fill="none">
-          <rect x="52" y="70" width="60" height="76" rx="6" />
-          <circle cx="68" cy="86" r="3.5" />
-          <circle cx="96" cy="86" r="3.5" />
-          <circle cx="68" cy="130" r="3.5" />
-          <circle cx="96" cy="130" r="3.5" />
+          <rect x="58" y="78" width="60" height="68" rx="6" />
         </g>
 
-        {/* solved badge */}
-        <g transform="translate(28, 50)">
-          <rect width="40" height="13" rx="2" fill="#7BB661" fillOpacity="0.12" stroke="#7BB661" strokeOpacity="0.4" />
-          <circle cx="6" cy="6.5" r="1.8" fill="#7BB661" />
-          <text x="11" y="9" fontSize="8" fontFamily="ui-monospace, monospace" fill="#7BB661">
+        {/* solved chip */}
+        <g transform="translate(28, 58)">
+          <rect width="46" height="14" rx="2.5" fill="#7BB661" fillOpacity="0.12" stroke="#7BB661" strokeOpacity="0.45" />
+          <circle cx="7" cy="7" r="2" fill="#7BB661" />
+          <text x="13" y="10" fontSize="8" fontFamily="ui-monospace, monospace" fill="#7BB661">
             solved
           </text>
         </g>
 
-        {/* file label */}
-        <text x="72" y="166" textAnchor="middle" fontSize="7" fontFamily="ui-monospace, monospace" fill="#5a6275">
-          mount.sketch
+        <text x="76" y="166" textAnchor="middle" fontSize="8" fontFamily="ui-monospace, monospace" fill="#5a6275">
+          .sketch
         </text>
       </g>
 
       {/* arrow stem from sketch → shortcuts */}
-      <g stroke="#ffd633" strokeWidth="0.9" fill="none" strokeLinecap="round">
-        <line x1="124" y1="108" x2="138" y2="108" />
-        <polygon points="138,108 134,105.5 134,110.5" fill="#ffd633" stroke="none" />
+      <g stroke="#ffd633" strokeWidth="1.2" fill="none" strokeLinecap="round">
+        <line x1="132" y1="112" x2="156" y2="112" markerEnd="url(#sks-arrow)" />
       </g>
 
-      {/* === Right: three shortcut rows === */}
-      <g transform="translate(144, 44)">
-        {/* boss with draft */}
-        <ShortcutRow y={0} label="feature_boss_with_draft" sub="extrude + 3° draft" active>
-          <BossDraftGlyph x={4} y={6} />
-        </ShortcutRow>
-        {/* cut from sketch */}
-        <ShortcutRow y={44} label="feature_cut_from_sketch" sub="pocket through faces">
-          <CutGlyph x={4} y={6} />
-        </ShortcutRow>
-        {/* hole pattern */}
-        <ShortcutRow y={88} label="feature_hole_pattern_from_sketch" sub="ø3.2 · 4× through" small>
-          <HolePatternGlyph x={4} y={6} />
-        </ShortcutRow>
+      {/* === Right: three outcome thumbnails stacked === */}
+      <g transform="translate(164, 50)">
+        <OutcomeRow y={0} title="Boss + draft" sub="extrude + 3° taper" accent active>
+          <BossDraftGlyph />
+        </OutcomeRow>
+        <OutcomeRow y={44} title="Cut from sketch" sub="pocket through face">
+          <CutGlyph />
+        </OutcomeRow>
+        <OutcomeRow y={88} title="Hole pattern" sub="ø3.2 · 4× through">
+          <HolePatternGlyph />
+        </OutcomeRow>
       </g>
     </svg>
   )
 }
 
-function ShortcutRow({ y, label, sub, active, small, children }) {
-  const labelColor = active ? '#ffd633' : '#e2e6ee'
+function OutcomeRow({ y, title, sub, active, children }) {
   return (
     <g transform={`translate(0, ${y})`}>
       <rect
         x="0"
         y="0"
-        width="158"
+        width="142"
         height="38"
-        rx="4"
+        rx="5"
         fill={active ? '#ffd633' : '#0f1115'}
-        fillOpacity={active ? 0.06 : 1}
+        fillOpacity={active ? 0.07 : 1}
         stroke={active ? '#ffd633' : '#1a1d24'}
-        strokeOpacity={active ? 0.45 : 1}
+        strokeOpacity={active ? 0.5 : 1}
       />
       {/* glyph slot */}
       <rect x="6" y="6" width="26" height="26" rx="3" fill="#0a0b0d" stroke="#1a1d24" strokeWidth="0.6" />
       <g transform="translate(6, 6)">{children}</g>
-      {/* label */}
+
+      {/* title — capped width, short labels avoid wrap */}
       <text
         x="40"
-        y={small ? 16 : 17}
-        fontSize={small ? 8 : 9}
-        fontFamily="ui-monospace, monospace"
-        fill={labelColor}
-        fontWeight="500"
+        y="17"
+        fontSize="10"
+        fontFamily="ui-sans-serif, system-ui, sans-serif"
+        fill={active ? '#ffd633' : '#e2e6ee'}
+        fontWeight="600"
       >
-        {label}
+        {title}
       </text>
       <text
         x="40"
-        y="28"
-        fontSize="7.5"
+        y="30"
+        fontSize="8.5"
         fontFamily="ui-monospace, monospace"
-        fill="#5a6275"
+        fill="#6a7185"
       >
         {sub}
       </text>
-      {active && (
-        <g transform="translate(132, 14)">
-          <rect width="22" height="11" rx="2" fill="#ffd633" fillOpacity="0.18" stroke="#ffd633" strokeOpacity="0.5" />
-          <text x="11" y="8.5" textAnchor="middle" fontSize="7" fontFamily="ui-monospace, monospace" fill="#ffd633">
-            new
-          </text>
-        </g>
-      )}
     </g>
   )
 }
 
 /* Glyphs sized to fit a 26×26 slot. */
 
-function BossDraftGlyph({ x = 0, y = 0 }) {
-  // Trapezoidal solid (boss with positive draft) — front face + side trapezoid.
+function BossDraftGlyph() {
   return (
-    <g transform={`translate(${x}, ${y})`} stroke="#ffd633" strokeWidth="1" fill="none" strokeLinejoin="round">
-      <polygon points="3,16 19,16 17,4 5,4" />
-      <polygon points="3,16 5,4 11,2 9,14" fill="#ffd633" fillOpacity="0.1" />
-      <line x1="11" y1="2" x2="17" y2="4" />
-      <line x1="9" y1="14" x2="19" y2="16" />
-      {/* draft angle indicator */}
-      <path d="M 3 16 A 4 4 0 0 0 5 12" stroke="#ffd633" strokeWidth="0.7" fill="none" />
+    <g stroke="#ffd633" strokeWidth="1.1" fill="none" strokeLinejoin="round">
+      {/* trapezoidal boss seen in isometric */}
+      <polygon points="4,18 22,18 19,7 7,7" />
+      <polygon points="4,18 7,7 12,5 9,16" fill="#ffd633" fillOpacity="0.12" />
+      <line x1="12" y1="5" x2="19" y2="7" />
+      <line x1="9" y1="16" x2="22" y2="18" />
+      {/* draft angle arc */}
+      <path d="M 4 18 A 4 4 0 0 0 7 14.5" strokeWidth="0.8" />
     </g>
   )
 }
 
-function CutGlyph({ x = 0, y = 0 }) {
-  // Solid block with a cut pocket from above.
+function CutGlyph() {
   return (
-    <g transform={`translate(${x}, ${y})`} stroke="#8a93a6" strokeWidth="1" fill="none" strokeLinejoin="round">
-      <polygon points="2,15 16,15 19,11 5,11" />
-      <polygon points="2,15 2,5 5,3 5,11" />
-      <polygon points="2,5 5,3 19,3 16,5" />
-      {/* pocket (cut from sketch) */}
-      <polygon points="7,5 13,5 14,4 8,4" fill="#0a0b0d" />
-      <polygon points="7,5 7,9 8,8 8,4" fill="#0a0b0d" />
-      <polygon points="7,9 13,9 14,8 8,8" stroke="#ff6bd4" />
-      <line x1="7" y1="5" x2="7" y2="9" stroke="#ff6bd4" />
-      <line x1="13" y1="5" x2="13" y2="9" stroke="#ff6bd4" />
-      <line x1="13" y1="9" x2="14" y2="8" stroke="#ff6bd4" />
-    </g>
-  )
-}
-
-function HolePatternGlyph({ x = 0, y = 0 }) {
-  // 2x2 hole pattern as seen top-down on a plate.
-  return (
-    <g transform={`translate(${x}, ${y})`} stroke="#8a93a6" strokeWidth="1" fill="none">
-      <rect x="2" y="2" width="18" height="18" rx="1.5" />
-      <g stroke="#ff6bd4" strokeWidth="1.1">
-        <circle cx="7" cy="7" r="1.6" />
-        <circle cx="15" cy="7" r="1.6" />
-        <circle cx="7" cy="15" r="1.6" />
-        <circle cx="15" cy="15" r="1.6" />
+    <g stroke="#8a93a6" strokeWidth="1" fill="none" strokeLinejoin="round">
+      {/* base block */}
+      <polygon points="3,18 18,18 22,14 7,14" />
+      <polygon points="3,18 3,6 7,4 7,14" />
+      <polygon points="3,6 7,4 22,4 18,6 18,14 22,14" />
+      <line x1="7" y1="14" x2="18" y2="14" />
+      <line x1="18" y1="14" x2="18" y2="6" opacity="0.6" />
+      {/* pocket cutout in pink */}
+      <g stroke="#ff6bd4" strokeWidth="1">
+        <rect x="9" y="6" width="7" height="6" fill="#0a0b0d" />
+        <line x1="9" y1="6" x2="11" y2="4" />
+        <line x1="16" y1="6" x2="18" y2="4" />
+        <line x1="11" y1="4" x2="18" y2="4" />
       </g>
-      {/* tiny cross hairs */}
-      <g stroke="#ff6bd4" strokeWidth="0.4" strokeDasharray="1 1">
-        <line x1="5" y1="7" x2="9" y2="7" />
-        <line x1="7" y1="5" x2="7" y2="9" />
-        <line x1="13" y1="7" x2="17" y2="7" />
-        <line x1="15" y1="5" x2="15" y2="9" />
+    </g>
+  )
+}
+
+function HolePatternGlyph() {
+  return (
+    <g stroke="#8a93a6" strokeWidth="1" fill="none">
+      <rect x="3" y="3" width="20" height="20" rx="1.5" />
+      <g stroke="#ff6bd4" strokeWidth="1.1">
+        <circle cx="9" cy="9" r="1.8" />
+        <circle cx="17" cy="9" r="1.8" />
+        <circle cx="9" cy="17" r="1.8" />
+        <circle cx="17" cy="17" r="1.8" />
+      </g>
+      <g stroke="#ff6bd4" strokeWidth="0.4" strokeDasharray="1 1.2" opacity="0.7">
+        <line x1="6" y1="9" x2="12" y2="9" />
+        <line x1="9" y1="6" x2="9" y2="12" />
+        <line x1="14" y1="9" x2="20" y2="9" />
+        <line x1="17" y1="6" x2="17" y2="12" />
       </g>
     </g>
   )

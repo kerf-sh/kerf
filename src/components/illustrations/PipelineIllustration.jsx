@@ -1,117 +1,176 @@
 /**
  * PipelineIllustration — wide section divider showing the data flow:
- *   sketch → .feature → assembly → drawing / BOM / G-code / IFC / gerber.
+ *   sketch → .feature → assembly → drawing → .cam.
  * Sits between the capability tour and the recently-shipped strip;
- * intended to be displayed at full width with no border.
- *
- * viewBox 720×120. Kept thin so it doesn't add vertical weight.
+ * displays full width with no border.
  */
 export default function PipelineIllustration({ className = '' }) {
   const nodes = [
-    { x: 60, label: '.sketch', sub: '2D + constraints', glyph: 'sketch' },
-    { x: 180, label: '.feature', sub: 'OCCT B-rep', glyph: 'feature' },
-    { x: 300, label: '.assembly', sub: 'mates + BOM', glyph: 'assembly' },
-    { x: 460, label: '.drawing', sub: 'TechDraw', glyph: 'drawing' },
-    { x: 620, label: '.cam', sub: 'G-code', glyph: 'gcode' },
+    { x: 80, label: '.sketch', sub: '2D + constraints', glyph: 'sketch' },
+    { x: 220, label: '.feature', sub: 'OCCT B-rep', glyph: 'feature' },
+    { x: 360, label: '.assembly', sub: 'mates + BOM', glyph: 'assembly' },
+    { x: 500, label: '.drawing', sub: 'TechDraw', glyph: 'drawing' },
+    { x: 640, label: '.cam', sub: 'G-code', glyph: 'gcode' },
   ]
+
+  const NODE_R = 28
+  const Y = 80
 
   return (
     <svg
-      viewBox="0 0 720 120"
+      viewBox="0 0 720 140"
       preserveAspectRatio="xMidYMid meet"
       className={className}
       role="img"
       aria-label="Sketch flowing through feature, assembly, drawing, and CAM stages"
     >
       <defs>
-        <marker id="pipe-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto">
-          <path d="M0,0 L10,5 L0,10 z" fill="#3a4150" />
+        <marker
+          id="pipe-arrow"
+          viewBox="0 0 10 10"
+          refX="9"
+          refY="5"
+          markerWidth="5"
+          markerHeight="5"
+          orient="auto"
+        >
+          <path d="M0,1 L9,5 L0,9 Z" fill="#4a5161" />
         </marker>
       </defs>
 
-      {/* horizontal flow line */}
-      <line x1="40" y1="60" x2="680" y2="60" stroke="#1a1d24" strokeWidth="1" />
+      {nodes.map((n, i) => {
+        const prev = nodes[i - 1]
+        return (
+          <g key={n.label}>
+            {i > 0 && (
+              <line
+                x1={prev.x + NODE_R + 4}
+                y1={Y}
+                x2={n.x - NODE_R - 6}
+                y2={Y}
+                stroke="#4a5161"
+                strokeWidth="1.25"
+                markerEnd="url(#pipe-arrow)"
+              />
+            )}
 
-      {nodes.map((n, i) => (
-        <g key={n.label}>
-          {/* connector */}
-          {i > 0 && (
-            <line
-              x1={nodes[i - 1].x + 36}
-              y1="60"
-              x2={n.x - 36}
-              y2="60"
-              stroke="#3a4150"
+            {/* label above */}
+            <text
+              x={n.x}
+              y={Y - NODE_R - 12}
+              textAnchor="middle"
+              fontSize="10"
+              fontFamily="ui-monospace, SFMono-Regular, monospace"
+              fill="#ffd633"
+              fontWeight="500"
+            >
+              {n.label}
+            </text>
+
+            {/* outer ring (subtle glow) */}
+            <circle
+              cx={n.x}
+              cy={Y}
+              r={NODE_R}
+              fill="#0f1115"
+              stroke="#2a2f3a"
               strokeWidth="1"
-              markerEnd="url(#pipe-arrow)"
-              strokeDasharray="3 3"
             />
-          )}
+            {/* inner stroke */}
+            <circle
+              cx={n.x}
+              cy={Y}
+              r={NODE_R - 4}
+              fill="none"
+              stroke="#1e2230"
+              strokeWidth="1"
+            />
 
-          {/* node */}
-          <circle cx={n.x} cy="60" r="22" fill="#0f1115" stroke="#3a4150" strokeWidth="1" />
-          <NodeGlyph kind={n.glyph} cx={n.x} cy="60" />
+            <NodeGlyph kind={n.glyph} cx={n.x} cy={Y} />
 
-          {/* label above */}
-          <text x={n.x} y="28" textAnchor="middle" fontSize="9" fontFamily="ui-monospace, monospace" fill="#ffd633">
-            {n.label}
-          </text>
-          {/* sub label below */}
-          <text x={n.x} y="100" textAnchor="middle" fontSize="8" fontFamily="ui-monospace, monospace" fill="#5a6275">
-            {n.sub}
-          </text>
-        </g>
-      ))}
+            {/* sub label below */}
+            <text
+              x={n.x}
+              y={Y + NODE_R + 18}
+              textAnchor="middle"
+              fontSize="9"
+              fontFamily="ui-monospace, SFMono-Regular, monospace"
+              fill="#6a7185"
+            >
+              {n.sub}
+            </text>
+          </g>
+        )
+      })}
     </svg>
   )
 }
 
 function NodeGlyph({ kind, cx, cy }) {
-  const color = '#ffd633'
+  const stroke = '#ffd633'
+
   if (kind === 'sketch') {
+    // L-shape with a dimension tick + a small circle (constraint marker)
     return (
-      <g stroke={color} strokeWidth="1.2" fill="none" strokeLinecap="round">
-        <line x1={cx - 10} y1={cy + 4} x2={cx + 10} y2={cy + 4} />
-        <line x1={cx - 10} y1={cy + 4} x2={cx - 10} y2={cy - 6} />
-        <circle cx={cx + 10} cy={cy - 6} r="4" />
+      <g stroke={stroke} strokeWidth="1.4" fill="none" strokeLinecap="round" strokeLinejoin="round">
+        <path d={`M ${cx - 10} ${cy + 7} L ${cx - 10} ${cy - 5} L ${cx + 8} ${cy - 5}`} />
+        {/* dimension tick */}
+        <line x1={cx - 10} y1={cy + 10} x2={cx + 8} y2={cy + 10} strokeDasharray="1.5 1.5" opacity="0.5" />
+        <line x1={cx - 10} y1={cy + 9} x2={cx - 10} y2={cy + 11} />
+        <line x1={cx + 8} y1={cy + 9} x2={cx + 8} y2={cy + 11} />
+        {/* constraint dot */}
+        <circle cx={cx + 8} cy={cy - 5} r="1.5" fill={stroke} stroke="none" />
       </g>
     )
   }
+
   if (kind === 'feature') {
+    // clean axonometric cube, contained
+    const s = 9
     return (
-      <g>
-        <polygon points={`${cx - 10},${cy + 6} ${cx},${cy + 9} ${cx + 10},${cy + 3} ${cx},${cy}`} fill="none" stroke={color} strokeWidth="1" />
-        <polygon points={`${cx - 10},${cy + 6} ${cx},${cy + 9} ${cx},${cy - 6} ${cx - 10},${cy - 9}`} fill="none" stroke={color} strokeWidth="1" />
-        <polygon points={`${cx},${cy + 9} ${cx + 10},${cy + 3} ${cx + 10},${cy - 12} ${cx},${cy - 6}`} fill="none" stroke={color} strokeWidth="1" />
+      <g stroke={stroke} strokeWidth="1.2" fill="none" strokeLinejoin="round">
+        {/* front face */}
+        <path d={`M ${cx - s} ${cy - s/2} L ${cx} ${cy + s/2} L ${cx + s} ${cy - s/2} L ${cx} ${cy - s * 1.5} Z`} />
+        {/* left face */}
+        <path d={`M ${cx - s} ${cy - s/2} L ${cx - s} ${cy + s/2} L ${cx} ${cy + s * 1.5} L ${cx} ${cy + s/2} Z`} />
+        {/* right face */}
+        <path d={`M ${cx + s} ${cy - s/2} L ${cx + s} ${cy + s/2} L ${cx} ${cy + s * 1.5} L ${cx} ${cy + s/2} Z`} />
       </g>
     )
   }
+
   if (kind === 'assembly') {
+    // 3 interlocking dots representing components
     return (
-      <g fill="none" stroke={color} strokeWidth="1">
-        <circle cx={cx - 6} cy={cy - 4} r="4" />
-        <circle cx={cx + 6} cy={cy + 4} r="4" />
-        <line x1={cx - 4} y1={cy - 2} x2={cx + 4} y2={cy + 2} />
+      <g stroke={stroke} strokeWidth="1.2" fill="none">
+        <circle cx={cx - 6} cy={cy - 5} r="5" />
+        <circle cx={cx + 6} cy={cy - 5} r="5" />
+        <circle cx={cx} cy={cy + 5} r="5" />
       </g>
     )
   }
+
   if (kind === 'drawing') {
+    // page with title block + lines
     return (
-      <g stroke={color} strokeWidth="1" fill="none" strokeLinecap="round">
-        <rect x={cx - 10} y={cy - 8} width="20" height="16" />
-        <line x1={cx - 10} y1={cy - 4} x2={cx + 10} y2={cy - 4} />
-        <line x1={cx - 7} y1={cy} x2={cx + 5} y2={cy} />
-        <line x1={cx - 7} y1={cy + 4} x2={cx + 2} y2={cy + 4} />
+      <g stroke={stroke} strokeWidth="1.2" fill="none" strokeLinejoin="round">
+        <rect x={cx - 11} y={cy - 10} width="22" height="20" rx="1" />
+        <line x1={cx - 11} y1={cy - 3} x2={cx + 11} y2={cy - 3} />
+        <line x1={cx - 8} y1={cy + 2} x2={cx + 4} y2={cy + 2} opacity="0.7" />
+        <line x1={cx - 8} y1={cy + 6} x2={cx + 6} y2={cy + 6} opacity="0.7" />
       </g>
     )
   }
+
   if (kind === 'gcode') {
+    // tool path zigzag with a cutter circle
     return (
-      <g stroke={color} strokeWidth="1" fill="none" strokeLinecap="round">
-        <rect x={cx - 10} y={cy - 6} width="20" height="12" rx="1" />
-        <path d={`M ${cx - 8} ${cy - 2} L ${cx - 4} ${cy + 2} L ${cx} ${cy - 2} L ${cx + 4} ${cy + 2} L ${cx + 8} ${cy - 2}`} />
+      <g stroke={stroke} strokeWidth="1.2" fill="none" strokeLinecap="round" strokeLinejoin="round">
+        <path d={`M ${cx - 11} ${cy + 5} L ${cx - 5} ${cy - 4} L ${cx + 1} ${cy + 5} L ${cx + 7} ${cy - 4}`} />
+        <circle cx={cx + 7} cy={cy - 4} r="2.5" fill="#0f1115" />
       </g>
     )
   }
+
   return null
 }
