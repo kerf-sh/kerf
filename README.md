@@ -43,7 +43,7 @@ A single workspace for mechanical, electronics, drawings, and library parts — 
 - **Code-first** — everything is text. Diffs, code review, branching, version control. The LLM doesn't have to "see" pixels — it edits source.
 - **Two real kernels** — JSCAD for fast iteration; OpenCascade B-rep (`.feature` files) for fillets / shells / lossless STEP export. Pick per file.
 - **Multi-domain** — mechanical assemblies and PCB schematics in the same project. Cross-reference a board outline from a mechanical Component.
-- **Open source** — MIT throughout, including the cloud bundle. Self-host the same code we run.
+- **Open source** — MIT for the core. The hosted-tier plugins (`kerf-billing`, `kerf-cloud`) are proprietary but separable; everything else self-hosts MIT.
 - **Local-first** — no telemetry, no phone-home. The hosted tier exists for convenience, not lock-in.
 
 ## Install
@@ -61,10 +61,11 @@ A single workspace for mechanical, electronics, drawings, and library parts — 
 # Or one-shot installer
 curl -fsSL https://kerf.app/install.sh | sh
 
-# Run (creates kerf.toml on first start)
+# Set up (creates kerf.toml + runs migrations)
 createdb kerf
-kerf
-# → http://localhost:8080
+pip install -e .[mech]      # smallest persona covering mechanical CAD
+kerf-server --migrate
+kerf-server                 # → http://localhost:8080
 ```
 
 In local mode the server auto-creates a single user and skips the login screen entirely (`[server].local_mode = true` is the default).
@@ -84,7 +85,7 @@ You'll need Python 3.11+, Node 22+, and Postgres 14+.
 
 ```sh
 npm run build              # full production build — compiles the SPA via Vite
-npm run build:web          # just the Vite frontend (outputs to backend/web/dist)
+npm run build:web          # just the Vite frontend (outputs to dist/)
 npm run build:api          # install Python dependencies (pip install -e .[full])
 npm run build:icons        # regenerate favicon set + OG image from public/favicon.svg
 npm run build:docs         # rebuild public/docs-manifest.json from the markdown corpus
@@ -95,7 +96,7 @@ npm run build:docs         # rebuild public/docs-manifest.json from the markdown
 The Python backend uses environment variables and optional feature flags to gate the cloud bundle. Default is **OSS**.
 
 ```sh
-# OSS build (default) — single-user local install, no billing, no Workshop
+# OSS build (default) — local install, no billing, no Workshop
 pip install -e .[full] && kerf-server --reload
 
 # Cloud build — adds Workshop sharing, Paystack billing, git, transactional email
@@ -129,22 +130,31 @@ Full schema: see [`kerf.example.toml`](./kerf.example.toml).
 | Capability | Status |
 |---|---|
 | JSCAD authoring + chat-driven edits | ✅ |
-| OpenCascade `.feature` files (Pad / Pocket / Revolve / Fillet / Chamfer / Shell / Hole / Patterns / Push-Pull / Sweep1 / Loft / Variable-radius fillet) | ✅ |
-| 2D parametric sketcher (planegcs constraints, live length/angle dynamic input, plain-English mini-toolbar) | ✅ |
+| OpenCascade `.feature` files (Pad / Pocket / Revolve / Fillet / Chamfer / Shell / Hole / Patterns / Push-Pull / Sweep1 / Sweep2 / Loft / NURBS surfacing) | ✅ |
+| FreeCAD-parity sketch shortcuts (boss-with-draft, cut-from-sketch, hole-pattern-from-sketch, symmetric loft, tangent-locked sweep) | ✅ |
+| 2D parametric sketcher (planegcs constraints, live length/angle, BREP face/edge picker) | ✅ |
 | TechDraw-flavored drawings (multi-sheet, dimensions, GD&T, hatching, leaders, balloons) | ✅ |
 | Electronics via tscircuit (TSX → schematic + PCB + 3D board viewers) | ✅ |
+| SPICE simulation (ngspice), RF s-parameters (scikit-rf), autoroute (FreeRouting) | ✅ |
+| FEM (FEniCSx + CalculiX) — linear-static + modal + thermal + deformed-shape overlay | ✅ |
+| Topology optimization (FEniCSx SIMP + Gmsh mesh + NURBS STEP export) | ✅ |
+| CAM (OpenCAMlib) — 2.5D + 3D parallel/waterline + lathe; G-code posts | ✅ |
+| BIM (`.bim` text-DSL → IFC4 via IfcOpenShell; Revit-parity families/schedules/views/sheets/stairs/MEP/curtain wall) | ✅ |
 | Library + BOM (per-Part visibility, distributors, photos, verified-publisher badge) | ✅ |
-| Assemblies (Component = placed Object instance with config/variant ref) | ✅ |
+| Assemblies + 3D mates (coincident/concentric/distance/angle/tangent, BREP picker) | ✅ |
+| Tolerance stack-up (worst-case / RSS / Monte Carlo + auto chain-walk through mates) | ✅ |
 | Equations + global parameters (mathjs, injected into all runners) | ✅ |
 | Workspaces (orgs) with members + roles + per-workspace billing | ✅ |
 | Workshop sharing (free-tier social gallery, like + fork) | ✅ |
-| Git (commits / branches / merge / GitHub sync) | ✅ |
-| STEP import/export, chunked resumable uploads, server-side tessellation | ✅ |
-| File revisions (Cmd+Z, full history drawer) | ✅ |
+| Git (commits / branches / merge / GitHub sync) — S3-backed bare-repo storer | ✅ |
+| STEP import/export, chunked resumable uploads, server-side pre-tessellation | ✅ |
+| Imports: KiCad (Tier 1 + 2 libraries), OpenSCAD, Rhino3DM | ✅ |
+| Scripting via `kerf-sdk` (PyPI, JSON-RPC to `/v1/rpc`) | ✅ |
+| File revisions (Cmd+Z + diff-based gzip compression + SHA-256 dedup) | ✅ |
 | Filesystem / S3 / R2 / MinIO storage | ✅ |
-| 🔮 NURBS surfacing for jewelry (sweep2, networkSrf, blendSrf) | planned |
-| 🔮 SPICE simulation, RF, autorouting (electronics) | planned |
-| 🔮 FEM (CalculiX + Gmsh) | planned |
+| Viewport perf — frustum culling + InstancedMesh batching for big assemblies | ✅ |
+| 📋 Sketch → JSCAD workflow (`extrude_sketch_to_jscad` + reactive re-eval) | next |
+| 📋 Import: FreeCAD | next |
 
 The full ROADMAP — shipped, in-flight, next, planned — is in [ROADMAP.md](./ROADMAP.md).
 
@@ -152,41 +162,42 @@ The full ROADMAP — shipped, in-flight, next, planned — is in [ROADMAP.md](./
 
 ```
 packages/
-├── kerf-core/         — FastAPI app factory, plugin loader, shared infra
-├── kerf-auth/         — auth routes + JWT middleware
-├── kerf-api/          — core API routes
-├── kerf-chat/         — LLM chat + tool dispatch
-├── kerf-v1/           — v1 REST endpoints
-├── kerf-billing/      — billing routes (cloud-only)
-├── kerf-cloud/        — cloud-tier routes (Workshop, git, email, fx)
-├── kerf-cad-core/     — OpenCascade .feature file kernel
-├── kerf-tess/         — server-side tessellation worker
-├── kerf-fem/          — FEM (CalculiX / Gmsh) worker
-├── kerf-cam/          — CAM post-processor
-├── kerf-topo/         — topology optimisation worker
-├── kerf-mates/        — assembly mates solver
-├── kerf-bim/          — BIM / IFC routes
-├── kerf-electronics/  — EDA / PCB routes
-├── kerf-imports/      — STEP / 3DM import pipeline
-├── kerf-render/       — render worker
-└── kerf-workers/      — generic background worker harness
+├── kerf-core/         — FastAPI app factory, plugin loader, DB, storage
+├── kerf-auth/         — JWT + API tokens + sessions
+├── kerf-api/          — core REST surface + ~50 LLM tools
+├── kerf-chat/         — LLM agent loop + tool dispatch + llm_docs corpus
+├── kerf-v1/           — `/v1/rpc` JSON-RPC for kerf-sdk
+├── kerf-billing/      — Paystack billing (PROPRIETARY, cloud-only)
+├── kerf-cloud/        — Workshop, git, GitHub sync, email, distributors (PROPRIETARY)
+├── kerf-cad-core/     — pythonOCC: sketch, BREP, surfacing, .feature ops
+├── kerf-tess/         — STEP → GLB tessellation worker
+├── kerf-fem/          — FEM (FEniCSx primary, CalculiX second-solver)
+├── kerf-cam/          — OpenCAMlib 2.5D + 3D + lathe + G-code posts
+├── kerf-topo/         — SIMP topology optimization
+├── kerf-mates/        — Assembly mate solvers + tolerance stack-up
+├── kerf-bim/          — IFC compiler + Revit-parity families/schedules/views
+├── kerf-electronics/  — ngspice, scikit-rf, FreeRouting, KiCad-parity
+├── kerf-imports/      — KiCad, FreeCAD, OpenSCAD, Rhino3DM
+├── kerf-render/       — render route
+├── kerf-workers/      — background-worker harness
+└── kerf-sdk/          — Python SDK (PyPI: kerf-sdk) for scripting
 
-backend/               — transitional shared code (tools/, workers/, geom/ — not yet split)
-Dockerfile             — monorepo image; use KERF_PERSONA build-arg to select plugin set
-docker-compose.yml     — local dev stack (app + postgres + redis)
+Dockerfile             — monorepo image; KERF_PERSONA build-arg selects plugin set
+docker-compose.yml     — local dev stack (app + postgres)
+deployment/            — k8s + Cloud Run manifests
 
 src/
-├── components/        — React components
-├── routes/            — pages (Editor, Projects, Library, Workshop, Docs, …)
+├── components/        — React components + illustrations
+├── routes/            — Landing, Editor, Projects, Library, Workshop, Docs
 ├── lib/               — runners (JSCAD / OCCT / sketch / equations), API client
-├── store/             — Zustand stores (workspace, auth, workspaces)
-└── cloud/             — cloud-tier UI
+├── store/             — Zustand stores
+└── cloud/             — cloud-tier UI (PROPRIETARY)
 
-cloud/                 — top-level cloud bundle metadata
 docs/                  — public-facing docs (rendered at /docs)
-public/                — static assets (icons, OG image, screenshots, planegcs.wasm)
+public/                — static assets (icons, OG image, planegcs.wasm)
 ROADMAP.md             — direction
-docs/architecture.md   — API + data model spec
+docs/architecture.md   — API + data model
+docs/capabilities.md   — plugin capability-tag reference
 ```
 
 ## Tech stack
@@ -198,22 +209,20 @@ docs/architecture.md   — API + data model spec
 - **Backend**: Python 3.11, FastAPI, asyncpg, SQLAlchemy, Alembic, PyJWT, `httpx`
 - **DB**: Postgres 14+ (Supabase-compatible)
 - **LLM**: multi-provider — Anthropic, OpenAI, Moonshot, Gemini (default `claude-opus-4-7`)
-- **Cloud-only**: Paystack (USD-priced, ZAR-settled), bunny.net CDN, go-git
+- **Cloud-only**: Paystack (USD-priced, ZAR-settled), bunny.net CDN, pygit2 + S3GitStorer
 
 ## Testing
 
 ```sh
-# Backend integration scenarios (boots a real server + Postgres)
-createdb kerf_test
-DATABASE_URL='postgres://localhost/kerf_test?sslmode=disable' \
-  pytest backend/tests/
-# → integration scenarios covering auth, projects, files, chat
+# Backend — auto-discovered from every plugin's tests/
+pytest                                  # full suite (~864 tests)
+pytest packages/kerf-api/tests/         # one plugin
+pytest packages/kerf-fem/tests/         # FEM (skips dolfinx tests if not installed)
 
-# Frontend unit tests (vitest)
+# Frontend (vitest)
 npm test
-# → 22 tests covering sketcher pure helpers + planegcs solver round-trip
 
-# Type-check + lint
+# Lint
 npm run lint
 ```
 
@@ -222,7 +231,7 @@ npm run lint
 PRs welcome. Pick anything marked `📋 next` or `🔮 planned` in [ROADMAP.md](./ROADMAP.md). For larger work, open an issue first so we can align scope.
 
 - **Style**: ESLint + Prettier defaults. Match the surrounding code; we don't bikeshed.
-- **Tests**: every PR that touches a backend handler should add or extend a test in `backend/tests/`. Frontend changes: add a vitest if the logic isn't UI-only.
+- **Tests**: every PR that touches a plugin should add or extend a test in `packages/kerf-<plugin>/tests/`. Frontend changes: add a vitest if the logic isn't UI-only.
 - **Commits**: imperative tense, ~70 chars (`fix sketcher line-tool double-commit`).
 - **The LLM edits source files directly.** If you add a new file kind or feature, also add a `packages/kerf-chat/llm_docs/<topic>.md` so the model knows about it. The doc-search tool indexes that directory automatically.
 
@@ -230,7 +239,9 @@ See [docs/architecture.md](./docs/architecture.md) for the API + data model spec
 
 ## License
 
-MIT — see [LICENSE](./LICENSE). The cloud bundle is the same MIT license; you can self-host it. Anyone can run, fork, modify, distribute, sublicense, or sell.
+Dual-licensed:
+- **MIT** for the core — see [LICENSE](./LICENSE). Covers everything outside `packages/kerf-billing/`, `packages/kerf-cloud/`, and `src/cloud/`.
+- **Proprietary** for the hosted-tier bundle — see [LICENSE-CLOUD](./LICENSE-CLOUD).
 
 Built in Durban 🇿🇦 by a small team. Engineered for engineers everywhere.
 
@@ -239,7 +250,7 @@ Built in Durban 🇿🇦 by a small team. Engineered for engineers everywhere.
 - [Docs](https://kerf.app/docs) — getting started, concepts, sketching, assemblies, drawings, electronics
 - [ROADMAP.md](./ROADMAP.md) — shipped · in-flight · next · planned
 - [docs/architecture.md](./docs/architecture.md) — full API + data model
-- [backend/README.md](./backend/README.md) — backend developer guide
+- [docs/capabilities.md](./docs/capabilities.md) — plugin capability-tag taxonomy
 - [docs/cloud-operator.md](./docs/cloud-operator.md) — hosted-tier build/deploy notes
 - [Issues](https://github.com/kerf-sh/kerf/issues) · [Discussions](https://github.com/kerf-sh/kerf/discussions)
 </content>

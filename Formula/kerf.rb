@@ -2,23 +2,23 @@
 #
 # Install via a personal tap:
 #
-#   brew tap imranp/kerf https://github.com/imranp/homebrew-kerf
+#   brew tap kerf-sh/tap https://github.com/kerf-sh/homebrew-tap
 #   brew install kerf
 #
 # Or directly from this repo once tagged:
 #
-#   brew install imranp/kerf/kerf
+#   brew install kerf-sh/tap/kerf
 #
 # This builds from source. Once we ship pre-built release binaries, swap
 # the `url` + `sha256` to a release tarball and remove the `:build` deps.
 
 class Kerf < Formula
   desc "Chat-driven CAD tool. JSCAD code on one side, 3D rendering on the other"
-  homepage "https://github.com/imranp/kerf"
-  url "https://github.com/imranp/kerf/archive/refs/tags/v0.1.0.tar.gz"
+  homepage "https://github.com/kerf-sh/tap"
+  url "https://github.com/kerf-sh/tap/archive/refs/tags/v0.1.0.tar.gz"
   sha256 "REPLACE_WITH_RELEASE_TARBALL_SHA256"
   license "MIT"
-  head "https://github.com/imranp/kerf.git", branch: "main"
+  head "https://github.com/kerf-sh/tap.git", branch: "main"
 
   depends_on "node" => :build
   depends_on "python@3.12"
