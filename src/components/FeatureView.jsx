@@ -591,18 +591,33 @@ export default function FeatureView({
   }, [updateTree])
 
   // ---- Push/pull commit: append a push_pull feature node ----
-  const onPushPullCommit = useCallback(({ partId, faceId, distance }) => {
+  const onPushPullCommit = useCallback(({ partId, faceId, faceName, distance }) => {
     if (Math.abs(distance) < 0.05) return
     void partId
     const id = newFeatureId('push_pull')
+    // T5: dual-write face_name (persistent) + face_id (legacy fallback).
     const node = { id, op: 'push_pull', face_id: faceId, distance }
+    if (faceName) node.face_name = faceName
     updateTree((arr) => [...arr, node])
     setSelectedId(id)
     setFeaturePickMode(null)
   }, [updateTree, setFeaturePickMode])
 
   // ---- Sketch-on-face: handle a one-shot face pick that creates a sketch ----
-  const onFacePicked = useCallback(async (faceId, partId) => {
+  // T5: onFacePicked now receives { id, name, partId } from FeatureRenderer
+  // (name is the persistent face name, id is the integer id).
+  const onFacePicked = useCallback(async (pickArg, legacyPartId) => {
+    // Support both legacy (faceId, partId) and new ({ id, name, partId }) shapes.
+    let faceId, faceName, partId
+    if (pickArg && typeof pickArg === 'object' && 'id' in pickArg) {
+      faceId   = pickArg.id
+      faceName = pickArg.name || ''
+      partId   = pickArg.partId
+    } else {
+      faceId   = pickArg
+      faceName = ''
+      partId   = legacyPartId
+    }
     void partId
     const mode = featurePickMode
     const target = featurePickTarget
@@ -629,9 +644,19 @@ export default function FeatureView({
     }
     if (mode === 'one_shot_face' && target) {
       // Fill the target field on the target feature with the picked face id.
-      patchFeature(target.featureId, { [target.fieldKey]: target.accept === 'face_multi'
-        ? Array.from(new Set([...(_arrayField(tree, target.featureId, target.fieldKey)), faceId]))
-        : faceId })
+      // T5: also dual-write the persistent name into a companion _name field
+      // (e.g. target_face_id → target_face_name, face_id → face_name).
+      if (target.accept === 'face_multi') {
+        patchFeature(target.featureId, {
+          [target.fieldKey]: Array.from(new Set([...(_arrayField(tree, target.featureId, target.fieldKey)), faceId])),
+        })
+      } else {
+        const patch = { [target.fieldKey]: faceId }
+        // Derive companion name key: target_face_id → target_face_name, face_id → face_name
+        const nameKey = target.fieldKey.replace(/_id$/, '_name')
+        if (faceName && nameKey !== target.fieldKey) patch[nameKey] = faceName
+        patchFeature(target.featureId, patch)
+      }
       setFeaturePickMode(null)
     }
     if (mode === 'one_shot_axis' || mode === 'one_shot_plane') {

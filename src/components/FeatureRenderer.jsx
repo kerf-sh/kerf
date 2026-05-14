@@ -8,7 +8,7 @@
 //
 // Inputs:
 //   - meshes: [{ id, mesh: { vertices, indices, normals, faceIds, edgeSegs,
-//                            edgeIds, faceMeta } }]
+//                            edgeIds, faceMeta, faceNames } }]
 //             Direct from the worker (occtRunner runFeatures result, with the
 //             id stamped in by FeatureView).
 //   - selection: { faceIds: Set<number>, edgeIds: Set<number> }
@@ -17,10 +17,12 @@
 //             What does a click do? When null, clicks are no-ops (the user
 //             is just orbiting / inspecting).
 //   - onSelectionChange(next) — receives a fresh `{faceIds, edgeIds}`.
-//   - onFacePick(faceId, partId) — fired on every face click in face/pushpull
-//             mode (the multi-select set is *also* updated for face mode).
-//   - onPushPullCommit({ partId, faceId, distance }) — push/pull drag complete.
-//   - onPushPullPreview({ partId, faceId, distance }) — debounced 100ms, used
+//   - onFacePick({ id: number, name: string, partId: string }) — fired on every
+//             face click in face/pushpull mode (the multi-select set is *also*
+//             updated for face mode). T5: name is the persistent face name from
+//             the worker's faceNames map, or '' when not available.
+//   - onPushPullCommit({ partId, faceId, faceName, distance }) — push/pull drag complete.
+//   - onPushPullPreview({ partId, faceId, faceName, distance }) — debounced 100ms, used
 //             to drive a worker preview shape. The renderer itself draws the
 //             ghost prism using only Three.js (no worker needed for visual).
 //
@@ -28,13 +30,14 @@
 // so a face id is `(partId, faceId)` and an edge id is `(partId, edgeId)`.
 // Sets store faces/edges as `partId|faceId` strings to scope correctly.
 //
-// ID-stability story:
+// ID-stability story (T5 update):
 //   The OCCT worker assigns `faceId`/`edgeId` from TopExp_Explorer order on
 //   each evaluation. Re-running the same tree gives the same ids; structural
 //   edits (adding/removing/reordering features) shuffle ids. The selection
 //   set is *not* persisted — it lives in component state and is cleared by
-//   the FeatureView whenever the tree mutates structurally (a future polish
-//   would re-map by spatial proximity to keep "intent" alive across edits).
+//   the FeatureView whenever the tree mutates structurally. T5 adds persistent
+//   face names (from the worker's faceNames map) so FeatureView can write
+//   both the integer id and the name into the feature node on commit.
 
 import { useEffect, useImperativeHandle, useRef, useState, forwardRef } from 'react'
 import * as THREE from 'three'
@@ -59,9 +62,9 @@ const FeatureRenderer = forwardRef(function FeatureRenderer({
   selection,                // { faceIds: Set<string>, edgeIds: Set<string> }
   pickMode,                 // 'face' | 'edge' | 'pushpull' | null
   onSelectionChange,        // (nextSelection) => void
-  onFacePick,               // (faceId:number, partId:string) => void
-  onPushPullCommit,         // ({partId, faceId, distance}) => void
-  onPushPullPreview,        // ({partId, faceId, distance}) => void
+  onFacePick,               // ({id:number, name:string, partId:string}) => void
+  onPushPullCommit,         // ({partId, faceId, faceName, distance}) => void
+  onPushPullPreview,        // ({partId, faceId, faceName, distance}) => void
   className = '',
 }, ref) {
   const mountRef = useRef(null)
@@ -204,8 +207,12 @@ const FeatureRenderer = forwardRef(function FeatureRenderer({
       stateRef.current.hoverHit = hit
       paintHover(stateRef.current, hit, selectionRef.current, mode)
       if (hit) {
-        if (hit.kind === 'face') setHoverInfo({ kind: 'face', label: `face ${hit.faceId}` })
-        else if (hit.kind === 'edge') setHoverInfo({ kind: 'edge', label: `edge ${hit.edgeId}` })
+        if (hit.kind === 'face') {
+          const part = stateRef.current?.perPart?.get(hit.partId)
+          const faceNameStr = part?.faceNames?.[String(hit.faceId)] || ''
+          const label = faceNameStr ? faceNameStr : `face ${hit.faceId}`
+          setHoverInfo({ kind: 'face', label })
+        } else if (hit.kind === 'edge') setHoverInfo({ kind: 'edge', label: `edge ${hit.edgeId}` })
       } else {
         setHoverInfo(null)
       }
@@ -223,9 +230,12 @@ const FeatureRenderer = forwardRef(function FeatureRenderer({
       controls.enabled = false
       const part = stateRef.current.perPart.get(hit.partId)
       const meta = part?.faceMeta?.find?.((m) => m.id === hit.faceId)
+      // T5: capture persistent face name alongside integer id.
+      const faceName = part?.faceNames?.[String(hit.faceId)] || ''
       stateRef.current.drag = {
         partId: hit.partId,
         faceId: hit.faceId,
+        faceName,
         startX: ev.clientX,
         startY: ev.clientY,
         distance: 0,
@@ -254,6 +264,7 @@ const FeatureRenderer = forwardRef(function FeatureRenderer({
         onPushPullCommitRef.current?.({
           partId: drag.partId,
           faceId: drag.faceId,
+          faceName: drag.faceName || '',
           distance: drag.distance,
         })
       }
@@ -294,7 +305,10 @@ const FeatureRenderer = forwardRef(function FeatureRenderer({
           next.edgeIds = new Set()
         }
         onSelectionChangeRef.current?.(next)
-        onFacePickRef.current?.(hit.faceId, hit.partId)
+        // T5: emit persistent face name alongside integer id.
+        const pickPart = stateRef.current?.perPart?.get(hit.partId)
+        const pickFaceName = pickPart?.faceNames?.[String(hit.faceId)] || ''
+        onFacePickRef.current?.({ id: hit.faceId, name: pickFaceName, partId: hit.partId })
       } else if (hit.kind === 'edge') {
         const k = edgeKey(hit.partId, hit.edgeId)
         if (ev.shiftKey) {
@@ -478,6 +492,8 @@ const FeatureRenderer = forwardRef(function FeatureRenderer({
         edgeIdPerSeg: edgeIds ? edgeIds.slice() : new Uint32Array(0),
         edgePositions: edgeSegs ? edgeSegs.slice() : new Float32Array(0),
         faceMeta: m.faceMeta || [],
+        // T5: persistent face names from the worker's namer closure.
+        faceNames: m.faceNames || {},
       })
     }
 
