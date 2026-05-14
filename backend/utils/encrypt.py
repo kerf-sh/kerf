@@ -4,7 +4,7 @@ import hashlib
 
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
-from config import get_settings
+from kerf_core.config import get_settings
 
 
 def _derive_key(domain: str) -> bytes:

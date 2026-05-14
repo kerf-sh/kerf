@@ -4,7 +4,16 @@ from pathlib import Path
 from tools.registry import ToolSpec, err_payload, ok_payload, register
 from tools.context import ProjectCtx
 
-_DOCS_DIR = Path(__file__).resolve().parent.parent / "llm_docs"
+# llm_docs corpus has moved into the kerf-chat plugin package.  Try the new
+# location first; fall back to the legacy ``backend/llm_docs`` for any tests
+# still asserting old paths.
+try:
+    import kerf_chat as _kerf_chat
+    _DOCS_DIR = Path(_kerf_chat.__file__).resolve().parent.parent.parent / "llm_docs"
+    if not _DOCS_DIR.exists():
+        raise ImportError("llm_docs not found alongside kerf-chat")
+except ImportError:
+    _DOCS_DIR = Path(__file__).resolve().parent.parent / "llm_docs"
 _HEADER_RE = re.compile(r"^#{1,3}\s+(.+?)\s*$", re.MULTILINE)
 _H1_RE = re.compile(r"^#\s+(.+?)\s*$", re.MULTILINE)
 

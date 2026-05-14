@@ -1,0 +1,41 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "kerf-core"
+version = "0.1.0"
+description = "Kerf core: FastAPI app, plugin loader, shared infrastructure"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+dependencies = [
+    "fastapi>=0.111.0",
+    "uvicorn[standard]>=0.29.0",
+    "asyncpg>=0.29.0",
+    "structlog>=24.1.0",
+    "pydantic>=2.7.0",
+    "pydantic-settings>=2.2.0",
+    "httpx>=0.27.0",
+    "tomli>=2.0.0; python_version < '3.11'",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "httpx>=0.27.0",
+]
+
+[project.scripts]
+kerf-server = "kerf_core.__main__:main"
+
+[project.entry-points."kerf.plugins"]
+# kerf-core itself does not register as a plugin; it is the loader.
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/kerf_core"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

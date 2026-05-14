@@ -1,0 +1,189 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+# ---------------------------------------------------------------------------
+# kerf — meta-package that installs a named "persona" bundle of plugins.
+#
+# Cloud-deploy story
+# ------------------
+# Each pod type selects the minimal set of plugins it needs:
+#
+#   api-only      stateless API gateway + chat (no heavy compute)
+#   mech          full mechanical CAD stack (CAD, FEM, CAM, topology, mates)
+#   electronics   EDA / PCB / SPICE stack
+#   bim           building information modelling stack
+#   full          everything (monolith / development)
+#   compute-only  heavy compute workers only (no auth/API; behind internal LB)
+#
+# Install example:
+#   pip install -e .[mech]
+# ---------------------------------------------------------------------------
+
+[project]
+name = "kerf"
+version = "0.1.0"
+description = "Chat-driven CAD/EDA/BIM platform — meta package"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+dependencies = []
+
+[project.optional-dependencies]
+
+api-only = [
+    "kerf-core",
+    "kerf-auth",
+    "kerf-api",
+    "kerf-chat",
+    "kerf-v1",
+]
+
+mech = [
+    "kerf-core",
+    "kerf-auth",
+    "kerf-api",
+    "kerf-chat",
+    "kerf-cad-core",
+    "kerf-tess",
+    "kerf-fem",
+    "kerf-cam",
+    "kerf-topo",
+    "kerf-mates",
+]
+
+electronics = [
+    "kerf-core",
+    "kerf-auth",
+    "kerf-api",
+    "kerf-chat",
+    "kerf-electronics",
+]
+
+bim = [
+    "kerf-core",
+    "kerf-auth",
+    "kerf-api",
+    "kerf-chat",
+    "kerf-bim",
+]
+
+full = [
+    "kerf-core",
+    "kerf-auth",
+    "kerf-api",
+    "kerf-chat",
+    "kerf-v1",
+    "kerf-billing",
+    "kerf-cloud",
+    "kerf-cad-core",
+    "kerf-tess",
+    "kerf-fem",
+    "kerf-cam",
+    "kerf-topo",
+    "kerf-mates",
+    "kerf-electronics",
+    "kerf-bim",
+    "kerf-imports",
+    "kerf-render",
+    "kerf-workers",
+]
+
+compute-only = [
+    "kerf-core",
+    "kerf-cad-core",
+    "kerf-tess",
+    "kerf-fem",
+    "kerf-cam",
+    "kerf-topo",
+    "kerf-mates",
+    "kerf-electronics",
+    "kerf-bim",
+    "kerf-imports",
+    "kerf-render",
+    "kerf-workers",
+]
+
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "httpx>=0.27.0",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = []
+
+[tool.uv.workspace]
+members = [
+    "packages/kerf-core",
+    "packages/kerf-sdk",
+    "packages/kerf-auth",
+    "packages/kerf-api",
+    "packages/kerf-chat",
+    "packages/kerf-v1",
+    "packages/kerf-billing",
+    "packages/kerf-cloud",
+    "packages/kerf-cad-core",
+    "packages/kerf-tess",
+    "packages/kerf-fem",
+    "packages/kerf-cam",
+    "packages/kerf-topo",
+    "packages/kerf-mates",
+    "packages/kerf-bim",
+    "packages/kerf-electronics",
+    "packages/kerf-imports",
+    "packages/kerf-render",
+    "packages/kerf-workers",
+]
+
+[tool.uv.sources]
+kerf-core = { workspace = true }
+kerf-sdk = { workspace = true }
+kerf-auth = { workspace = true }
+kerf-api = { workspace = true }
+kerf-chat = { workspace = true }
+kerf-v1 = { workspace = true }
+kerf-billing = { workspace = true }
+kerf-cloud = { workspace = true }
+kerf-cad-core = { workspace = true }
+kerf-tess = { workspace = true }
+kerf-fem = { workspace = true }
+kerf-cam = { workspace = true }
+kerf-topo = { workspace = true }
+kerf-mates = { workspace = true }
+kerf-bim = { workspace = true }
+kerf-electronics = { workspace = true }
+kerf-imports = { workspace = true }
+kerf-render = { workspace = true }
+kerf-workers = { workspace = true }
+
+[tool.pytest.ini_options]
+# Auto-discover tests from every plugin package and from the legacy backend/
+# tree (which still hosts shared tools/ / workers/ / utils/ used by plugins
+# until the next migration pass).
+testpaths = [
+    "backend/tests",
+    "kerf-core/tests",
+    "kerf-auth/tests",
+    "kerf-api/tests",
+    "kerf-chat/tests",
+    "kerf-v1/tests",
+    "kerf-billing/tests",
+    "kerf-cloud/tests",
+    "kerf-cad-core/tests",
+    "kerf-tess/tests",
+    "kerf-fem/tests",
+    "kerf-cam/tests",
+    "kerf-topo/tests",
+    "kerf-mates/tests",
+    "kerf-bim/tests",
+    "kerf-electronics/tests",
+    "kerf-imports/tests",
+    "kerf-render/tests",
+    "kerf-workers/tests",
+    "pyworker/tests",
+]
+asyncio_mode = "auto"
+# importlib mode lets multiple plugin tests/ dirs coexist without conflicting
+# package paths.
+addopts = "--import-mode=importlib"

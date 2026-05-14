@@ -1,0 +1,34 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "kerf-billing"
+version = "0.1.0"
+description = "Kerf billing plugin: Paystack payments (cloud-only)"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+dependencies = [
+    "fastapi>=0.111.0",
+    "asyncpg>=0.29.0",
+    "httpx>=0.27.0",
+    "kerf-core>=0.1.0",
+    "kerf-auth>=0.1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "httpx>=0.27.0",
+]
+
+[project.entry-points."kerf.plugins"]
+kerf-billing = "kerf_billing.plugin:register"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/kerf_billing"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

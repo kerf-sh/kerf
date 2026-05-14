@@ -3,7 +3,7 @@ import math
 import uuid
 from tools.registry import ToolSpec, err_payload, ok_payload, register
 from tools.context import ProjectCtx
-from db.queries import files as file_queries
+from kerf_core.db.queries import files as file_queries
 
 
 compare_models_spec = ToolSpec(

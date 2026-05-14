@@ -5,7 +5,7 @@ from typing import Optional
 
 import asyncpg
 
-from workers.base import BaseWorker
+from kerf_workers.base import BaseWorker
 
 logger = logging.getLogger(__name__)
 

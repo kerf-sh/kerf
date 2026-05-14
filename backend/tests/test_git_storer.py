@@ -6,8 +6,8 @@ import boto3
 import pygit2
 from moto import mock_aws
 
-from storage.s3 import S3Storage
-from storage.git_storer import S3GitStorer, StorerConcurrencyError
+from kerf_core.storage.s3 import S3Storage
+from kerf_core.storage.git_storer import S3GitStorer, StorerConcurrencyError
 
 BUCKET = 'test-bucket'
 REGION = 'us-east-1'

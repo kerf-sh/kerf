@@ -9,10 +9,7 @@ from . import (
     surfacing,
     feature_draft,
     feature_mirror,
-    fem,
-    cam,
     sim,
-    topo,
     assembly,
     tolerance,
     docs,
@@ -22,8 +19,10 @@ from . import (
     project_layers,
     routing,
     sketch,
-    # phasing and drafting_complete: modules do not exist yet
     # Moved to plugin packages:
+    # fem -> kerf-fem
+    # cam -> kerf-cam
+    # topo -> kerf-topo
     # bim, bim_categories, family, schedule, view, sheet, stairs, railings,
     # mep, curtain_wall, element_types -> kerf-bim
     # rf, autoroute, pour, erc, net_classes, buses, via_stitching, shove_router,

@@ -6,11 +6,11 @@ from typing import Optional
 
 import asyncpg
 
-from backend.workers.fem_worker import FEMWorker
+from kerf_fem.worker import FEMWorker
 from kerf_workers.spice_worker import SPICEWorker
-from backend.workers.tess_worker import TessWorker
-from backend.workers.auto_tess_worker import AutoTessWorker
-from backend.workers.cam_worker import CAMWorker
+from workers.tess_worker import TessWorker
+from workers.auto_tess_worker import AutoTessWorker
+from kerf_cam.worker import CAMWorker
 
 logger = logging.getLogger(__name__)
 
