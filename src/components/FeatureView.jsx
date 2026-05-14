@@ -118,7 +118,7 @@ const FEATURE_KINDS = [
     op: 'cut_from_sketch',
     label: 'Cut from sketch',
     icon: Disc,
-    defaults: { target_id: '', target_face_id: -1, sketch_path: '', depth: 5, reverse: false },
+    defaults: { target_id: '', target_face_id: -1, target_face_name: '', sketch_path: '', depth: 5, reverse: false },
     fields: [
       { key: 'target_id', kind: 'feature_picker', label: 'Target body' },
       { key: 'target_face_id', kind: 'face_picker_single', label: 'Face' },
@@ -248,7 +248,7 @@ const FEATURE_KINDS = [
     op: 'push_pull',
     label: 'Push/Pull',
     icon: Move,
-    defaults: { face_id: -1, distance: 0 },
+    defaults: { face_id: -1, face_name: '', distance: 0 },
     fields: [
       { key: 'face_id', kind: 'face_picker_single', label: 'Face' },
       { key: 'distance', kind: 'number', label: 'Distance (mm) — negative = into body' },
