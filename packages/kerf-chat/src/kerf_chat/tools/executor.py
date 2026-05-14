@@ -1,7 +1,7 @@
 import json
 from typing import Optional
-from tools.registry import Tool, ToolSpec, err_payload, ok_payload, Registry
-from tools.context import ProjectCtx
+from kerf_chat.tools.registry import Tool, ToolSpec, err_payload, ok_payload, Registry
+from kerf_core.utils.context import ProjectCtx
 
 
 def specs(role: str) -> list[ToolSpec]:

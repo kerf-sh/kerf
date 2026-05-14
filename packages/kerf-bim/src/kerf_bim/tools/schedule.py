@@ -1,6 +1,6 @@
 import json
-from tools.registry import ToolSpec, err_payload, ok_payload, register
-from tools.context import ProjectCtx
+from kerf_chat.tools.registry import ToolSpec, err_payload, ok_payload, register
+from kerf_core.utils.context import ProjectCtx
 
 
 def _get_nested_value(obj, path):
@@ -188,7 +188,7 @@ async def run_create_schedule(ctx: ProjectCtx, args: bytes) -> str:
     if not clean.startswith("/"):
         return err_payload("path must be absolute", "BAD_ARGS")
 
-    from tools.bim import resolve_path, ensure_folders
+    from kerf_bim.tools.bim import resolve_path, ensure_folders
     rp = await resolve_path(ctx, clean)
     if rp.get("exists"):
         return err_payload("path already exists", "EXISTS")
@@ -209,7 +209,7 @@ async def run_create_schedule(ctx: ProjectCtx, args: bytes) -> str:
 
     body = json.dumps(schedule_doc, indent="  ")
 
-    from tools.bim import record_revision_for_file
+    from kerf_bim.tools.bim import record_revision_for_file
     new_id = await ctx.pool.fetchval(
         "INSERT INTO files(project_id, parent_id, name, kind, content) VALUES ($1, $2, $3, 'schedule', $4) RETURNING id",
         ctx.project_id, parent_id, leaf, body,
@@ -282,7 +282,7 @@ async def run_update_schedule_filter(ctx: ProjectCtx, args: bytes) -> str:
         new_content, fid,
     )
 
-    from tools.bim import record_revision_for_file
+    from kerf_bim.tools.bim import record_revision_for_file
     await record_revision_for_file(ctx, fid, new_content, "tool")
 
     return ok_payload({"updated": True})

@@ -5,7 +5,7 @@ import json
 import unittest
 
 from kerf_electronics.tools.pcb_drc import _run_drc_on_circuit, _DEFAULT_RULES
-from tools.registry import Registry
+from kerf_chat.tools.registry import Registry
 
 
 # ---------------------------------------------------------------------------
@@ -48,7 +48,7 @@ def make_silk(x, y):
 
 
 async def call_tool(name, payload):
-    from tools.registry import Registry
+    from kerf_chat.tools.registry import Registry
     tool = next(t for t in Registry if t.spec.name == name)
     return json.loads(await tool.run(None, json.dumps(payload).encode()))
 

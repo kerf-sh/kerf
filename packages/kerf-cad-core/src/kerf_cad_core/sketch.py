@@ -1,8 +1,8 @@
 import json
 import uuid
-from tools.registry import ToolSpec, err_payload, ok_payload, register
-from tools.context import ProjectCtx
-from tools.file_ops import resolve_path
+from kerf_chat.tools.registry import ToolSpec, err_payload, ok_payload, register
+from kerf_core.utils.context import ProjectCtx
+from kerf_api.tools.file_ops import resolve_path
 
 
 def _gen_id() -> str:

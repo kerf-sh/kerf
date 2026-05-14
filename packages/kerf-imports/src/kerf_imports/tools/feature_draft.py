@@ -1,8 +1,8 @@
 import json
 import uuid
-from tools.registry import ToolSpec, err_payload, ok_payload, register
-from tools.context import ProjectCtx
-from tools.surfacing import next_node_id, read_feature_content, append_feature_node
+from kerf_chat.tools.registry import ToolSpec, err_payload, ok_payload, register
+from kerf_core.utils.context import ProjectCtx
+from kerf_cad_core.surfacing import next_node_id, read_feature_content, append_feature_node
 
 ANGLE_MIN = -30.0
 ANGLE_MAX = 30.0

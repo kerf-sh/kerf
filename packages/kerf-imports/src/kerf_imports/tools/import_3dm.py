@@ -12,8 +12,8 @@ import os
 import uuid
 from typing import Any
 
-from tools.context import ProjectCtx
-from tools.registry import ToolSpec, err_payload, ok_payload, register
+from kerf_core.utils.context import ProjectCtx
+from kerf_chat.tools.registry import ToolSpec, err_payload, ok_payload, register
 
 # ---------------------------------------------------------------------------
 # Spec: import_3dm

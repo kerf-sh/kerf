@@ -1,8 +1,8 @@
 import json
 import re
 from pathlib import Path
-from tools.registry import ToolSpec, err_payload, ok_payload, register
-from tools.context import ProjectCtx
+from kerf_chat.tools.registry import ToolSpec, err_payload, ok_payload, register
+from kerf_core.utils.context import ProjectCtx
 
 # llm_docs corpus has moved into the kerf-chat plugin package.  Try the new
 # location first; fall back to the legacy ``backend/llm_docs`` for any tests

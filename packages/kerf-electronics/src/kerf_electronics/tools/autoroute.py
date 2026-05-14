@@ -4,7 +4,7 @@ from typing import Any
 from kerf_electronics.freerouting.dsn_writer import AutorouteParams, circuit_to_dsn
 from kerf_electronics.freerouting.freerouting import FreeRouter
 from kerf_electronics.freerouting.ses_reader import ses_to_routes
-from tools.registry import ToolSpec, err_payload, ok_payload, register
+from kerf_chat.tools.registry import ToolSpec, err_payload, ok_payload, register
 
 
 autoroute_circuit_spec = ToolSpec(

@@ -1,5 +1,5 @@
 import json
-from tools.registry import ToolSpec, err_payload, ok_payload, register
+from kerf_chat.tools.registry import ToolSpec, err_payload, ok_payload, register
 
 
 ROUTE_WITH_SHOVE_SPEC = ToolSpec(

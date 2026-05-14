@@ -9,8 +9,8 @@ import json
 import uuid
 
 try:
-    from tools.registry import ToolSpec, err_payload, ok_payload, register
-    from tools.context import ProjectCtx
+    from kerf_chat.tools.registry import ToolSpec, err_payload, ok_payload, register
+    from kerf_core.utils.context import ProjectCtx
     from db.queries import files as file_queries
     _HAS_FILE_QUERIES = True
 except ImportError:

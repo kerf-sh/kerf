@@ -10,7 +10,7 @@ import os
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from tools.feature_draft import validate_draft_args, build_draft_node, ANGLE_MIN, ANGLE_MAX
+from kerf_imports.tools.feature_draft import validate_draft_args, build_draft_node, ANGLE_MIN, ANGLE_MAX
 
 
 # ── validate_draft_args ───────────────────────────────────────────────────────

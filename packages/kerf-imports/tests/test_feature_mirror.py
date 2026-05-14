@@ -10,7 +10,7 @@ import os
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from tools.feature_mirror import validate_mirror_args, build_mirror_node
+from kerf_imports.tools.feature_mirror import validate_mirror_args, build_mirror_node
 
 
 # ── validate_mirror_args — source mutual exclusion ───────────────────────────

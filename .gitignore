@@ -14,10 +14,8 @@ dist
 dist-ssr
 *.local
 
-# Embedded frontend bundle: built by `npm run build:web`, ignored except
-# for the placeholder that keeps the directory present for //go:embed.
-backend/internal/web/dist/*
-!backend/internal/web/dist/.gitkeep
+# (Stale Go-era frontend embed paths removed; build artifacts now in /dist
+# from vite.config.js, gitignored via the top-level `dist` line above.)
 
 # Editor
 .vscode/*
@@ -39,22 +37,9 @@ backend/internal/web/dist/*
 # Backend config (commit only kerf.example.toml).
 kerf.toml
 
-# Go
-backend/bin/
-backend/tmp/
+# Stray binaries
 *.test
 *.out
-
-# Compiled Go binaries (built into repo root and backend/). These rooted
-# patterns (leading slash) only match the top-level binary; they do NOT
-# shadow packages/kerf-cloud/ or packages/kerf-oss/, which live under
-# packages/.
-/kerf
-/kerf-cloud
-/kerf-oss
-/backend/server
-/backend/test
-/backend/migrate
 
 # Local storage backend (STEP files, uploads)
 .kerf-storage/

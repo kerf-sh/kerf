@@ -13,7 +13,7 @@ from kerf_electronics.tools.pcb_layer_tools import (
     _layer_stack_without_name,
     VALID_COPPER_COUNTS,
 )
-from tools.registry import Registry
+from kerf_chat.tools.registry import Registry
 
 
 # ---------------------------------------------------------------------------

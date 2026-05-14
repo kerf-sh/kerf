@@ -2,7 +2,7 @@ import math
 import sys
 sys.path.insert(0, '/Users/pc/code/exo/kerf/backend-python')
 
-from tools.tolerance import (
+from kerf_mates.tolerance import (
     worst_case, rss, monte_carlo, compute_histogram,
     grade_to_tolerance, IT_GRADE_TOLERANCES
 )

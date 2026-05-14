@@ -1,7 +1,7 @@
 import json
 import re
-from tools.registry import ToolSpec, err_payload, ok_payload, register
-from tools.context import ProjectCtx
+from kerf_chat.tools.registry import ToolSpec, err_payload, ok_payload, register
+from kerf_core.utils.context import ProjectCtx
 
 BOARD_TAG_PATTERN = re.compile(
     r'(<board\b[^>]*?)(\blayer_stack\s*=\s*(\{[^}]*\}|\[[^\]]*\]))?',

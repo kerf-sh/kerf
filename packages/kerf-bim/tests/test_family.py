@@ -1,55 +1,9 @@
-"""
-Tests for family.py — pure logic, no DB required.
-
-Uses importlib to load the module directly, bypassing the package init chain.
-"""
-import importlib.util
-import json
-import os
-import sys
-
-
-def _load_module(name: str, rel_path: str):
-    base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    full_path = os.path.join(base, rel_path)
-    spec = importlib.util.spec_from_file_location(name, full_path)
-    mod = importlib.util.module_from_spec(spec)
-    sys.modules[name] = mod
-    spec.loader.exec_module(mod)
-    return mod
-
-
-# Load the real registry/context via importlib so family.py's @register calls
-# land on the live Registry list. Use setdefault so we don't clobber a real
-# module that a preceding test already loaded.
-import types, importlib
-
-_base = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))), "backend")
-_tools_dir = os.path.join(_base, "tools")
-_plugin_tools = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src", "kerf_bim", "tools")
-
-if "tools.registry" not in sys.modules:
-    _load_module("tools.registry", os.path.join(_tools_dir, "registry.py"))
-if "tools.context" not in sys.modules:
-    _load_module("tools.context", os.path.join(_tools_dir, "context.py"))
-
-# Stub tools.bim since family.py imports from it but we don't need it to run.
-if "tools.bim" not in sys.modules:
-    _bim_mod = types.ModuleType("tools.bim")
-    _bim_mod.ensure_folders = None
-    _bim_mod.record_revision_for_file = None
-    _bim_mod.resolve_path = None
-    sys.modules["tools.bim"] = _bim_mod
-
-# Now load the module under test via importlib to avoid triggering
-# tools/__init__.py (which would re-import tools.registry and fail).
-_family_mod = _load_module(
-    "tools.family",
-    os.path.join(_plugin_tools, "family.py"),
+"""Tests for family.py — pure logic, no DB required."""
+from kerf_bim.tools.family import (
+    validate_family_doc,
+    resolve_params,
+    _validate_param,
 )
-validate_family_doc = _family_mod.validate_family_doc
-resolve_params = _family_mod.resolve_params
-_validate_param = _family_mod._validate_param
 
 
 # ── validate_family_doc ────────────────────────────────────────────────────────

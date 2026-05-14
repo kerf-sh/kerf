@@ -1,8 +1,8 @@
 import json
 import uuid
 from typing import Optional
-from tools.registry import ToolSpec, err_payload, ok_payload, register
-from tools.context import ProjectCtx
+from kerf_chat.tools.registry import ToolSpec, err_payload, ok_payload, register
+from kerf_core.utils.context import ProjectCtx
 
 
 def next_node_id(content: str, op: str) -> str:

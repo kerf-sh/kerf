@@ -41,8 +41,8 @@ from kerf_core.db.queries import workshop_likes as workshop_likes_queries
 from kerf_core.dependencies import require_auth, optional_auth
 from kerf_core.storage import get_storage_required
 from kerf_chat import llm as llm_module
-from tools.executor import execute as tools_execute, specs as tools_specs
-from tools.context import ProjectCtx
+from kerf_chat.tools.executor import execute as tools_execute, specs as tools_specs
+from kerf_core.utils.context import ProjectCtx
 from kerf_tess.worker import notify_step_uploaded
 
 router = APIRouter()
@@ -1568,7 +1568,7 @@ async def solve_mates(pid: str, fid: str, request: Request, payload: dict = Depe
             pass
 
         # In-process fallback
-        from tools.solvespace_wrapper import solve_assembly
+        from kerf_mates.solver import solve_assembly
         result = solve_assembly(components, mates, fixed_component_id=fixed_component_id)
         return result
 
@@ -1611,7 +1611,7 @@ async def run_tolerance(pid: str, fid: str, request: Request, payload: dict = De
         if not dimensions:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="no tolerances defined in file")
 
-        from tools.tolerance import worst_case, rss, monte_carlo
+        from kerf_mates.tolerance import worst_case, rss, monte_carlo
         if method == "worst_case":
             return worst_case(dimensions)
         elif method == "rss":

@@ -4,7 +4,9 @@ from fastapi import APIRouter, HTTPException, status, Request, Depends
 
 from kerf_core.db.connection import get_pool_required
 from kerf_core.dependencies import require_auth
-from tools import ProjectCtx, specs, execute as execute_tool, err_payload
+from kerf_core.utils.context import ProjectCtx
+from kerf_chat.tools.executor import specs, execute as execute_tool
+from kerf_chat.tools.registry import err_payload
 
 
 router = APIRouter()

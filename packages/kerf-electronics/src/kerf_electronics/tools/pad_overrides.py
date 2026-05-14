@@ -1,7 +1,7 @@
 import json
 from typing import Any
 
-from tools.registry import ToolSpec, err_payload, ok_payload, register
+from kerf_chat.tools.registry import ToolSpec, err_payload, ok_payload, register
 
 
 def _get_pad(circuit_json: dict, pad_id: str) -> dict | None:

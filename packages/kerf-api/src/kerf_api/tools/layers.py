@@ -11,8 +11,8 @@ and patch it in-place using a regex-based JSON fragment replacement.
 
 import json
 import re
-from tools.registry import ToolSpec, err_payload, ok_payload, register
-from tools.context import ProjectCtx
+from kerf_chat.tools.registry import ToolSpec, err_payload, ok_payload, register
+from kerf_core.utils.context import ProjectCtx
 
 
 # ---------------------------------------------------------------------------

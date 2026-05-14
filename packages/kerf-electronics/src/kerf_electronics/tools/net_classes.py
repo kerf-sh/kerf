@@ -15,7 +15,7 @@ import json
 from copy import deepcopy
 from typing import Any
 
-from tools.registry import ToolSpec, err_payload, ok_payload, register
+from kerf_chat.tools.registry import ToolSpec, err_payload, ok_payload, register
 
 # ── Built-in class defaults (mirrors netClasses.js) ───────────────────────────
 

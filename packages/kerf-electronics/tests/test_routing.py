@@ -12,7 +12,7 @@ from kerf_electronics.tools.routing import (
     _point_to_segment_dist,
     _new_trace_id,
 )
-from tools.registry import Registry
+from kerf_chat.tools.registry import Registry
 
 
 # ---------------------------------------------------------------------------

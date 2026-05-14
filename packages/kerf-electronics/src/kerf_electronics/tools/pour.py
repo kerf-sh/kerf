@@ -11,7 +11,7 @@ pads change.
 import json
 from typing import Any
 
-from tools.registry import ToolSpec, err_payload, ok_payload, register
+from kerf_chat.tools.registry import ToolSpec, err_payload, ok_payload, register
 
 
 # ── add_copper_pour ───────────────────────────────────────────────────────────

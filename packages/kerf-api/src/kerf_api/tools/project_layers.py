@@ -8,8 +8,8 @@ creating it at the project root if it does not yet exist.
 import json
 import re
 import uuid
-from tools.registry import ToolSpec, err_payload, ok_payload, register
-from tools.context import ProjectCtx
+from kerf_chat.tools.registry import ToolSpec, err_payload, ok_payload, register
+from kerf_core.utils.context import ProjectCtx
 
 
 # ---------------------------------------------------------------------------

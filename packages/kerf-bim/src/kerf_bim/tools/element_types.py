@@ -12,9 +12,9 @@ delete_type            — remove a type and optionally reassign its instances.
 import json
 import uuid as _uuid
 
-from tools.registry import ToolSpec, err_payload, ok_payload, register
-from tools.context import ProjectCtx
-from tools.bim import resolve_path, record_revision_for_file
+from kerf_chat.tools.registry import ToolSpec, err_payload, ok_payload, register
+from kerf_core.utils.context import ProjectCtx
+from kerf_bim.tools.bim import resolve_path, record_revision_for_file
 
 
 bulk_set_type_param_spec = ToolSpec(

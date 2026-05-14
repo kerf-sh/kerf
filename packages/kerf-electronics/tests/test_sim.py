@@ -11,7 +11,7 @@ import unittest
 # Import the module to trigger @register decorators and populate Registry.
 import kerf_electronics.tools.sim  # noqa: F401
 
-from tools.registry import Registry
+from kerf_chat.tools.registry import Registry
 
 
 async def call_tool(name, payload, ctx=None):

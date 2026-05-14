@@ -1,5 +1,5 @@
 import json
-from tools.registry import ToolSpec, ok_payload, err_payload, register
+from kerf_chat.tools.registry import ToolSpec, ok_payload, err_payload, register
 
 ADD_VIA_STITCHING_SPEC = ToolSpec(
     name="add_via_stitching",

@@ -2,9 +2,9 @@ import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 
-// The build outputs into `backend/web/dist/` so the Python server can
-// serve it via Starlette StaticFiles. In dev, Vite serves :5173 directly
-// (HMR) and proxies /api + /auth to the backend on VITE_API_URL.
+// Build outputs into `dist/` (Vite default). kerf-api serves it via
+// StaticFiles at runtime. In dev, Vite serves :5173 directly (HMR) and
+// proxies /api + /auth to kerf-server on VITE_API_URL.
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
   const apiUrl = env.VITE_API_URL || 'http://localhost:8080'
@@ -19,7 +19,7 @@ export default defineConfig(({ mode }) => {
       },
     },
     build: {
-      outDir: 'backend/web/dist',
+      outDir: 'dist',
       emptyOutDir: true,
       rollupOptions: {
         output: {
