@@ -47,6 +47,10 @@ import {
 } from './occtBridge.js'
 import { sketchToGeom2 } from './sketchGeom2.js'
 import { parseSketch } from './sketchSolver.js'
+import {
+  buildFaceNamesForExtrude,
+  buildFaceNamesForRevolve,
+} from './faceNaming.js'
 
 // The opencascade.js package ships a JS shim (`opencascade.wasm.js`) plus
 // the matching `.wasm` blob. Vite bundles the JS but won't auto-resolve
@@ -1402,6 +1406,358 @@ function opVariableRadiusFillet(oc, prev, node, _sketches, tracker) {
 }
 
 // ---------------------------------------------------------------------------
+// Face naming helpers (T1: persistent face naming).
+//
+// extractFaceDescriptors walks every FACE on `shape` and builds the plain-JS
+// FaceDescriptor array that faceNaming.js expects. OCCT is used here to read
+// surface kinds, normals, and edge-adjacency; the result is OCCT-free so the
+// pure-JS helpers in faceNaming.js can work on it without any WASM dependency.
+//
+// `sketchEntityIds` is an optional array mapping face-explorer-index → sketch
+// entity id.  For extrude/revolve ops we build this mapping by correlating the
+// builder's First/LastShape back to sketch wire edges; for ops where we can't
+// do that, we pass null and the naming helpers fall back to topoHash.
+// ---------------------------------------------------------------------------
+
+/**
+ * Determine the OCCT surface kind for a face as a string.
+ * @param {object} oc   - OpenCascade.js binding
+ * @param {object} face - TopoDS_Face
+ * @returns {string} 'plane'|'cylinder'|'cone'|'sphere'|'torus'|'bspline'|'unknown'
+ */
+function occtSurfaceKind(oc, face) {
+  try {
+    const surf = oc.BRep_Tool.Surface_2(face)
+    const ga = oc.GeomAdaptor_Surface
+    if (ga) {
+      const adaptor = new ga(surf)
+      const kind = adaptor.GetType()
+      try { adaptor.delete?.() } catch { /* */ }
+      // GeomAbs_SurfaceType enum values vary by build; use string matching on
+      // the enum value name to be portable.
+      const k = typeof kind === 'number' ? kind : 0
+      // Common OCCT GeomAbs_SurfaceType ordinals (0-indexed):
+      //   0=Plane, 1=Cylinder, 2=Cone, 3=Sphere, 4=Torus, 5=BezierSurface,
+      //   6=BSplineSurface, 7=SurfaceOfRevolution, 8=SurfaceOfExtrusion,
+      //   9=OffsetSurface, 10=OtherSurface
+      const MAP = {
+        0: 'plane', 1: 'cylinder', 2: 'cone', 3: 'sphere', 4: 'torus',
+        5: 'bspline', 6: 'bspline',
+      }
+      return MAP[k] || 'unknown'
+    }
+    // Fallback: try Geom_Plane downcast.
+    try {
+      const pl = oc.Handle_Geom_Plane?.DownCast?.(surf)
+      if (pl && !pl.IsNull?.()) return 'plane'
+    } catch { /* */ }
+    return 'unknown'
+  } catch {
+    return 'unknown'
+  }
+}
+
+/**
+ * Count the edges in a face's outer wire.
+ * @param {object} oc
+ * @param {object} face - TopoDS_Face
+ * @returns {number}
+ */
+function countFaceEdges(oc, face) {
+  let count = 0
+  let exp
+  try {
+    exp = new oc.TopExp_Explorer_2(face, oc.TopAbs_ShapeEnum.TopAbs_EDGE, oc.TopAbs_ShapeEnum.TopAbs_SHAPE)
+    for (; exp.More(); exp.Next()) count++
+    exp.delete?.()
+  } catch { /* */ }
+  return count
+}
+
+/**
+ * Determine edge curve kind for an edge.
+ * @param {object} oc
+ * @param {object} edge - TopoDS_Edge
+ * @returns {string} 'line'|'circle'|'ellipse'|'bspline'|'other'
+ */
+function occtEdgeKind(oc, edge) {
+  try {
+    const ea = new (oc.BRepAdaptor_Curve || oc.BRepAdaptor_Curve2d)(edge)
+    const kind = ea.GetType?.()
+    try { ea.delete?.() } catch { /* */ }
+    const MAP = { 0: 'line', 1: 'circle', 2: 'ellipse', 3: 'hyperbola',
+                  4: 'parabola', 5: 'bspline', 6: 'bspline' }
+    return MAP[typeof kind === 'number' ? kind : -1] || 'other'
+  } catch {
+    return 'other'
+  }
+}
+
+/**
+ * Walk a shape's faces and produce a FaceDescriptor array for faceNaming.js.
+ *
+ * `sketchEntityIdMap` is a plain object mapping face explorer index → sketch
+ * entity id string.  Pass `{}` if no sketch correlation is available.
+ *
+ * @param {object} oc
+ * @param {object} shape              - TopoDS_Shape
+ * @param {Record<number,string>} sketchEntityIdMap
+ * @returns {import('./faceNaming.js').FaceDescriptor[]}
+ */
+function extractFaceDescriptors(oc, shape, sketchEntityIdMap) {
+  const descriptors = []
+  // First pass: collect per-face data and build an edge → face-indices map.
+  const faceShapes = []
+  const faceEdgeSets = []  // faceEdgeSets[i] = Set of global edge indices
+  const edgeToFaces = new Map() // globalEdgeIdx → [faceIdx, ...]
+
+  let globalEdgeIdx = 0
+  const edgeShapeToIdx = new Map() // OCCT edge HashCode → globalEdgeIdx
+
+  let faceIdx = 0
+  let faceExp
+  try {
+    faceExp = new oc.TopExp_Explorer_2(shape, oc.TopAbs_ShapeEnum.TopAbs_FACE, oc.TopAbs_ShapeEnum.TopAbs_SHAPE)
+  } catch {
+    return descriptors
+  }
+
+  for (; faceExp.More(); faceExp.Next()) {
+    const faceSh = oc.TopoDS.Face_1(faceExp.Current())
+    faceShapes.push(faceSh)
+
+    const edgeSet = new Set()
+    let edgeExp
+    try {
+      edgeExp = new oc.TopExp_Explorer_2(faceSh, oc.TopAbs_ShapeEnum.TopAbs_EDGE, oc.TopAbs_ShapeEnum.TopAbs_SHAPE)
+      for (; edgeExp.More(); edgeExp.Next()) {
+        const eSh = edgeExp.Current()
+        let key
+        try {
+          key = oc.TopoDS.Edge_1(eSh).HashCode(2147483647)
+        } catch {
+          key = globalEdgeIdx++  // deduplicate best-effort
+        }
+        let eidx = edgeShapeToIdx.get(key)
+        if (eidx === undefined) {
+          eidx = globalEdgeIdx++
+          edgeShapeToIdx.set(key, eidx)
+        }
+        edgeSet.add(eidx)
+        const existing = edgeToFaces.get(eidx) || []
+        existing.push(faceIdx)
+        edgeToFaces.set(eidx, existing)
+      }
+      try { edgeExp.delete?.() } catch { /* */ }
+    } catch { /* tolerate */ }
+
+    faceEdgeSets.push(edgeSet)
+    faceIdx++
+  }
+  try { faceExp.delete?.() } catch { /* */ }
+
+  // Second pass: build descriptors.
+  for (let i = 0; i < faceShapes.length; i++) {
+    const face = faceShapes[i]
+    const surfaceKind = occtSurfaceKind(oc, face)
+
+    // Collect edge kinds.
+    const edgeKinds = []
+    let exp2
+    try {
+      exp2 = new oc.TopExp_Explorer_2(face, oc.TopAbs_ShapeEnum.TopAbs_EDGE, oc.TopAbs_ShapeEnum.TopAbs_SHAPE)
+      for (; exp2.More(); exp2.Next()) {
+        const eSh = exp2.Current()
+        try {
+          const edge = oc.TopoDS.Edge_1(eSh)
+          edgeKinds.push(occtEdgeKind(oc, edge))
+        } catch {
+          edgeKinds.push('other')
+        }
+      }
+      try { exp2.delete?.() } catch { /* */ }
+    } catch { /* */ }
+
+    // Vertex valences.
+    const vertexValences = []
+    const vertValenceMap = new Map()
+    let vexp
+    try {
+      vexp = new oc.TopExp_Explorer_2(face, oc.TopAbs_ShapeEnum.TopAbs_VERTEX, oc.TopAbs_ShapeEnum.TopAbs_SHAPE)
+      for (; vexp.More(); vexp.Next()) {
+        const vSh = vexp.Current()
+        try {
+          const key = oc.TopoDS.Vertex_1(vSh).HashCode(2147483647)
+          vertValenceMap.set(key, (vertValenceMap.get(key) || 0) + 1)
+        } catch { /* */ }
+      }
+      try { vexp.delete?.() } catch { /* */ }
+    } catch { /* */ }
+    for (const val of vertValenceMap.values()) vertexValences.push(val)
+
+    // Normal at parametric midpoint.
+    let normalVec = [0, 0, 1]
+    try {
+      const surf = oc.BRep_Tool.Surface_2(face)
+      const props = new oc.GeomLProp_SLProps_2(surf, 0.5, 0.5, 1, 1e-7)
+      if (props.IsNormalDefined()) {
+        const n = props.Normal()
+        normalVec = [n.X(), n.Y(), n.Z()]
+        try { n.delete?.() } catch { /* */ }
+      }
+      try { props.delete?.() } catch { /* */ }
+    } catch { /* tolerate */ }
+
+    descriptors.push({
+      index:           i,
+      surfaceKind,
+      edgeCount:       edgeKinds.length,
+      edgeKinds:       edgeKinds.slice().sort(),
+      vertexValences,
+      normal:          normalVec,
+      sharedEdgeIndices: [...faceEdgeSets[i]],
+      sketchEntityId:  sketchEntityIdMap[i] ?? null,
+    })
+  }
+  return descriptors
+}
+
+/**
+ * Extract sketch wire entity ids in wire traversal order.
+ * Returns an array of entity id strings (or null entries for edges without ids).
+ *
+ * @param {string|object|null} sketchJson
+ * @returns {string[]}
+ */
+function extractWireEntityIds(sketchJson) {
+  if (!sketchJson) return []
+  try {
+    const obj = typeof sketchJson === 'string' ? JSON.parse(sketchJson) : sketchJson
+    const entities = obj?.entities || []
+    // Collect segments and arcs in definition order — they correspond to the
+    // edges in the wire produced by sketchToWire / geom2ToWire.
+    return entities
+      .filter((e) => e?.type === 'segment' || e?.type === 'arc' || e?.type === 'line')
+      .map((e) => e?.id || null)
+  } catch {
+    return []
+  }
+}
+
+/**
+ * Compute faceNames for a Pad / BossWithDraft result shape.
+ *
+ * @param {object} oc
+ * @param {object} resultShape   - TopoDS_Shape (the prism result)
+ * @param {object} prismBuilder  - BRepPrimAPI_MakePrism after Build() (may be null)
+ * @param {string} nodeId        - feature node id (e.g. 'Pad-A')
+ * @param {number[]} axis        - extrusion axis [ax, ay, az]
+ * @param {string|object|null} sketchJson  - raw sketch JSON for entity-id extraction
+ * @param {boolean} [isPocket=false]
+ * @returns {Record<string, string>}  faceIndex(string) → name
+ */
+function computeExtrudeFaceNames(oc, resultShape, _prismBuilder, nodeId, axis, sketchJson, isPocket = false) {
+  try {
+    const wireEntityIds = extractWireEntityIds(sketchJson)
+    // Position-based correlation: the k-th side face (non-cap, in explorer order)
+    // corresponds to the k-th sketch edge. This is OCCT's guaranteed ordering for
+    // BRepPrimAPI_MakePrism. We use this regardless of whether the prism builder
+    // reference is available (it's currently always null at the call sites).
+    const entityIdMap = wireEntityIds.length > 0
+      ? _buildPositionalEntityIdMap(oc, resultShape, axis, wireEntityIds)
+      : {}
+
+    const descriptors = extractFaceDescriptors(oc, resultShape, entityIdMap)
+    return buildFaceNamesForExtrude(nodeId, descriptors, axis, isPocket)
+  } catch {
+    return {}
+  }
+}
+
+/**
+ * Position-based sketch entity id assignment for extrusions.
+ *
+ * BRepPrimAPI_MakePrism preserves the source profile's edge ordering in the
+ * generated side faces: the k-th side face (in TopExp_Explorer order, after
+ * removing the 2 cap faces) corresponds to the k-th edge of the profile wire.
+ *
+ * Cap faces are identified by dot(normal, axis) ≥ 0.966 (same threshold as
+ * walkSideFaces). Side faces are numbered 0..N-1 in explorer order.
+ *
+ * @param {object}   oc
+ * @param {object}   resultShape
+ * @param {number[]} axis
+ * @param {string[]} wireEntityIds  - entity ids in wire edge order
+ * @returns {Record<number, string>}  faceIndex → entityId
+ */
+function _buildPositionalEntityIdMap(oc, resultShape, axis, wireEntityIds) {
+  const map = {}
+  if (!wireEntityIds || wireEntityIds.length === 0) return map
+
+  const [ax, ay, az] = axis
+  const axLen = Math.sqrt(ax * ax + ay * ay + az * az) || 1
+  const nx = ax / axLen, ny = ay / axLen, nz = az / axLen
+
+  let sideIdx = 0
+  let faceIdx = 0
+  let fexp
+  try {
+    fexp = new oc.TopExp_Explorer_2(resultShape, oc.TopAbs_ShapeEnum.TopAbs_FACE, oc.TopAbs_ShapeEnum.TopAbs_SHAPE)
+  } catch {
+    return map
+  }
+
+  for (; fexp.More(); fexp.Next()) {
+    const fSh = oc.TopoDS.Face_1(fexp.Current())
+    let isCap = false
+    try {
+      const surf = oc.BRep_Tool.Surface_2(fSh)
+      const props = new oc.GeomLProp_SLProps_2(surf, 0.5, 0.5, 1, 1e-7)
+      if (props.IsNormalDefined()) {
+        const n = props.Normal()
+        const dot = Math.abs(n.X() * nx + n.Y() * ny + n.Z() * nz)
+        isCap = dot >= 0.966
+        try { n.delete?.() } catch { /* */ }
+      }
+      try { props.delete?.() } catch { /* */ }
+    } catch { /* tolerate — assume side face */ }
+
+    if (!isCap && sideIdx < wireEntityIds.length) {
+      const eid = wireEntityIds[sideIdx]
+      if (eid) map[faceIdx] = eid
+      sideIdx++
+    }
+    faceIdx++
+  }
+  try { fexp.delete?.() } catch { /* */ }
+  return map
+}
+
+/**
+ * Compute faceNames for a Revolve result shape.
+ *
+ * @param {object} oc
+ * @param {object} resultShape
+ * @param {string} nodeId
+ * @param {number[]} axis
+ * @param {boolean} isFullCircle
+ * @param {string|object|null} sketchJson
+ * @returns {Record<string, string>}
+ */
+function computeRevolveFaceNames(oc, resultShape, nodeId, axis, isFullCircle, sketchJson) {
+  try {
+    const wireEntityIds = extractWireEntityIds(sketchJson)
+    const entityIdMap = wireEntityIds.length > 0
+      ? _buildPositionalEntityIdMap(oc, resultShape, axis, wireEntityIds)
+      : {}
+    const descriptors = extractFaceDescriptors(oc, resultShape, entityIdMap)
+    return buildFaceNamesForRevolve(nodeId, descriptors, axis, isFullCircle)
+  } catch {
+    return {}
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Tree evaluation.
 //
 // The evaluator walks the feature tree top-to-bottom, threading the
@@ -1421,44 +1777,91 @@ function evaluateTree(oc, tree, sketches) {
   const meshes = []
   let current = null         // the shape the next op operates on
   let currentTrack = null    // the previous-current that needs deleting
+  // currentFaceNamer: (oc, shape) → Record<string,string> | null
+  // Set when a "root" op produces a new body; called just before breptToMesh
+  // to compute the faceNames map.  Carries over through in-place ops
+  // (pocket/fillet/chamfer/…) so the final mesh still gets names.
+  let currentFaceNamer = null
+
+  // Helper: push the current shape as a mesh entry, including faceNames.
+  function pushCurrentMesh(bodyId) {
+    const mesh = breptToMesh(oc, current)
+    let faceNames = {}
+    try {
+      if (currentFaceNamer) faceNames = currentFaceNamer(oc, current)
+    } catch { /* silently omit on failure */ }
+    meshes.push({ id: bodyId, ...mesh, faceNames })
+  }
+
   // Inject sketch lookup into hole/(future) ops via node decoration.
   for (const raw of tree) {
     const node = { ...raw, _sketches: sketches }
     let next = null
     try {
       switch (node.op) {
-        case 'pad':
+        case 'pad': {
           // Pads always start a fresh body; finalize previous body first.
           if (current) {
-            meshes.push({
-              id: node._prevId || `body-${meshes.length}`,
-              ...breptToMesh(oc, current),
-            })
+            pushCurrentMesh(node._prevId || `body-${meshes.length}`)
             cleanupShape(oc, current)
             current = null
           }
           next = opPad(oc, null, node, sketches, tracker)
+          // Build a namer closure that captures the node-id and sketch context.
+          const padNodeId = node.id || node.op
+          const padAxis = node.direction === 'down' ? [0, 0, -1] : [0, 0, 1]
+          const padSketchJson = sketches?.[node.sketch_path] || null
+          currentFaceNamer = (oc_, shape) =>
+            computeExtrudeFaceNames(oc_, shape, null, padNodeId, padAxis, padSketchJson, false)
           break
-        case 'boss_with_draft':
+        }
+        case 'boss_with_draft': {
           if (current) {
-            meshes.push({
-              id: node._prevId || `body-${meshes.length}`,
-              ...breptToMesh(oc, current),
-            })
+            pushCurrentMesh(node._prevId || `body-${meshes.length}`)
             cleanupShape(oc, current)
             current = null
           }
           next = opBossWithDraft(oc, null, node, sketches, tracker)
+          const bwdNodeId = node.id || node.op
+          const bwdAxis = node.direction === 'down' ? [0, 0, -1] : [0, 0, 1]
+          const bwdSketchJson = sketches?.[node.sketch_path] || null
+          currentFaceNamer = (oc_, shape) =>
+            computeExtrudeFaceNames(oc_, shape, null, bwdNodeId, bwdAxis, bwdSketchJson, false)
           break
-        case 'pocket':   next = opPocket(oc, current, node, sketches, tracker); break
-        case 'revolve':
+        }
+        case 'pocket': {
+          // Pocket is in-place; the namer updates to reflect the pocket context.
+          const pktNodeId = node.id || node.op
+          const pktAxis = [0, 0, 1]
+          const pktSketchJson = sketches?.[node.sketch_path] || null
+          next = opPocket(oc, current, node, sketches, tracker)
+          // Update namer: the new body is the pocket result; inner faces get names.
+          currentFaceNamer = (oc_, shape) =>
+            computeExtrudeFaceNames(oc_, shape, null, pktNodeId, pktAxis, pktSketchJson, true)
+          break
+        }
+        case 'revolve': {
           if (current) {
-            meshes.push({ id: `body-${meshes.length}`, ...breptToMesh(oc, current) })
+            pushCurrentMesh(`body-${meshes.length}`)
             cleanupShape(oc, current)
             current = null
           }
           next = opRevolve(oc, null, node, sketches, tracker)
+          const revNodeId = node.id || node.op
+          const revAxisDir = (() => {
+            switch (node.axis) {
+              case 'x': return [1, 0, 0]
+              case 'y': return [0, 1, 0]
+              default:  return [0, 0, 1]
+            }
+          })()
+          const revAngleDeg = Number(node.angle_deg) || 360
+          const revFull = Math.abs(revAngleDeg - 360) < 1e-3
+          const revSketchJson = sketches?.[node.sketch_path] || null
+          currentFaceNamer = (oc_, shape) =>
+            computeRevolveFaceNames(oc_, shape, revNodeId, revAxisDir, revFull, revSketchJson)
           break
+        }
         case 'fillet':   next = opFillet(oc, current, node, sketches, tracker); break
         case 'chamfer':  next = opChamfer(oc, current, node, sketches, tracker); break
         case 'shell':    next = opShell(oc, current, node, sketches, tracker); break
@@ -1471,46 +1874,51 @@ function evaluateTree(oc, tree, sketches) {
         case 'cut_from_sketch':     next = opCutFromSketch(oc, current, node, sketches, tracker); break
         case 'sweep1':
           if (current) {
-            meshes.push({ id: `body-${meshes.length}`, ...breptToMesh(oc, current) })
+            pushCurrentMesh(`body-${meshes.length}`)
             cleanupShape(oc, current)
             current = null
           }
           next = opSweep1(oc, null, node, sketches, tracker)
+          currentFaceNamer = null  // sweep face names deferred to T1.5
           break
         case 'sweep2':
           if (current) {
-            meshes.push({ id: `body-${meshes.length}`, ...breptToMesh(oc, current) })
+            pushCurrentMesh(`body-${meshes.length}`)
             cleanupShape(oc, current)
             current = null
           }
           next = opSweep2(oc, null, node, sketches, tracker)
+          currentFaceNamer = null
           break
         case 'network_srf':
           if (current) {
-            meshes.push({ id: `body-${meshes.length}`, ...breptToMesh(oc, current) })
+            pushCurrentMesh(`body-${meshes.length}`)
             cleanupShape(oc, current)
             current = null
           }
           next = opNetworkSrf(oc, null, node, sketches, tracker)
+          currentFaceNamer = null
           break
         case 'blend_srf':
           // blend_srf returns a SURFACE built from the prev body's edges
           // — caller is expected to follow up with a fuse/cut. We finalize
           // the prev body as its own mesh so both stay visible.
           if (current) {
-            meshes.push({ id: `body-${meshes.length}`, ...breptToMesh(oc, current) })
+            pushCurrentMesh(`body-${meshes.length}`)
             // Note: we don't cleanup `current` here because opBlendSrf
             // reads edges from it. We let the post-switch cleanup handle it.
           }
           next = opBlendSrf(oc, current, node, sketches, tracker)
+          currentFaceNamer = null
           break
         case 'loft':
           if (current) {
-            meshes.push({ id: `body-${meshes.length}`, ...breptToMesh(oc, current) })
+            pushCurrentMesh(`body-${meshes.length}`)
             cleanupShape(oc, current)
             current = null
           }
           next = opLoft(oc, null, node, sketches, tracker)
+          currentFaceNamer = null
           break
         case 'variable_radius_fillet':
           next = opVariableRadiusFillet(oc, current, node, sketches, tracker)
@@ -1532,7 +1940,7 @@ function evaluateTree(oc, tree, sketches) {
     currentTrack = next
   }
   if (current) {
-    meshes.push({ id: `body-${meshes.length}`, ...breptToMesh(oc, current) })
+    pushCurrentMesh(`body-${meshes.length}`)
     cleanupShape(oc, current)
     current = null
   }
@@ -1547,27 +1955,72 @@ function evaluateTree(oc, tree, sketches) {
 // Helper: compute the final shape from a tree without triangulating every
 // intermediate body. Used by face_outline to get an OCCT shape we can then
 // query for a face by id. Returns the *last* shape produced.
+// evaluateToFinalShape returns { shape, faceNamer } where:
+//   shape     — the last TopoDS_Shape built (or null on empty tree)
+//   faceNamer — (oc, shape) → Record<string,string> | null; the naming
+//               closure for the final body, or null when the last op has no
+//               sketch-anchored naming (sweep1/2, loft, etc.)
+//
+// Callers that don't need face names can ignore faceNamer (backwards-compat).
 async function evaluateToFinalShape(oc, tree, sketches) {
   const tracker = makeTracker()
   let current = null
+  let currentFaceNamer = null
   for (const raw of tree || []) {
     const node = { ...raw, _sketches: sketches }
     let next = null
     try {
       switch (node.op) {
-        case 'pad':
+        case 'pad': {
           if (current) cleanupShape(oc, current)
           current = null
-          next = opPad(oc, null, node, sketches, tracker); break
-        case 'boss_with_draft':
+          next = opPad(oc, null, node, sketches, tracker)
+          const padNodeId = node.id || node.op
+          const padAxis = node.direction === 'down' ? [0, 0, -1] : [0, 0, 1]
+          const padSketchJson = sketches?.[node.sketch_path] || null
+          currentFaceNamer = (oc_, shape) =>
+            computeExtrudeFaceNames(oc_, shape, null, padNodeId, padAxis, padSketchJson, false)
+          break
+        }
+        case 'boss_with_draft': {
           if (current) cleanupShape(oc, current)
           current = null
-          next = opBossWithDraft(oc, null, node, sketches, tracker); break
-        case 'pocket':   next = opPocket(oc, current, node, sketches, tracker); break
-        case 'revolve':
+          next = opBossWithDraft(oc, null, node, sketches, tracker)
+          const bwdNodeId = node.id || node.op
+          const bwdAxis = node.direction === 'down' ? [0, 0, -1] : [0, 0, 1]
+          const bwdSketchJson = sketches?.[node.sketch_path] || null
+          currentFaceNamer = (oc_, shape) =>
+            computeExtrudeFaceNames(oc_, shape, null, bwdNodeId, bwdAxis, bwdSketchJson, false)
+          break
+        }
+        case 'pocket': {
+          const pktNodeId = node.id || node.op
+          const pktAxis = [0, 0, 1]
+          const pktSketchJson = sketches?.[node.sketch_path] || null
+          next = opPocket(oc, current, node, sketches, tracker)
+          currentFaceNamer = (oc_, shape) =>
+            computeExtrudeFaceNames(oc_, shape, null, pktNodeId, pktAxis, pktSketchJson, true)
+          break
+        }
+        case 'revolve': {
           if (current) cleanupShape(oc, current)
           current = null
-          next = opRevolve(oc, null, node, sketches, tracker); break
+          next = opRevolve(oc, null, node, sketches, tracker)
+          const revNodeId = node.id || node.op
+          const revAxisDir = (() => {
+            switch (node.axis) {
+              case 'x': return [1, 0, 0]
+              case 'y': return [0, 1, 0]
+              default:  return [0, 0, 1]
+            }
+          })()
+          const revAngleDeg = Number(node.angle_deg) || 360
+          const revFull = Math.abs(revAngleDeg - 360) < 1e-3
+          const revSketchJson = sketches?.[node.sketch_path] || null
+          currentFaceNamer = (oc_, shape) =>
+            computeRevolveFaceNames(oc_, shape, revNodeId, revAxisDir, revFull, revSketchJson)
+          break
+        }
         case 'fillet':   next = opFillet(oc, current, node, sketches, tracker); break
         case 'chamfer':  next = opChamfer(oc, current, node, sketches, tracker); break
         case 'shell':    next = opShell(oc, current, node, sketches, tracker); break
@@ -1581,21 +2034,31 @@ async function evaluateToFinalShape(oc, tree, sketches) {
         case 'sweep1':
           if (current) cleanupShape(oc, current)
           current = null
-          next = opSweep1(oc, null, node, sketches, tracker); break
+          next = opSweep1(oc, null, node, sketches, tracker)
+          currentFaceNamer = null  // sweep face names deferred to T1.5
+          break
         case 'sweep2':
           if (current) cleanupShape(oc, current)
           current = null
-          next = opSweep2(oc, null, node, sketches, tracker); break
+          next = opSweep2(oc, null, node, sketches, tracker)
+          currentFaceNamer = null
+          break
         case 'network_srf':
           if (current) cleanupShape(oc, current)
           current = null
-          next = opNetworkSrf(oc, null, node, sketches, tracker); break
+          next = opNetworkSrf(oc, null, node, sketches, tracker)
+          currentFaceNamer = null
+          break
         case 'blend_srf':
-          next = opBlendSrf(oc, current, node, sketches, tracker); break
+          next = opBlendSrf(oc, current, node, sketches, tracker)
+          currentFaceNamer = null
+          break
         case 'loft':
           if (current) cleanupShape(oc, current)
           current = null
-          next = opLoft(oc, null, node, sketches, tracker); break
+          next = opLoft(oc, null, node, sketches, tracker)
+          currentFaceNamer = null
+          break
         case 'variable_radius_fillet':
           next = opVariableRadiusFillet(oc, current, node, sketches, tracker); break
         default: throw new Error(`unknown feature op '${node.op}'`)
@@ -1608,7 +2071,7 @@ async function evaluateToFinalShape(oc, tree, sketches) {
     current = next
   }
   freeAll(tracker)
-  return current
+  return { shape: current, faceNamer: currentFaceNamer }
 }
 
 self.addEventListener('message', async (ev) => {
@@ -1659,7 +2122,7 @@ self.addEventListener('message', async (ev) => {
     const { tree, sketches, faceId } = msg
     try {
       const oc = await loadOcct()
-      const shape = await evaluateToFinalShape(oc, tree || [], sketches || {})
+      const { shape, faceNamer } = await evaluateToFinalShape(oc, tree || [], sketches || {})
       if (!shape) {
         self.postMessage({ type: 'face_outline_result', runId, ok: false, reason: 'no shape' })
         return
@@ -1672,6 +2135,13 @@ self.addEventListener('message', async (ev) => {
       }
       const frame = faceFrame(oc, face)
       const outline = (frame && frame.planar) ? faceTo2DOutline(oc, face) : null
+      // Compute faceNames from the namer closure so the caller gets the full
+      // name table alongside the outline — satisfies the dormant-node-bug
+      // requirement that evaluateToFinalShape also produces names.
+      let faceNames = {}
+      try {
+        if (faceNamer) faceNames = faceNamer(oc, shape)
+      } catch { /* silently omit on failure */ }
       cleanupShape(oc, shape)
       self.postMessage({
         type: 'face_outline_result',
@@ -1680,6 +2150,7 @@ self.addEventListener('message', async (ev) => {
         frame,
         outline: outline || [],
         planar: !!(frame && frame.planar),
+        faceNames,
       })
     } catch (err) {
       self.postMessage({
