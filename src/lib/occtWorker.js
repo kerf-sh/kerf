@@ -2511,9 +2511,17 @@ function opSurfaceBoolean(oc, _prev, node, _sketches, tracker, bodyMap) {
     throw new Error(`surface_boolean: unknown kind '${kind}' (expected cut|fuse|common)`)
   }
 
-  const fuzziness = typeof node.fuzziness === 'number' && node.fuzziness > 0
-    ? node.fuzziness
-    : 1e-4
+  // Accept `fuzzy_value` (inspector field — passes directly to SetFuzzyValue),
+  // `tolerance` (inspector general tolerance field), or `fuzziness` (Python
+  // tool field name).  Priority: fuzzy_value > fuzziness > tolerance > 1e-4.
+  const rawFuzzy = (typeof node.fuzzy_value === 'number' && node.fuzzy_value > 0)
+    ? node.fuzzy_value
+    : (typeof node.fuzziness === 'number' && node.fuzziness > 0)
+      ? node.fuzziness
+      : (typeof node.tolerance === 'number' && node.tolerance > 0)
+        ? node.tolerance
+        : 1e-4
+  const fuzziness = rawFuzzy
 
   // Phase 4 binding probe results — gate optional features.
   const p4 = getNurbsPhase4Bindings(oc)
@@ -2521,10 +2529,18 @@ function opSurfaceBoolean(oc, _prev, node, _sketches, tracker, bodyMap) {
   const hasUnify    = p4['ShapeUpgrade_UnifySameDomain']
   const hasBOPAlgo  = p4['BOPAlgo_Builder']
 
+  // coarse_mode: opt-in flag that skips the ShapeFix_Shape pre-pass and the
+  // ShapeUpgrade_UnifySameDomain cleanup step.  Faster but may produce
+  // non-watertight face fragments on pathological NURBS pairs.  Use when
+  // sub-2s performance is needed and topological cleanliness is not critical
+  // (e.g. preview renders, topology-optimisation intermediate steps).
+  // Set coarse_mode:true in the LLM tool / inspector to activate.
+  const coarseMode = node.coarse_mode === true
+
   // Optional ShapeFix_Shape pre-pass on each operand.
-  // Only applied if the binding is present; silently skipped otherwise.
+  // Skipped when coarse_mode is set (T6 performance opt-in) or binding absent.
   function maybeFixShape(shape) {
-    if (!hasShapeFix) return shape
+    if (coarseMode || !hasShapeFix) return shape
     try {
       const fixer = track(tracker, new oc.ShapeFix_Shape_2(shape))
       fixer.Perform(new oc.Message_ProgressRange_1())
@@ -2601,7 +2617,8 @@ function opSurfaceBoolean(oc, _prev, node, _sketches, tracker, bodyMap) {
   }
 
   // Optional ShapeUpgrade_UnifySameDomain cleanup on the result.
-  if (hasUnify) {
+  // Skipped in coarse_mode (faster; may leave redundant face boundaries).
+  if (!coarseMode && hasUnify) {
     try {
       const unify = track(tracker, new oc.ShapeUpgrade_UnifySameDomain_2(result, true, true, false))
       unify.Build()

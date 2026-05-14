@@ -668,6 +668,16 @@ feature_surface_boolean_spec = ToolSpec(
                     "Raise to 1e-3 if tangent-intersection face fragments go missing."
                 ),
             },
+            "coarse_mode": {
+                "type": "boolean",
+                "description": (
+                    "Opt-in performance flag (default false). When true, skips the "
+                    "ShapeFix_Shape pre-pass and ShapeUpgrade_UnifySameDomain cleanup. "
+                    "Faster (~30-50% on dense NURBS) but may produce non-watertight face "
+                    "fragments. Use for preview renders or topology-optimisation "
+                    "intermediates where topological cleanliness is not critical."
+                ),
+            },
             "options": {
                 "type": "object",
                 "properties": {
@@ -692,6 +702,7 @@ async def run_feature_surface_boolean(ctx: ProjectCtx, args: bytes) -> str:
     target_b_id = a.get("target_b_id", "").strip()
     kind = a.get("kind", "").strip()
     fuzziness = a.get("fuzziness", None)
+    coarse_mode = a.get("coarse_mode", None)
     options = a.get("options", {})
 
     if not file_id or not target_a_id or not target_b_id or not kind:
@@ -737,6 +748,9 @@ async def run_feature_surface_boolean(ctx: ProjectCtx, args: bytes) -> str:
 
     if fuzziness is not None:
         node["fuzziness"] = float(fuzziness)
+
+    if coarse_mode is True:
+        node["coarse_mode"] = True
 
     name, nid, err = append_feature_node(ctx, fid, node)
     if err:
