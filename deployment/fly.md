@@ -28,38 +28,36 @@ machine fast.
 ## First deploy
 
 ```sh
-# Clone, install Node deps for the frontend build stage
+# 1. Clone
 git clone https://github.com/kerf-sh/kerf.git
 cd kerf
 
-# Create the fly app (one-time; will read fly.toml)
+# 2. Create fly apps (one-time)
 flyctl apps create kerf
+flyctl apps create kerf-workers
 
-# Provision storage (one-time)
+# 3. Provision storage (one-time) — prints bucket name + access keys
 flyctl storage create kerf-blobs
 
-# Set secrets — see fly.toml for the full list
-flyctl secrets set \
-  DATABASE_URL="postgres://user:pass@host:5432/kerf?sslmode=require" \
-  KERF_STORAGE_S3_BUCKET="kerf-blobs-abc123" \
-  KERF_STORAGE_S3_ACCESS_KEY="tid_..." \
-  KERF_STORAGE_S3_SECRET_KEY="tsec_..." \
-  LLM_ANTHROPIC_API_KEY="sk-ant-..." \
-  CLOUD_PAYSTACK_SECRET_KEY="sk_live_..." \
-  CLOUD_PAYSTACK_PUBLIC_KEY="pk_live_..." \
-  JWT_SECRET="$(openssl rand -hex 32)"
+# 4. Copy + fill in secrets template
+cp .env.production.example .env.production
+$EDITOR .env.production    # paste real keys
 
-# Deploy
-flyctl deploy
-
-# Migrations
-flyctl ssh console -C "python -m kerf_core.db.migrations.runner $DATABASE_URL"
+# 5. One-shot deploy: pushes secrets + deploys app + workers + runs migrations
+./scripts/deploy-fly.sh
 ```
+
+`scripts/deploy-fly.sh` reads `.env.production` (gitignored), pushes every
+value to fly as a secret on both the `kerf` and `kerf-workers` apps, then
+runs `flyctl deploy` against both configs and applies migrations.
 
 ## Subsequent deploys
 
 ```sh
-flyctl deploy
+./scripts/deploy-fly.sh                 # full deploy
+./scripts/deploy-fly.sh --secrets-only  # just rotate secrets, no rebuild
+./scripts/deploy-fly.sh --app-only      # skip worker deploy
+./scripts/deploy-fly.sh --staging       # uses .env.staging + kerf-staging app
 ```
 
 CI: GitHub Actions workflow at `.github/workflows/release.yml` runs

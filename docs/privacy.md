@@ -136,7 +136,7 @@ These rights line up with the GDPR (if you're in the EU/UK) and the
 [POPIA](https://popia.co.za/) (if you're in South Africa). Either way, the
 mechanism is the same: it's your data, you can take it or delete it.
 
-To exercise any of these rights, email us at **TBD@kerf.app**. We'll respond
+To exercise any of these rights, email us at **privacy@kerf.sh**. We'll respond
 within 30 days. If you're unsatisfied with our response, see the contact
 section below for regulator complaints.
 
@@ -197,7 +197,7 @@ GitHub at `docs/privacy.md`.
 ## Contact
 
 Privacy questions, data requests, or anything else covered above:
-**TBD@kerf.app**.
+**privacy@kerf.sh**.
 
 If you're not happy with how we've handled your request, you can complain to
 the South African Information Regulator

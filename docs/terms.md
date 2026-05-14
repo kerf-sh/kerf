@@ -1,138 +1,171 @@
 # Terms of Service
 
-These terms cover the **hosted** Kerf service at `kerf.app`. They don't apply
-to a Kerf you run on your own machine — that's just the open-source software
-under the [MIT license](/docs/license).
+**Effective date:** 2026-05-15
 
-We've tried to keep this readable. If anything's unclear, email us at the
-address at the bottom and we'll explain.
+These terms govern your use of the **hosted Kerf service at `kerf.sh`**
+(the "Service"). If you run Kerf locally from the open-source code, the
+[MIT License](https://github.com/kerf-sh/kerf/blob/main/LICENSE) applies
+to that copy and these terms do not.
 
-## Who provides the service
+By creating an account or using the Service, you agree to these terms.
 
-Kerf (the hosted service) is operated by a small South African team. The
-operating entity is **TBD** *(placeholder — to be replaced with the registered
-company or sole-proprietor name once the entity is set up)*, based in South
-Africa.
+## 1. The Service
 
-Throughout this document, "we", "us", and "Kerf" refer to that operator. "You"
-means the person or company using the hosted service.
+Kerf provides a chat-driven CAD platform — mechanical, electronics,
+drawings, BIM — running on our infrastructure. We bill for storage,
+LLM credits, and worker compute as set out on the
+[Pricing page](https://kerf.sh/pricing). The full software is MIT-licensed
+and available at [github.com/kerf-sh/kerf](https://github.com/kerf-sh/kerf)
+if you'd rather self-host.
 
-## Your account
+## 2. Accounts
 
-- You need an account to use the hosted service. We accept email + password
-  signup or Google sign-in.
-- Keep your login details safe. You're responsible for activity on your
-  account.
-- Tell us right away if you think someone else has access to it.
-- You must be old enough to enter a binding agreement where you live (in
-  South Africa, that's 18; elsewhere, your local rules apply).
+- You must be 16 or older to create an account.
+- You're responsible for keeping your password and API tokens secret. If
+  a token is compromised, rotate it immediately from your Profile page.
+- One person, one account. Workspaces are for teams; team members each
+  have their own account.
+- Provide accurate billing information.
 
-## Acceptable use
+## 3. Acceptable use
 
-Don't use Kerf to:
+You agree not to use the Service to:
 
-- Build or store anything illegal where you are or where we are.
-- Harass, threaten, or impersonate other people.
-- Distribute malware, spam, or content designed to compromise other systems.
-- Resell or redistribute the LLM access bundled with the hosted service.
-  Inside-the-app chat is for your own design work, not as a backend for
-  someone else's product. (If you want LLM-powered CAD in your own product:
-  that's exactly what the open-source build is for — bring your own keys.)
-- Try to break the service — overwhelm it, scrape it at scale, reverse-engineer
-  authentication, or evade billing.
+- Violate any law or regulation, or another person's rights.
+- Upload malware, exploit code targeting other users, or content
+  designed to defraud.
+- Send unsolicited bulk messages, spam, or phishing through any Kerf
+  feature.
+- Scrape, mirror, or resell the Service's content without our written
+  consent (your own projects are yours to export, of course — see
+  Section 6).
+- Reverse-engineer or stress-test our infrastructure beyond ordinary use.
+  If you want to run a load test that goes beyond your tier's quotas,
+  email us first.
+- Run automated workloads at a scale that disrupts other users. The
+  per-API-token daily spend cap and per-user monthly limits are there
+  to bound this; intentionally trying to evade them is grounds for
+  suspension.
 
-## Account suspension
+We reserve the right to suspend or terminate accounts that violate
+these rules.
 
-We may suspend or close an account if we believe it's being used to break
-these terms or the law. Where it's safe to do so we'll explain why and give
-you a chance to fix it. If we close your account for a clear policy
-violation, any unused credits may be forfeit.
+## 4. Content
 
-For run-of-the-mill issues we'll always try to talk to you first.
+**Your content stays yours.** You retain all rights to projects, files,
+sketches, designs, and chat history you create on Kerf. By using the
+Service, you grant us a limited license to store, process, and display
+your content as needed to operate the Service (e.g. render your projects,
+back up your data, send your chat messages to the LLM provider you
+chose).
 
-## Payment and cancellation
+**Public Workshop content.** When you publish a project to the public
+Workshop, you grant other users a worldwide, non-exclusive, royalty-free
+license to view, fork, and modify your project in the Workshop. You can
+unpublish at any time, but copies forked before unpublishing remain with
+the user who forked them. We don't claim ownership.
 
-The hosted service runs on a top-up model:
+**Content rules:** don't publish content that infringes intellectual
+property, contains malware, depicts illegal activity, or harasses other
+users. We may remove content that violates these rules.
 
-- **No subscription.** You buy credit when you want to. Credit doesn't
-  auto-renew, and we don't store a card to charge later unless you ask us to.
-- **Usage-based.** Storage is billed per gigabyte-month. LLM chats are billed
-  per token, with a small markup over the underlying provider's price.
-- **Free tier.** The first 50 MB of storage is free, and you don't pay
-  anything until you actively top up.
-- **USD displayed, ZAR settled.** Prices in the app are shown in US dollars
-  for familiarity. Your card is charged in South African rand, at the
-  exchange rate at the time of payment, by our payment processor (Paystack).
-- **No refunds for consumed credits.** Once an LLM token is generated or a
-  gigabyte-month is spent, that money's gone. If you top up and then change
-  your mind before using any of it, email us within 14 days and we'll refund
-  the unused balance.
-- **Cancel anytime.** "Cancelling" just means stopping using the service.
-  Export your projects, then delete your account from
-  `Profile → Delete account`. We don't keep ghost subscriptions running.
+## 5. Payments and billing
 
-Prices may change. We'll post changes on the pricing page at least 30 days
-before they take effect; existing credit is honoured at the rate it was
-purchased.
+- Prices are displayed on [kerf.sh/pricing](https://kerf.sh/pricing).
+- The hosted service settles in your card's native currency via
+  [Paystack](https://paystack.com). Displayed USD prices are converted
+  at the FX rate active at billing time.
+- Subscription tiers (Studio $9/mo, Pro $29/mo) bundle a monthly credit
+  allowance for LLM tokens at our provider cost (no markup). Overage
+  debits a wallet balance you top up via Paystack.
+- **At-cost token pricing**: we charge the raw provider rate plus a 5%
+  payment-processing fee on the overage portion. No hidden markup.
+- **Storage overage**: $0.30/GB-month past your tier's included storage,
+  prorated daily.
+- **Worker compute overage**: $0.10/minute past your tier's free quota
+  for FEM / topo / autoroute jobs.
+- **Refunds**: we don't offer refunds for partial-month subscriptions or
+  unused credits, but we'll work with you in good faith on edge cases
+  (e.g. duplicate top-up, our outage during your subscription).
+- **Cancellation**: you can cancel a subscription any time. Already-paid
+  subscription periods stay active until they expire; we don't auto-renew
+  if you cancel.
 
-## Your content
+## 6. Data export and account deletion
 
-You own everything you create — designs, files, chat history, drawings, parts.
-We don't claim any rights to it.
+- Every project has a "Download project" button that exports all your
+  files as a zip.
+- You can delete your account from `Profile → Delete Account`. Your
+  account data, private projects, and chat history are wiped within 30
+  days. Public Workshop publishes stay live unless you unpublish them
+  first.
 
-To run the service, we have to do a few technical things with your content:
-store it, serve it back to your browser, send it to LLM providers when you
-make a chat request, and back it up. That's the extent of it. Details are in
-the [Privacy Policy](/docs/privacy).
+## 7. Service availability
 
-If you publish a Part to the public Workshop, you're granting other Kerf
-users the right to view, copy, and remix that specific Part. You can
-unpublish it at any time, but copies others have already saved are theirs.
+We aim for high availability but don't guarantee it. The Service is
+provided **"as is"** without uptime guarantees in the standard tier.
+Enterprise customers can negotiate an SLA — contact
+[hello@kerf.sh](mailto:hello@kerf.sh).
 
-## Disclaimer and liability
+We may schedule downtime for maintenance and will give reasonable notice
+where possible (email + status page).
 
-Kerf is provided **as is**. We work hard to keep it stable, but:
+## 8. Third-party providers
 
-- Kerf is a CAD and electronics design tool. **It is not certified for
-  safety-critical work** — aerospace, medical devices, structural engineering
-  for buildings or vehicles, anything where a model error could hurt
-  someone. If you use Kerf for that kind of work, you take full
-  responsibility for verifying the output through your own engineering
-  process.
-- The LLM features can and do make mistakes. Treat their output the way you'd
-  treat a pull request from a junior engineer: check it.
-- We don't guarantee uninterrupted service, and we can't guarantee your data
-  won't ever be lost — keep your own backups of anything you can't afford to
-  lose. (You can download a project as a zip at any time.)
+Kerf uses third-party services to deliver some features:
 
-To the maximum extent the law allows, our total liability to you for anything
-arising out of the hosted service is capped at **what you've paid us in the
-12 months before the claim**, or **USD 100**, whichever is greater. Some
-jurisdictions don't allow these caps, in which case they apply only as far as
-the local law permits.
+- **LLM providers** (Anthropic, OpenAI, Google, DeepSeek, MiniMax) —
+  your chat content is sent to whichever you choose.
+- **Paystack** — payment processing.
+- **Resend** — transactional email.
+- **Tigris** / **fly.io** — hosting and storage.
+- **GitHub** (if you connect git sync) — your project code mirrors to
+  the repo you authorize.
 
-Nothing in this section limits our liability for things the law says can't be
-limited — fraud, gross negligence, or death/injury caused by our negligence.
+These third parties operate under their own terms. We've chosen each
+based on privacy and reliability; full details in our
+[Privacy Policy](./privacy.md).
 
-## Changes to these terms
+## 9. Liability
 
-If we change these terms in a way that materially affects you, we'll email
-you and post a notice in the app at least 30 days before the change takes
-effect. Continuing to use the service after that means you've accepted the
-new terms; if you don't agree, close your account before then.
+To the maximum extent permitted by law:
 
-Small clarifications and typo fixes go in without notice — the change history
-is visible on GitHub at `docs/terms.md`.
+- The Service is provided "as is" without warranties of any kind.
+- We're not liable for indirect, incidental, special, consequential, or
+  punitive damages, or lost profits, even if we've been advised of the
+  possibility.
+- Our total liability for any claim arising from the Service is limited
+  to the amount you paid us in the 12 months before the claim, or
+  USD 100, whichever is greater.
 
-## Governing law
+Nothing in these terms limits liability for fraud, gross negligence,
+or other liability that can't be limited by law.
 
-These terms are governed by the **laws of South Africa**. Disputes go to the
-courts of South Africa, unless your local consumer-protection law gives you a
-right to bring claims in your own jurisdiction (in which case, fair).
+## 10. Changes to these terms
 
-We'd much rather sort things out by email first. Genuinely.
+We may update these terms. If we make a change that materially affects
+your rights or what we charge, we'll email you at the address on your
+account and post a notice in the app at least 30 days before the change
+takes effect. Continued use after that date means you accept the change.
 
-## Contact
+Minor clarifications go in without notice; the change history is visible
+on GitHub.
 
-Questions about these terms: **TBD@kerf.app** *(placeholder — final contact
-address to be confirmed before launch)*.
+## 11. Governing law
+
+These terms are governed by the laws of the Republic of South Africa.
+Disputes are resolved in the courts of Durban, KwaZulu-Natal, unless
+you're a consumer in a jurisdiction (EU, UK, etc.) where local consumer
+law requires a different forum.
+
+The South African Consumer Protection Act applies where relevant.
+
+## 12. Contact
+
+- **Support**: [support@kerf.sh](mailto:support@kerf.sh)
+- **Privacy**: [privacy@kerf.sh](mailto:privacy@kerf.sh)
+- **Security**: [security@kerf.sh](mailto:security@kerf.sh) (see
+  [SECURITY.md](https://github.com/kerf-sh/kerf/blob/main/SECURITY.md))
+- **Legal / business**: [hello@kerf.sh](mailto:hello@kerf.sh)
+
+Postal address available on request.
