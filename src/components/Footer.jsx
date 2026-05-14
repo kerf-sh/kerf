@@ -2,7 +2,7 @@ import { Link } from 'react-router-dom'
 import { Github, ExternalLink } from 'lucide-react'
 import { LogoMark } from './Logo.jsx'
 
-const GITHUB_URL = 'https://github.com/imranp/kerf'
+const GITHUB_URL = 'https://github.com/kerf-sh/kerf'
 
 function Col({ title, children }) {
   return (
@@ -66,7 +66,7 @@ export default function Footer() {
               className="inline-flex items-center gap-2 self-start rounded-md border border-ink-800 bg-ink-900/60 px-2.5 py-1.5 text-xs text-ink-300 hover:border-ink-700 hover:text-ink-100 transition-colors"
             >
               <Github size={13} />
-              <span className="font-mono">imranp/kerf</span>
+              <span className="font-mono">kerf-sh/kerf</span>
             </a>
           </div>
 

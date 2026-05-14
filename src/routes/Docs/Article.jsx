@@ -9,7 +9,7 @@ import Header from '../../components/Header.jsx'
 import Sidebar from './Sidebar.jsx'
 import { useDocs } from './docsStore.js'
 
-const GITHUB_BASE = 'https://github.com/imranp/kerf'
+const GITHUB_BASE = 'https://github.com/kerf-sh/kerf'
 
 export default function DocsArticle() {
   const { slug } = useParams()

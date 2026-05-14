@@ -26,7 +26,7 @@ That's it.
 
 ## The full text
 
-Verbatim from the [`LICENSE`](https://github.com/imranp/kerf/blob/main/LICENSE)
+Verbatim from the [`LICENSE`](https://github.com/kerf-sh/kerf/blob/main/LICENSE)
 file at the repository root:
 
 ```

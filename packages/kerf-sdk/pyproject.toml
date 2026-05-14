@@ -22,7 +22,7 @@ dev = [
 
 [project.urls]
 Homepage = "https://kerf.app"
-Repository = "https://github.com/imranp/kerf"
+Repository = "https://github.com/kerf-sh/kerf"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/kerf"]

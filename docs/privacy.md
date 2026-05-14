@@ -177,8 +177,8 @@ than posting publicly. We'll credit you in the release notes if you'd like.
 
 ## Open source
 
-Kerf is [MIT licensed](https://github.com/imranp/kerf) and the codebase is
-public on [GitHub](https://github.com/imranp/kerf). If you want to know
+Kerf is [MIT licensed](https://github.com/kerf-sh/kerf) and the codebase is
+public on [GitHub](https://github.com/kerf-sh/kerf). If you want to know
 exactly what gets logged when, the middleware lives in
 `packages/kerf-core/src/kerf_core/app.py`. If you want to see what context
 goes to the LLM, check `packages/kerf-chat/src/kerf_chat/`. The cloud plugin

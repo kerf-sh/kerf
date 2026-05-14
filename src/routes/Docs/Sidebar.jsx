@@ -117,7 +117,7 @@ export default function Sidebar() {
               <ul>
                 <li>
                   <a
-                    href="https://github.com/imranp/kerf/blob/main/ROADMAP.md"
+                    href="https://github.com/kerf-sh/kerf/blob/main/ROADMAP.md"
                     target="_blank"
                     rel="noreferrer"
                     className="flex items-center justify-between px-3 py-1.5 ml-2 text-sm text-ink-200 hover:text-ink-100 hover:bg-ink-900 rounded-md transition-colors"
@@ -141,7 +141,7 @@ export default function Sidebar() {
       {/* Footer: link out */}
       <div className="px-4 py-3 border-t border-ink-800 text-xs text-ink-400">
         <a
-          href="https://github.com/imranp/kerf"
+          href="https://github.com/kerf-sh/kerf"
           target="_blank"
           rel="noreferrer"
           className="inline-flex items-center gap-1.5 hover:text-ink-100"

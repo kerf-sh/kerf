@@ -21,7 +21,7 @@ set -euo pipefail
 KERF_VERSION="${KERF_VERSION:-latest}"
 INSTALL_DIR="${INSTALL_DIR:-$HOME/.local/bin}"
 CONFIG_DIR="${CONFIG_DIR:-$HOME/.config/kerf}"
-REPO="${KERF_REPO:-imranp/kerf}"
+REPO="${KERF_REPO:-kerf-sh/kerf}"
 
 note()  { printf "\033[1;36m%s\033[0m\n" "$*"; }
 warn()  { printf "\033[1;33m%s\033[0m\n" "$*" >&2; }

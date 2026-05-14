@@ -29,7 +29,7 @@ import Footer from '../components/Footer.jsx'
 import Button from '../components/Button.jsx'
 import { useCloudConfig, billingApi } from '../cloud/index.js'
 
-const GITHUB_URL = 'https://github.com/imranp/kerf'
+const GITHUB_URL = 'https://github.com/kerf-sh/kerf'
 
 // Fallback rates mirror backend/cloud/pricing/pricing.go (the on-disk
 // list-price table). USD per million tokens, raw — markup applied by

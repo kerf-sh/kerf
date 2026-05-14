@@ -1,6 +1,6 @@
 # What's New
 
-Recent features shipped to Kerf. See [ROADMAP.md](https://github.com/imranp/kerf/blob/main/ROADMAP.md) for the full list and status of every item.
+Recent features shipped to Kerf. See [ROADMAP.md](https://github.com/kerf-sh/kerf/blob/main/ROADMAP.md) for the full list and status of every item.
 
 ## Sprint — May 2026
 

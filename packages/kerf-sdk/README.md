@@ -69,7 +69,7 @@ result = k.invoke("files.list", {"project_id": "..."})
 
 ## Source
 
-Part of the [Kerf monorepo](https://github.com/imranp/kerf). SDK lives at `kerf-sdk/`.
+Part of the [Kerf monorepo](https://github.com/kerf-sh/kerf). SDK lives at `kerf-sdk/`.
 
 ## License
 

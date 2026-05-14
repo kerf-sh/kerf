@@ -245,7 +245,7 @@ export default function DocsHome() {
                 </div>
               </div>
               <a
-                href="https://github.com/imranp/kerf/tree/main/docs"
+                href="https://github.com/kerf-sh/kerf/tree/main/docs"
                 target="_blank"
                 rel="noreferrer"
                 className="text-sm text-kerf-300 hover:text-kerf-200 inline-flex items-center gap-1.5"
