@@ -39,11 +39,13 @@ async def register(app: FastAPI, ctx):
         delete_mate_spec, run_delete_mate,
         list_mates_spec, run_list_mates,
         solve_assembly_spec, run_solve_assembly,
+        tolerance_auto_chain_spec, run_tolerance_auto_chain,
     )
     ctx.tools.register("add_mate", add_mate_spec, run_add_mate)
     ctx.tools.register("delete_mate", delete_mate_spec, run_delete_mate)
     ctx.tools.register("list_mates", list_mates_spec, run_list_mates)
     ctx.tools.register("solve_assembly", solve_assembly_spec, run_solve_assembly)
+    ctx.tools.register("tolerance_auto_chain", tolerance_auto_chain_spec, run_tolerance_auto_chain)
 
     # Pure-Python gradient-descent solver always available;
     # python-solvespace is the optional fast-path.

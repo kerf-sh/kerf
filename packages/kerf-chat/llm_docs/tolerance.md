@@ -142,16 +142,79 @@ distributions. Returns P01/P50/P99 percentiles, histogram, mean, and std-dev.
 
 ## Assembly tolerance chain walk
 
-When tolerances are stored on sketch dimensions and feature parameters,
-a tolerance stack can be built by walking the assembly graph:
+Use `tolerance_auto_chain` to automatically build a dimension chain by
+walking the assembly mate graph between two feature references.  The result
+is a chain list ready for `tolerance_stack` or `tolerance_monte_carlo`.
 
-1. Start from an assembly mate's `from_face` reference
-2. Walk through each component's part geometry
-3. Accumulate dimensions at each mating interface
-4. Return the full stack as inline dimensions to `tolerance_stack`
+### `tolerance_auto_chain`
 
-The `from_face` → `to_face` chain represents the mechanical gap or
-interference being analyzed.
+**Arguments:**
+
+```json
+{
+  "assembly_file_id": "<uuid>",
+  "start_ref": { "component_id": "housing", "feature_id": "face-bottom" },
+  "end_ref":   { "component_id": "lid",     "feature_id": "face-top" }
+}
+```
+
+**Result:**
+
+```json
+{
+  "assembly_file_id": "<uuid>",
+  "start_ref": { "component_id": "housing", "feature_id": "face-bottom" },
+  "end_ref":   { "component_id": "lid",     "feature_id": "face-top" },
+  "chain": [
+    { "name": "mate:dist-1", "nominal": 10.0, "plus": 0.1, "minus": 0.1,
+      "unit": "mm", "source": "mate", "mate_id": "dist-1", "mate_type": "distance" },
+    { "name": "mate:dist-2", "nominal": 5.0,  "plus": 0.05, "minus": 0.05,
+      "unit": "mm", "source": "mate", "mate_id": "dist-2", "mate_type": "distance" }
+  ],
+  "chain_length": 2
+}
+```
+
+Pass the `chain` directly to `tolerance_stack`:
+
+```json
+{
+  "dimensions": <chain from tolerance_auto_chain>,
+  "rss_k": 3
+}
+```
+
+**Algorithm:** BFS on the mate graph.  Nodes are `(component_id, feature_id)`
+pairs.  Intra-component edges (zero cost) allow traversal between different
+features of the same component.  The shortest path is selected.
+
+**Mate contributions:**
+
+| Mate type | Nominal | Plus / Minus |
+|-----------|---------|--------------|
+| `distance` | `value` (mm) | from `tolerance` slot or `tolerance_plus`/`tolerance_minus` |
+| `angle` | `value` (deg/rad) | from `tolerance` slot |
+| `coincident`, `concentric`, `parallel`, `perpendicular`, `tangent` | 0 | 0 (unless tolerance slot present) |
+
+### Per-mate tolerance slot (`.assembly` schema extension)
+
+Mates may carry an optional backward-compatible `tolerance` slot:
+
+```json
+{
+  "id": "shaft-gap",
+  "type": "distance",
+  "a": { "component_id": "housing", "feature": "face", "feature_id": "bore-face" },
+  "b": { "component_id": "shaft",   "feature": "face", "feature_id": "shoulder" },
+  "value": 0.05,
+  "unit": "mm",
+  "tolerance": { "plus": 0.01, "minus": 0.01 }
+}
+```
+
+If `tolerance` is absent, `plus = minus = 0` is assumed.  The legacy flat
+fields `tolerance_plus` / `tolerance_minus` (used by `solve_assembly`) are
+also recognised as a fallback.
 
 ## Quick reference
 

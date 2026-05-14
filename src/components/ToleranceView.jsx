@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react'
-import { Play, Loader2, AlertTriangle } from 'lucide-react'
+import { Play, Loader2, AlertTriangle, GitBranch, X } from 'lucide-react'
 import { worstCaseStack, rssStack } from '../lib/tolerance.js'
 import { api } from '../lib/api.js'
 
@@ -157,11 +157,152 @@ function Histogram({ histogram, binEdges }) {
   )
 }
 
+// ---------------------------------------------------------------------------
+// Auto-build from assembly modal
+// ---------------------------------------------------------------------------
+
+function AutoChainModal({ projectId, onChain, onClose }) {
+  const [assemblyFileId, setAssemblyFileId] = useState('')
+  const [startCompId, setStartCompId] = useState('')
+  const [startFeatId, setStartFeatId] = useState('')
+  const [endCompId, setEndCompId] = useState('')
+  const [endFeatId, setEndFeatId] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState(null)
+
+  const handleBuild = useCallback(async () => {
+    setError(null)
+    if (!assemblyFileId.trim()) { setError('Assembly file ID is required'); return }
+    if (!startCompId.trim() || !startFeatId.trim()) { setError('Start component/feature ID required'); return }
+    if (!endCompId.trim() || !endFeatId.trim()) { setError('End component/feature ID required'); return }
+
+    setLoading(true)
+    try {
+      const result = await api.chat(projectId, {
+        tool: 'tolerance_auto_chain',
+        args: {
+          assembly_file_id: assemblyFileId.trim(),
+          start_ref: { component_id: startCompId.trim(), feature_id: startFeatId.trim() },
+          end_ref:   { component_id: endCompId.trim(),   feature_id: endFeatId.trim() },
+        },
+      })
+      if (result && result.chain) {
+        onChain(result.chain)
+        onClose()
+      } else if (result && result.error) {
+        setError(result.error)
+      } else {
+        setError('Unexpected response from server')
+      }
+    } catch (err) {
+      setError(err.message || 'Failed to build chain')
+    } finally {
+      setLoading(false)
+    }
+  }, [projectId, assemblyFileId, startCompId, startFeatId, endCompId, endFeatId, onChain, onClose])
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+      <div className="w-full max-w-md bg-ink-950 border border-ink-700 rounded-lg shadow-2xl">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-ink-800">
+          <span className="text-xs font-semibold uppercase tracking-wider text-ink-300">
+            Auto-build chain from assembly
+          </span>
+          <button type="button" onClick={onClose} className="text-ink-500 hover:text-ink-200">
+            <X size={14} />
+          </button>
+        </div>
+        <div className="px-4 py-4 space-y-3">
+          <label className="block">
+            <span className="text-[10px] uppercase tracking-wider text-ink-500 font-medium">Assembly file ID</span>
+            <input
+              type="text"
+              value={assemblyFileId}
+              onChange={e => setAssemblyFileId(e.target.value)}
+              placeholder="UUID of .assembly file"
+              className="mt-1 w-full bg-ink-900 border border-ink-700 rounded px-2 py-1.5 text-[11px] font-mono text-ink-100 placeholder:text-ink-600 focus:outline-none focus:border-kerf-300"
+            />
+          </label>
+          <div className="grid grid-cols-2 gap-3">
+            <label className="block">
+              <span className="text-[10px] uppercase tracking-wider text-ink-500 font-medium">Start component</span>
+              <input
+                type="text"
+                value={startCompId}
+                onChange={e => setStartCompId(e.target.value)}
+                placeholder="component_id"
+                className="mt-1 w-full bg-ink-900 border border-ink-700 rounded px-2 py-1.5 text-[11px] font-mono text-ink-100 placeholder:text-ink-600 focus:outline-none focus:border-kerf-300"
+              />
+            </label>
+            <label className="block">
+              <span className="text-[10px] uppercase tracking-wider text-ink-500 font-medium">Start feature</span>
+              <input
+                type="text"
+                value={startFeatId}
+                onChange={e => setStartFeatId(e.target.value)}
+                placeholder="feature_id"
+                className="mt-1 w-full bg-ink-900 border border-ink-700 rounded px-2 py-1.5 text-[11px] font-mono text-ink-100 placeholder:text-ink-600 focus:outline-none focus:border-kerf-300"
+              />
+            </label>
+            <label className="block">
+              <span className="text-[10px] uppercase tracking-wider text-ink-500 font-medium">End component</span>
+              <input
+                type="text"
+                value={endCompId}
+                onChange={e => setEndCompId(e.target.value)}
+                placeholder="component_id"
+                className="mt-1 w-full bg-ink-900 border border-ink-700 rounded px-2 py-1.5 text-[11px] font-mono text-ink-100 placeholder:text-ink-600 focus:outline-none focus:border-kerf-300"
+              />
+            </label>
+            <label className="block">
+              <span className="text-[10px] uppercase tracking-wider text-ink-500 font-medium">End feature</span>
+              <input
+                type="text"
+                value={endFeatId}
+                onChange={e => setEndFeatId(e.target.value)}
+                placeholder="feature_id"
+                className="mt-1 w-full bg-ink-900 border border-ink-700 rounded px-2 py-1.5 text-[11px] font-mono text-ink-100 placeholder:text-ink-600 focus:outline-none focus:border-kerf-300"
+              />
+            </label>
+          </div>
+
+          {error && (
+            <div className="px-2 py-1.5 rounded bg-amber-950/40 border border-amber-700/60 text-[11px] text-amber-200">
+              {error}
+            </div>
+          )}
+        </div>
+        <div className="flex justify-end gap-2 px-4 py-3 border-t border-ink-800">
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-3 py-1.5 rounded text-[11px] font-medium text-ink-400 hover:text-ink-200 hover:bg-ink-800"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={handleBuild}
+            disabled={loading}
+            className="inline-flex items-center gap-1 px-3 py-1.5 rounded bg-kerf-300 text-ink-950 text-[11px] font-medium hover:bg-kerf-200 disabled:opacity-50"
+          >
+            {loading ? <><Loader2 size={11} className="animate-spin" /> Building…</> : 'Build chain'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+
 export default function ToleranceView({ content, fileName, projectId, fileId }) {
   const parsed = parseToleranceFile(content || '')
   const [mcResult, setMcResult] = useState(null)
   const [mcError, setMcError] = useState(null)
   const [running, setRunning] = useState(false)
+  const [showAutoChain, setShowAutoChain] = useState(false)
+  const [autoChain, setAutoChain] = useState(null)
 
   const handleRunMonteCarlo = useCallback(async () => {
     if (!projectId || !fileId) return
@@ -176,6 +317,21 @@ export default function ToleranceView({ content, fileName, projectId, fileId }) 
       setRunning(false)
     }
   }, [projectId, fileId])
+
+  const handleAutoChain = useCallback((chain) => {
+    setAutoChain(chain)
+  }, [])
+
+  // Dimensions to display: prefer auto-built chain when present
+  const displayDims = autoChain
+    ? autoChain.map((e, i) => ({
+        id: e.name || e.mate_id || `link-${i + 1}`,
+        nominal: e.nominal,
+        plus: e.plus,
+        minus: e.minus,
+        unit: e.unit || 'mm',
+      }))
+    : parsed.tolerances || []
 
   if (parsed.kind === 'invalid' || parsed.kind === 'unsupported' || parsed.kind === 'empty') {
     return (
@@ -201,9 +357,15 @@ export default function ToleranceView({ content, fileName, projectId, fileId }) 
     )
   }
 
-  const { tolerances } = parsed
-
   return (
+    <>
+    {showAutoChain && (
+      <AutoChainModal
+        projectId={projectId}
+        onChain={handleAutoChain}
+        onClose={() => setShowAutoChain(false)}
+      />
+    )}
     <div className="h-full flex flex-col bg-ink-950 text-ink-100 min-h-0">
       <div className="flex items-center gap-2 px-4 py-2.5 border-b border-ink-800 bg-ink-900/40 flex-shrink-0">
         <span className="text-xs font-semibold uppercase tracking-wider text-ink-300">
@@ -217,24 +379,41 @@ export default function ToleranceView({ content, fileName, projectId, fileId }) 
             {parsed.name}
           </span>
         )}
-        <button
-          type="button"
-          onClick={handleRunMonteCarlo}
-          disabled={running || tolerances.length === 0}
-          className="ml-auto inline-flex items-center gap-1 px-2 py-1 rounded bg-kerf-300 text-ink-950 text-[11px] font-medium hover:bg-kerf-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-kerf-300"
-        >
-          {running ? (
-            <>
-              <Loader2 size={11} className="animate-spin" />
-              Running…
-            </>
-          ) : (
-            <>
-              <Play size={11} />
-              Monte-Carlo
-            </>
-          )}
-        </button>
+        {autoChain && (
+          <span className="text-[10px] text-emerald-400 border border-emerald-400/40 rounded px-1.5 py-0.5">
+            auto-chain ({autoChain.length} links)
+          </span>
+        )}
+        <div className="ml-auto flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setShowAutoChain(true)}
+            disabled={!projectId}
+            className="inline-flex items-center gap-1 px-2 py-1 rounded border border-ink-700 text-ink-300 text-[11px] font-medium hover:bg-ink-800 hover:text-ink-100 disabled:opacity-40 disabled:cursor-not-allowed"
+            title="Auto-build chain from assembly mate graph"
+          >
+            <GitBranch size={11} />
+            Auto-build…
+          </button>
+          <button
+            type="button"
+            onClick={handleRunMonteCarlo}
+            disabled={running || displayDims.length === 0}
+            className="inline-flex items-center gap-1 px-2 py-1 rounded bg-kerf-300 text-ink-950 text-[11px] font-medium hover:bg-kerf-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-kerf-300"
+          >
+            {running ? (
+              <>
+                <Loader2 size={11} className="animate-spin" />
+                Running…
+              </>
+            ) : (
+              <>
+                <Play size={11} />
+                Monte-Carlo
+              </>
+            )}
+          </button>
+        </div>
       </div>
 
       <div className="flex-1 min-h-0 overflow-auto">
@@ -242,15 +421,18 @@ export default function ToleranceView({ content, fileName, projectId, fileId }) 
           <section>
             <div className="mb-2 text-[10px] uppercase tracking-wider text-ink-500 font-medium">
               Dimension Chain
+              {autoChain && (
+                <span className="ml-2 normal-case text-ink-500"> — from assembly walk</span>
+              )}
             </div>
-            <DimensionTable tolerances={tolerances} />
+            <DimensionTable tolerances={displayDims} />
           </section>
 
           <section>
             <div className="mb-2 text-[10px] uppercase tracking-wider text-ink-500 font-medium">
               Worst-Case + RSS Summary
             </div>
-            <SummaryCard dims={tolerances} />
+            <SummaryCard dims={displayDims} />
           </section>
 
           {mcError && (
@@ -290,5 +472,6 @@ export default function ToleranceView({ content, fileName, projectId, fileId }) 
         </div>
       </div>
     </div>
+    </>
   )
 }

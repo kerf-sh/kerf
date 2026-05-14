@@ -1,7 +1,8 @@
 """
 LLM tools for the mates/assembly plugin.
 
-Provides: add_mate, delete_mate, list_mates, solve_assembly
+Provides: add_mate, delete_mate, list_mates, solve_assembly,
+          tolerance_auto_chain
 These are registered via ctx.tools.register() in plugin.py.
 """
 
@@ -405,4 +406,101 @@ async def run_solve_assembly(ctx: ProjectCtx, args: bytes) -> str:
         "tolerance_stackup": result["tolerance_stackup"],
         "residuals": result["residuals"],
         "error": result["error"],
+    })
+
+
+# ---------------------------------------------------------------------------
+# tolerance_auto_chain
+# ---------------------------------------------------------------------------
+
+tolerance_auto_chain_spec = ToolSpec(
+    name="tolerance_auto_chain",
+    description=(
+        "Automatically build a 1D tolerance chain by walking the assembly mate "
+        "graph between two feature references. Returns a chain list compatible "
+        "with tolerance_stack. Distance/angle mates contribute their nominal "
+        "value + tolerance; coincident/concentric/parallel/perpendicular/tangent "
+        "contribute zero unless they carry a tolerance slot."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "assembly_file_id": {
+                "type": "string",
+                "description": "UUID of the .assembly file to walk.",
+            },
+            "start_ref": {
+                "type": "object",
+                "description": "Start feature reference.",
+                "properties": {
+                    "component_id": {"type": "string"},
+                    "feature_id": {"type": "string"},
+                },
+                "required": ["component_id", "feature_id"],
+            },
+            "end_ref": {
+                "type": "object",
+                "description": "End feature reference.",
+                "properties": {
+                    "component_id": {"type": "string"},
+                    "feature_id": {"type": "string"},
+                },
+                "required": ["component_id", "feature_id"],
+            },
+        },
+        "required": ["assembly_file_id", "start_ref", "end_ref"],
+    },
+)
+
+
+@register(tolerance_auto_chain_spec)
+async def run_tolerance_auto_chain(ctx: ProjectCtx, args: bytes) -> str:
+    try:
+        a = json.loads(args)
+    except Exception as e:
+        return err_payload(f"invalid args: {e}", "BAD_ARGS")
+
+    assembly_file_id = a.get("assembly_file_id", "").strip()
+    start_ref = a.get("start_ref")
+    end_ref = a.get("end_ref")
+
+    if not assembly_file_id:
+        return err_payload("assembly_file_id is required", "BAD_ARGS")
+    if not start_ref or not isinstance(start_ref, dict):
+        return err_payload("start_ref is required", "BAD_ARGS")
+    if not end_ref or not isinstance(end_ref, dict):
+        return err_payload("end_ref is required", "BAD_ARGS")
+
+    try:
+        fid = uuid.UUID(assembly_file_id)
+    except Exception:
+        return err_payload("assembly_file_id must be a uuid", "BAD_ARGS")
+
+    row = await _get_assembly_file(ctx, fid)
+    if not row:
+        return err_payload("assembly file not found", "NOT_FOUND")
+    if row["kind"] != "assembly":
+        return err_payload(f"file kind '{row['kind']}' is not an assembly", "BAD_KIND")
+
+    content = row["content"] or "{}"
+    try:
+        doc = json.loads(content)
+    except Exception:
+        return err_payload("assembly file content is invalid JSON", "BAD_FILE")
+    if not isinstance(doc, dict):
+        return err_payload("assembly file content is invalid JSON object", "BAD_FILE")
+
+    from kerf_mates.chain_walk import build_chain_from_assembly
+
+    result = build_chain_from_assembly(doc, start_ref, end_ref)
+
+    if isinstance(result, dict) and "error" in result:
+        return err_payload(result["error"], result.get("code", "NO_PATH"))
+
+    return ok_payload({
+        "assembly_file_id": assembly_file_id,
+        "start_ref": start_ref,
+        "end_ref": end_ref,
+        "chain": result,
+        "chain_length": len(result),
     })
