@@ -44,6 +44,7 @@ import {
   resolveAxisRef, resolvePlaneRef,
   sketchToWire, geom2ToWire, placeWireOnPlane,
   buildVariableRadiusLaw,
+  surfaceToSolid, SurfaceToSolidUnsupportedError,
 } from './occtBridge.js'
 import { sketchToGeom2 } from './sketchGeom2.js'
 import { parseSketch } from './sketchSolver.js'
@@ -2051,6 +2052,59 @@ function makePushPullNamer(oc, builder, inputShape, nodeId, faceNormal, prevFace
 }
 
 // ---------------------------------------------------------------------------
+// NURBS booleans v1 — T2: to_solid worker handler
+// ---------------------------------------------------------------------------
+//
+// `to_solid` promotes any face / shell / surface-body shape to a TopoDS_Solid
+// by sewing its faces into a closed shell and then capping into a solid.
+//
+// Node schema:
+//   { op: "to_solid",
+//     id: string,
+//     inputs: [{ ref: "<upstream-node-id-or-sketch-path>" }],
+//     opts?: { tolerance?: number, sew_edges?: boolean } }
+//
+// The input shape is the CURRENT shape (the upstream result in the pipeline).
+// `inputs[0].ref` is accepted in the node but is presently advisory — the
+// dispatch loop feeds `prev` (current shape) directly so no explicit
+// input-resolution step is needed in v1 (matches how fillet/chamfer work).
+//
+// Failure modes:
+//   - BRepBuilderAPI_Sewing absent → SurfaceToSolidUnsupportedError is thrown
+//     and caught by the dispatch loop, re-surfaced as a worker error envelope.
+//   - No upstream shape (current == null) → clear error.
+//   - makeSolidFromShell probe failed (via boot-time NURBS_BOOLEAN_BINDINGS)
+//     → fast-fail with a "wasm binding missing" message before calling sewer.
+
+function opToSolid(oc, prev, node, _sketches, tracker) {
+  if (!prev) {
+    throw new Error('to_solid: no upstream shape — to_solid must follow a surface-producing op (sweep1, loft, network_srf, blend_srf, etc.)')
+  }
+
+  // Boot-time binding probe: check the BRepBuilderAPI_MakeSolid_1 gate that
+  // T1 pre-computed. If it's explicitly false (probe ran and found it missing),
+  // emit a clear message. This is a best-effort fast-fail — surfaceToSolid
+  // itself handles the deeper fallback paths (BRep_Builder), so we only gate
+  // here on the hard BRepBuilderAPI_Sewing blocker.
+  const bindings = getNurbsBooleanBindings(oc)
+  if (bindings.makeSolidFromShell === false) {
+    throw new Error('to_solid: wasm binding missing — BRepBuilderAPI_MakeSolid_1 not present in this OCCT build (run a WASM rebuild to resolve)')
+  }
+
+  const opts = node.opts || {}
+  const { solid, warnings } = surfaceToSolid(oc, prev, tracker, {
+    tolerance: typeof opts.tolerance === 'number' ? opts.tolerance : undefined,
+  })
+  if (warnings.length > 0 && typeof console !== 'undefined') {
+    for (const w of warnings) {
+      // eslint-disable-next-line no-console
+      console.warn(`[to_solid] ${w}`)
+    }
+  }
+  return solid
+}
+
+// ---------------------------------------------------------------------------
 // Tree evaluation.
 //
 // The evaluator walks the feature tree top-to-bottom, threading the
@@ -2274,6 +2328,12 @@ function evaluateTree(oc, tree, sketches) {
         case 'variable_radius_fillet':
           next = opVariableRadiusFillet(oc, current, node, sketches, tracker)
           break
+        case 'to_solid':
+          // to_solid promotes a surface body to a solid in place.
+          // SurfaceToSolidUnsupportedError propagates to the outer catch
+          // which routes it through the worker error envelope.
+          next = opToSolid(oc, current, node, sketches, tracker)
+          break
         default:
           throw new Error(`unknown feature op '${node.op}'`)
       }
@@ -2468,6 +2528,8 @@ async function evaluateToFinalShape(oc, tree, sketches) {
           break
         case 'variable_radius_fillet':
           next = opVariableRadiusFillet(oc, current, node, sketches, tracker); break
+        case 'to_solid':
+          next = opToSolid(oc, current, node, sketches, tracker); break
         default: throw new Error(`unknown feature op '${node.op}'`)
       }
     } catch {
