@@ -4580,3 +4580,62 @@ async def admin_update_library_submission(
             raise HTTPException(status_code=404, detail="Submission not found or not in pending state")
 
     return {"id": submission_id, "status": updated["status"]}
+
+
+# ---------------------------------------------------------------------------
+# Wiring diagram run
+# ---------------------------------------------------------------------------
+
+@router.post("/projects/{pid}/files/{fid}/wiring/run")
+async def run_wiring(pid: str, fid: str, request: Request, payload: dict = Depends(require_auth)):
+    """
+    Forward the .wiring file's YAML source to the pyworker /run-wireviz route
+    and return { svg, warnings }.
+
+    The file must be of kind 'wiring'.  Viewers may render (read-only op).
+    """
+    user_id = payload.get("sub")
+
+    pool = await get_pool_required()
+    async with pool.acquire() as conn:
+        ws_id = await project_workspace_id(pid)
+        if not ws_id:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="project not found")
+
+        role = await get_user_workspace_role(conn, ws_id, user_id)
+        if not role:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="project not found")
+
+        row = await conn.fetchrow(
+            "SELECT kind, content FROM files WHERE id = $1 AND project_id = $2 AND deleted_at IS NULL",
+            fid, pid,
+        )
+        if not row:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="file not found")
+        if row["kind"] != "wiring":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="file is not a .wiring file",
+            )
+
+        source = row["content"] or ""
+
+    pyworker_url = os.environ.get("PYWORKER_URL", "http://localhost:9090")
+    try:
+        import httpx as _httpx
+        async with _httpx.AsyncClient(timeout=60.0) as client:
+            resp = await client.post(
+                f"{pyworker_url}/run-wireviz",
+                json={"source": source},
+            )
+        if resp.status_code == 200:
+            return resp.json()
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"pyworker error: {resp.text[:300]}",
+        )
+    except _httpx.HTTPError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"pyworker unreachable: {exc}",
+        )

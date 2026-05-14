@@ -497,6 +497,12 @@ export const api = {
         mode: opts.mode ?? 'project',
       },
     }),
+
+  // ---- Wiring diagram render ----
+  // POSTs to the kerf-api thin handler which forwards to pyworker /run-wireviz.
+  // Returns { svg: string|null, warnings: string[] }.
+  runWireviz: (projectId, fileId) =>
+    request(`/api/projects/${projectId}/files/${fileId}/wiring/run`, { method: 'POST' }),
 }
 
 // ---------------------------------------------------------------------------
