@@ -139,6 +139,7 @@ local install, optional hosted tier with billing + workshop sharing + git.
 | **KiCad parity: electrical rules check (ERC)** | ✅ shipped | `packages/kerf-electronics/src/kerf_electronics/tools/erc.py` + `src/lib/erc.js` + frontend wiring in CircuitObjectsPanel shipped. |
 | **KiCad parity: per-pad mask/paste overrides** | ✅ shipped | `packages/kerf-electronics/src/kerf_electronics/tools/pad_overrides.py` + `src/lib/padOverrides.js` shipped. |
 | **Docs: ROADMAP + restructured /docs + landing revamp** | ✅ shipped | `docs/index.md` TOC, `docs/whats-new.md` sprint summary, 8 stale ROADMAP labels flipped, `build-docs-manifest.mjs` updated with new entries, Landing hero revamped with "open source · now shipping IFC" badge and whats-new link. |
+| **Persistent face naming (topological IDs)** | 🔮 planned | Replace positional `target_face_id: N` with stable, human-readable names (`Pad-A.TopCap`, `Pad-A.Side.seg-3`) that survive upstream sketch / feature edits. Sketch-anchored primary + topological-signature fallback; dual-write `target_face_name` + legacy `target_face_id` for backwards compat. Fixes silent-renumber bug across `feature_push_pull`, `feature_cut_from_sketch`, `feature_boss_with_draft`, `feature_fillet`, `feature_chamfer`, pattern features, mate refs. Design doc: [`docs/plans/persistent-face-naming.md`](./docs/plans/persistent-face-naming.md). ~5.5 sonnet-agent-days (T1–T7). |
 
 Legend: ✅ shipped · 🚧 in flight · 📋 next · 🔮 planned (multi-quarter)
 
