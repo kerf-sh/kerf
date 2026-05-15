@@ -74,7 +74,6 @@ function KindIcon({ kind, name, open }) {
   if (lower.endsWith('.equations')) {
     return <Variable size={14} className={`${cls} text-kerf-300`} />
   }
-<<<<<<< HEAD
   if (lower.endsWith('.wiring')) {
     return <Cable size={14} className={`${cls} text-orange-300`} />
   }

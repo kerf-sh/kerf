@@ -38,6 +38,7 @@ import StairView from '../components/StairView.jsx'
 import RailingView from '../components/RailingView.jsx'
 import PLCView from '../components/PLCView.jsx'
 import QuadMeshView from '../components/QuadMeshView.jsx'
+import PrintSliceView from '../components/PrintSliceView.jsx'
 import ConfigurationsPanel from '../components/ConfigurationsPanel.jsx'
 import ActivityTimeline from '../components/ActivityTimeline.jsx'
 import { useWorkspace, loadFilePartsForProject } from '../store/workspace.js'
@@ -421,6 +422,13 @@ function isQuadMeshFile(file) {
   return n.endsWith('.quadmesh')
 }
 
+function isPrintFile(file) {
+  if (!file) return false
+  if (file.kind === 'print') return true
+  const n = (file.name || '').toLowerCase()
+  return n.endsWith('.print')
+}
+
 export default function Editor() {
   const { projectId, fileId } = useParams()
   const navigate = useNavigate()
@@ -489,6 +497,7 @@ export default function Editor() {
     if (isFemFile(w.currentFile)) return
     if (isPLCFile(w.currentFile)) return
     if (isQuadMeshFile(w.currentFile)) return
+    if (isPrintFile(w.currentFile)) return
     if (runTimerRef.current) clearTimeout(runTimerRef.current)
     const code = w.currentFileContent
     const delay = runDebounceFor(code)
@@ -852,6 +861,7 @@ export default function Editor() {
     }
   }, [femFile, w.parts])
 
+  const printFile = isPrintFile(w.currentFile)
   // Resolver used by FeatureView to fetch sketch contents on demand. We
   // re-read the latest file content rather than relying on the cached
   // sketch parse from the workspace store (which may be stale if the user
@@ -1424,6 +1434,19 @@ export default function Editor() {
             <div className="flex-1 min-h-0 relative">
               <TopoView
                 viewRef={currentViewRef}
+                content={w.currentFileContent}
+                fileName={w.currentFile?.name}
+              />
+              {w.toast && (
+                <div className="absolute bottom-3 right-3 z-20 px-3 py-2 rounded-md bg-ink-900 border border-kerf-300/60 text-kerf-300 text-xs shadow-xl"
+                  onClick={() => w.dismissToast()}>
+                  {w.toast}
+                </div>
+              )}
+            </div>
+          ) : printFile ? (
+            <div className="flex-1 min-h-0 relative">
+              <PrintSliceView
                 content={w.currentFileContent}
                 fileName={w.currentFile?.name}
               />
