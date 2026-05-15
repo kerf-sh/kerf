@@ -27,7 +27,7 @@
 
 import { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
 import { snapshotSvg } from '../lib/snapshotHelpers.js'
-import { Maximize2, RotateCcw, AlertTriangle, Layers, Eye, EyeOff, Zap, Loader, CheckCircle, ShieldAlert, X } from 'lucide-react'
+import { Maximize2, RotateCcw, AlertTriangle, Layers, Eye, EyeOff, Zap, Loader, CheckCircle, ShieldAlert, X, Package } from 'lucide-react'
 import { convertCircuitJsonToPcbSvg } from 'circuit-to-svg'
 import { runDRC } from '../lib/pcbDRC.js'
 import { orthogonalSnap, corner45 } from '../lib/pcbRouting.js'
@@ -87,7 +87,7 @@ const LAYER_MODES = [
   { id: 'both',   label: 'Both',   color: '#a855f7' },
 ]
 
-export default function PCBView({ circuitJson, highlightRefdes = null, onSelectRefdes, onAutoroute = null, autorouteStatus = null, viewRef }) {
+export default function PCBView({ circuitJson, highlightRefdes = null, onSelectRefdes, onAutoroute = null, autorouteStatus = null, onExportFab = null, viewRef }) {
   const containerRef = useRef(null)
   const innerTopRef = useRef(null)
   const innerBottomRef = useRef(null)
@@ -737,6 +737,21 @@ export default function PCBView({ circuitJson, highlightRefdes = null, onSelectR
                autorouteStatus === 'done'    ? 'Routed' :
                autorouteStatus === 'error'   ? 'Retry' :
                'Autoroute'}
+            </button>
+            <span className="h-4 w-px bg-ink-800" />
+          </>
+        )}
+        {/* Export fab package button */}
+        {onExportFab && (
+          <>
+            <button
+              type="button"
+              onClick={onExportFab}
+              title="Export fabrication package (Gerbers + drill + P&P + BOM + IPC-2581)"
+              className="flex items-center gap-1 px-2 py-1 rounded text-[10px] font-semibold uppercase tracking-wider transition-colors bg-kerf-300/20 text-kerf-300 hover:bg-kerf-300/30 border border-kerf-300/30"
+            >
+              <Package size={11} />
+              Export Fab
             </button>
             <span className="h-4 w-px bg-ink-800" />
           </>

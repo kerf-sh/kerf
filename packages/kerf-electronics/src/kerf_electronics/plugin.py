@@ -48,6 +48,9 @@ async def register(app: "FastAPI", ctx):
     # Copper pour uses shapely (optional)
     provides.append("electronics.pour")
 
+    # Fab output (Gerber, Excellon, P&P, BOM, IPC-2581) — pure Python, always available
+    provides.append("electronics.fab")
+
     try:
         from kerf_core.plugin import PluginManifest  # type: ignore
     except ImportError:
@@ -84,6 +87,7 @@ def _register_tools(ctx, provides: list) -> None:
         "kerf_electronics.tools.pcb_layer_tools",
         "kerf_electronics.tools.routing",
         "kerf_electronics.tools.sim",
+        "kerf_electronics.tools.fab",
     ]
 
     for module_path in tool_modules:
