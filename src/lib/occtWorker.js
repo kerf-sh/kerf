@@ -4244,6 +4244,491 @@ function opRingShank(oc, _prev, node, _sketches, tracker) {
 }
 
 // ---------------------------------------------------------------------------
+// T-25  opChannelSeat
+// ---------------------------------------------------------------------------
+/**
+ * opChannelSeat — continuous bearing groove + per-stone seat positions.
+ *
+ * Node schema fields (from channel_seat_geometry() in gem_seat.py):
+ *   n_stones, pitch_mm, stone_diameter_mm,
+ *   stone_positions         — list of N [x,y,z] arrays (relative to node origin)
+ *   per_stone_geom          — seat_geometry result dict (same for all stones)
+ *   groove_width_mm         — 2 × girdle_radius_mm
+ *   groove_depth_mm         — total cutter depth
+ *   groove_length_mm        — full sweep length
+ *   groove_wall_thickness_mm— metal wall hint (informational)
+ *   position?, orientation_deg?
+ *
+ * Geometry strategy:
+ *   A single rectangular groove box (groove_length × groove_width × groove_depth)
+ *   centred at the origin along X represents the channel cut.  Individual stone
+ *   bearing-cone cylinders are fused into the groove to form per-seat relief.
+ *   The stone_positions array is preserved on the node (as-is from Python) so
+ *   downstream feature_boolean ops can reference it.
+ *
+ * Graceful fallback: if any per-stone step fails the groove box alone is returned.
+ */
+function opChannelSeat(oc, _prev, node, _sketches, tracker) {
+  const nStones   = Math.max(1, Math.round(Number(node.n_stones) || 1))
+  const pitchMm   = Number(node.pitch_mm)          || 4.0
+  const grvW      = Number(node.groove_width_mm)    || 3.5
+  const grvD      = Number(node.groove_depth_mm)    || 2.5
+  const grvL      = Number(node.groove_length_mm)   || (nStones * pitchMm)
+  const psg       = node.per_stone_geom || {}
+  const girdR     = Number(psg.girdle_radius_mm)    || grvW / 2
+  const pavH      = Number(psg.pavilion_depth_mm)   || grvD * 0.8
+  const botR      = Number(psg.bearing_cone_bottom_radius) || 0.1
+
+  // 1. Main groove box — centred at origin, running along X.
+  const groove = _makeBox(oc,
+    -grvL / 2, -grvW / 2, -grvD,
+    grvL, grvW, grvD, tracker)
+
+  // 2. Fuse per-stone bearing-cone relief cylinders into the groove.
+  //    Use stone_positions[] if provided; otherwise evenly space along X.
+  const rawPositions = Array.isArray(node.stone_positions) ? node.stone_positions : []
+  let seat = groove
+  for (let i = 0; i < nStones; i++) {
+    try {
+      const sp = rawPositions[i]
+      const sx = sp ? Number(sp[0]) : (i - (nStones - 1) / 2) * pitchMm
+      const sy = sp ? Number(sp[1]) : 0
+      const sz = sp ? Number(sp[2]) : 0
+      // Bearing cone centred at this stone position, tip pointing down.
+      const coneH = Math.max(pavH, 0.2)
+      const ax = track(tracker, new oc.gp_Ax2_3(
+        track(tracker, new oc.gp_Pnt_3(sx, sy, sz - coneH)),
+        track(tracker, new oc.gp_Dir_4(0, 0, 1)),
+      ))
+      const cone = track(tracker, new oc.BRepPrimAPI_MakeCone_3(ax, botR, girdR, coneH))
+      cone.Build()
+      if (cone.IsDone()) {
+        seat = _jewelryFuse(oc, seat, cone.Shape(), tracker)
+      }
+    } catch { /* best-effort: skip this stone's cone, keep groove */ }
+  }
+
+  return _jewelryTransform(oc, seat, node.position, node.orientation_deg, tracker)
+}
+
+// ---------------------------------------------------------------------------
+// T-25  opBezelSeat
+// ---------------------------------------------------------------------------
+/**
+ * opBezelSeat — inner bearing ledge + bezel wall (straight or tapered).
+ *
+ * Node schema fields (from bezel_seat_geometry() in gem_seat.py):
+ *   girdle_radius_mm, pavilion_depth_mm, girdle_height_mm,
+ *   bearing_cone_top_radius, bearing_cone_bottom_radius,
+ *   culet_depth_mm, crown_relief_depth_mm, crown_relief_half_angle,
+ *   through_hole, through_hole_radius_mm,
+ *   bezel_wall_height_mm, tapered (bool), taper_angle_deg,
+ *   inner_bore_top_radius, inner_bore_bottom_radius,
+ *   seat_type: "bezel",
+ *   girdle_profile? — fancy-cut outline hints (optional; informational in v1)
+ *   position?, orientation_deg?
+ *
+ * Geometry:
+ *   1. Base gem-seat cutter (identical to opGemSeat: cone + ledge + crown).
+ *   2. Bezel wall — straight cylinder or tapered cone above the girdle ledge,
+ *      height = bezel_wall_height_mm; inner bore subtracted.
+ *   3. Optional through-hole.
+ */
+function opBezelSeat(oc, _prev, node, _sketches, tracker) {
+  const girdR       = Number(node.girdle_radius_mm)           || 3.3
+  const topR        = Number(node.bearing_cone_top_radius)    || girdR
+  const botR        = Number(node.bearing_cone_bottom_radius) || 0.15
+  const pavH        = Number(node.pavilion_depth_mm)          || 2.8
+  const culetD      = Number(node.culet_depth_mm)             || 0.1
+  const girdH       = Number(node.girdle_height_mm)           || 0.18
+  const crownR      = Number(node.crown_relief_depth_mm)      || 0.3
+  const crownHA     = Number(node.crown_relief_half_angle)    || 7.5
+  const wallH       = Number(node.bezel_wall_height_mm)       || 1.0
+  const tapered     = Boolean(node.tapered)
+  const taperAng    = Number(node.taper_angle_deg)            || 0.0
+  const boreTopR    = Number(node.inner_bore_top_radius)      || topR
+  const boreBotR    = tapered ? Number(node.inner_bore_bottom_radius) || topR : topR
+  const throughHole = Boolean(node.through_hole)
+  const thrR        = throughHole ? (Number(node.through_hole_radius_mm) || 0.3) : 0
+
+  // 1. Base cutter (same as opGemSeat).
+  const coneH = pavH + culetD
+  const bearingCone = _makeCone(oc, botR, topR, coneH, -(coneH), tracker)
+  const girdleLedge = _makeCylinder(oc, topR, girdH, 0, tracker)
+  const crownTopR   = topR + Math.tan(crownHA * Math.PI / 180) * crownR
+  const crownRelief = _makeCone(oc, topR, crownTopR, crownR, girdH, tracker)
+
+  let seat = _jewelryFuse(oc, bearingCone, girdleLedge, tracker)
+  seat = _jewelryFuse(oc, seat, crownRelief, tracker)
+
+  // 2. Bezel wall above the girdle ledge.
+  const wallBase = girdH + crownR
+  let wall
+  if (tapered && taperAng > 0) {
+    const wallTopR = Math.max(boreTopR - Math.tan(taperAng * Math.PI / 180) * wallH, boreTopR * 0.5)
+    wall = _makeCone(oc, boreTopR, wallTopR, wallH, wallBase, tracker)
+  } else {
+    wall = _makeCylinder(oc, boreTopR, wallH, wallBase, tracker)
+  }
+  // Bore the stone hole through the wall (bore from wallBase, height = wallH + epsilon).
+  const bore = _makeCylinder(oc, boreBotR, wallH + 0.05, wallBase - 0.02, tracker)
+  try {
+    wall = _jewelryCut(oc, wall, bore, tracker)
+  } catch { /* bore step failed — keep solid wall as fallback */ }
+  seat = _jewelryFuse(oc, seat, wall, tracker)
+
+  // 3. Optional through-hole.
+  if (throughHole && thrR > 0) {
+    const totalD = coneH + girdH + crownR + wallH + 0.2
+    const hole = _makeCylinder(oc, thrR, totalD, -(coneH + 0.1), tracker)
+    seat = _jewelryFuse(oc, seat, hole, tracker)
+  }
+
+  return _jewelryTransform(oc, seat, node.position, node.orientation_deg, tracker)
+}
+
+// ---------------------------------------------------------------------------
+// T-25  opFishtailSeat
+// ---------------------------------------------------------------------------
+/**
+ * opFishtailSeat — gem seat + radial bright-cut accent facets.
+ *
+ * Node schema fields (from fishtail_seat_geometry() in gem_seat.py):
+ *   (all gem_seat fields)
+ *   bright_cut_angle_deg  — half-angle of each groove from vertical
+ *   bright_cut_depth_mm   — axial depth of each groove
+ *   n_bright_facets       — count of radial grooves (4 or 6 typical)
+ *   bright_cut_radius_mm  — outer radius of the bright-cut pattern
+ *   seat_type: "fishtail"
+ *   position?, orientation_deg?
+ *
+ * Geometry:
+ *   1. Base gem-seat cutter (identical to opGemSeat).
+ *   2. N radial wedge-cutters equally spaced around the girdle; each is a
+ *      thin tapered box (approximated as a slim cone slice) that creates the
+ *      bright-cut reflective groove.
+ */
+function opFishtailSeat(oc, _prev, node, _sketches, tracker) {
+  const girdR     = Number(node.girdle_radius_mm)           || 3.3
+  const topR      = Number(node.bearing_cone_top_radius)    || girdR
+  const botR      = Number(node.bearing_cone_bottom_radius) || 0.15
+  const pavH      = Number(node.pavilion_depth_mm)          || 2.8
+  const culetD    = Number(node.culet_depth_mm)             || 0.1
+  const girdH     = Number(node.girdle_height_mm)           || 0.18
+  const crownR    = Number(node.crown_relief_depth_mm)      || 0.3
+  const crownHA   = Number(node.crown_relief_half_angle)    || 7.5
+  const bcAngDeg  = Number(node.bright_cut_angle_deg)       || 45.0
+  const bcDepth   = Number(node.bright_cut_depth_mm)        || 0.15
+  const nFacets   = Math.max(1, Math.round(Number(node.n_bright_facets) || 4))
+  const bcR       = Number(node.bright_cut_radius_mm)       || (topR + 0.3)
+  const throughHole = Boolean(node.through_hole)
+  const thrR      = throughHole ? (Number(node.through_hole_radius_mm) || 0.3) : 0
+
+  // 1. Base cutter (same as opGemSeat).
+  const coneH = pavH + culetD
+  const bearingCone = _makeCone(oc, botR, topR, coneH, -(coneH), tracker)
+  const girdleLedge = _makeCylinder(oc, topR, girdH, 0, tracker)
+  const crownTopR   = topR + Math.tan(crownHA * Math.PI / 180) * crownR
+  const crownRelief = _makeCone(oc, topR, crownTopR, crownR, girdH, tracker)
+
+  let seat = _jewelryFuse(oc, bearingCone, girdleLedge, tracker)
+  seat = _jewelryFuse(oc, seat, crownRelief, tracker)
+
+  // 2. Bright-cut grooves — N thin box cutters radiating outward from the girdle.
+  //    Each groove is a slim box at angle (2πi/N) from the +X axis, starting at
+  //    topR and extending to bcR; height = bcDepth, width = ~0.3 mm.
+  const grooveW = Math.max(0.1, bcDepth * Math.tan(bcAngDeg * Math.PI / 180) * 0.8)
+  const grooveLen = Math.max(bcR - topR, 0.1)
+  for (let i = 0; i < nFacets; i++) {
+    try {
+      const ang = (2 * Math.PI * i) / nFacets
+      // Build a box at the origin along +X direction, then rotate it.
+      const groove = _makeBox(oc,
+        topR, -grooveW / 2, -bcDepth / 2,
+        grooveLen, grooveW, bcDepth, tracker)
+      // Rotate around Z.
+      const az = track(tracker, new oc.gp_Ax1_2(
+        track(tracker, new oc.gp_Pnt_3(0, 0, 0)),
+        track(tracker, new oc.gp_Dir_4(0, 0, 1)),
+      ))
+      const tRot = track(tracker, new oc.gp_Trsf_1())
+      tRot.SetRotation_1(az, ang)
+      const xf = track(tracker, new oc.BRepBuilderAPI_Transform_2(groove, tRot, true))
+      xf.Build()
+      if (xf.IsDone()) {
+        seat = _jewelryFuse(oc, seat, xf.Shape(), tracker)
+      }
+    } catch { /* best-effort: skip this groove */ }
+  }
+
+  // 3. Optional through-hole.
+  if (throughHole && thrR > 0) {
+    const totalD = coneH + girdH + crownR + 0.2
+    const hole = _makeCylinder(oc, thrR, totalD, -(coneH + 0.1), tracker)
+    seat = _jewelryFuse(oc, seat, hole, tracker)
+  }
+
+  return _jewelryTransform(oc, seat, node.position, node.orientation_deg, tracker)
+}
+
+// ---------------------------------------------------------------------------
+// T-25  opMultiStoneSeat
+// ---------------------------------------------------------------------------
+/**
+ * opMultiStoneSeat — center seat + N side seats for graduated stone arrangements.
+ *
+ * Node schema fields (from multi_stone_seat_geometry() in gem_seat.py):
+ *   center_seat_geom   — seat_geometry dict for center stone
+ *   side_seat_geom     — seat_geometry dict for each side stone (all identical)
+ *   center_position    — [x,y,z] of center stone (always [0,0,0])
+ *   side_positions     — list of [x,y,z] for each side stone
+ *   n_side_stones      — total count of side stones
+ *   side_pitch_mm      — center-to-center spacing
+ *   total_cutter_depth_mm
+ *   seat_type: "multi_stone"
+ *   position?, orientation_deg?
+ *
+ * Geometry:
+ *   Center seat — gem-seat cutter at center_position.
+ *   Side seats  — gem-seat cutter at each side_positions entry.
+ *   All solids are fused into a compound cutter.
+ *
+ * side_positions and per-seat geometry are preserved in the node payload for
+ * downstream reference; the returned solid is the union of all seat cutters.
+ */
+function opMultiStoneSeat(oc, _prev, node, _sketches, tracker) {
+  // Helper: build a single gem-seat cutter solid at a given [x,y,z] offset.
+  function _buildSeatAt(geom, posArr) {
+    const gr  = Number(geom.girdle_radius_mm)           || 3.3
+    const tR  = Number(geom.bearing_cone_top_radius)    || gr
+    const bR  = Number(geom.bearing_cone_bottom_radius) || 0.15
+    const pH  = Number(geom.pavilion_depth_mm)          || 2.8
+    const cD  = Number(geom.culet_depth_mm)             || 0.1
+    const gH  = Number(geom.girdle_height_mm)           || 0.18
+    const cR  = Number(geom.crown_relief_depth_mm)      || 0.3
+    const cHA = Number(geom.crown_relief_half_angle)    || 7.5
+    const coneH = pH + cD
+
+    const bearingCone = _makeCone(oc, bR, tR, coneH, -(coneH), tracker)
+    const girdleLedge = _makeCylinder(oc, tR, gH, 0, tracker)
+    const crownTopR   = tR + Math.tan(cHA * Math.PI / 180) * cR
+    const crownRelief = _makeCone(oc, tR, crownTopR, cR, gH, tracker)
+
+    let s = _jewelryFuse(oc, bearingCone, girdleLedge, tracker)
+    s = _jewelryFuse(oc, s, crownRelief, tracker)
+
+    // Translate to position.
+    const px = posArr ? Number(posArr[0]) : 0
+    const py = posArr ? Number(posArr[1]) : 0
+    const pz = posArr ? Number(posArr[2]) : 0
+    if (px !== 0 || py !== 0 || pz !== 0) {
+      const t = track(tracker, new oc.gp_Trsf_1())
+      t.SetTranslation_1(track(tracker, new oc.gp_Vec_4(px, py, pz)))
+      const xf = track(tracker, new oc.BRepBuilderAPI_Transform_2(s, t, true))
+      xf.Build()
+      s = xf.Shape()
+    }
+    return s
+  }
+
+  const centerGeom  = node.center_seat_geom || {}
+  const sideGeom    = node.side_seat_geom   || {}
+  const centerPos   = node.center_position  || [0, 0, 0]
+  const sidePos     = Array.isArray(node.side_positions) ? node.side_positions : []
+
+  // Build center seat.
+  let compound
+  try {
+    compound = _buildSeatAt(centerGeom, centerPos)
+  } catch (e) {
+    // Fallback: a minimal cylinder at origin if center seat build fails.
+    compound = _makeCylinder(oc, 1.0, 1.0, 0, tracker)
+  }
+
+  // Fuse each side seat.
+  for (const sp of sidePos) {
+    try {
+      const sideSeat = _buildSeatAt(sideGeom, sp)
+      compound = _jewelryFuse(oc, compound, sideSeat, tracker)
+    } catch { /* best-effort: skip this side seat */ }
+  }
+
+  return _jewelryTransform(oc, compound, node.position, node.orientation_deg, tracker)
+}
+
+// ---------------------------------------------------------------------------
+// T-25  opChainAssembly
+// ---------------------------------------------------------------------------
+/**
+ * opChainAssembly — repeat a chain link geometry along a line, with optional clasp.
+ *
+ * Node schema fields (from compute_chain_params() in chain.py):
+ *   style           — link style string (cable|curb|figaro|rope|box|snake|byzantine|mariner)
+ *   wire_gauge_mm   — wire rod diameter
+ *   link_length_mm  — outer link length
+ *   link_width_mm   — outer link width
+ *   link_count      — number of links
+ *   link_hints      — style-specific dict
+ *   total_length_mm — link_pitch_mm × link_count
+ *   link_pitch_mm   — centre-to-centre advance per link
+ *   open_ends       — bool
+ *   clasp           — optional inline clasp sub-node
+ *   position?, orientation_deg?
+ *
+ * Geometry strategy:
+ *   Build a single representative link solid and instantiate it link_count times
+ *   along the X axis with pitch = link_pitch_mm, alternating Z-rotation by 90°
+ *   for cable/figaro/rope styles (the classic interlocking oval pattern).
+ *
+ *   A "link" is an OCCT torus (inner_radius = link_width/2 - wire_gauge,
+ *   outer_radius_sweep = link_length/2) approximated via a swept circular
+ *   cross-section.  For box/snake a rectangular tube prism is used.  The
+ *   assembly returns a TopoDS_Compound of all link solids.
+ *
+ *   If the clasp sub-node is present, a simple lobster-claw placeholder cylinder
+ *   is appended at the end of the chain.
+ *
+ * Graceful fallback: if the torus build fails, each link falls back to a simple
+ * cylinder placeholder so the compound always has link_count shapes.
+ */
+function opChainAssembly(oc, _prev, node, _sketches, tracker) {
+  const style     = (node.style || 'cable').toLowerCase()
+  const gauge     = Math.max(0.1, Number(node.wire_gauge_mm)  || 1.0)
+  const linkLen   = Math.max(gauge, Number(node.link_length_mm) || gauge * 3.5)
+  const linkW     = Math.max(gauge, Number(node.link_width_mm)  || gauge * 2.5)
+  const linkCount = Math.max(1, Math.round(Number(node.link_count) || 10))
+  const pitch     = Math.max(gauge * 1.1, Number(node.link_pitch_mm) || (linkLen - 2 * gauge))
+  const linkHints = node.link_hints || {}    // style-specific hints (from Python)
+  const clasp     = node.clasp || null
+  void linkHints  // hints are informational; geometry is derived from link_length/width
+
+  // Determine if this style uses a box/tube profile vs round torus profile.
+  const boxStyles = new Set(['box', 'snake'])
+
+  // Build the compound.
+  const compBuilder = track(tracker, new oc.TopoDS_Compound())
+  const bldBuilder  = track(tracker, new oc.BRep_Builder())
+  bldBuilder.MakeCompound(compBuilder)
+
+  // Pre-build one representative link solid.
+  function _buildLink(rotateZ) {
+    let linkShape
+    if (boxStyles.has(style)) {
+      // Box/snake: rectangular tube — outer box minus inner bore.
+      const wallT = gauge * 0.4
+      const outerBox = _makeBox(oc,
+        -linkLen / 2, -linkW / 2, -gauge / 2,
+        linkLen, linkW, gauge, tracker)
+      const innerBox = _makeBox(oc,
+        -linkLen / 2 + wallT, -linkW / 2 + wallT, -gauge / 2 - 0.01,
+        linkLen - 2 * wallT, linkW - 2 * wallT, gauge + 0.02, tracker)
+      try {
+        linkShape = _jewelryCut(oc, outerBox, innerBox, tracker)
+      } catch {
+        linkShape = outerBox  // fallback: solid box
+      }
+    } else {
+      // Round wire styles: torus-like oval ring.
+      // Approximate as a torus: major_radius = (linkLen/2 + linkW/2)/2, minor = gauge/2.
+      // Using BRepPrimAPI_MakeTorus with a partial angle can give an oval approximation;
+      // since OCCT torus only supports circular sweeps, we use a full torus sized to the
+      // longer axis and scale the Y axis to achieve the oval aspect ratio.
+      const majorR = (linkLen / 2 + linkW / 2) / 2 - gauge / 2
+      const minorR = gauge / 2
+      const safeM  = Math.max(minorR + 0.01, majorR)
+      try {
+        const ax = track(tracker, new oc.gp_Ax2_3(
+          track(tracker, new oc.gp_Pnt_3(0, 0, 0)),
+          track(tracker, new oc.gp_Dir_4(0, 0, 1)),
+        ))
+        const tor = track(tracker, new oc.BRepPrimAPI_MakeTorus_3(ax, safeM, minorR))
+        tor.Build()
+        if (tor.IsDone()) {
+          // Scale X → linkLen/2 / safeM and Y → linkW/2 / safeM to make oval.
+          const scaleX = (linkLen / 2) / safeM
+          const scaleY = (linkW  / 2) / safeM
+          if (Math.abs(scaleX - 1) > 0.01 || Math.abs(scaleY - 1) > 0.01) {
+            const mat = track(tracker, new oc.gp_GTrsf_1())
+            mat.SetVectorialPart(track(tracker, (() => {
+              const m = new oc.gp_Mat_1()
+              m.SetDiagonal(scaleX, scaleY, 1.0)
+              return m
+            })()))
+            const xfG = track(tracker, new oc.BRepBuilderAPI_GTransform_2(tor.Shape(), mat, true))
+            xfG.Build()
+            linkShape = xfG.IsDone() ? xfG.Shape() : tor.Shape()
+          } else {
+            linkShape = tor.Shape()
+          }
+        } else {
+          throw new Error('torus build failed')
+        }
+      } catch {
+        // Fallback: simple cylinder placeholder for the link.
+        linkShape = _makeCylinder(oc, gauge * 1.5, gauge * 2, 0, tracker)
+      }
+    }
+
+    if (rotateZ) {
+      try {
+        const az = track(tracker, new oc.gp_Ax1_2(
+          track(tracker, new oc.gp_Pnt_3(0, 0, 0)),
+          track(tracker, new oc.gp_Dir_4(0, 0, 1)),
+        ))
+        const t = track(tracker, new oc.gp_Trsf_1())
+        t.SetRotation_1(az, Math.PI / 2)
+        const xf = track(tracker, new oc.BRepBuilderAPI_Transform_2(linkShape, t, true))
+        xf.Build()
+        if (xf.IsDone()) linkShape = xf.Shape()
+      } catch { /* keep unrotated */ }
+    }
+    return linkShape
+  }
+
+  // Alternating rotation for interlocking styles.
+  const alternates = !boxStyles.has(style)
+
+  for (let i = 0; i < linkCount; i++) {
+    try {
+      const linkShape = _buildLink(alternates && i % 2 === 1)
+      // Translate to position i × pitch along X.
+      const xPos = i * pitch
+      const t = track(tracker, new oc.gp_Trsf_1())
+      t.SetTranslation_1(track(tracker, new oc.gp_Vec_4(xPos, 0, 0)))
+      const xf = track(tracker, new oc.BRepBuilderAPI_Transform_2(linkShape, t, true))
+      xf.Build()
+      const placed = xf.IsDone() ? xf.Shape() : linkShape
+      bldBuilder.Add(compBuilder, placed)
+    } catch {
+      // Worst-case fallback link at position i × pitch.
+      try {
+        const fb = _makeCylinder(oc, gauge, gauge * 1.5, 0, tracker)
+        const tFb = track(tracker, new oc.gp_Trsf_1())
+        tFb.SetTranslation_1(track(tracker, new oc.gp_Vec_4(i * pitch, 0, 0)))
+        const xfFb = track(tracker, new oc.BRepBuilderAPI_Transform_2(fb, tFb, true))
+        xfFb.Build()
+        if (xfFb.IsDone()) bldBuilder.Add(compBuilder, xfFb.Shape())
+      } catch { /* skip */ }
+    }
+  }
+
+  // Clasp — append a simple lobster-claw placeholder cylinder at the chain end.
+  if (clasp) {
+    try {
+      const claspLen  = gauge * 6.0
+      const claspBody = _makeCylinder(oc, gauge * 1.75, claspLen, 0, tracker)
+      const tClasp = track(tracker, new oc.gp_Trsf_1())
+      tClasp.SetTranslation_1(track(tracker, new oc.gp_Vec_4(linkCount * pitch, 0, 0)))
+      const xfClasp = track(tracker, new oc.BRepBuilderAPI_Transform_2(claspBody, tClasp, true))
+      xfClasp.Build()
+      if (xfClasp.IsDone()) bldBuilder.Add(compBuilder, xfClasp.Shape())
+    } catch { /* clasp is optional — ignore errors */ }
+  }
+
+  return _jewelryTransform(oc, compBuilder, node.position, node.orientation_deg, tracker)
+}
+
+// ---------------------------------------------------------------------------
 // Tree evaluation.
 //
 // The evaluator walks the feature tree top-to-bottom, threading the
@@ -4692,6 +5177,57 @@ function evaluateTree(oc, tree, sketches) {
           currentFaceNamer = null
           break
         }
+        // ── Jewelry ops T-25: seat types + chain assembly ─────────────────────
+        case 'channel_seat': {
+          if (current) {
+            pushCurrentMesh(`body-${meshes.length}`)
+            cleanupShape(oc, current)
+            current = null
+          }
+          next = opChannelSeat(oc, null, node, sketches, tracker)
+          currentFaceNamer = null
+          break
+        }
+        case 'bezel_seat': {
+          if (current) {
+            pushCurrentMesh(`body-${meshes.length}`)
+            cleanupShape(oc, current)
+            current = null
+          }
+          next = opBezelSeat(oc, null, node, sketches, tracker)
+          currentFaceNamer = null
+          break
+        }
+        case 'fishtail_seat': {
+          if (current) {
+            pushCurrentMesh(`body-${meshes.length}`)
+            cleanupShape(oc, current)
+            current = null
+          }
+          next = opFishtailSeat(oc, null, node, sketches, tracker)
+          currentFaceNamer = null
+          break
+        }
+        case 'multi_stone_seat': {
+          if (current) {
+            pushCurrentMesh(`body-${meshes.length}`)
+            cleanupShape(oc, current)
+            current = null
+          }
+          next = opMultiStoneSeat(oc, null, node, sketches, tracker)
+          currentFaceNamer = null
+          break
+        }
+        case 'chain_assembly': {
+          if (current) {
+            pushCurrentMesh(`body-${meshes.length}`)
+            cleanupShape(oc, current)
+            current = null
+          }
+          next = opChainAssembly(oc, null, node, sketches, tracker)
+          currentFaceNamer = null
+          break
+        }
         default:
           throw new Error(`unknown feature op '${node.op}'`)
       }
@@ -5040,6 +5576,37 @@ async function evaluateToFinalShape(oc, tree, sketches) {
           if (current) cleanupShape(oc, current)
           current = null
           next = opRingShank(oc, null, node, sketches, tracker)
+          currentFaceNamer = null
+          break
+        // ── Jewelry ops T-25: seat types + chain assembly ─────────────────────
+        case 'channel_seat':
+          if (current) cleanupShape(oc, current)
+          current = null
+          next = opChannelSeat(oc, null, node, sketches, tracker)
+          currentFaceNamer = null
+          break
+        case 'bezel_seat':
+          if (current) cleanupShape(oc, current)
+          current = null
+          next = opBezelSeat(oc, null, node, sketches, tracker)
+          currentFaceNamer = null
+          break
+        case 'fishtail_seat':
+          if (current) cleanupShape(oc, current)
+          current = null
+          next = opFishtailSeat(oc, null, node, sketches, tracker)
+          currentFaceNamer = null
+          break
+        case 'multi_stone_seat':
+          if (current) cleanupShape(oc, current)
+          current = null
+          next = opMultiStoneSeat(oc, null, node, sketches, tracker)
+          currentFaceNamer = null
+          break
+        case 'chain_assembly':
+          if (current) cleanupShape(oc, current)
+          current = null
+          next = opChainAssembly(oc, null, node, sketches, tracker)
           currentFaceNamer = null
           break
         default: throw new Error(`unknown feature op '${node.op}'`)
