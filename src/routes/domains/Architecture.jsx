@@ -637,7 +637,7 @@ function ComparisonSection() {
         </div>
 
         <div className="overflow-x-auto rounded-xl border border-ink-800">
-          <table className="w-full text-sm border-collapse">
+          <table className="w-full min-w-[720px] text-sm border-collapse">
             <thead>
               <tr className="border-b border-ink-800 bg-ink-900/60">
                 <th className="text-left px-4 py-3 font-mono text-[11px] uppercase tracking-widest text-ink-400 min-w-[180px]">
