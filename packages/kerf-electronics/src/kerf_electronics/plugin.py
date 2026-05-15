@@ -111,6 +111,7 @@ def _register_tools(ctx, provides: list) -> None:
         "kerf_electronics.tools.ipc_netlist",
         "kerf_electronics.tools.spice_lib",
         "kerf_electronics.tools.idf_export",
+        "kerf_electronics.tools.lib_mgmt",
     ]
 
     for module_path in tool_modules:
