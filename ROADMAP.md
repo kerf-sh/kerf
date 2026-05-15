@@ -35,10 +35,10 @@ deep, trustworthy domain beats four shallow ones.** Flip Status as items land
 | # | Persona | Capability you CANNOT do today | Why it blocks "best CAD" | Status |
 |---|---|---|---|---|
 | P0-1 | ECAD / PCB | **Fabrication output** — Gerber RS-274X, Excellon drill, IPC-2581 / ODB++, pick-and-place, fab BOM | Design side is KiCad-class (ERC, hier-schematic, shove router, autoroute, SPICE) but a board **cannot be manufactured** — defeats the purpose of a PCB tool | 🔴 not started |
-| P0-2 | Architect + Mechanical | **DWG / DXF import + export** (no DXF/DWG read or write anywhere) | The architecture market runs on DWG; much of mechanical 2D too. Total absence disqualifies Kerf for most firms in minute one | 🔴 not started |
-| P0-3 | Mechanical | **Sheet metal** — flange / bend / unfold / flat-pattern / bend tables | Every mechanical CAD (incl. FreeCAD's SheetMetal WB) has it. Absence is the fastest "this isn't serious" signal | 🔴 not started |
+| P0-2 | Architect + Mechanical + **Automotive** | **DWG / DXF import + export** (no DXF/DWG read or write anywhere) | The architecture market runs on DWG; much of mechanical 2D too. Total absence disqualifies Kerf for most firms in minute one. *(Automotive: 2D control drawings, supplier data exchange, and homologation packages are DWG/DXF-bound — same root gap.)* | 🔴 not started |
+| P0-3 | Mechanical + **Automotive** | **Sheet metal** — flange / bend / unfold / flat-pattern / bend tables | Every mechanical CAD (incl. FreeCAD's SheetMetal WB) has it. Absence is the fastest "this isn't serious" signal. *(Automotive is the dominant consumer: BIW / body-panel stamping — flanges, hems, draw dies, formability — is built on exactly this primitive. Verified absent: no flange/unfold/flat-pattern anywhere in `packages/` or `src/`.)* | 🔴 not started |
 | P0-4 | All (esp. chat-driven) | **Persistent face-naming hardening** — boolean-heavy regression corpus + stress on real production models | T3–T7 just landed but unproven. Chat-driven re-eval is the core promise; a topological-naming failure breaks the product, not just annoys | 🔴 not started |
-| P0-5 | Mechanical + Architect | **Large-assembly performance ceiling** — defined + measured budget, LOD / lazy-load for 1000s of parts | Pros hit this fast; an unknown ceiling is an unknown product | 🔴 not started |
+| P0-5 | Mechanical + Architect + **Automotive** | **Large-assembly performance ceiling** — defined + measured budget, LOD / lazy-load for 1000s of parts | Pros hit this fast; an unknown ceiling is an unknown product. *(Automotive is the extreme case: full-vehicle DMU is 10,000s of parts — sectioning, packaging studies, clash. Same ceiling, harder limit; see automotive-DMU note under P1.)* | 🔴 not started |
 
 ### P1 — depth that converts evaluators to users
 
@@ -49,6 +49,8 @@ deep, trustworthy domain beats four shallow ones.** Flip Status as items land
 | P1-3 | Mechanical | Weldments (structural members + cut lists); GD&T-from-model on drawings (drawing engine + GD&T frames exist; model-driven callouts do not) | 🔴 not started |
 | P1-4 | Architect | Parametric family editor (Revit's actual moat); IFC import Tier 2 (families / MEP / schedules / openings — Tier 1 only today); construction-doc detailing (dimensioned plans/sections from model, revision clouds, sheet-set management) | 🔴 not started |
 | P1-5 | Jewelry | Surface-boolean robustness on dense NURBS — eliminate runtime escalation paths so organic models survive booleans reliably | 🔴 not started |
+| P1-6 | **Automotive** | **Class-A surfacing workflow** — algorithmic G2/G3 continuity enforcement, curvature-controlled surfaces, theoretical-vs-Class-A split, **zebra / reflection-line analysis**. Today: sweep/network/blend surfaces + `surface_continuity` (C0–C2 / G0–G2 only — no G3) + curvature-comb *visualization* (eyeball-only, viz path). No zebra/reflection anywhere; no Class-A vs theoretical-surface workflow. *The one big automotive-specific build — the equivalent of jewelry's P1-2 toolkit. Algorithmic G3 needs a custom WASM rebuild (GeomAbs_G3 absent in stock OCCT — verified); zebra/reflection is shader-side and lands without that.* Honest gap pass: [docs/plans/automotive.md](./docs/plans/automotive.md). | 🔴 not started (zebra/reflection: shippable; algorithmic G3: custom-WASM, multi-year) |
+| P1-7 | **Automotive** + ECAD | **3D in-vehicle wiring harness** — harness routing through the DMU, bundle / segment / connector libraries, formboard flatten, length / gauge / voltage-drop. Today: only 2D `.wiring` WireViz schematic diagrams (verified — `kerf-wiring` is WireViz YAML→SVG, no 3D routing). Cross-refs the ECAD harness gap but is a distinct 3D-DMU problem | 🔴 not started |
 
 ### P2 — moats / defer (tracked, explicitly NOT urgent — multi-year or niche)
 
@@ -56,9 +58,31 @@ Real-time multi-user collaboration · nonlinear / thermal / CFD / fatigue
 simulation · cross-discipline clash detection · scan-to-CAD / point clouds ·
 energy & daylight analysis. Listed so they are not lost; none should block P0/P1.
 
+**Automotive simulation depth** is explicitly P2: crash / impact (explicit
+dynamics), NVH, durability / fatigue, CFD / thermal, multibody — none exist
+(FEM is verified linear-static + modal + steady-state thermal + bonded contact
+only; no nonlinear / explicit / fatigue path). Each is a solver-class project
+on its own and rides the generic P2 nonlinear/CFD/fatigue line above; an
+automotive user should expect to round-trip to a dedicated CAE tool here.
+Likewise **EV-specific packaging** (battery-pack layout, busbar / HV routing,
+thermal) and full **GD&T / PMI model-based-definition + homologation
+documentation** (drawing engine + GD&T frames exist; model-driven MBD callouts
+do not — shares P1-3's "GD&T-from-model" gap) are tracked here, not urgent: a
+credible automotive story rests on the P0 spine + P1-6 Class-A first, not on
+chasing the CAE/EV long tail.
+
 **Recommended sequencing (solo, "keep it simple"):** P0-4 (protects
 everything) → P0-1 (smallest lift-to-credibility, ECAD is already ~80% there)
 → P0-3 → P0-2 → P0-5, then P1 by whichever persona you choose to win first.
+**Automotive is almost free on this spine:** it shares P0-2 (DWG/DXF), P0-3
+(sheet metal — automotive is *the* consumer), P0-5 (large-assembly → full
+vehicle DMU), and P1-5 (NURBS-boolean robustness) with the existing personas,
+so finishing the P0 spine alone makes Kerf meaningfully automotive-capable for
+brackets / components / tooling. The only genuinely automotive-specific spend
+is P1-6 Class-A — and even there the zebra/reflection slice is a shader-side
+afternoon, while algorithmic G3 is a deliberately deferred custom-WASM moat.
+Net: do not treat automotive as a fifth front — it is the P0 spine plus one
+focused Class-A build.
 
 ---
 
