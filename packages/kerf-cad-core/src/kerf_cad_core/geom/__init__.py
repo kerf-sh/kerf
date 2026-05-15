@@ -50,6 +50,11 @@ from kerf_cad_core.geom.blend_srf import (
     compute_blend_surface_isocurves,
 )
 
+from kerf_cad_core.geom.surface_boolean_robust import (
+    surface_health_check,
+    surface_boolean_robust,
+)
+
 __all__ = [
     "NurbsCurve",
     "NurbsSurface",
@@ -86,4 +91,6 @@ __all__ = [
     "blend_srf_fillet",
     "validate_surface_blend",
     "compute_blend_surface_isocurves",
+    "surface_health_check",
+    "surface_boolean_robust",
 ]
