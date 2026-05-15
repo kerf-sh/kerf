@@ -42,6 +42,10 @@ LLM tools registered
 ---------------------
     jewelry_ring_size_to_diameter
     jewelry_create_ring_shank
+    jewelry_create_eternity_band
+    jewelry_create_signet_ring
+    jewelry_create_stacking_band_set
+    jewelry_create_contoured_band
 
 New profiles (v2)
 -----------------
@@ -62,6 +66,13 @@ New node-spec fields (v2)
     finger_fit_taper   — float: asymmetric taper angle (degrees) for knuckle fit
     width_profile      — list[float]: width taper curve (shoulder→back, 2–10 points,
                          each 0 < v ≤ 1.0, relative to band_width)
+
+New ring types (v3)
+-------------------
+    eternity_band  — full/half/three-quarter circle stone channel; EternityBandSpec
+    signet_ring    — flat/oval/cushion engravable seal face; SignetRingSpec
+    stacking_band_set — set of N thin stacking bands + optional wishbone; StackingBandSpec
+    contoured_band — band with curved/notched top to hug an engagement ring; ContouredBandSpec
 """
 
 from __future__ import annotations
@@ -1448,4 +1459,1652 @@ async def run_jewelry_create_ring_shank(ctx: ProjectCtx, args: bytes) -> str:
         "shoulder_style": shoulder_style,
         "band_width_mm": band_width,
         "thickness_mm": thickness,
+    })
+
+
+# ===========================================================================
+# v3 Ring Types
+# ===========================================================================
+
+# ---------------------------------------------------------------------------
+# Constants for v3 types
+# ---------------------------------------------------------------------------
+
+_VALID_ETERNITY_COVERAGES = frozenset(["full", "half", "three_quarter"])
+_VALID_ETERNITY_SETTINGS = frozenset(["channel", "shared_prong", "pave"])
+_VALID_SIGNET_FACE_SHAPES = frozenset(["flat", "oval", "cushion"])
+_VALID_STACKING_PROFILES = frozenset([
+    "flat", "half_round", "knife_edge", "euro", "comfort_fit",
+    "d_shape", "cigar_band", "concave",
+])
+
+
+# ---------------------------------------------------------------------------
+# v3 spec dataclasses
+# ---------------------------------------------------------------------------
+
+@dataclass
+class EternityBandSpec:
+    """Parametric eternity / anniversary band descriptor.
+
+    Describes a full-circle (or half / three-quarter) band set with equal
+    stones around the circumference in channel, shared-prong, or pavé style.
+    This is a geometry hint; the occtWorker resolves actual stone-seat geometry.
+
+    Fields
+    ------
+    ring_size : int | float | str
+        Size in the given system.
+    system : str
+        Ring-size standard ("us", "uk", "au", "eu", "jp").
+    stone_diameter_mm : float
+        Diameter of each stone, mm.  > 0.
+    coverage : str
+        Arc coverage: "full" (360°), "half" (180°), "three_quarter" (270°).
+    stone_count : int | None
+        Number of stones.  If None (default) the count is auto-derived from
+        the inner circumference and stone pitch.  Must be ≥ 1 if specified.
+    setting_style : str
+        Geometry hint for the stone setting style: "channel", "shared_prong",
+        or "pave".  Consumed by the occtWorker; does not affect stone_count math.
+    band_width_mm : float
+        Band width along the finger axis, mm.  Defaults to stone_diameter_mm
+        + 0.6 mm (seat walls).  Must be ≥ stone_diameter_mm.
+    thickness_mm : float
+        Radial wall thickness below the stone seats, mm.  > 0.
+    stone_spacing_mm : float
+        Edge-to-edge gap between adjacent stones, mm.  ≥ 0.
+        Default 0.1 mm (minimal; channel / shared-prong standard).
+    """
+    ring_size: object  # int | float | str
+    system: str = "us"
+    stone_diameter_mm: float = 2.0
+    coverage: str = "full"
+    stone_count: Optional[int] = None
+    setting_style: str = "channel"
+    band_width_mm: Optional[float] = None   # None → auto (stone_diam + 0.6)
+    thickness_mm: float = 1.2
+    stone_spacing_mm: float = 0.1
+
+    def _resolve_band_width(self) -> float:
+        if self.band_width_mm is not None:
+            return self.band_width_mm
+        return round(self.stone_diameter_mm + 0.6, 3)
+
+    def auto_stone_count(self, inner_diameter_mm: float) -> int:
+        """Derive stone count from circumference when stone_count is None.
+
+        Uses the stone pitch (diameter + spacing) and the arc length that
+        corresponds to ``coverage``.
+
+        Returns
+        -------
+        int
+            Derived stone count, ≥ 1.
+        """
+        coverage_fraction = {
+            "full": 1.0,
+            "three_quarter": 0.75,
+            "half": 0.5,
+        }[self.coverage]
+        arc_length = _PI * inner_diameter_mm * coverage_fraction
+        pitch = self.stone_diameter_mm + self.stone_spacing_mm
+        count = max(1, round(arc_length / pitch))
+        return count
+
+    def validate(self, inner_diameter_mm: float) -> None:
+        if self.stone_diameter_mm <= 0:
+            raise ValueError(
+                f"eternity.stone_diameter_mm must be > 0; got {self.stone_diameter_mm}"
+            )
+        if self.coverage not in _VALID_ETERNITY_COVERAGES:
+            raise ValueError(
+                f"eternity.coverage must be one of {sorted(_VALID_ETERNITY_COVERAGES)}; "
+                f"got {self.coverage!r}"
+            )
+        if self.setting_style not in _VALID_ETERNITY_SETTINGS:
+            raise ValueError(
+                f"eternity.setting_style must be one of "
+                f"{sorted(_VALID_ETERNITY_SETTINGS)}; got {self.setting_style!r}"
+            )
+        bw = self._resolve_band_width()
+        if bw < self.stone_diameter_mm:
+            raise ValueError(
+                f"eternity.band_width_mm ({bw}) must be ≥ stone_diameter_mm "
+                f"({self.stone_diameter_mm})"
+            )
+        if self.thickness_mm <= 0:
+            raise ValueError(
+                f"eternity.thickness_mm must be > 0; got {self.thickness_mm}"
+            )
+        if self.stone_spacing_mm < 0:
+            raise ValueError(
+                f"eternity.stone_spacing_mm must be ≥ 0; got {self.stone_spacing_mm}"
+            )
+        if self.stone_count is not None:
+            if self.stone_count < 1:
+                raise ValueError(
+                    f"eternity.stone_count must be ≥ 1; got {self.stone_count}"
+                )
+        if inner_diameter_mm <= 0:
+            raise ValueError(
+                f"inner_diameter_mm must be > 0; got {inner_diameter_mm}"
+            )
+
+    def to_dict(self, inner_diameter_mm: float) -> dict:
+        self.validate(inner_diameter_mm)
+        bw = self._resolve_band_width()
+        if self.stone_count is not None:
+            sc = self.stone_count
+        else:
+            sc = self.auto_stone_count(inner_diameter_mm)
+        coverage_deg = {
+            "full": 360.0,
+            "three_quarter": 270.0,
+            "half": 180.0,
+        }[self.coverage]
+        arc_length = _PI * inner_diameter_mm * coverage_deg / 360.0
+        pitch = self.stone_diameter_mm + self.stone_spacing_mm
+        return {
+            "stone_diameter_mm": self.stone_diameter_mm,
+            "coverage": self.coverage,
+            "coverage_deg": coverage_deg,
+            "stone_count": sc,
+            "stone_count_auto": self.stone_count is None,
+            "setting_style": self.setting_style,
+            "band_width_mm": round(bw, 4),
+            "thickness_mm": self.thickness_mm,
+            "stone_spacing_mm": self.stone_spacing_mm,
+            "stone_pitch_mm": round(pitch, 4),
+            "arc_length_mm": round(arc_length, 4),
+        }
+
+
+@dataclass
+class SignetRingSpec:
+    """Parametric signet ring descriptor.
+
+    Describes a flat/oval/cushion engravable seal face fused to the ring shank.
+    Engraving depth is a geometry hint consumed by the occtWorker.
+
+    Fields
+    ------
+    ring_size : int | float | str
+        Size in the given system.
+    system : str
+        Ring-size standard.
+    face_shape : str
+        Shape of the seal face: "flat", "oval", or "cushion".
+    face_length_mm : float
+        Length of the seal face (finger-axis direction), mm.  > 0.
+    face_width_mm : float
+        Width of the seal face (across the finger), mm.  > 0.
+    face_height_mm : float
+        Height (thickness) of the seal face above the shank, mm.  > 0.
+    intaglio_depth_mm : float
+        Depth of the intaglio / relief engraving cut into the seal face.
+        0 = no engraving.  ≥ 0; must be < face_height_mm.
+    engraving : EngravingSpec | None
+        Optional text engraving on the seal face (same convention as shank
+        engraving; geometry hint only).
+    band_width_mm : float
+        Shank band width, mm.  Default 4.0.
+    thickness_mm : float
+        Shank wall thickness, mm.  Default 1.8.
+    shoulder_style : str
+        Shank shoulder style (plain / cathedral / split_shank / bypass).
+    """
+    ring_size: object
+    system: str = "us"
+    face_shape: str = "oval"
+    face_length_mm: float = 12.0
+    face_width_mm: float = 10.0
+    face_height_mm: float = 3.0
+    intaglio_depth_mm: float = 0.0
+    engraving: Optional[EngravingSpec] = None
+    band_width_mm: float = 4.0
+    thickness_mm: float = 1.8
+    shoulder_style: str = "plain"
+
+    def validate(self) -> None:
+        if self.face_shape not in _VALID_SIGNET_FACE_SHAPES:
+            raise ValueError(
+                f"signet.face_shape must be one of "
+                f"{sorted(_VALID_SIGNET_FACE_SHAPES)}; got {self.face_shape!r}"
+            )
+        if self.face_length_mm <= 0:
+            raise ValueError(
+                f"signet.face_length_mm must be > 0; got {self.face_length_mm}"
+            )
+        if self.face_width_mm <= 0:
+            raise ValueError(
+                f"signet.face_width_mm must be > 0; got {self.face_width_mm}"
+            )
+        if self.face_height_mm <= 0:
+            raise ValueError(
+                f"signet.face_height_mm must be > 0; got {self.face_height_mm}"
+            )
+        if self.intaglio_depth_mm < 0:
+            raise ValueError(
+                f"signet.intaglio_depth_mm must be ≥ 0; got {self.intaglio_depth_mm}"
+            )
+        if self.intaglio_depth_mm >= self.face_height_mm:
+            raise ValueError(
+                f"signet.intaglio_depth_mm ({self.intaglio_depth_mm}) must be < "
+                f"face_height_mm ({self.face_height_mm})"
+            )
+        if self.band_width_mm <= 0:
+            raise ValueError(
+                f"signet.band_width_mm must be > 0; got {self.band_width_mm}"
+            )
+        if self.thickness_mm <= 0:
+            raise ValueError(
+                f"signet.thickness_mm must be > 0; got {self.thickness_mm}"
+            )
+        if self.shoulder_style not in _VALID_SHOULDER_STYLES:
+            raise ValueError(
+                f"signet.shoulder_style must be one of "
+                f"{sorted(_VALID_SHOULDER_STYLES)}; got {self.shoulder_style!r}"
+            )
+        if self.engraving is not None:
+            self.engraving.validate()
+
+    def to_dict(self, inner_diameter_mm: float) -> dict:
+        self.validate()
+        result: dict = {
+            "face_shape": self.face_shape,
+            "face_length_mm": self.face_length_mm,
+            "face_width_mm": self.face_width_mm,
+            "face_height_mm": self.face_height_mm,
+            "face_area_mm2": round(self._face_area(), 4),
+            "intaglio_depth_mm": self.intaglio_depth_mm,
+            "band_width_mm": self.band_width_mm,
+            "thickness_mm": self.thickness_mm,
+            "shoulder_style": self.shoulder_style,
+        }
+        if self.engraving is not None:
+            result["engraving"] = self.engraving.to_dict()
+        return result
+
+    def _face_area(self) -> float:
+        """Approximate seal-face area in mm² (for metal-cost hints)."""
+        if self.face_shape == "flat":
+            return self.face_length_mm * self.face_width_mm
+        elif self.face_shape == "oval":
+            return _PI * (self.face_length_mm / 2.0) * (self.face_width_mm / 2.0)
+        else:  # cushion — approximate as rounded rectangle (90% of bounding box)
+            return self.face_length_mm * self.face_width_mm * 0.9
+
+
+@dataclass
+class StackingBandSpec:
+    """Parametric stacking / nesting band-set descriptor.
+
+    Describes a set of N thin stacking bands that sit side-by-side on the
+    finger.  Optionally includes a contour / wishbone band that nests against
+    a named solitaire's shank profile.
+
+    Fields
+    ------
+    ring_size : int | float | str
+        Size in the given system.
+    system : str
+        Ring-size standard.
+    band_count : int
+        Number of bands in the set.  1–8.
+    band_width_mm : float
+        Width of each band along the finger axis, mm.  > 0.
+    thickness_mm : float
+        Radial wall thickness of each band, mm.  > 0.
+    profile : str
+        Cross-section profile shared by all bands in the set.
+        Subset of the main profile set (flat, half_round, knife_edge, euro,
+        comfort_fit, d_shape, cigar_band, concave).
+    nest_gap_mm : float
+        Gap between adjacent bands when stacked, mm.  ≥ 0.  Default 0.1 mm.
+    include_wishbone : bool
+        Whether to include a contour/wishbone band designed to nest against
+        an engagement ring.  Default False.
+    wishbone_notch_depth_mm : float
+        Depth of the notch cut into the top of the wishbone band, mm.
+        Only meaningful when include_wishbone=True.  > 0 when set.
+    solitaire_node_id : str | None
+        Optional node ID of the solitaire ring_shank whose profile the
+        wishbone band should match.  Geometry hint only.
+    per_band_profiles : list[str] | None
+        Optional per-band profile override list (len must equal band_count).
+        None = all bands use the ``profile`` field.
+    """
+    ring_size: object
+    system: str = "us"
+    band_count: int = 3
+    band_width_mm: float = 2.0
+    thickness_mm: float = 1.4
+    profile: str = "flat"
+    nest_gap_mm: float = 0.1
+    include_wishbone: bool = False
+    wishbone_notch_depth_mm: float = 0.8
+    solitaire_node_id: Optional[str] = None
+    per_band_profiles: Optional[List[str]] = None
+
+    def validate(self) -> None:
+        if not (1 <= self.band_count <= 8):
+            raise ValueError(
+                f"stacking.band_count must be 1–8; got {self.band_count}"
+            )
+        if self.band_width_mm <= 0:
+            raise ValueError(
+                f"stacking.band_width_mm must be > 0; got {self.band_width_mm}"
+            )
+        if self.thickness_mm <= 0:
+            raise ValueError(
+                f"stacking.thickness_mm must be > 0; got {self.thickness_mm}"
+            )
+        if self.profile not in _VALID_STACKING_PROFILES:
+            raise ValueError(
+                f"stacking.profile must be one of "
+                f"{sorted(_VALID_STACKING_PROFILES)}; got {self.profile!r}"
+            )
+        if self.nest_gap_mm < 0:
+            raise ValueError(
+                f"stacking.nest_gap_mm must be ≥ 0; got {self.nest_gap_mm}"
+            )
+        if self.include_wishbone:
+            if self.wishbone_notch_depth_mm <= 0:
+                raise ValueError(
+                    f"stacking.wishbone_notch_depth_mm must be > 0 when "
+                    f"include_wishbone is True; got {self.wishbone_notch_depth_mm}"
+                )
+            if self.wishbone_notch_depth_mm >= self.thickness_mm:
+                raise ValueError(
+                    f"stacking.wishbone_notch_depth_mm ({self.wishbone_notch_depth_mm}) "
+                    f"must be < thickness_mm ({self.thickness_mm})"
+                )
+        if self.per_band_profiles is not None:
+            if len(self.per_band_profiles) != self.band_count:
+                raise ValueError(
+                    f"stacking.per_band_profiles length ({len(self.per_band_profiles)}) "
+                    f"must equal band_count ({self.band_count})"
+                )
+            for i, p in enumerate(self.per_band_profiles):
+                if p not in _VALID_STACKING_PROFILES:
+                    raise ValueError(
+                        f"stacking.per_band_profiles[{i}] must be one of "
+                        f"{sorted(_VALID_STACKING_PROFILES)}; got {p!r}"
+                    )
+
+    def to_dict(self, inner_diameter_mm: float) -> dict:
+        self.validate()
+        pitch = self.band_width_mm + self.nest_gap_mm
+        total_span = pitch * self.band_count - self.nest_gap_mm
+        bands = []
+        profiles = (
+            self.per_band_profiles
+            if self.per_band_profiles is not None
+            else [self.profile] * self.band_count
+        )
+        for i in range(self.band_count):
+            bands.append({
+                "index": i,
+                "profile": profiles[i],
+                "band_width_mm": self.band_width_mm,
+                "thickness_mm": self.thickness_mm,
+                "offset_mm": round(i * pitch, 4),
+            })
+        result: dict = {
+            "band_count": self.band_count,
+            "band_width_mm": self.band_width_mm,
+            "thickness_mm": self.thickness_mm,
+            "profile": self.profile,
+            "nest_gap_mm": self.nest_gap_mm,
+            "total_span_mm": round(total_span, 4),
+            "bands": bands,
+            "include_wishbone": self.include_wishbone,
+        }
+        if self.include_wishbone:
+            result["wishbone_notch_depth_mm"] = self.wishbone_notch_depth_mm
+        if self.solitaire_node_id:
+            result["solitaire_node_id"] = self.solitaire_node_id
+        if self.per_band_profiles is not None:
+            result["per_band_profiles"] = self.per_band_profiles
+        return result
+
+
+@dataclass
+class ContouredBandSpec:
+    """Parametric contoured / shadow band descriptor.
+
+    A wedding / shadow band whose top profile is cut to hug the underside
+    of an engagement ring (curved or notched top).  The contour lets the
+    two rings sit flush against each other on the finger.
+
+    Fields
+    ------
+    ring_size : int | float | str
+        Size in the given system.
+    system : str
+        Ring-size standard.
+    notch_depth_mm : float
+        Depth of the top-centre notch / curve cut, mm.  > 0.
+    notch_width_mm : float
+        Width of the notch across the band, mm.  > 0; must be ≤ band_width_mm.
+    match_radius_mm : float
+        Radius of the concave curve that mirrors the engagement ring's profile,
+        mm.  > 0.  Should match the engagement ring's outer radius (≈ outer
+        diameter / 2) for a perfect shadow fit.
+    contour_style : str
+        "curved" — smooth concave arc cut across the top face.
+        "notched" — V or U notch cut into the centre of the top face.
+    band_width_mm : float
+        Band width along the finger axis, mm.  > 0.
+    thickness_mm : float
+        Radial wall thickness, mm.  > 0.
+    profile : str
+        Cross-section profile for the lower (shank) portion of the band.
+        Valid: flat, half_round, comfort_fit, d_shape, euro.  Default "flat".
+    shoulder_style : str
+        Shank shoulder style.  Default "plain".
+    engagement_ring_node_id : str | None
+        Optional node ID of the engagement ring this band is contoured to.
+        Geometry hint only; occtWorker uses match_radius_mm regardless.
+    """
+    ring_size: object
+    system: str = "us"
+    notch_depth_mm: float = 1.2
+    notch_width_mm: float = 3.0
+    match_radius_mm: float = 10.5
+    contour_style: str = "curved"
+    band_width_mm: float = 3.5
+    thickness_mm: float = 1.6
+    profile: str = "flat"
+    shoulder_style: str = "plain"
+    engagement_ring_node_id: Optional[str] = None
+
+    _VALID_CONTOUR_STYLES = frozenset(["curved", "notched"])
+    _VALID_CONTOUR_BASE_PROFILES = frozenset([
+        "flat", "half_round", "comfort_fit", "d_shape", "euro",
+    ])
+
+    def validate(self) -> None:
+        if self.notch_depth_mm <= 0:
+            raise ValueError(
+                f"contoured.notch_depth_mm must be > 0; got {self.notch_depth_mm}"
+            )
+        if self.notch_width_mm <= 0:
+            raise ValueError(
+                f"contoured.notch_width_mm must be > 0; got {self.notch_width_mm}"
+            )
+        if self.notch_width_mm > self.band_width_mm:
+            raise ValueError(
+                f"contoured.notch_width_mm ({self.notch_width_mm}) must be ≤ "
+                f"band_width_mm ({self.band_width_mm})"
+            )
+        if self.match_radius_mm <= 0:
+            raise ValueError(
+                f"contoured.match_radius_mm must be > 0; got {self.match_radius_mm}"
+            )
+        if self.contour_style not in self._VALID_CONTOUR_STYLES:
+            raise ValueError(
+                f"contoured.contour_style must be one of "
+                f"{sorted(self._VALID_CONTOUR_STYLES)}; got {self.contour_style!r}"
+            )
+        if self.band_width_mm <= 0:
+            raise ValueError(
+                f"contoured.band_width_mm must be > 0; got {self.band_width_mm}"
+            )
+        if self.thickness_mm <= 0:
+            raise ValueError(
+                f"contoured.thickness_mm must be > 0; got {self.thickness_mm}"
+            )
+        if self.notch_depth_mm >= self.thickness_mm:
+            raise ValueError(
+                f"contoured.notch_depth_mm ({self.notch_depth_mm}) must be < "
+                f"thickness_mm ({self.thickness_mm})"
+            )
+        if self.profile not in self._VALID_CONTOUR_BASE_PROFILES:
+            raise ValueError(
+                f"contoured.profile must be one of "
+                f"{sorted(self._VALID_CONTOUR_BASE_PROFILES)}; got {self.profile!r}"
+            )
+        if self.shoulder_style not in _VALID_SHOULDER_STYLES:
+            raise ValueError(
+                f"contoured.shoulder_style must be one of "
+                f"{sorted(_VALID_SHOULDER_STYLES)}; got {self.shoulder_style!r}"
+            )
+
+    def to_dict(self, inner_diameter_mm: float) -> dict:
+        self.validate()
+        outer_diameter_mm = inner_diameter_mm + 2 * self.thickness_mm
+        result: dict = {
+            "notch_depth_mm": self.notch_depth_mm,
+            "notch_width_mm": self.notch_width_mm,
+            "match_radius_mm": self.match_radius_mm,
+            "contour_style": self.contour_style,
+            "band_width_mm": self.band_width_mm,
+            "thickness_mm": self.thickness_mm,
+            "profile": self.profile,
+            "shoulder_style": self.shoulder_style,
+            "inner_diameter_mm": round(inner_diameter_mm, 4),
+            "outer_diameter_mm": round(outer_diameter_mm, 4),
+            "contour_hints": {
+                "type": self.contour_style,
+                "notch_depth_mm": self.notch_depth_mm,
+                "notch_width_mm": self.notch_width_mm,
+                "match_radius_mm": self.match_radius_mm,
+                # Clearance angle: half-angle of the notch span at match radius
+                "notch_half_angle_deg": round(
+                    math.degrees(
+                        math.asin(min(1.0, (self.notch_width_mm / 2.0) / self.match_radius_mm))
+                    ), 4
+                ),
+            },
+        }
+        if self.engagement_ring_node_id:
+            result["engagement_ring_node_id"] = self.engagement_ring_node_id
+        return result
+
+
+# ---------------------------------------------------------------------------
+# v3 compute functions
+# ---------------------------------------------------------------------------
+
+def compute_eternity_band_params(
+    ring_size,
+    system: str = "us",
+    stone_diameter_mm: float = 2.0,
+    coverage: str = "full",
+    stone_count: Optional[int] = None,
+    setting_style: str = "channel",
+    band_width_mm: Optional[float] = None,
+    thickness_mm: float = 1.2,
+    stone_spacing_mm: float = 0.1,
+) -> dict:
+    """Compute validated eternity band descriptor.
+
+    Returns a dict suitable for embedding in a feature JSON node
+    (op = ``eternity_band``).
+
+    Raises
+    ------
+    ValueError
+        On any constraint violation.
+    """
+    id_mm = ring_size_to_diameter(system, ring_size)
+    circ_mm = _id_mm_to_circumference(id_mm)
+
+    spec = EternityBandSpec(
+        ring_size=ring_size,
+        system=system,
+        stone_diameter_mm=float(stone_diameter_mm),
+        coverage=str(coverage),
+        stone_count=int(stone_count) if stone_count is not None else None,
+        setting_style=str(setting_style),
+        band_width_mm=float(band_width_mm) if band_width_mm is not None else None,
+        thickness_mm=float(thickness_mm),
+        stone_spacing_mm=float(stone_spacing_mm),
+    )
+    # validate raises if bad
+    spec.validate(id_mm)
+    stone_dict = spec.to_dict(id_mm)
+
+    return {
+        "inner_diameter_mm": round(id_mm, 4),
+        "outer_diameter_mm": round(id_mm + 2 * thickness_mm, 4),
+        "circumference_mm": round(circ_mm, 4),
+        "size_system": system,
+        "ring_size": ring_size,
+        **stone_dict,
+    }
+
+
+def compute_signet_ring_params(
+    ring_size,
+    system: str = "us",
+    face_shape: str = "oval",
+    face_length_mm: float = 12.0,
+    face_width_mm: float = 10.0,
+    face_height_mm: float = 3.0,
+    intaglio_depth_mm: float = 0.0,
+    engraving: Optional[EngravingSpec] = None,
+    band_width_mm: float = 4.0,
+    thickness_mm: float = 1.8,
+    shoulder_style: str = "plain",
+) -> dict:
+    """Compute validated signet ring descriptor.
+
+    Returns a dict suitable for embedding in a feature JSON node
+    (op = ``signet_ring``).
+    """
+    id_mm = ring_size_to_diameter(system, ring_size)
+    circ_mm = _id_mm_to_circumference(id_mm)
+
+    spec = SignetRingSpec(
+        ring_size=ring_size,
+        system=system,
+        face_shape=str(face_shape),
+        face_length_mm=float(face_length_mm),
+        face_width_mm=float(face_width_mm),
+        face_height_mm=float(face_height_mm),
+        intaglio_depth_mm=float(intaglio_depth_mm),
+        engraving=engraving,
+        band_width_mm=float(band_width_mm),
+        thickness_mm=float(thickness_mm),
+        shoulder_style=str(shoulder_style),
+    )
+    spec.validate()
+    face_dict = spec.to_dict(id_mm)
+    shoulder_hints = _shoulder_hints(shoulder_style, id_mm, band_width_mm)
+
+    return {
+        "inner_diameter_mm": round(id_mm, 4),
+        "outer_diameter_mm": round(id_mm + 2 * thickness_mm, 4),
+        "circumference_mm": round(circ_mm, 4),
+        "size_system": system,
+        "ring_size": ring_size,
+        "shoulder_hints": shoulder_hints,
+        **face_dict,
+    }
+
+
+def compute_stacking_band_params(
+    ring_size,
+    system: str = "us",
+    band_count: int = 3,
+    band_width_mm: float = 2.0,
+    thickness_mm: float = 1.4,
+    profile: str = "flat",
+    nest_gap_mm: float = 0.1,
+    include_wishbone: bool = False,
+    wishbone_notch_depth_mm: float = 0.8,
+    solitaire_node_id: Optional[str] = None,
+    per_band_profiles: Optional[List[str]] = None,
+) -> dict:
+    """Compute validated stacking band set descriptor.
+
+    Returns a dict suitable for embedding in a feature JSON node
+    (op = ``stacking_band_set``).
+    """
+    id_mm = ring_size_to_diameter(system, ring_size)
+    circ_mm = _id_mm_to_circumference(id_mm)
+
+    spec = StackingBandSpec(
+        ring_size=ring_size,
+        system=system,
+        band_count=int(band_count),
+        band_width_mm=float(band_width_mm),
+        thickness_mm=float(thickness_mm),
+        profile=str(profile),
+        nest_gap_mm=float(nest_gap_mm),
+        include_wishbone=bool(include_wishbone),
+        wishbone_notch_depth_mm=float(wishbone_notch_depth_mm),
+        solitaire_node_id=solitaire_node_id,
+        per_band_profiles=per_band_profiles,
+    )
+    spec.validate()
+    stack_dict = spec.to_dict(id_mm)
+
+    return {
+        "inner_diameter_mm": round(id_mm, 4),
+        "outer_diameter_mm": round(id_mm + 2 * thickness_mm, 4),
+        "circumference_mm": round(circ_mm, 4),
+        "size_system": system,
+        "ring_size": ring_size,
+        **stack_dict,
+    }
+
+
+def compute_contoured_band_params(
+    ring_size,
+    system: str = "us",
+    notch_depth_mm: float = 1.2,
+    notch_width_mm: float = 3.0,
+    match_radius_mm: float = 10.5,
+    contour_style: str = "curved",
+    band_width_mm: float = 3.5,
+    thickness_mm: float = 1.6,
+    profile: str = "flat",
+    shoulder_style: str = "plain",
+    engagement_ring_node_id: Optional[str] = None,
+) -> dict:
+    """Compute validated contoured / shadow band descriptor.
+
+    Returns a dict suitable for embedding in a feature JSON node
+    (op = ``contoured_band``).
+    """
+    id_mm = ring_size_to_diameter(system, ring_size)
+    circ_mm = _id_mm_to_circumference(id_mm)
+
+    spec = ContouredBandSpec(
+        ring_size=ring_size,
+        system=system,
+        notch_depth_mm=float(notch_depth_mm),
+        notch_width_mm=float(notch_width_mm),
+        match_radius_mm=float(match_radius_mm),
+        contour_style=str(contour_style),
+        band_width_mm=float(band_width_mm),
+        thickness_mm=float(thickness_mm),
+        profile=str(profile),
+        shoulder_style=str(shoulder_style),
+        engagement_ring_node_id=engagement_ring_node_id,
+    )
+    spec.validate()
+    contour_dict = spec.to_dict(id_mm)
+    shoulder_hints = _shoulder_hints(shoulder_style, id_mm, band_width_mm)
+
+    result = {
+        "size_system": system,
+        "ring_size": ring_size,
+        "circumference_mm": round(circ_mm, 4),
+        "shoulder_hints": shoulder_hints,
+        **contour_dict,
+    }
+    return result
+
+
+# ---------------------------------------------------------------------------
+# v3 node ID helpers
+# ---------------------------------------------------------------------------
+
+def _next_op_id(content: str, op: str) -> str:
+    """Generate a unique node id for the given op prefix."""
+    try:
+        doc = json.loads(content)
+        features = doc.get("features", [])
+        prefix = f"{op}-"
+        max_n = 0
+        for item in features:
+            nid = item.get("id", "")
+            if nid.startswith(prefix):
+                try:
+                    n = int(nid[len(prefix):])
+                    max_n = max(max_n, n)
+                except ValueError:
+                    pass
+        return f"{prefix}{max_n + 1}"
+    except Exception:
+        return f"{op}-1"
+
+
+def _load_feature_doc(content: str) -> dict:
+    """Parse or initialise a feature document."""
+    if content and content.strip():
+        try:
+            doc = json.loads(content)
+        except Exception:
+            doc = {"version": 1, "features": []}
+    else:
+        doc = {"version": 1, "features": []}
+    if "version" not in doc:
+        doc["version"] = 1
+    if "features" not in doc or not isinstance(doc["features"], list):
+        doc["features"] = []
+    return doc
+
+
+def _fetch_feature_file(ctx: ProjectCtx, fid):
+    """Fetch content from the pool; return (content, error_str)."""
+    try:
+        row = ctx.pool.fetchone(
+            "select content, kind from files where id = $1 and project_id = $2 "
+            "and deleted_at is null",
+            fid, ctx.project_id,
+        )
+        if not row:
+            return None, f"file {fid} not found"
+        content, kind = row[0], row[1]
+        if kind != "feature":
+            return None, f"file {fid} is not a feature file"
+        return content, None
+    except Exception as e:
+        return None, str(e)
+
+
+# ---------------------------------------------------------------------------
+# LLM tool: jewelry_create_eternity_band
+# ---------------------------------------------------------------------------
+
+jewelry_create_eternity_band_spec = ToolSpec(
+    name="jewelry_create_eternity_band",
+    description=(
+        "Append an `eternity_band` node to a `.feature` file. "
+        "Builds a parametric full-circle (or half / three-quarter) eternity / "
+        "anniversary band set with equal stones around the band in channel, "
+        "shared-prong, or pavé style. "
+        "Stone count is auto-derived from ring circumference and stone diameter "
+        "unless stone_count is specified explicitly. "
+        "All dimensions in mm. Ring size is auto-converted to inner diameter."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "file_id": {
+                "type": "string",
+                "description": "Target .feature file id (uuid).",
+            },
+            "ring_size": {
+                "description": "Size in the chosen system.",
+            },
+            "system": {
+                "type": "string",
+                "enum": ["us", "uk", "au", "eu", "jp"],
+                "description": "Ring-size standard. Default 'us'.",
+            },
+            "stone_diameter_mm": {
+                "type": "number",
+                "description": "Diameter of each stone, mm. > 0. Default 2.0.",
+            },
+            "coverage": {
+                "type": "string",
+                "enum": ["full", "half", "three_quarter"],
+                "description": (
+                    "Arc coverage of stones around the band. "
+                    "'full' = 360°, 'half' = 180°, 'three_quarter' = 270°. "
+                    "Default 'full'."
+                ),
+            },
+            "stone_count": {
+                "type": "integer",
+                "description": (
+                    "Explicit number of stones. If omitted, auto-derived from "
+                    "circumference and stone pitch. Must be ≥ 1."
+                ),
+            },
+            "setting_style": {
+                "type": "string",
+                "enum": ["channel", "shared_prong", "pave"],
+                "description": (
+                    "Stone setting style (geometry hint for occtWorker). "
+                    "Default 'channel'."
+                ),
+            },
+            "band_width_mm": {
+                "type": "number",
+                "description": (
+                    "Band width along finger axis, mm. "
+                    "Default = stone_diameter_mm + 0.6 mm. "
+                    "Must be ≥ stone_diameter_mm."
+                ),
+            },
+            "thickness_mm": {
+                "type": "number",
+                "description": "Radial wall thickness below stone seats, mm. > 0. Default 1.2.",
+            },
+            "stone_spacing_mm": {
+                "type": "number",
+                "description": (
+                    "Edge-to-edge gap between adjacent stones, mm. ≥ 0. "
+                    "Default 0.1 mm."
+                ),
+            },
+            "id": {
+                "type": "string",
+                "description": "Optional explicit node id.",
+            },
+        },
+        "required": ["file_id", "ring_size"],
+    },
+)
+
+
+@register(jewelry_create_eternity_band_spec, write=True)
+async def run_jewelry_create_eternity_band(ctx: ProjectCtx, args: bytes) -> str:
+    try:
+        a = json.loads(args)
+    except Exception as e:
+        return err_payload(f"invalid args: {e}", "BAD_ARGS")
+
+    file_id_str = a.get("file_id", "").strip()
+    ring_size = a.get("ring_size", None)
+    system = str(a.get("system", "us")).strip().lower()
+    stone_diameter_mm = a.get("stone_diameter_mm", 2.0)
+    coverage = str(a.get("coverage", "full")).strip()
+    stone_count = a.get("stone_count", None)
+    setting_style = str(a.get("setting_style", "channel")).strip()
+    band_width_mm = a.get("band_width_mm", None)
+    thickness_mm = a.get("thickness_mm", 1.2)
+    stone_spacing_mm = a.get("stone_spacing_mm", 0.1)
+    node_id = str(a.get("id", "")).strip()
+
+    if not file_id_str:
+        return err_payload("file_id is required", "BAD_ARGS")
+    if ring_size is None:
+        return err_payload("ring_size is required", "BAD_ARGS")
+    if system not in _VALID_SYSTEMS:
+        return err_payload(
+            f"system must be one of {sorted(_VALID_SYSTEMS)}; got {system!r}",
+            "BAD_ARGS",
+        )
+    if coverage not in _VALID_ETERNITY_COVERAGES:
+        return err_payload(
+            f"coverage must be one of {sorted(_VALID_ETERNITY_COVERAGES)}; "
+            f"got {coverage!r}", "BAD_ARGS",
+        )
+    if setting_style not in _VALID_ETERNITY_SETTINGS:
+        return err_payload(
+            f"setting_style must be one of {sorted(_VALID_ETERNITY_SETTINGS)}; "
+            f"got {setting_style!r}", "BAD_ARGS",
+        )
+
+    try:
+        stone_diameter_mm = float(stone_diameter_mm)
+        thickness_mm = float(thickness_mm)
+        stone_spacing_mm = float(stone_spacing_mm)
+    except (TypeError, ValueError) as e:
+        return err_payload(f"numeric param error: {e}", "BAD_ARGS")
+
+    if stone_count is not None:
+        try:
+            stone_count = int(stone_count)
+        except (TypeError, ValueError) as e:
+            return err_payload(f"stone_count must be an integer: {e}", "BAD_ARGS")
+
+    if band_width_mm is not None:
+        try:
+            band_width_mm = float(band_width_mm)
+        except (TypeError, ValueError) as e:
+            return err_payload(f"band_width_mm must be a number: {e}", "BAD_ARGS")
+
+    try:
+        params = compute_eternity_band_params(
+            ring_size=ring_size,
+            system=system,
+            stone_diameter_mm=stone_diameter_mm,
+            coverage=coverage,
+            stone_count=stone_count,
+            setting_style=setting_style,
+            band_width_mm=band_width_mm,
+            thickness_mm=thickness_mm,
+            stone_spacing_mm=stone_spacing_mm,
+        )
+    except ValueError as e:
+        return err_payload(str(e), "BAD_ARGS")
+
+    try:
+        fid = uuid.UUID(file_id_str)
+    except Exception:
+        return err_payload("file_id must be a uuid", "BAD_ARGS")
+
+    content, err = _fetch_feature_file(ctx, fid)
+    if err:
+        code = "NOT_FOUND" if "not found" in err or "not a feature" in err else "ERROR"
+        return err_payload(err, code)
+
+    if not node_id:
+        node_id = _next_op_id(content or "", "eternity_band")
+
+    node = {"id": node_id, "op": "eternity_band", **params}
+    doc = _load_feature_doc(content or "")
+    doc["features"].append(node)
+
+    try:
+        body = json.dumps(doc, indent=2)
+    except Exception as e:
+        return err_payload(f"encode: {e}", "ERROR")
+
+    try:
+        ctx.pool.execute(
+            "update files set content = $1, updated_at = now() "
+            "where id = $2 and project_id = $3",
+            body, fid, ctx.project_id,
+        )
+    except Exception as e:
+        return err_payload(str(e), "ERROR")
+
+    return ok_payload({
+        "file_id": file_id_str,
+        "id": node_id,
+        "op": "eternity_band",
+        "inner_diameter_mm": params["inner_diameter_mm"],
+        "stone_count": params["stone_count"],
+        "stone_diameter_mm": params["stone_diameter_mm"],
+        "coverage": params["coverage"],
+        "setting_style": params["setting_style"],
+        "band_width_mm": params["band_width_mm"],
+        "thickness_mm": params["thickness_mm"],
+    })
+
+
+# ---------------------------------------------------------------------------
+# LLM tool: jewelry_create_signet_ring
+# ---------------------------------------------------------------------------
+
+jewelry_create_signet_ring_spec = ToolSpec(
+    name="jewelry_create_signet_ring",
+    description=(
+        "Append a `signet_ring` node to a `.feature` file. "
+        "Builds a parametric signet ring with a flat, oval, or cushion "
+        "engravable seal face fused to the shank. "
+        "Optional intaglio/relief engraving depth is a geometry hint consumed "
+        "by the occtWorker. The engraving field (text/font) follows the same "
+        "convention as the ring_shank engraving field. "
+        "All dimensions in mm. Ring size is auto-converted to inner diameter."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "file_id": {
+                "type": "string",
+                "description": "Target .feature file id (uuid).",
+            },
+            "ring_size": {
+                "description": "Size in the chosen system.",
+            },
+            "system": {
+                "type": "string",
+                "enum": ["us", "uk", "au", "eu", "jp"],
+                "description": "Ring-size standard. Default 'us'.",
+            },
+            "face_shape": {
+                "type": "string",
+                "enum": ["flat", "oval", "cushion"],
+                "description": "Shape of the seal face. Default 'oval'.",
+            },
+            "face_length_mm": {
+                "type": "number",
+                "description": "Seal face length (finger-axis direction), mm. > 0. Default 12.0.",
+            },
+            "face_width_mm": {
+                "type": "number",
+                "description": "Seal face width (across finger), mm. > 0. Default 10.0.",
+            },
+            "face_height_mm": {
+                "type": "number",
+                "description": "Seal face height above shank, mm. > 0. Default 3.0.",
+            },
+            "intaglio_depth_mm": {
+                "type": "number",
+                "description": (
+                    "Depth of intaglio / relief engraving cut into the seal face, mm. "
+                    "0 = no engraving. Must be < face_height_mm. Default 0."
+                ),
+            },
+            "engraving": {
+                "type": "object",
+                "description": (
+                    "Optional text engraving on seal face (geometry hint only). "
+                    "Fields: text (required), font_height_mm (default 1.5), "
+                    "depth_mm (default 0.3), position_deg (default 180), "
+                    "align ('centre'|'left'|'right', default 'centre')."
+                ),
+                "properties": {
+                    "text": {"type": "string"},
+                    "font_height_mm": {"type": "number"},
+                    "depth_mm": {"type": "number"},
+                    "position_deg": {"type": "number"},
+                    "align": {"type": "string", "enum": ["centre", "left", "right"]},
+                },
+                "required": ["text"],
+            },
+            "band_width_mm": {
+                "type": "number",
+                "description": "Shank band width, mm. > 0. Default 4.0.",
+            },
+            "thickness_mm": {
+                "type": "number",
+                "description": "Shank radial wall thickness, mm. > 0. Default 1.8.",
+            },
+            "shoulder_style": {
+                "type": "string",
+                "enum": ["plain", "cathedral", "split_shank", "bypass"],
+                "description": "Shank shoulder style. Default 'plain'.",
+            },
+            "id": {
+                "type": "string",
+                "description": "Optional explicit node id.",
+            },
+        },
+        "required": ["file_id", "ring_size"],
+    },
+)
+
+
+@register(jewelry_create_signet_ring_spec, write=True)
+async def run_jewelry_create_signet_ring(ctx: ProjectCtx, args: bytes) -> str:
+    try:
+        a = json.loads(args)
+    except Exception as e:
+        return err_payload(f"invalid args: {e}", "BAD_ARGS")
+
+    file_id_str = a.get("file_id", "").strip()
+    ring_size = a.get("ring_size", None)
+    system = str(a.get("system", "us")).strip().lower()
+    face_shape = str(a.get("face_shape", "oval")).strip()
+    face_length_mm = a.get("face_length_mm", 12.0)
+    face_width_mm = a.get("face_width_mm", 10.0)
+    face_height_mm = a.get("face_height_mm", 3.0)
+    intaglio_depth_mm = a.get("intaglio_depth_mm", 0.0)
+    engraving_raw = a.get("engraving", None)
+    band_width_mm = a.get("band_width_mm", 4.0)
+    thickness_mm = a.get("thickness_mm", 1.8)
+    shoulder_style = str(a.get("shoulder_style", "plain")).strip()
+    node_id = str(a.get("id", "")).strip()
+
+    if not file_id_str:
+        return err_payload("file_id is required", "BAD_ARGS")
+    if ring_size is None:
+        return err_payload("ring_size is required", "BAD_ARGS")
+    if system not in _VALID_SYSTEMS:
+        return err_payload(
+            f"system must be one of {sorted(_VALID_SYSTEMS)}; got {system!r}",
+            "BAD_ARGS",
+        )
+    if face_shape not in _VALID_SIGNET_FACE_SHAPES:
+        return err_payload(
+            f"face_shape must be one of {sorted(_VALID_SIGNET_FACE_SHAPES)}; "
+            f"got {face_shape!r}", "BAD_ARGS",
+        )
+    if shoulder_style not in _VALID_SHOULDER_STYLES:
+        return err_payload(
+            f"shoulder_style must be one of {sorted(_VALID_SHOULDER_STYLES)}; "
+            f"got {shoulder_style!r}", "BAD_ARGS",
+        )
+
+    try:
+        face_length_mm = float(face_length_mm)
+        face_width_mm = float(face_width_mm)
+        face_height_mm = float(face_height_mm)
+        intaglio_depth_mm = float(intaglio_depth_mm)
+        band_width_mm = float(band_width_mm)
+        thickness_mm = float(thickness_mm)
+    except (TypeError, ValueError) as e:
+        return err_payload(f"numeric param error: {e}", "BAD_ARGS")
+
+    # Parse engraving
+    engraving_spec: Optional[EngravingSpec] = None
+    if engraving_raw is not None:
+        if not isinstance(engraving_raw, dict):
+            return err_payload("engraving must be an object", "BAD_ARGS")
+        eng_text = engraving_raw.get("text", "")
+        if not eng_text:
+            return err_payload("engraving.text is required", "BAD_ARGS")
+        try:
+            engraving_spec = EngravingSpec(
+                text=str(eng_text),
+                font_height_mm=float(engraving_raw.get("font_height_mm", 1.5)),
+                depth_mm=float(engraving_raw.get("depth_mm", 0.3)),
+                position_deg=float(engraving_raw.get("position_deg", 180.0)),
+                align=str(engraving_raw.get("align", "centre")),
+            )
+            engraving_spec.validate()
+        except ValueError as e:
+            return err_payload(str(e), "BAD_ARGS")
+
+    try:
+        params = compute_signet_ring_params(
+            ring_size=ring_size,
+            system=system,
+            face_shape=face_shape,
+            face_length_mm=face_length_mm,
+            face_width_mm=face_width_mm,
+            face_height_mm=face_height_mm,
+            intaglio_depth_mm=intaglio_depth_mm,
+            engraving=engraving_spec,
+            band_width_mm=band_width_mm,
+            thickness_mm=thickness_mm,
+            shoulder_style=shoulder_style,
+        )
+    except ValueError as e:
+        return err_payload(str(e), "BAD_ARGS")
+
+    try:
+        fid = uuid.UUID(file_id_str)
+    except Exception:
+        return err_payload("file_id must be a uuid", "BAD_ARGS")
+
+    content, err = _fetch_feature_file(ctx, fid)
+    if err:
+        code = "NOT_FOUND" if "not found" in err or "not a feature" in err else "ERROR"
+        return err_payload(err, code)
+
+    if not node_id:
+        node_id = _next_op_id(content or "", "signet_ring")
+
+    node = {"id": node_id, "op": "signet_ring", **params}
+    doc = _load_feature_doc(content or "")
+    doc["features"].append(node)
+
+    try:
+        body = json.dumps(doc, indent=2)
+    except Exception as e:
+        return err_payload(f"encode: {e}", "ERROR")
+
+    try:
+        ctx.pool.execute(
+            "update files set content = $1, updated_at = now() "
+            "where id = $2 and project_id = $3",
+            body, fid, ctx.project_id,
+        )
+    except Exception as e:
+        return err_payload(str(e), "ERROR")
+
+    return ok_payload({
+        "file_id": file_id_str,
+        "id": node_id,
+        "op": "signet_ring",
+        "inner_diameter_mm": params["inner_diameter_mm"],
+        "face_shape": params["face_shape"],
+        "face_length_mm": params["face_length_mm"],
+        "face_width_mm": params["face_width_mm"],
+        "face_height_mm": params["face_height_mm"],
+        "intaglio_depth_mm": params["intaglio_depth_mm"],
+    })
+
+
+# ---------------------------------------------------------------------------
+# LLM tool: jewelry_create_stacking_band_set
+# ---------------------------------------------------------------------------
+
+jewelry_create_stacking_band_set_spec = ToolSpec(
+    name="jewelry_create_stacking_band_set",
+    description=(
+        "Append a `stacking_band_set` node to a `.feature` file. "
+        "Generates a set of N thin stacking bands that sit side-by-side on the "
+        "finger with a controlled gap between them. "
+        "Optionally includes a contour/wishbone band that nests against a named "
+        "solitaire ring shank (set include_wishbone=true and provide "
+        "solitaire_node_id). "
+        "All dimensions in mm. Ring size is auto-converted to inner diameter."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "file_id": {
+                "type": "string",
+                "description": "Target .feature file id (uuid).",
+            },
+            "ring_size": {
+                "description": "Size in the chosen system.",
+            },
+            "system": {
+                "type": "string",
+                "enum": ["us", "uk", "au", "eu", "jp"],
+                "description": "Ring-size standard. Default 'us'.",
+            },
+            "band_count": {
+                "type": "integer",
+                "description": "Number of bands in the set. 1–8. Default 3.",
+            },
+            "band_width_mm": {
+                "type": "number",
+                "description": "Width of each band, mm. > 0. Default 2.0.",
+            },
+            "thickness_mm": {
+                "type": "number",
+                "description": "Radial wall thickness of each band, mm. > 0. Default 1.4.",
+            },
+            "profile": {
+                "type": "string",
+                "enum": sorted(_VALID_STACKING_PROFILES),
+                "description": "Cross-section profile for all bands. Default 'flat'.",
+            },
+            "nest_gap_mm": {
+                "type": "number",
+                "description": "Gap between adjacent bands when stacked, mm. ≥ 0. Default 0.1.",
+            },
+            "include_wishbone": {
+                "type": "boolean",
+                "description": (
+                    "Include a contour/wishbone band that nests against an "
+                    "engagement ring. Default false."
+                ),
+            },
+            "wishbone_notch_depth_mm": {
+                "type": "number",
+                "description": (
+                    "Notch depth in the wishbone band top, mm. > 0. "
+                    "Required when include_wishbone=true. Default 0.8."
+                ),
+            },
+            "solitaire_node_id": {
+                "type": "string",
+                "description": (
+                    "Node ID of the engagement ring_shank whose profile the "
+                    "wishbone band should match. Geometry hint only."
+                ),
+            },
+            "per_band_profiles": {
+                "type": "array",
+                "description": (
+                    "Optional per-band profile override (one per band, same "
+                    "valid values as profile). Must have exactly band_count elements."
+                ),
+                "items": {
+                    "type": "string",
+                    "enum": sorted(_VALID_STACKING_PROFILES),
+                },
+            },
+            "id": {
+                "type": "string",
+                "description": "Optional explicit node id.",
+            },
+        },
+        "required": ["file_id", "ring_size"],
+    },
+)
+
+
+@register(jewelry_create_stacking_band_set_spec, write=True)
+async def run_jewelry_create_stacking_band_set(ctx: ProjectCtx, args: bytes) -> str:
+    try:
+        a = json.loads(args)
+    except Exception as e:
+        return err_payload(f"invalid args: {e}", "BAD_ARGS")
+
+    file_id_str = a.get("file_id", "").strip()
+    ring_size = a.get("ring_size", None)
+    system = str(a.get("system", "us")).strip().lower()
+    band_count = a.get("band_count", 3)
+    band_width_mm = a.get("band_width_mm", 2.0)
+    thickness_mm = a.get("thickness_mm", 1.4)
+    profile = str(a.get("profile", "flat")).strip()
+    nest_gap_mm = a.get("nest_gap_mm", 0.1)
+    include_wishbone = bool(a.get("include_wishbone", False))
+    wishbone_notch_depth_mm = a.get("wishbone_notch_depth_mm", 0.8)
+    solitaire_node_id = a.get("solitaire_node_id", None)
+    per_band_profiles = a.get("per_band_profiles", None)
+    node_id = str(a.get("id", "")).strip()
+
+    if not file_id_str:
+        return err_payload("file_id is required", "BAD_ARGS")
+    if ring_size is None:
+        return err_payload("ring_size is required", "BAD_ARGS")
+    if system not in _VALID_SYSTEMS:
+        return err_payload(
+            f"system must be one of {sorted(_VALID_SYSTEMS)}; got {system!r}",
+            "BAD_ARGS",
+        )
+    if profile not in _VALID_STACKING_PROFILES:
+        return err_payload(
+            f"profile must be one of {sorted(_VALID_STACKING_PROFILES)}; "
+            f"got {profile!r}", "BAD_ARGS",
+        )
+
+    try:
+        band_count = int(band_count)
+        band_width_mm = float(band_width_mm)
+        thickness_mm = float(thickness_mm)
+        nest_gap_mm = float(nest_gap_mm)
+        wishbone_notch_depth_mm = float(wishbone_notch_depth_mm)
+    except (TypeError, ValueError) as e:
+        return err_payload(f"numeric param error: {e}", "BAD_ARGS")
+
+    try:
+        params = compute_stacking_band_params(
+            ring_size=ring_size,
+            system=system,
+            band_count=band_count,
+            band_width_mm=band_width_mm,
+            thickness_mm=thickness_mm,
+            profile=profile,
+            nest_gap_mm=nest_gap_mm,
+            include_wishbone=include_wishbone,
+            wishbone_notch_depth_mm=wishbone_notch_depth_mm,
+            solitaire_node_id=solitaire_node_id,
+            per_band_profiles=per_band_profiles,
+        )
+    except ValueError as e:
+        return err_payload(str(e), "BAD_ARGS")
+
+    try:
+        fid = uuid.UUID(file_id_str)
+    except Exception:
+        return err_payload("file_id must be a uuid", "BAD_ARGS")
+
+    content, err = _fetch_feature_file(ctx, fid)
+    if err:
+        code = "NOT_FOUND" if "not found" in err or "not a feature" in err else "ERROR"
+        return err_payload(err, code)
+
+    if not node_id:
+        node_id = _next_op_id(content or "", "stacking_band_set")
+
+    node = {"id": node_id, "op": "stacking_band_set", **params}
+    doc = _load_feature_doc(content or "")
+    doc["features"].append(node)
+
+    try:
+        body = json.dumps(doc, indent=2)
+    except Exception as e:
+        return err_payload(f"encode: {e}", "ERROR")
+
+    try:
+        ctx.pool.execute(
+            "update files set content = $1, updated_at = now() "
+            "where id = $2 and project_id = $3",
+            body, fid, ctx.project_id,
+        )
+    except Exception as e:
+        return err_payload(str(e), "ERROR")
+
+    return ok_payload({
+        "file_id": file_id_str,
+        "id": node_id,
+        "op": "stacking_band_set",
+        "inner_diameter_mm": params["inner_diameter_mm"],
+        "band_count": params["band_count"],
+        "band_width_mm": params["band_width_mm"],
+        "thickness_mm": params["thickness_mm"],
+        "total_span_mm": params["total_span_mm"],
+        "include_wishbone": params["include_wishbone"],
+    })
+
+
+# ---------------------------------------------------------------------------
+# LLM tool: jewelry_create_contoured_band
+# ---------------------------------------------------------------------------
+
+jewelry_create_contoured_band_spec = ToolSpec(
+    name="jewelry_create_contoured_band",
+    description=(
+        "Append a `contoured_band` node to a `.feature` file. "
+        "Builds a parametric contoured / shadow wedding band whose top profile "
+        "is cut to hug an engagement ring (curved concave arc or notched top). "
+        "Set match_radius_mm to the engagement ring's outer radius (outer_diameter/2) "
+        "for a perfect shadow fit. "
+        "contour_style='curved' produces a smooth concave arc; 'notched' produces a "
+        "V/U notch in the centre of the top face. "
+        "All dimensions in mm. Ring size is auto-converted to inner diameter."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "file_id": {
+                "type": "string",
+                "description": "Target .feature file id (uuid).",
+            },
+            "ring_size": {
+                "description": "Size in the chosen system.",
+            },
+            "system": {
+                "type": "string",
+                "enum": ["us", "uk", "au", "eu", "jp"],
+                "description": "Ring-size standard. Default 'us'.",
+            },
+            "notch_depth_mm": {
+                "type": "number",
+                "description": (
+                    "Depth of the contour cut / notch at the top of the band, mm. "
+                    "> 0; must be < thickness_mm. Default 1.2."
+                ),
+            },
+            "notch_width_mm": {
+                "type": "number",
+                "description": (
+                    "Width of the contour notch across the band, mm. "
+                    "> 0; must be ≤ band_width_mm. Default 3.0."
+                ),
+            },
+            "match_radius_mm": {
+                "type": "number",
+                "description": (
+                    "Radius of the concave curve that mirrors the engagement ring "
+                    "outer surface, mm. > 0. "
+                    "Use engagement_ring outer_diameter / 2 for a perfect fit. "
+                    "Default 10.5."
+                ),
+            },
+            "contour_style": {
+                "type": "string",
+                "enum": ["curved", "notched"],
+                "description": (
+                    "'curved' = smooth concave arc across the top face (shadow band). "
+                    "'notched' = V/U notch at centre of top face. "
+                    "Default 'curved'."
+                ),
+            },
+            "band_width_mm": {
+                "type": "number",
+                "description": "Band width along finger axis, mm. > 0. Default 3.5.",
+            },
+            "thickness_mm": {
+                "type": "number",
+                "description": "Radial wall thickness, mm. > 0. Default 1.6.",
+            },
+            "profile": {
+                "type": "string",
+                "enum": ["flat", "half_round", "comfort_fit", "d_shape", "euro"],
+                "description": "Cross-section profile for the lower (shank) portion. Default 'flat'.",
+            },
+            "shoulder_style": {
+                "type": "string",
+                "enum": ["plain", "cathedral", "split_shank", "bypass"],
+                "description": "Shank shoulder style. Default 'plain'.",
+            },
+            "engagement_ring_node_id": {
+                "type": "string",
+                "description": (
+                    "Optional node ID of the engagement ring this band is contoured to. "
+                    "Geometry hint for the occtWorker; match_radius_mm is used regardless."
+                ),
+            },
+            "id": {
+                "type": "string",
+                "description": "Optional explicit node id.",
+            },
+        },
+        "required": ["file_id", "ring_size"],
+    },
+)
+
+
+@register(jewelry_create_contoured_band_spec, write=True)
+async def run_jewelry_create_contoured_band(ctx: ProjectCtx, args: bytes) -> str:
+    try:
+        a = json.loads(args)
+    except Exception as e:
+        return err_payload(f"invalid args: {e}", "BAD_ARGS")
+
+    file_id_str = a.get("file_id", "").strip()
+    ring_size = a.get("ring_size", None)
+    system = str(a.get("system", "us")).strip().lower()
+    notch_depth_mm = a.get("notch_depth_mm", 1.2)
+    notch_width_mm = a.get("notch_width_mm", 3.0)
+    match_radius_mm = a.get("match_radius_mm", 10.5)
+    contour_style = str(a.get("contour_style", "curved")).strip()
+    band_width_mm = a.get("band_width_mm", 3.5)
+    thickness_mm = a.get("thickness_mm", 1.6)
+    profile = str(a.get("profile", "flat")).strip()
+    shoulder_style = str(a.get("shoulder_style", "plain")).strip()
+    engagement_ring_node_id = a.get("engagement_ring_node_id", None)
+    node_id = str(a.get("id", "")).strip()
+
+    if not file_id_str:
+        return err_payload("file_id is required", "BAD_ARGS")
+    if ring_size is None:
+        return err_payload("ring_size is required", "BAD_ARGS")
+    if system not in _VALID_SYSTEMS:
+        return err_payload(
+            f"system must be one of {sorted(_VALID_SYSTEMS)}; got {system!r}",
+            "BAD_ARGS",
+        )
+
+    _VALID_CONTOUR_STYLES = frozenset(["curved", "notched"])
+    _VALID_CONTOUR_BASE_PROFILES = frozenset([
+        "flat", "half_round", "comfort_fit", "d_shape", "euro",
+    ])
+    if contour_style not in _VALID_CONTOUR_STYLES:
+        return err_payload(
+            f"contour_style must be one of {sorted(_VALID_CONTOUR_STYLES)}; "
+            f"got {contour_style!r}", "BAD_ARGS",
+        )
+    if profile not in _VALID_CONTOUR_BASE_PROFILES:
+        return err_payload(
+            f"profile must be one of {sorted(_VALID_CONTOUR_BASE_PROFILES)}; "
+            f"got {profile!r}", "BAD_ARGS",
+        )
+    if shoulder_style not in _VALID_SHOULDER_STYLES:
+        return err_payload(
+            f"shoulder_style must be one of {sorted(_VALID_SHOULDER_STYLES)}; "
+            f"got {shoulder_style!r}", "BAD_ARGS",
+        )
+
+    try:
+        notch_depth_mm = float(notch_depth_mm)
+        notch_width_mm = float(notch_width_mm)
+        match_radius_mm = float(match_radius_mm)
+        band_width_mm = float(band_width_mm)
+        thickness_mm = float(thickness_mm)
+    except (TypeError, ValueError) as e:
+        return err_payload(f"numeric param error: {e}", "BAD_ARGS")
+
+    try:
+        params = compute_contoured_band_params(
+            ring_size=ring_size,
+            system=system,
+            notch_depth_mm=notch_depth_mm,
+            notch_width_mm=notch_width_mm,
+            match_radius_mm=match_radius_mm,
+            contour_style=contour_style,
+            band_width_mm=band_width_mm,
+            thickness_mm=thickness_mm,
+            profile=profile,
+            shoulder_style=shoulder_style,
+            engagement_ring_node_id=engagement_ring_node_id,
+        )
+    except ValueError as e:
+        return err_payload(str(e), "BAD_ARGS")
+
+    try:
+        fid = uuid.UUID(file_id_str)
+    except Exception:
+        return err_payload("file_id must be a uuid", "BAD_ARGS")
+
+    content, err = _fetch_feature_file(ctx, fid)
+    if err:
+        code = "NOT_FOUND" if "not found" in err or "not a feature" in err else "ERROR"
+        return err_payload(err, code)
+
+    if not node_id:
+        node_id = _next_op_id(content or "", "contoured_band")
+
+    node = {"id": node_id, "op": "contoured_band", **params}
+    doc = _load_feature_doc(content or "")
+    doc["features"].append(node)
+
+    try:
+        body = json.dumps(doc, indent=2)
+    except Exception as e:
+        return err_payload(f"encode: {e}", "ERROR")
+
+    try:
+        ctx.pool.execute(
+            "update files set content = $1, updated_at = now() "
+            "where id = $2 and project_id = $3",
+            body, fid, ctx.project_id,
+        )
+    except Exception as e:
+        return err_payload(str(e), "ERROR")
+
+    return ok_payload({
+        "file_id": file_id_str,
+        "id": node_id,
+        "op": "contoured_band",
+        "inner_diameter_mm": params["inner_diameter_mm"],
+        "outer_diameter_mm": params["outer_diameter_mm"],
+        "notch_depth_mm": params["notch_depth_mm"],
+        "notch_width_mm": params["notch_width_mm"],
+        "match_radius_mm": params["match_radius_mm"],
+        "contour_style": params["contour_style"],
+        "band_width_mm": params["band_width_mm"],
+        "thickness_mm": params["thickness_mm"],
     })
