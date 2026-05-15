@@ -48,6 +48,12 @@ kerf.toml
 # Local storage backend (STEP files, uploads)
 .kerf-storage/
 
+# kerf-parts: third-party CAD parts are fetched locally on demand and
+# NEVER committed (MIT hygiene). The clone cache + all generated/converted
+# output (incl. the attribution NOTICE) live here and are gitignored.
+# Only kerf-parts code + parts-sources.toml + LICENSES.md are committed.
+/.parts-cache/
+
 # Python
 __pycache__/
 *.py[cod]
