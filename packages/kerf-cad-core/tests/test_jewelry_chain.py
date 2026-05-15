@@ -45,6 +45,25 @@ from kerf_cad_core.jewelry.chain import (
     jewelry_chain_length_spec,
     run_jewelry_create_chain,
     run_jewelry_chain_length,
+    # v3 composed pieces
+    tennis_bracelet_spec,
+    station_necklace_spec,
+    lariat_spec,
+    charm_bracelet_spec,
+    multi_strand_spec,
+    extender_chain_spec,
+    run_jewelry_create_tennis_bracelet,
+    run_jewelry_create_station_necklace,
+    run_jewelry_create_lariat,
+    run_jewelry_create_charm_bracelet,
+    run_jewelry_create_multi_strand,
+    run_jewelry_create_extender_chain,
+    _tennis_bracelet_spec_obj,
+    _station_necklace_spec_obj,
+    _lariat_spec_obj,
+    _charm_bracelet_spec_obj,
+    _multi_strand_spec_obj,
+    _extender_chain_spec_obj,
 )
 
 
@@ -1338,3 +1357,813 @@ class TestChainOCC:
         p = compute_chain_params("byzantine", wire_gauge_mm=0.9, link_count=60)
         hints = p["link_hints"]
         assert hints["cluster_links"] == 4
+
+
+# ===========================================================================
+# v3 — Composed chain pieces
+# ===========================================================================
+
+# ---------------------------------------------------------------------------
+# Helpers shared by composed-piece tests
+# ---------------------------------------------------------------------------
+
+def run_composed(runner, ctx, fid, **kwargs):
+    """Run an async composed-piece runner and return the parsed JSON result."""
+    args = {"file_id": str(fid), **kwargs}
+    return run_sync(runner(ctx, json.dumps(args).encode()))
+
+
+# ---------------------------------------------------------------------------
+# Tennis bracelet
+# ---------------------------------------------------------------------------
+
+class TestTennisBraceletSpec:
+    def test_stone_count_defaults(self):
+        s = tennis_bracelet_spec(stone_count=20)
+        assert s["op"] == "tennis_bracelet"
+        assert s["stone_count"] == 20
+        assert s["total_length_mm"] > 0
+        assert s["stone_pitch_mm"] > s["stone_size_mm"]   # gap included
+        assert "chains" in s and len(s["chains"]) == 1
+        assert "stone_station_hints" in s
+        assert s["stone_station_hints"]["station_type"] == "tennis_mount"
+
+    def test_total_length_derives_count(self):
+        s = tennis_bracelet_spec(stone_size_mm=3.0, total_length_mm=180.0)
+        assert s["stone_count"] >= 1
+        assert s["total_length_mm"] > 0
+
+    def test_standard_length_bracelet(self):
+        s = tennis_bracelet_spec(standard_length="bracelet_7in")
+        assert s["stone_count"] >= 1
+
+    def test_chain_sub_spec_reuses_compute_chain_params_keys(self):
+        s = tennis_bracelet_spec(stone_count=15)
+        chain = s["chains"][0]
+        for key in ("style", "wire_gauge_mm", "link_count", "link_hints",
+                    "total_length_mm", "link_pitch_mm", "open_ends"):
+            assert key in chain, f"Missing key {key!r} in tennis chain sub-spec"
+
+    def test_clasp_is_box_clasp_default(self):
+        s = tennis_bracelet_spec(stone_count=10)
+        assert s["clasp"]["style"] == "box_clasp"
+
+    def test_clasp_style_override(self):
+        s = tennis_bracelet_spec(stone_count=10, clasp_style="toggle")
+        assert s["clasp"]["style"] == "toggle"
+
+    def test_link_style_override(self):
+        s = tennis_bracelet_spec(stone_count=10, link_style="rolo", wire_gauge_mm=0.9)
+        assert s["chains"][0]["style"] == "rolo"
+
+    def test_weight_positive(self):
+        s = tennis_bracelet_spec(stone_count=20)
+        assert s["estimated_weight_18k_gold_g"] > 0
+
+    def test_no_length_source_raises(self):
+        with pytest.raises(ValueError, match="required"):
+            tennis_bracelet_spec()
+
+    def test_two_length_sources_raises(self):
+        with pytest.raises(ValueError, match="exactly one"):
+            tennis_bracelet_spec(stone_count=10, total_length_mm=180.0)
+
+    def test_zero_stone_size_raises(self):
+        with pytest.raises(ValueError, match="stone_size_mm must be > 0"):
+            tennis_bracelet_spec(stone_size_mm=0, stone_count=10)
+
+    def test_gauge_preset_applied(self):
+        s = tennis_bracelet_spec(stone_count=10, gauge_preset="heavy")
+        chain = s["chains"][0]
+        assert chain["wire_gauge_mm"] == pytest.approx(
+            GAUGE_PRESETS["cable"]["heavy"]
+        )
+
+    @pytest.mark.parametrize("style", sorted(_VALID_LINK_STYLES))
+    def test_all_link_styles_succeed(self, style):
+        s = tennis_bracelet_spec(stone_count=10, link_style=style, wire_gauge_mm=0.8)
+        assert s["chains"][0]["style"] == _STYLE_ALIASES.get(style, style)
+
+
+class TestTennisBraceletTool:
+    def test_tool_success_stone_count(self):
+        ctx, store, fid = make_ctx()
+        r = run_composed(run_jewelry_create_tennis_bracelet, ctx, fid, stone_count=20)
+        assert "error" not in r, r
+        assert r["op"] == "tennis_bracelet"
+        assert r["stone_count"] == 20
+
+    def test_node_appended(self):
+        ctx, store, fid = make_ctx()
+        run_composed(run_jewelry_create_tennis_bracelet, ctx, fid, stone_count=15)
+        doc = json.loads(store["content"])
+        assert len(doc["features"]) == 1
+        assert doc["features"][0]["op"] == "tennis_bracelet"
+
+    def test_tool_standard_length(self):
+        ctx, store, fid = make_ctx()
+        r = run_composed(run_jewelry_create_tennis_bracelet, ctx, fid,
+                         standard_length="bracelet_7in")
+        assert "error" not in r
+
+    def test_tool_missing_file_id(self):
+        ctx, _, _ = make_ctx()
+        r = run_sync(run_jewelry_create_tennis_bracelet(
+            ctx, json.dumps({"stone_count": 10}).encode()
+        ))
+        assert "error" in r
+
+    def test_tool_file_not_found(self):
+        ctx, _, fid = make_ctx(kind="NOT_FOUND")
+        r = run_composed(run_jewelry_create_tennis_bracelet, ctx, fid, stone_count=10)
+        assert "error" in r
+
+    def test_tool_invalid_json(self):
+        ctx, _, _ = make_ctx()
+        r = run_sync(run_jewelry_create_tennis_bracelet(ctx, b"bad json"))
+        assert "error" in r
+
+    def test_tool_spec_name(self):
+        assert _tennis_bracelet_spec_obj.name == "jewelry_create_tennis_bracelet"
+
+    def test_tool_spec_has_file_id_required(self):
+        assert "file_id" in _tennis_bracelet_spec_obj.input_schema["required"]
+
+
+# ---------------------------------------------------------------------------
+# Station necklace
+# ---------------------------------------------------------------------------
+
+class TestStationNecklaceSpec:
+    def test_defaults(self):
+        s = station_necklace_spec()
+        assert s["op"] == "station_necklace"
+        assert s["station_count"] == 5
+        assert s["total_length_mm"] > 0
+        assert len(s["chains"]) == 1
+        assert "station_hints" in s
+        assert s["station_hints"]["station_type"] == "bezel_or_prong"
+
+    def test_standard_length_override(self):
+        s = station_necklace_spec(standard_length="princess_18in")
+        assert s["total_length_mm"] == pytest.approx(457.2, rel=1e-3)
+
+    def test_total_length_override(self):
+        s = station_necklace_spec(total_length_mm=400.0)
+        assert s["total_length_mm"] == pytest.approx(400.0, rel=1e-3)
+
+    def test_chain_sub_reuses_chain_params_keys(self):
+        s = station_necklace_spec()
+        chain = s["chains"][0]
+        for key in ("style", "wire_gauge_mm", "link_count", "link_hints",
+                    "total_length_mm", "link_pitch_mm", "open_ends"):
+            assert key in chain
+
+    def test_clasp_default_lobster(self):
+        s = station_necklace_spec()
+        assert s["clasp"]["style"] == "lobster"
+
+    def test_station_count_stored(self):
+        s = station_necklace_spec(station_count=7, station_spacing_mm=40.0)
+        assert s["station_hints"]["station_count"] == 7
+
+    def test_spacing_stored(self):
+        s = station_necklace_spec(station_spacing_mm=60.0)
+        assert s["station_hints"]["station_spacing_mm"] == pytest.approx(60.0)
+
+    def test_zero_station_count_raises(self):
+        with pytest.raises(ValueError, match="station_count"):
+            station_necklace_spec(station_count=0)
+
+    def test_zero_spacing_raises(self):
+        with pytest.raises(ValueError, match="station_spacing_mm must be > 0"):
+            station_necklace_spec(station_spacing_mm=0)
+
+    def test_zero_stone_size_raises(self):
+        with pytest.raises(ValueError, match="stone_size_mm must be > 0"):
+            station_necklace_spec(stone_size_mm=0)
+
+    def test_gauge_preset_applied(self):
+        s = station_necklace_spec(gauge_preset="fine")
+        assert s["chains"][0]["wire_gauge_mm"] == pytest.approx(
+            GAUGE_PRESETS["cable"]["fine"]
+        )
+
+    def test_weight_positive(self):
+        s = station_necklace_spec()
+        assert s["estimated_weight_18k_gold_g"] > 0
+
+    @pytest.mark.parametrize("style", sorted(_VALID_LINK_STYLES))
+    def test_carrier_styles_succeed(self, style):
+        s = station_necklace_spec(carrier_style=style, wire_gauge_mm=0.7)
+        assert s["chains"][0]["style"] == _STYLE_ALIASES.get(style, style)
+
+
+class TestStationNecklaceTool:
+    def test_tool_success_defaults(self):
+        ctx, store, fid = make_ctx()
+        r = run_composed(run_jewelry_create_station_necklace, ctx, fid)
+        assert "error" not in r, r
+        assert r["op"] == "station_necklace"
+        assert r["station_count"] == 5
+
+    def test_node_appended(self):
+        ctx, store, fid = make_ctx()
+        run_composed(run_jewelry_create_station_necklace, ctx, fid, station_count=3)
+        doc = json.loads(store["content"])
+        assert doc["features"][0]["op"] == "station_necklace"
+
+    def test_tool_standard_length(self):
+        ctx, store, fid = make_ctx()
+        r = run_composed(run_jewelry_create_station_necklace, ctx, fid,
+                         standard_length="princess_18in", station_count=7)
+        assert "error" not in r
+
+    def test_tool_missing_file_id(self):
+        ctx, _, _ = make_ctx()
+        r = run_sync(run_jewelry_create_station_necklace(
+            ctx, json.dumps({"station_count": 5}).encode()
+        ))
+        assert "error" in r
+
+    def test_tool_file_not_found(self):
+        ctx, _, fid = make_ctx(kind="NOT_FOUND")
+        r = run_composed(run_jewelry_create_station_necklace, ctx, fid)
+        assert "error" in r
+
+    def test_tool_spec_name(self):
+        assert _station_necklace_spec_obj.name == "jewelry_create_station_necklace"
+
+    def test_tool_spec_has_file_id_required(self):
+        assert "file_id" in _station_necklace_spec_obj.input_schema["required"]
+
+
+# ---------------------------------------------------------------------------
+# Lariat
+# ---------------------------------------------------------------------------
+
+class TestLariatSpec:
+    def test_defaults(self):
+        s = lariat_spec()
+        assert s["op"] == "lariat"
+        assert s["body_length_mm"] == pytest.approx(400.0)
+        assert s["drop_length_mm"] == pytest.approx(80.0)
+        assert len(s["chains"]) == 2   # body + drop
+        assert s["clasp"] is None      # no traditional clasp
+
+    def test_slide_hints(self):
+        s = lariat_spec()
+        sh = s["slide_hints"]
+        assert sh["type"] == "slide"
+        assert sh["slide_mechanism"] == "loop_slide"
+        assert sh["inner_diameter_mm"] > 0
+
+    def test_terminal_hints(self):
+        s = lariat_spec(terminal_stone_mm=6.0)
+        th = s["terminal_hints"]
+        assert th["type"] == "stone_station"
+        assert th["stone_size_mm"] == pytest.approx(6.0)
+
+    def test_body_sub_spec_has_chain_keys(self):
+        s = lariat_spec()
+        body = s["chains"][0]
+        for key in ("style", "wire_gauge_mm", "link_count", "link_hints",
+                    "total_length_mm", "link_pitch_mm"):
+            assert key in body
+
+    def test_drop_sub_spec_exists(self):
+        s = lariat_spec(drop_length_mm=100.0)
+        drop = s["chains"][1]
+        assert drop["total_length_mm"] > 0
+
+    def test_different_body_drop_styles(self):
+        s = lariat_spec(body_style="cable", drop_style="box", wire_gauge_mm=0.8)
+        assert s["chains"][0]["style"] == "cable"
+        assert s["chains"][1]["style"] == "box"
+
+    def test_drop_defaults_to_body_style(self):
+        s = lariat_spec(body_style="rope", wire_gauge_mm=0.8)
+        assert s["chains"][0]["style"] == "rope"
+        assert s["chains"][1]["style"] == "rope"
+
+    def test_bail_slide_type(self):
+        s = lariat_spec(slide_type="bail_slide")
+        assert s["slide_hints"]["slide_mechanism"] == "bail_slide"
+
+    def test_zero_body_length_raises(self):
+        with pytest.raises(ValueError, match="body_length_mm must be > 0"):
+            lariat_spec(body_length_mm=0)
+
+    def test_zero_drop_length_raises(self):
+        with pytest.raises(ValueError, match="drop_length_mm must be > 0"):
+            lariat_spec(drop_length_mm=0)
+
+    def test_zero_terminal_stone_raises(self):
+        with pytest.raises(ValueError, match="terminal_stone_mm must be > 0"):
+            lariat_spec(terminal_stone_mm=0)
+
+    def test_gauge_preset_applied(self):
+        s = lariat_spec(gauge_preset="medium")
+        assert s["chains"][0]["wire_gauge_mm"] == pytest.approx(
+            GAUGE_PRESETS["cable"]["medium"]
+        )
+
+    def test_weight_positive(self):
+        s = lariat_spec()
+        assert s["estimated_weight_18k_gold_g"] > 0
+
+    @pytest.mark.parametrize("style", sorted(_VALID_LINK_STYLES))
+    def test_body_styles_succeed(self, style):
+        s = lariat_spec(body_style=style, wire_gauge_mm=0.8)
+        assert s["chains"][0]["style"] == _STYLE_ALIASES.get(style, style)
+
+
+class TestLariatTool:
+    def test_tool_success_defaults(self):
+        ctx, store, fid = make_ctx()
+        r = run_composed(run_jewelry_create_lariat, ctx, fid)
+        assert "error" not in r, r
+        assert r["op"] == "lariat"
+        assert r["body_length_mm"] == pytest.approx(400.0)
+
+    def test_node_appended(self):
+        ctx, store, fid = make_ctx()
+        run_composed(run_jewelry_create_lariat, ctx, fid)
+        doc = json.loads(store["content"])
+        assert doc["features"][0]["op"] == "lariat"
+        # Two chain sub-specs stored
+        assert len(doc["features"][0]["chains"]) == 2
+
+    def test_tool_custom_lengths(self):
+        ctx, store, fid = make_ctx()
+        r = run_composed(run_jewelry_create_lariat, ctx, fid,
+                         body_length_mm=500.0, drop_length_mm=120.0)
+        assert "error" not in r
+
+    def test_tool_missing_file_id(self):
+        ctx, _, _ = make_ctx()
+        r = run_sync(run_jewelry_create_lariat(ctx, json.dumps({}).encode()))
+        assert "error" in r
+
+    def test_tool_file_not_found(self):
+        ctx, _, fid = make_ctx(kind="NOT_FOUND")
+        r = run_composed(run_jewelry_create_lariat, ctx, fid)
+        assert "error" in r
+
+    def test_tool_spec_name(self):
+        assert _lariat_spec_obj.name == "jewelry_create_lariat"
+
+    def test_tool_spec_has_file_id_required(self):
+        assert "file_id" in _lariat_spec_obj.input_schema["required"]
+
+
+# ---------------------------------------------------------------------------
+# Charm bracelet
+# ---------------------------------------------------------------------------
+
+class TestCharmBraceletSpec:
+    def test_defaults_with_length(self):
+        s = charm_bracelet_spec(standard_length="bracelet_7in")
+        assert s["op"] == "charm_bracelet"
+        assert s["charm_count"] == 8
+        assert len(s["chains"]) == 1
+        assert "attach_hints" in s
+        assert s["attach_hints"]["type"] == "jump_ring_attach"
+
+    def test_attach_positions_count(self):
+        s = charm_bracelet_spec(standard_length="bracelet_7in", charm_count=5)
+        assert len(s["attach_hints"]["positions_mm"]) == 5
+
+    def test_attach_positions_evenly_spaced(self):
+        s = charm_bracelet_spec(total_length_mm=180.0, charm_count=3)
+        positions = s["attach_hints"]["positions_mm"]
+        assert len(positions) == 3
+        # Positions should be > 0 and < total_length
+        for pos in positions:
+            assert 0 < pos < s["total_length_mm"]
+
+    def test_chain_sub_reuses_chain_params_keys(self):
+        s = charm_bracelet_spec(link_count=60)
+        chain = s["chains"][0]
+        for key in ("style", "wire_gauge_mm", "link_count", "link_hints",
+                    "total_length_mm", "link_pitch_mm", "open_ends"):
+            assert key in chain
+
+    def test_clasp_default_lobster(self):
+        s = charm_bracelet_spec(link_count=60)
+        assert s["clasp"]["style"] == "lobster"
+
+    def test_jump_ring_gauge_default(self):
+        s = charm_bracelet_spec(link_count=60, wire_gauge_mm=1.2)
+        jr = s["attach_hints"]["jump_ring_wire_gauge_mm"]
+        assert abs(jr - 1.2 * 0.7) < 0.01
+
+    def test_custom_jump_ring_gauge(self):
+        s = charm_bracelet_spec(link_count=60, jump_ring_gauge_mm=0.5)
+        assert s["attach_hints"]["jump_ring_wire_gauge_mm"] == pytest.approx(0.5)
+
+    def test_rolo_default_style(self):
+        s = charm_bracelet_spec(link_count=50)
+        assert s["chains"][0]["style"] == "rolo"
+
+    def test_no_length_raises(self):
+        with pytest.raises(ValueError, match="required"):
+            charm_bracelet_spec()
+
+    def test_two_length_sources_raises(self):
+        with pytest.raises(ValueError, match="exactly one"):
+            charm_bracelet_spec(total_length_mm=180.0, link_count=60)
+
+    def test_zero_charm_count_raises(self):
+        with pytest.raises(ValueError, match="charm_count"):
+            charm_bracelet_spec(link_count=60, charm_count=0)
+
+    def test_gauge_preset(self):
+        s = charm_bracelet_spec(link_count=50, gauge_preset="fine",
+                                base_style="rolo")
+        assert s["chains"][0]["wire_gauge_mm"] == pytest.approx(
+            GAUGE_PRESETS["rolo"]["fine"]
+        )
+
+    def test_weight_positive(self):
+        s = charm_bracelet_spec(link_count=60)
+        assert s["estimated_weight_18k_gold_g"] > 0
+
+    @pytest.mark.parametrize("style", sorted(_VALID_LINK_STYLES))
+    def test_base_styles_succeed(self, style):
+        s = charm_bracelet_spec(base_style=style, wire_gauge_mm=1.0, link_count=50)
+        assert s["chains"][0]["style"] == _STYLE_ALIASES.get(style, style)
+
+
+class TestCharmBraceletTool:
+    def test_tool_success_standard_length(self):
+        ctx, store, fid = make_ctx()
+        r = run_composed(run_jewelry_create_charm_bracelet, ctx, fid,
+                         standard_length="bracelet_7in")
+        assert "error" not in r, r
+        assert r["op"] == "charm_bracelet"
+        assert r["charm_count"] == 8
+
+    def test_node_appended(self):
+        ctx, store, fid = make_ctx()
+        run_composed(run_jewelry_create_charm_bracelet, ctx, fid, link_count=60)
+        doc = json.loads(store["content"])
+        assert doc["features"][0]["op"] == "charm_bracelet"
+
+    def test_tool_link_count(self):
+        ctx, store, fid = make_ctx()
+        r = run_composed(run_jewelry_create_charm_bracelet, ctx, fid,
+                         link_count=60, charm_count=6)
+        assert "error" not in r
+        assert r["charm_count"] == 6
+
+    def test_tool_missing_file_id(self):
+        ctx, _, _ = make_ctx()
+        r = run_sync(run_jewelry_create_charm_bracelet(
+            ctx, json.dumps({"link_count": 60}).encode()
+        ))
+        assert "error" in r
+
+    def test_tool_no_length_source(self):
+        ctx, _, fid = make_ctx()
+        r = run_composed(run_jewelry_create_charm_bracelet, ctx, fid)
+        assert "error" in r
+
+    def test_tool_file_not_found(self):
+        ctx, _, fid = make_ctx(kind="NOT_FOUND")
+        r = run_composed(run_jewelry_create_charm_bracelet, ctx, fid, link_count=60)
+        assert "error" in r
+
+    def test_tool_spec_name(self):
+        assert _charm_bracelet_spec_obj.name == "jewelry_create_charm_bracelet"
+
+    def test_tool_spec_has_file_id_required(self):
+        assert "file_id" in _charm_bracelet_spec_obj.input_schema["required"]
+
+
+# ---------------------------------------------------------------------------
+# Multi-strand
+# ---------------------------------------------------------------------------
+
+class TestMultiStrandSpec:
+    def test_defaults_three_strands(self):
+        s = multi_strand_spec(total_length_mm=450.0)
+        assert s["op"] == "multi_strand"
+        assert s["strand_count"] == 3
+        assert len(s["chains"]) == 3
+
+    def test_strand_styles_applied(self):
+        s = multi_strand_spec(
+            strand_count=2,
+            strand_styles=["cable", "rope"],
+            wire_gauge_mm=0.8,
+            total_length_mm=450.0,
+        )
+        assert s["chains"][0]["style"] == "cable"
+        assert s["chains"][1]["style"] == "rope"
+
+    def test_strand_styles_padded(self):
+        # Provide one style for 3 strands — last should be padded
+        s = multi_strand_spec(
+            strand_count=3,
+            strand_styles=["box"],
+            wire_gauge_mm=0.9,
+            link_count=100,
+        )
+        assert all(c["style"] == "box" for c in s["chains"])
+
+    def test_connector_hints(self):
+        s = multi_strand_spec(total_length_mm=450.0)
+        ch = s["connector_hints"]
+        assert ch["type"] == "connector"
+        assert ch["strand_count"] == 3
+
+    def test_clasp_default_box_clasp(self):
+        s = multi_strand_spec(total_length_mm=450.0)
+        assert s["clasp"]["style"] == "box_clasp"
+
+    def test_five_strands(self):
+        s = multi_strand_spec(strand_count=5, link_count=150)
+        assert len(s["chains"]) == 5
+
+    def test_strand_count_one_raises(self):
+        with pytest.raises(ValueError, match="strand_count must be an integer between"):
+            multi_strand_spec(strand_count=1, total_length_mm=450.0)
+
+    def test_strand_count_six_raises(self):
+        with pytest.raises(ValueError, match="strand_count must be an integer between"):
+            multi_strand_spec(strand_count=6, total_length_mm=450.0)
+
+    def test_no_length_raises(self):
+        with pytest.raises(ValueError, match="required"):
+            multi_strand_spec()
+
+    def test_two_length_sources_raises(self):
+        with pytest.raises(ValueError, match="exactly one"):
+            multi_strand_spec(total_length_mm=450.0, link_count=100)
+
+    def test_each_chain_sub_has_chain_keys(self):
+        s = multi_strand_spec(strand_count=2, total_length_mm=450.0)
+        for chain in s["chains"]:
+            for key in ("style", "wire_gauge_mm", "link_count", "link_hints",
+                        "total_length_mm", "link_pitch_mm", "open_ends"):
+                assert key in chain
+
+    def test_gauge_preset(self):
+        s = multi_strand_spec(strand_count=2, total_length_mm=450.0,
+                               gauge_preset="fine")
+        assert s["chains"][0]["wire_gauge_mm"] == pytest.approx(
+            GAUGE_PRESETS["cable"]["fine"]
+        )
+
+    def test_weight_positive(self):
+        s = multi_strand_spec(total_length_mm=450.0)
+        assert s["estimated_weight_18k_gold_g"] > 0
+
+    def test_connector_type_end_bar(self):
+        s = multi_strand_spec(total_length_mm=450.0, connector_type="end_bar")
+        assert s["connector_hints"]["connector_style"] == "end_bar"
+
+
+class TestMultiStrandTool:
+    def test_tool_success_defaults(self):
+        ctx, store, fid = make_ctx()
+        r = run_composed(run_jewelry_create_multi_strand, ctx, fid,
+                         total_length_mm=450.0)
+        assert "error" not in r, r
+        assert r["op"] == "multi_strand"
+        assert r["strand_count"] == 3
+
+    def test_node_appended_three_chains(self):
+        ctx, store, fid = make_ctx()
+        run_composed(run_jewelry_create_multi_strand, ctx, fid, link_count=100)
+        doc = json.loads(store["content"])
+        node = doc["features"][0]
+        assert node["op"] == "multi_strand"
+        assert len(node["chains"]) == 3
+
+    def test_tool_standard_length(self):
+        ctx, store, fid = make_ctx()
+        r = run_composed(run_jewelry_create_multi_strand, ctx, fid,
+                         standard_length="princess_18in", strand_count=2)
+        assert "error" not in r
+
+    def test_tool_strand_count_too_low(self):
+        ctx, _, fid = make_ctx()
+        r = run_composed(run_jewelry_create_multi_strand, ctx, fid,
+                         strand_count=1, total_length_mm=450.0)
+        assert "error" in r
+
+    def test_tool_no_length_source(self):
+        ctx, _, fid = make_ctx()
+        r = run_composed(run_jewelry_create_multi_strand, ctx, fid)
+        assert "error" in r
+
+    def test_tool_missing_file_id(self):
+        ctx, _, _ = make_ctx()
+        r = run_sync(run_jewelry_create_multi_strand(
+            ctx, json.dumps({"total_length_mm": 450.0}).encode()
+        ))
+        assert "error" in r
+
+    def test_tool_file_not_found(self):
+        ctx, _, fid = make_ctx(kind="NOT_FOUND")
+        r = run_composed(run_jewelry_create_multi_strand, ctx, fid,
+                         total_length_mm=450.0)
+        assert "error" in r
+
+    def test_tool_spec_name(self):
+        assert _multi_strand_spec_obj.name == "jewelry_create_multi_strand"
+
+    def test_tool_spec_has_file_id_required(self):
+        assert "file_id" in _multi_strand_spec_obj.input_schema["required"]
+
+    def test_tool_strand_styles_list(self):
+        ctx, store, fid = make_ctx()
+        r = run_composed(run_jewelry_create_multi_strand, ctx, fid,
+                         strand_count=2,
+                         strand_styles=["cable", "rope"],
+                         total_length_mm=450.0)
+        assert "error" not in r
+        doc = json.loads(store["content"])
+        assert doc["features"][0]["chains"][0]["style"] == "cable"
+        assert doc["features"][0]["chains"][1]["style"] == "rope"
+
+
+# ---------------------------------------------------------------------------
+# Extender chain
+# ---------------------------------------------------------------------------
+
+class TestExtenderChainSpec:
+    def test_defaults(self):
+        s = extender_chain_spec()
+        assert s["op"] == "extender_chain"
+        assert s["loop_count"] == 5
+        assert s["extender_length_mm"] > 0
+        assert len(s["chains"]) == 1
+        assert "loop_hints" in s
+        assert s["loop_hints"]["type"] == "end_loops"
+
+    def test_loop_positions_count(self):
+        s = extender_chain_spec(loop_count=4)
+        assert len(s["loop_hints"]["loop_positions_mm"]) == 4
+
+    def test_loop_positions_within_length(self):
+        s = extender_chain_spec(extender_length_mm=50.0, loop_count=5)
+        for pos in s["loop_hints"]["loop_positions_mm"]:
+            assert 0 < pos < s["extender_length_mm"]
+
+    def test_custom_loop_spacing(self):
+        s = extender_chain_spec(extender_length_mm=60.0, loop_count=3,
+                                loop_spacing_mm=10.0)
+        assert s["loop_spacing_mm"] == pytest.approx(10.0)
+
+    def test_chain_sub_has_chain_keys(self):
+        s = extender_chain_spec()
+        chain = s["chains"][0]
+        for key in ("style", "wire_gauge_mm", "link_count", "link_hints",
+                    "total_length_mm", "link_pitch_mm", "open_ends"):
+            assert key in chain
+
+    def test_clasp_default_lobster(self):
+        s = extender_chain_spec()
+        assert s["clasp"]["style"] == "lobster"
+
+    def test_clasp_override(self):
+        s = extender_chain_spec(end_ring_style="spring_ring")
+        assert s["clasp"]["style"] == "spring_ring"
+
+    def test_zero_length_raises(self):
+        with pytest.raises(ValueError, match="extender_length_mm must be > 0"):
+            extender_chain_spec(extender_length_mm=0)
+
+    def test_zero_loop_count_raises(self):
+        with pytest.raises(ValueError, match="loop_count"):
+            extender_chain_spec(loop_count=0)
+
+    def test_zero_loop_spacing_raises(self):
+        with pytest.raises(ValueError, match="loop_spacing_mm must be > 0"):
+            extender_chain_spec(loop_spacing_mm=0)
+
+    def test_gauge_preset(self):
+        s = extender_chain_spec(gauge_preset="heavy")
+        assert s["chains"][0]["wire_gauge_mm"] == pytest.approx(
+            GAUGE_PRESETS["cable"]["heavy"]
+        )
+
+    def test_weight_positive(self):
+        s = extender_chain_spec()
+        assert s["estimated_weight_18k_gold_g"] > 0
+
+    def test_loop_inner_diameter_positive(self):
+        s = extender_chain_spec()
+        assert s["loop_hints"]["loop_inner_diameter_mm"] > 0
+
+    @pytest.mark.parametrize("style", sorted(_VALID_LINK_STYLES))
+    def test_extender_styles_succeed(self, style):
+        s = extender_chain_spec(extender_style=style, wire_gauge_mm=0.7)
+        assert s["chains"][0]["style"] == _STYLE_ALIASES.get(style, style)
+
+
+class TestExtenderChainTool:
+    def test_tool_success_defaults(self):
+        ctx, store, fid = make_ctx()
+        r = run_composed(run_jewelry_create_extender_chain, ctx, fid)
+        assert "error" not in r, r
+        assert r["op"] == "extender_chain"
+        assert r["loop_count"] == 5
+
+    def test_node_appended(self):
+        ctx, store, fid = make_ctx()
+        run_composed(run_jewelry_create_extender_chain, ctx, fid)
+        doc = json.loads(store["content"])
+        assert doc["features"][0]["op"] == "extender_chain"
+
+    def test_tool_custom_params(self):
+        ctx, store, fid = make_ctx()
+        r = run_composed(run_jewelry_create_extender_chain, ctx, fid,
+                         extender_length_mm=60.0, loop_count=6)
+        assert "error" not in r
+        assert r["loop_count"] == 6
+
+    def test_tool_missing_file_id(self):
+        ctx, _, _ = make_ctx()
+        r = run_sync(run_jewelry_create_extender_chain(ctx, json.dumps({}).encode()))
+        assert "error" in r
+
+    def test_tool_file_not_found(self):
+        ctx, _, fid = make_ctx(kind="NOT_FOUND")
+        r = run_composed(run_jewelry_create_extender_chain, ctx, fid)
+        assert "error" in r
+
+    def test_tool_invalid_json(self):
+        ctx, _, _ = make_ctx()
+        r = run_sync(run_jewelry_create_extender_chain(ctx, b"bad json"))
+        assert "error" in r
+
+    def test_tool_spec_name(self):
+        assert _extender_chain_spec_obj.name == "jewelry_create_extender_chain"
+
+    def test_tool_spec_has_file_id_required(self):
+        assert "file_id" in _extender_chain_spec_obj.input_schema["required"]
+
+    def test_tool_zero_loop_count_error(self):
+        ctx, _, fid = make_ctx()
+        r = run_composed(run_jewelry_create_extender_chain, ctx, fid, loop_count=0)
+        assert "error" in r
+
+
+# ---------------------------------------------------------------------------
+# Cross-piece: composed pieces reuse chain_assembly link hints
+# ---------------------------------------------------------------------------
+
+class TestComposedPiecesReuseChainAssembly:
+    """Each composed piece must carry chain_assembly sub-specs with the
+    standard chain_assembly key set (style, wire_gauge_mm, link_count,
+    link_hints, total_length_mm, link_pitch_mm, open_ends)."""
+
+    _REQUIRED_CHAIN_KEYS = {
+        "style", "wire_gauge_mm", "link_count", "link_hints",
+        "total_length_mm", "link_pitch_mm", "open_ends",
+    }
+
+    def _check_chains(self, spec: dict) -> None:
+        chains = spec.get("chains", [])
+        assert chains, "Expected at least one chain sub-spec"
+        for i, chain in enumerate(chains):
+            missing = self._REQUIRED_CHAIN_KEYS - set(chain.keys())
+            assert not missing, (
+                f"Chain[{i}] of {spec['op']!r} missing keys: {missing}"
+            )
+            # link_hints must have a type key
+            assert "type" in chain["link_hints"], (
+                f"Chain[{i}] of {spec['op']!r}: link_hints missing 'type'"
+            )
+
+    def test_tennis_bracelet_chains(self):
+        self._check_chains(tennis_bracelet_spec(stone_count=10))
+
+    def test_station_necklace_chains(self):
+        self._check_chains(station_necklace_spec())
+
+    def test_lariat_chains(self):
+        self._check_chains(lariat_spec())
+
+    def test_charm_bracelet_chains(self):
+        self._check_chains(charm_bracelet_spec(link_count=50))
+
+    def test_multi_strand_chains(self):
+        self._check_chains(multi_strand_spec(total_length_mm=450.0))
+
+    def test_extender_chain_chains(self):
+        self._check_chains(extender_chain_spec())
+
+    @pytest.mark.parametrize("style", sorted(_VALID_LINK_STYLES))
+    def test_tennis_all_styles_chain_keys(self, style):
+        s = tennis_bracelet_spec(stone_count=5, link_style=style, wire_gauge_mm=0.8)
+        self._check_chains(s)
+
+    @pytest.mark.parametrize("style", sorted(_VALID_LINK_STYLES))
+    def test_extender_all_styles_chain_keys(self, style):
+        s = extender_chain_spec(extender_style=style, wire_gauge_mm=0.7)
+        self._check_chains(s)

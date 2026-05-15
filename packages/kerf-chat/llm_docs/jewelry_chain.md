@@ -493,4 +493,213 @@ twist geometry.
 *(Deferred to a future consolidated frontend pass — the `chain_assembly`
 op is not yet wired into `FeatureView.jsx`.  The feature node is stored
 and can be evaluated by the worker immediately; only the inspector panel
-UI is pending.)*
+UI is pending.  This applies equally to the v3 composed piece ops below.)*
+
+---
+
+## v3 — Composed chain pieces
+
+Six higher-level builders that compose existing `chain_assembly` link hints.
+Each produces a node with `op` set to the piece type; the node carries a
+`chains` list of full `chain_assembly` sub-specs (consumed as
+`opChainAssembly` calls by the worker) plus piece-specific hint dicts.
+
+| Tool | Write? | Piece |
+|------|--------|-------|
+| `jewelry_create_tennis_bracelet` | yes | Continuous stone line in flexible link mounts |
+| `jewelry_create_station_necklace` | yes | Periodic stone stations on a carrier chain |
+| `jewelry_create_lariat` | yes | Open-ended Y-necklace with drop slide |
+| `jewelry_create_charm_bracelet` | yes | Base chain + N jump-ring attach points |
+| `jewelry_create_multi_strand` | yes | 2–5 parallel chains joined at connector + clasp |
+| `jewelry_create_extender_chain` | yes | Adjustable extender with end loops |
+
+All composed tools require only `file_id` as a mandatory parameter; everything
+else has sensible defaults.
+
+---
+
+### `jewelry_create_tennis_bracelet`
+
+A continuous line of equal round stones set in flexible link mounts.
+
+| Parameter | Type | Default | Notes |
+|-----------|------|---------|-------|
+| `stone_size_mm` | number | 3.0 | Round stone diameter mm |
+| `stone_count` | integer | — | Mutually exclusive with `total_length_mm` / `standard_length` |
+| `total_length_mm` | number | — | Bracelet length; derives stone_count |
+| `standard_length` | string | — | Named standard length key |
+| `link_style` | string | `"cable"` | Any valid link style |
+| `wire_gauge_mm` | number | 0.8 | |
+| `clasp_style` | string | `"box_clasp"` | Flat profile suits tennis |
+| `gauge_preset` | string | — | `"fine"` / `"medium"` / `"heavy"` |
+
+Node keys: `op`, `stone_size_mm`, `stone_count`, `total_length_mm`,
+`stone_pitch_mm`, `stone_station_hints`, `chains`, `clasp`,
+`estimated_weight_18k_gold_g`.
+
+`stone_station_hints.station_type = "tennis_mount"`, `prong_count = 4`.
+
+**Example:**
+```json
+{"file_id": "<uuid>", "stone_size_mm": 3.0, "standard_length": "bracelet_7in",
+ "clasp_style": "box_clasp"}
+```
+
+---
+
+### `jewelry_create_station_necklace`
+
+Periodic stone stations spaced along a thin carrier chain.
+
+| Parameter | Type | Default | Notes |
+|-----------|------|---------|-------|
+| `stone_size_mm` | number | 4.0 | |
+| `station_count` | integer | 5 | Number of stone stations |
+| `station_spacing_mm` | number | 50.0 | Centre-to-centre spacing mm |
+| `carrier_style` | string | `"cable"` | Any valid link style |
+| `wire_gauge_mm` | number | 0.7 | |
+| `clasp_style` | string | `"lobster"` | |
+| `total_length_mm` | number | — | Override length; spacing preserved |
+| `standard_length` | string | — | Named standard length key |
+| `gauge_preset` | string | — | |
+
+Node keys: `op`, `stone_size_mm`, `station_count`, `station_spacing_mm`,
+`total_length_mm`, `station_hints`, `chains`, `clasp`,
+`estimated_weight_18k_gold_g`.
+
+`station_hints.station_positions = "evenly_spaced"`.
+
+**Example:**
+```json
+{"file_id": "<uuid>", "station_count": 7, "station_spacing_mm": 55.0,
+ "standard_length": "opera_24in"}
+```
+
+---
+
+### `jewelry_create_lariat`
+
+Open-ended Y-necklace with a sliding drop pendant.  No clasp (`clasp: null`).
+Emits two `chain_assembly` sub-specs: body + drop.
+
+| Parameter | Type | Default | Notes |
+|-----------|------|---------|-------|
+| `body_length_mm` | number | 400.0 | Main body chain mm |
+| `drop_length_mm` | number | 80.0 | Drop/tail chain mm |
+| `body_style` | string | `"cable"` | |
+| `drop_style` | string | body_style | Defaults to same as body |
+| `wire_gauge_mm` | number | 0.8 | Shared by body and drop |
+| `slide_type` | string | `"loop_slide"` | `"loop_slide"` or `"bail_slide"` |
+| `terminal_stone_mm` | number | 5.0 | Drop-end stone diameter mm |
+| `gauge_preset` | string | — | |
+
+Node keys: `op`, `body_length_mm`, `drop_length_mm`, `slide_type`,
+`terminal_stone_mm`, `slide_hints`, `terminal_hints`, `chains` (2 entries),
+`clasp` (null), `estimated_weight_18k_gold_g`.
+
+**Example:**
+```json
+{"file_id": "<uuid>", "body_length_mm": 450.0, "drop_length_mm": 100.0,
+ "body_style": "cable", "drop_style": "box"}
+```
+
+---
+
+### `jewelry_create_charm_bracelet`
+
+Base chain with N evenly-spaced jump-ring attach points for charms.
+Rolo / belcher links are the traditional choice.
+
+| Parameter | Type | Default | Notes |
+|-----------|------|---------|-------|
+| `base_style` | string | `"rolo"` | |
+| `wire_gauge_mm` | number | 1.2 | |
+| `total_length_mm` | number | — | Mutually exclusive with `link_count` / `standard_length` |
+| `standard_length` | string | — | |
+| `link_count` | integer | — | |
+| `charm_count` | integer | 8 | Number of attach points |
+| `clasp_style` | string | `"lobster"` | |
+| `jump_ring_gauge_mm` | number | wire_gauge × 0.7 | |
+| `gauge_preset` | string | — | |
+
+Node keys: `op`, `charm_count`, `total_length_mm`, `attach_hints`, `chains`,
+`clasp`, `estimated_weight_18k_gold_g`.
+
+`attach_hints.positions_mm` — list of mm positions along the bracelet.
+
+**Example:**
+```json
+{"file_id": "<uuid>", "standard_length": "bracelet_7in", "charm_count": 10,
+ "base_style": "rolo"}
+```
+
+---
+
+### `jewelry_create_multi_strand`
+
+Two to five parallel chains joined at a connector and clasp.
+
+| Parameter | Type | Default | Notes |
+|-----------|------|---------|-------|
+| `strand_count` | integer | 3 | 2–5 |
+| `strand_styles` | array | all `"cable"` | Per-strand styles; padded to strand_count |
+| `wire_gauge_mm` | number | 0.8 | Shared by all strands |
+| `total_length_mm` | number | — | Per-strand length |
+| `standard_length` | string | — | |
+| `link_count` | integer | — | Per-strand link count |
+| `clasp_style` | string | `"box_clasp"` | Multi-tab suits multi-strand |
+| `connector_type` | string | `"multi_strand_box"` | `"multi_strand_box"` or `"end_bar"` |
+| `gauge_preset` | string | — | |
+
+Node keys: `op`, `strand_count`, `strand_styles`, `total_length_mm`,
+`connector_hints`, `chains` (N entries), `clasp`,
+`estimated_weight_18k_gold_g`.
+
+**Example:**
+```json
+{"file_id": "<uuid>", "strand_count": 3,
+ "strand_styles": ["cable", "rope", "cable"],
+ "standard_length": "princess_18in"}
+```
+
+---
+
+### `jewelry_create_extender_chain`
+
+A short chain with a series of end loops for adjustable length attachment.
+
+| Parameter | Type | Default | Notes |
+|-----------|------|---------|-------|
+| `extender_style` | string | `"cable"` | |
+| `wire_gauge_mm` | number | 0.7 | |
+| `extender_length_mm` | number | 50.0 | Total extender length mm |
+| `loop_count` | integer | 5 | Number of attachment loops |
+| `loop_spacing_mm` | number | length/(loop_count+1) | Spacing between loops mm |
+| `end_ring_style` | string | `"lobster"` | Clasp at extender end |
+| `gauge_preset` | string | — | |
+
+Node keys: `op`, `extender_length_mm`, `loop_count`, `loop_spacing_mm`,
+`loop_hints`, `chains`, `clasp`, `estimated_weight_18k_gold_g`.
+
+`loop_hints.loop_positions_mm` — list of mm positions along the extender.
+
+**Example:**
+```json
+{"file_id": "<uuid>", "extender_length_mm": 60.0, "loop_count": 6,
+ "end_ring_style": "lobster"}
+```
+
+---
+
+## How composed pieces reuse chain_assembly
+
+Each composed piece calls `compute_chain_params()` internally and embeds the
+resulting full `chain_assembly` sub-spec(s) in the `chains` list.  The
+`opChainAssembly` worker evaluates each sub-spec exactly as it would a
+top-level `chain_assembly` node.  Piece-specific hints (`stone_station_hints`,
+`attach_hints`, `connector_hints`, `loop_hints`, `slide_hints`,
+`terminal_hints`) are additive overlays — they do not replace or modify the
+`chain_assembly` node-spec contract.
+
+The `jewelry_create_chain` tool and worker contract are unchanged; all
+existing styles and parameters continue to work without modification.
