@@ -53,6 +53,9 @@ import {
   Terminal,
   Radio,
   Copy,
+  Gem,
+  Settings2,
+  ChevronRight,
 } from 'lucide-react'
 import { useState } from 'react'
 import Header from '../components/Header.jsx'
@@ -157,6 +160,10 @@ function Hero() {
               <li className="flex items-center gap-1.5">
                 <span className="w-1 h-1 rounded-full bg-ink-500" />
                 no card required
+              </li>
+              <li className="flex items-center gap-1.5">
+                <span className="w-1 h-1 rounded-full bg-ink-500" />
+                open source
               </li>
             </ul>
           </div>
@@ -625,6 +632,140 @@ function CapabilityTextCard({ icon: Icon, title, body }) {
 }
 
 /* -------------------------------------------------------------------------- */
+/* Section: Per-domain deep-dives                                             */
+/* -------------------------------------------------------------------------- */
+
+const DOMAINS = [
+  {
+    icon: Gem,
+    label: 'Jewelry',
+    sub: 'NURBS surfaces, ring sizers, stone settings',
+    href: '/domains/jewelry',
+    color: 'text-pink-400',
+    bg: 'bg-pink-400/10 border-pink-400/30 group-hover:bg-pink-400/20',
+  },
+  {
+    icon: Settings2,
+    label: 'Mechanical',
+    sub: 'B-rep features, assemblies, FEM on the way',
+    href: '/domains/mechanical',
+    color: 'text-cyan-400',
+    bg: 'bg-cyan-400/10 border-cyan-400/30 group-hover:bg-cyan-400/20',
+  },
+  {
+    icon: CircuitBoard,
+    label: 'Electronics',
+    sub: 'tscircuit schematics, PCB layout, 3D preview',
+    href: '/domains/electronics',
+    color: 'text-emerald-400',
+    bg: 'bg-emerald-400/10 border-emerald-400/30 group-hover:bg-emerald-400/20',
+  },
+  {
+    icon: Building2,
+    label: 'Architecture',
+    sub: 'Parametric massing, section views, drawings',
+    href: '/domains/architecture',
+    color: 'text-violet-400',
+    bg: 'bg-violet-400/10 border-violet-400/30 group-hover:bg-violet-400/20',
+  },
+]
+
+function PerDomain() {
+  return (
+    <section className="relative border-t border-ink-900">
+      <div className="mx-auto max-w-7xl px-6 py-12 lg:py-14">
+        <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-8">
+          <div className="max-w-2xl">
+            <p className="font-mono text-xs uppercase tracking-[0.2em] text-kerf-300">
+              Built for your discipline
+            </p>
+            <h2 className="mt-2 font-display text-3xl sm:text-4xl font-semibold tracking-[-0.02em]">
+              Domain-specific workflows.
+            </h2>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {DOMAINS.map((d) => (
+            <Link
+              key={d.label}
+              to={d.href}
+              className="group relative rounded-2xl border border-ink-800 bg-ink-900/40 p-5 hover:border-ink-700 hover:bg-ink-900/60 transition-colors flex flex-col gap-3"
+            >
+              <span
+                className={`grid place-items-center w-9 h-9 rounded-lg border transition-colors ${d.bg} ${d.color}`}
+              >
+                <d.icon size={16} />
+              </span>
+              <div>
+                <h3 className="font-display text-base font-semibold tracking-tight text-ink-100">
+                  {d.label}
+                </h3>
+                <p className="text-sm text-ink-400 mt-0.5">{d.sub}</p>
+              </div>
+              <ChevronRight
+                size={14}
+                className="absolute right-4 top-1/2 -translate-y-1/2 text-ink-600 group-hover:text-kerf-300 group-hover:translate-x-0.5 transition-all"
+              />
+            </Link>
+          ))}
+        </div>
+      </div>
+    </section>
+  )
+}
+
+/* -------------------------------------------------------------------------- */
+/* Section: Compare                                                            */
+/* -------------------------------------------------------------------------- */
+
+const COMPARE_LINKS = [
+  { label: 'Kerf vs Onshape', href: '/compare/onshape' },
+  { label: 'Kerf vs Fusion 360', href: '/compare/fusion360' },
+  { label: 'Kerf vs FreeCAD', href: '/compare/freecad' },
+  { label: 'Kerf vs KiCad', href: '/compare/kicad' },
+]
+
+function Compare() {
+  return (
+    <section className="relative border-t border-ink-900 bg-ink-950/50">
+      <div className="mx-auto max-w-7xl px-6 py-10 lg:py-12">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6">
+          <div>
+            <p className="font-mono text-xs uppercase tracking-[0.2em] text-kerf-300 mb-1">
+              How we stack up
+            </p>
+            <h2 className="font-display text-2xl sm:text-3xl font-semibold tracking-[-0.02em]">
+              Compare Kerf
+            </h2>
+          </div>
+
+          <div className="flex flex-wrap gap-3">
+            {COMPARE_LINKS.map((c) => (
+              <Link
+                key={c.label}
+                to={c.href}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-ink-800 bg-ink-900/40 px-3 py-2 text-sm text-ink-300 hover:border-ink-700 hover:text-ink-100 transition-colors"
+              >
+                {c.label}
+                <ArrowRight size={12} className="text-ink-500" />
+              </Link>
+            ))}
+            <Link
+              to="/compare"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-kerf-300/30 bg-kerf-300/5 px-3 py-2 text-sm text-kerf-300 hover:bg-kerf-300/10 transition-colors font-medium"
+            >
+              All comparisons
+              <ArrowRight size={12} />
+            </Link>
+          </div>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+/* -------------------------------------------------------------------------- */
 /* Section: Chat loop                                                          */
 /* -------------------------------------------------------------------------- */
 
@@ -992,7 +1133,7 @@ function LocalVsHosted() {
             ctaTo="/signup"
             extra="Metered LLM tokens + storage"
             features={SHARED_FEATURES}
-            extras={['Daily backups', 'GitHub OAuth + branch sync', 'Paystack billing (USD/ZAR)']}
+            extras={['Daily backups', 'GitHub OAuth + branch sync', 'USD billing, ZAR settlement']}
           />
         </div>
       </div>
@@ -1284,7 +1425,9 @@ export default function Landing() {
       <Hero />
       <OutputStrip />
       <PipelineDivider />
+      <PerDomain />
       <CapabilityTour />
+      <Compare />
       <ChatLoop />
       <RecentlyShipped />
       <RoadmapGlimpse />
