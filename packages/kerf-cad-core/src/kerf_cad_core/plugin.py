@@ -61,6 +61,7 @@ _TOOL_MODULES = [
     "kerf_cad_core.gearbox.tools",
     "kerf_cad_core.arch.spaces_tools",
     "kerf_cad_core.civil.hydraulics_tools",
+    "kerf_cad_core.tolstack.tools",
 ]
 
 # ── kerf_core contract (built by kerf-core agent in parallel) ─────────────────
