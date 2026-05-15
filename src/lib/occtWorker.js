@@ -4729,6 +4729,236 @@ function opChainAssembly(oc, _prev, node, _sketches, tracker) {
 }
 
 // ---------------------------------------------------------------------------
+// T-1  opSheetFlange — sheet-metal base plate + single bent flange.
+// ---------------------------------------------------------------------------
+//
+// Node schema (emitted by sheet_metal.py run_sheet_metal_flange):
+//   base_width     (mm)   — plate X dimension
+//   base_depth     (mm)   — plate Y dimension
+//   thickness      (mm)   — sheet thickness
+//   edge_ref       string — which top edge to bend: 'top-front'|'top-back'|
+//                           'top-left'|'top-right'  (or numeric 'edge-N')
+//   flange_length  (mm)   — straight wall length after bend arc
+//   bend_angle_deg (deg)  — rotation angle, (0,180]; 90° = right angle
+//   bend_radius    (mm)   — inside bend radius
+//   k_factor       (0,1)  — neutral-axis fraction (stored for T-2 unfold)
+//
+// Geometry approach:
+//   1. Base plate: box (base_width × base_depth × thickness) at Z=0,
+//      centred on X, along +Y.
+//   2. Bend arc: partial outer cylinder (outer radius = bend_radius + thickness)
+//      centred at the top edge being bent, swept through bend_angle_deg.
+//      For a 'top-front' edge the cylinder axis is parallel to X at
+//      y=0, z=thickness.  The arc sweeps from -Y toward -Z (or rotated for
+//      other edges).
+//   3. Flange wall: box extruded from the far end of the bend arc in the
+//      direction tangent to the arc at bend_angle_deg.
+//   4. Fuse: base + arc + flange_wall into one solid.
+//
+// Edge convention for the base plate (width=W, depth=D, thickness=T):
+//   top-front  — edge at y=0,    z=T  (front XZ face top)
+//   top-back   — edge at y=D,    z=T
+//   top-left   — edge at x=−W/2, z=T
+//   top-right  — edge at x=+W/2, z=T
+//
+// OCCT-binding caveat:
+//   The WASM build used here (opencascade.js 7.7.x) does not expose
+//   BRepOffsetAPI_MakeOffsetShape or BRepAlgoAPI_Defeaturing, so the
+//   arc is constructed as a BRepPrimAPI_MakeCylinder sector (full cylinder
+//   trimmed by rotation) rather than an OCCT sheet-metal-aware offset.
+//   This produces a geometrically correct folded solid; the neural-axis
+//   neutral-bend-allowance (k_factor) is applied only during unfold (T-2).
+//
+// Deferred (T-2/T-3/T-4): unfold solver, flat-pattern DXF, bend table.
+//
+/**
+ * opSheetFlange — base plate + bent flange along one top edge.
+ *
+ * @param {object} oc      — OpenCASCADE.js binding
+ * @param {object} _prev   — ignored (flange always starts a fresh body)
+ * @param {object} node    — feature tree node (see schema above)
+ * @param {object} _sk     — sketches map (unused)
+ * @param {object} tracker — OCCT shape tracker
+ * @returns {object} TopoDS_Shape (solid)
+ */
+function opSheetFlange(oc, _prev, node, _sk, tracker) {
+  const W       = Math.max(0.01, Number(node.base_width)    || 50)
+  const D       = Math.max(0.01, Number(node.base_depth)    || 50)
+  const T       = Math.max(0.01, Number(node.thickness)     || 1)
+  const rInner  = Math.max(0,    Number(node.bend_radius)   || 1)
+  const rOuter  = rInner + T
+  const angDeg  = Math.min(180, Math.max(0.01, Number(node.bend_angle_deg) || 90))
+  const angRad  = angDeg * Math.PI / 180
+  const fLen    = Math.max(0.01, Number(node.flange_length)  || 20)
+  const edgeRef = (node.edge_ref || 'top-front').toLowerCase().trim()
+
+  // --- 1. Base plate ---
+  // box from (-W/2, 0, 0) extending (+W, +D, +T)
+  const plate = _makeBox(oc, -W / 2, 0, 0, W, D, T, tracker)
+
+  // --- 2. Build the bend arc and flange wall for 'top-front' then rotate ---
+  //
+  // For top-front: the fold axis is the X-axis at y=0, z=T.
+  // The outer cylinder sector sweeps from θ=0 (pointing -Y from the axis)
+  // through bend_angle_deg around the fold axis.
+  //
+  // We build in canonical space (top-front) then rotate for other edges.
+
+  // Cylinder axis: along X, base at (-W/2, 0, T), extending +W.
+  // We want an arc strip of angular width = angDeg.
+  // Use BRepPrimAPI_MakeCylinder with angular range.
+  const cylAx = track(tracker, new oc.gp_Ax2_3(
+    track(tracker, new oc.gp_Pnt_3(-W / 2, 0, T)),
+    track(tracker, new oc.gp_Dir_4(1, 0, 0)),   // cylinder axis = +X
+    track(tracker, new oc.gp_Dir_4(0, -1, 0)),  // reference direction = −Y (toward front)
+  ))
+  // Outer arc cylinder sector
+  const outerCylMk = track(tracker, new oc.BRepPrimAPI_MakeCylinder_4(cylAx, rOuter, W, angRad))
+  outerCylMk.Build()
+  if (!outerCylMk.IsDone()) throw new Error('sheet_metal_flange: outer cylinder build failed')
+  const outerSec = outerCylMk.Shape()
+
+  // Inner arc cylinder sector (to hollow out — leave only the shell/strip)
+  let bendArc
+  if (rInner > 1e-6) {
+    const innerCylMk = track(tracker, new oc.BRepPrimAPI_MakeCylinder_4(cylAx, rInner, W, angRad))
+    innerCylMk.Build()
+    if (!innerCylMk.IsDone()) throw new Error('sheet_metal_flange: inner cylinder build failed')
+    const innerSec = innerCylMk.Shape()
+    const pr = () => new oc.Message_ProgressRange_1()
+    const cutMk = track(tracker, new oc.BRepAlgoAPI_Cut_3(outerSec, innerSec, pr()))
+    cutMk.Build(pr())
+    if (!cutMk.IsDone()) throw new Error('sheet_metal_flange: bend arc cut failed')
+    bendArc = cutMk.Shape()
+  } else {
+    bendArc = outerSec
+  }
+
+  // --- 3. Flange wall ---
+  // The far end of the arc is at angle angDeg from the reference direction (−Y).
+  // Direction tangent at the far end of the arc (pointing away from the bend):
+  //   tangent = rotate(−Y, angRad around +X) then rotate 90° (outward)
+  // In 2D (Y-Z plane), the arc starts at (0, −rOuter) [−Y] and sweeps CCW by angRad.
+  // The far-end point on the outer arc (in Y-Z): (−rOuter·sin(angRad), −rOuter·cos(angRad)) + (0, T)
+  // But we want the wall from the INNER face of the arc at its far end.
+  // Far-end inner point in Y-Z (relative to fold axis at (0, T)):
+  //   inner_end_y = -rInner * Math.sin(angRad)   (or 0 if rInner==0)
+  //   inner_end_z = T - rInner * Math.cos(angRad)
+  // The wall extends in the direction perpendicular to the arc radius at the far end:
+  //   wall_dir_y = -Math.cos(angRad)   (tangent in Y)
+  //   wall_dir_z = +Math.sin(angRad)   (tangent in Z... wait, let me be precise)
+  //
+  // At angle θ from −Y (CCW when viewed from +X):
+  //   radial direction at θ: (0, -sin(θ), -cos(θ))   in (X,Y,Z)
+  //   tangent direction at θ: (0, -cos(θ), sin(θ))   (CCW tangent)
+  //
+  // The flange wall starts at the far-end inner surface:
+  //   start: (Y, Z) = (0 - rInner*sin(angRad),  T - rInner*cos(angRad))
+  //          with X running from -W/2 to +W/2
+  // and extends fLen in the tangent direction: dy=-cos(angRad), dz=sin(angRad).
+
+  const sinA = Math.sin(angRad)
+  const cosA = Math.cos(angRad)
+  const wallY0 = -rOuter * sinA                 // outer face of arc far end in Y (rel to y=0, z=T)
+  const wallZ0 = T - rOuter * cosA              // Z of the outer face far end
+  // Wall inner face start (same computation with rInner):
+  // For the box we span from inner to outer (thickness T) in the radial direction,
+  // and in the tangent direction for fLen.
+  // Radial direction at far end: (0, -sinA, -cosA)  [pointing inward toward cylinder axis]
+  // We build the flange wall as a prism of a parallelogram face.
+  //
+  // For simplicity we build a rectangular box in a local frame and then rotate it.
+  // Local flange box: width=W (X), height=T (radial), length=fLen (tangential direction).
+  // We need it at the far end of the arc outer surface, extending in the tangential direction.
+  //
+  // Origin of flange box (outer-arc far end corner, at X=-W/2):
+  //   Y = -rOuter * sinA     (outer radius Y)
+  //   Z = T - rOuter * cosA  (outer radius Z from world origin)
+  //
+  // The flange wall is a box: in local coords (u=tangent, v=radial_inward, w=X):
+  //   u: 0 → fLen   (in tangent direction of arc far end)
+  //   v: 0 → T      (thickness, inward)
+  //   w: 0 → W      (along X, aligned with base plate)
+  //
+  // Tangent at far end in (Y,Z): (-cosA, sinA)
+  // Radial inward at far end in (Y,Z): (sinA, cosA)  [toward the centre of curvature]
+  //
+  // We build the face in the tangential plane and prism along X.
+  // 2D corners of the flange cross-section (in Y-Z, offset from fold axis origin):
+  //   P0: outer arc far end  → (−rOuter·sinA, T − rOuter·cosA)
+  //   P1: P0 + fLen*(tangent_Y, tangent_Z) = P0 + fLen*(−cosA, sinA)
+  //   P2: P1 + T*(radial_inward_Y, radial_inward_Z) = P1 + T*(sinA, cosA)
+  //   P3: P0 + T*(radial_inward_Y, radial_inward_Z)
+  // (Here we use that outer→inner is the inward radial: +sinA in Y, +cosA in Z)
+  const p0y = -rOuter * sinA,      p0z = T - rOuter * cosA
+  const p1y = p0y + fLen * (-cosA),  p1z = p0z + fLen * sinA
+  const p2y = p1y + T * sinA,       p2z = p1z + T * cosA
+  const p3y = p0y + T * sinA,       p3z = p0z + T * cosA
+
+  const wBldr = track(tracker, new oc.BRepBuilderAPI_MakeWire_1())
+  const flangeCorners2D = [[p0y, p0z], [p1y, p1z], [p2y, p2z], [p3y, p3z]]
+  for (let i = 0; i < 4; i++) {
+    const [ay0, az0] = flangeCorners2D[i]
+    const [ay1, az1] = flangeCorners2D[(i + 1) % 4]
+    const pe0 = track(tracker, new oc.gp_Pnt_3(-W / 2, ay0, az0))
+    const pe1 = track(tracker, new oc.gp_Pnt_3(-W / 2, ay1, az1))
+    const eBldr = track(tracker, new oc.BRepBuilderAPI_MakeEdge_3(pe0, pe1))
+    eBldr.Build()
+    if (!eBldr.IsDone()) throw new Error('sheet_metal_flange: flange edge build failed')
+    wBldr.Add_1(eBldr.Shape())
+  }
+  wBldr.Build()
+  if (!wBldr.IsDone()) throw new Error('sheet_metal_flange: flange wire build failed')
+  const fFaceMk = track(tracker, new oc.BRepBuilderAPI_MakeFace_15(wBldr.Shape(), true))
+  fFaceMk.Build()
+  if (!fFaceMk.IsDone()) throw new Error('sheet_metal_flange: flange face build failed')
+  const prismVec = track(tracker, new oc.gp_Vec_4(W, 0, 0))
+  const fPrismMk = track(tracker, new oc.BRepPrimAPI_MakePrism_1(fFaceMk.Shape(), prismVec, false, true))
+  fPrismMk.Build()
+  if (!fPrismMk.IsDone()) throw new Error('sheet_metal_flange: flange prism build failed')
+  const flangeWall = fPrismMk.Shape()
+
+  // --- 4. Fuse: plate + bendArc + flangeWall ---
+  const pr = () => new oc.Message_ProgressRange_1()
+  const fuse1Mk = track(tracker, new oc.BRepAlgoAPI_Fuse_3(plate, bendArc, pr()))
+  fuse1Mk.Build(pr())
+  if (!fuse1Mk.IsDone()) throw new Error('sheet_metal_flange: fuse plate+arc failed')
+  const partial = fuse1Mk.Shape()
+
+  const fuse2Mk = track(tracker, new oc.BRepAlgoAPI_Fuse_3(partial, flangeWall, pr()))
+  fuse2Mk.Build(pr())
+  if (!fuse2Mk.IsDone()) throw new Error('sheet_metal_flange: fuse +flange failed')
+  let body = fuse2Mk.Shape()
+
+  // --- 5. Rotate for edge_ref other than 'top-front' ---
+  //
+  // top-front: no rotation needed (built canonically above)
+  // top-back:  flip 180° around Z axis (or mirror in Y)
+  // top-left:  rotate +90° around Z axis
+  // top-right: rotate -90° around Z axis
+  //
+  // All rotations about world origin (0,0,0) + Z axis.
+  let rotDeg = 0
+  if      (edgeRef === 'top-back')  rotDeg = 180
+  else if (edgeRef === 'top-left')  rotDeg = 90
+  else if (edgeRef === 'top-right') rotDeg = -90
+
+  if (rotDeg !== 0) {
+    const ax = track(tracker, new oc.gp_Ax1_2(
+      track(tracker, new oc.gp_Pnt_3(0, 0, 0)),
+      track(tracker, new oc.gp_Dir_4(0, 0, 1)),
+    ))
+    const trsf = track(tracker, new oc.gp_Trsf_1())
+    trsf.SetRotation_1(ax, rotDeg * Math.PI / 180)
+    const xfMk = track(tracker, new oc.BRepBuilderAPI_Transform_2(body, trsf, true))
+    xfMk.Build()
+    body = xfMk.Shape()
+  }
+
+  return body
+}
+
+// ---------------------------------------------------------------------------
 // Tree evaluation.
 //
 // The evaluator walks the feature tree top-to-bottom, threading the
@@ -5228,6 +5458,17 @@ function evaluateTree(oc, tree, sketches) {
           currentFaceNamer = null
           break
         }
+        // T-1  Sheet metal — folded flange primitive.
+        case 'sheet_metal_flange': {
+          if (current) {
+            pushCurrentMesh(`body-${meshes.length}`)
+            cleanupShape(oc, current)
+            current = null
+          }
+          next = opSheetFlange(oc, null, node, sketches, tracker)
+          currentFaceNamer = null
+          break
+        }
         default:
           throw new Error(`unknown feature op '${node.op}'`)
       }
@@ -5607,6 +5848,13 @@ async function evaluateToFinalShape(oc, tree, sketches) {
           if (current) cleanupShape(oc, current)
           current = null
           next = opChainAssembly(oc, null, node, sketches, tracker)
+          currentFaceNamer = null
+          break
+        // T-1  Sheet metal — folded flange primitive.
+        case 'sheet_metal_flange':
+          if (current) cleanupShape(oc, current)
+          current = null
+          next = opSheetFlange(oc, null, node, sketches, tracker)
           currentFaceNamer = null
           break
         default: throw new Error(`unknown feature op '${node.op}'`)
