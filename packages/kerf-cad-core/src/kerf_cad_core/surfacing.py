@@ -1081,3 +1081,178 @@ async def surface_continuity(ctx: ProjectCtx, args: bytes) -> str:
         "continuity": current_cont,
         "valid_values": ["G0", "G1", "G2"] if op == "blend_srf" else ["C0", "C1", "C2"],
     })
+
+
+# ── feature_surface_curvature_combs ──────────────────────────────────────────
+#
+# NURBS Phase 4 Capability 4 (C4).
+#
+# Appends a `surface_curvature_combs` node to a `.feature` file.  The worker's
+# `opSurfaceCurvatureCombs` samples principal curvatures on the target feature's
+# NURBS faces via `GeomLProp_SLProps` and posts a side message consumed by
+# `CurvatureCombOverlay.jsx` — a Three.js overlay that renders orthogonal
+# line segments scaled by curvature magnitude (blue=concave, red=convex, white=flat).
+#
+# This is a **visualisation-only** feature.  Algorithmic G3 continuity enforcement
+# is structurally impossible in stock OCCT: `GeomAbs_G3` does not exist in the
+# `GeomAbs_Shape` enum.  The viz-only path lets practitioners EYEBALL G3
+# continuity at face junctions — the standard workflow in automotive Class-A
+# and jewelry surfacing.
+#
+# Plan ref: docs/plans/nurbs-phase-4-full.md § Capability 4.
+
+feature_surface_curvature_combs_spec = ToolSpec(
+    name="feature_surface_curvature_combs",
+    description=(
+        "Append a `surface_curvature_combs` node to a `.feature` file. "
+        "Samples principal curvatures (k1/k2, mean, Gaussian) on the target "
+        "NURBS feature's faces via GeomLProp_SLProps and displays an "
+        "interactive curvature-comb overlay in the viewport "
+        "(Three.js LineSegments: blue=concave, red=convex, white=flat; "
+        "comb length = curvature × scale_factor). "
+        "Use this to verify G2/G3 continuity at face junctions visually — "
+        "e.g. after a blend_srf between a shank sweep and a bezel, inspect "
+        "the curvature combs to confirm the tangency match looks smooth. "
+        "NOTE: This is visualisation-only. Algorithmic G3 enforcement is "
+        "structurally impossible in stock OCCT (GeomAbs_G3 absent from "
+        "GeomAbs_Shape enum). See feature_surface_curvature_combs.md for the "
+        "full design rationale and what a true G3 solution would require."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "file_id": {
+                "type": "string",
+                "description": "Target .feature file id (uuid).",
+            },
+            "target_feature_ref": {
+                "type": "string",
+                "description": (
+                    "Node id of the feature whose face(s) to sample "
+                    "(e.g. 'blend_srf-1', 'sweep1-2'). Must exist in the "
+                    "evaluated tree before this node."
+                ),
+            },
+            "target_face_name": {
+                "type": "string",
+                "description": (
+                    "Optional. If set, sample only the named face "
+                    "(positional id like 'face-0'); otherwise all faces on "
+                    "the target body are sampled."
+                ),
+            },
+            "uv_density": {
+                "type": "number",
+                "description": (
+                    "UV grid step as a fraction of the parameter range "
+                    "(default 0.1 → ~10×10 sample grid per face). "
+                    "Smaller values produce finer combs but increase "
+                    "worker compute time. Range: 0.01–0.5."
+                ),
+            },
+            "scale_factor": {
+                "type": "number",
+                "description": (
+                    "Comb line length multiplier: line_length = max(|k1|, |k2|) × scale_factor "
+                    "(default 10). Increase for nearly-flat surfaces; decrease for "
+                    "high-curvature surfaces where combs would overshoot."
+                ),
+            },
+            "show_combs": {
+                "type": "boolean",
+                "description": (
+                    "Initial overlay visibility toggle (default true). "
+                    "The overlay panel also exposes this as an on/off toggle "
+                    "so the user can hide combs without removing the node."
+                ),
+            },
+            "options": {
+                "type": "object",
+                "properties": {
+                    "id": {"type": "string"},
+                },
+            },
+        },
+        "required": ["file_id", "target_feature_ref"],
+    },
+)
+
+
+@register(feature_surface_curvature_combs_spec, write=True)
+async def run_feature_surface_curvature_combs(ctx: ProjectCtx, args: bytes) -> str:
+    try:
+        a = json.loads(args)
+    except Exception as e:
+        return err_payload(f"invalid args JSON: {e}", "BAD_ARGS")
+
+    file_id_str = a.get("file_id", "").strip()
+    target_ref  = a.get("target_feature_ref", "").strip()
+
+    if not file_id_str:
+        return err_payload("file_id is required", "BAD_ARGS")
+    if not target_ref:
+        return err_payload("target_feature_ref is required", "BAD_ARGS")
+
+    try:
+        fid = uuid.UUID(file_id_str)
+    except Exception:
+        return err_payload("file_id must be a uuid", "BAD_ARGS")
+
+    uv_density = a.get("uv_density", None)
+    if uv_density is not None:
+        try:
+            uv_density = float(uv_density)
+        except Exception:
+            return err_payload("uv_density must be a number", "BAD_ARGS")
+        if uv_density <= 0 or uv_density > 0.5:
+            return err_payload("uv_density must be in range (0, 0.5]", "BAD_ARGS")
+
+    scale_factor = a.get("scale_factor", None)
+    if scale_factor is not None:
+        try:
+            scale_factor = float(scale_factor)
+        except Exception:
+            return err_payload("scale_factor must be a number", "BAD_ARGS")
+        if scale_factor <= 0:
+            return err_payload("scale_factor must be positive", "BAD_ARGS")
+
+    opts = a.get("options", {}) or {}
+    node_id = opts.get("id", "").strip() if isinstance(opts, dict) else ""
+
+    content, err = read_feature_content(ctx, fid)
+    if err:
+        return err_payload(f"file not found: {err}", "NOT_FOUND")
+
+    if not node_id:
+        node_id = next_node_id(content, "surface_curvature_combs")
+
+    node: dict = {
+        "id": node_id,
+        "op": "surface_curvature_combs",
+        "target_feature_ref": target_ref,
+    }
+
+    target_face_name = a.get("target_face_name", "").strip()
+    if target_face_name:
+        node["target_face_name"] = target_face_name
+
+    if uv_density is not None:
+        node["uv_density"] = uv_density
+
+    if scale_factor is not None:
+        node["scale_factor"] = scale_factor
+
+    show_combs = a.get("show_combs", None)
+    if show_combs is not None:
+        node["show_combs"] = bool(show_combs)
+
+    _name, nid, err3 = append_feature_node(ctx, fid, node)
+    if err3:
+        return err_payload(f"failed to append node: {err3}", "ERROR")
+
+    return ok_payload({
+        "file_id": file_id_str,
+        "node_id": nid or node_id,
+        "op": "surface_curvature_combs",
+        "target_feature_ref": target_ref,
+    })
