@@ -42,6 +42,9 @@ from kerf_bim.import_ifc.slabs import translate_slab
 from kerf_bim.import_ifc.spaces import translate_space
 from kerf_bim.import_ifc.openings import translate_opening
 from kerf_bim.import_ifc.mep import translate_mep_element, MEP_QUERY_TYPES
+from kerf_bim.import_ifc.families import translate_type_object, TYPE_OBJECT_QUERY_TYPES
+from kerf_bim.import_ifc.schedules import extract_quantity_schedules
+from kerf_bim.import_ifc.views import extract_views
 
 logger = logging.getLogger(__name__)
 
@@ -102,6 +105,11 @@ def parse_ifc_file(path: Path) -> IFCImportResult:
         "openings": [],
         "mep": [],
     }
+    # These are produced as separate JSON documents alongside the .bim file.
+    # They are stored on IFCImportResult.families / .schedules / .views.
+    families: list[dict[str, Any]] = []
+    schedules: list[dict[str, Any]] = []
+    views: list[dict[str, Any]] = []
 
     # ── Project name from IfcProject ────────────────────────────────────────
     try:
@@ -240,6 +248,36 @@ def parse_ifc_file(path: Path) -> IFCImportResult:
         except Exception as exc:
             warnings.append(f"mep element {gid!r}: translation error ({exc}); skipped")
 
+    # ── Families: IFC type objects ───────────────────────────────────────────
+    type_entities: dict[str, Any] = {}
+    for type_query in TYPE_OBJECT_QUERY_TYPES:
+        try:
+            for elem in ifc_file.by_type(type_query):
+                gid = getattr(elem, "GlobalId", id(elem))
+                type_entities[gid] = elem
+        except Exception as exc:
+            warnings.append(f"{type_query} query failed: {exc}")
+
+    for gid, ifc_type_obj in type_entities.items():
+        try:
+            family_payload = translate_type_object(ifc_type_obj, warnings)
+            if family_payload:
+                families.append(family_payload)
+        except Exception as exc:
+            warnings.append(f"type object {gid!r}: translation error ({exc}); skipped")
+
+    # ── Schedules: IFC quantity sets ─────────────────────────────────────────
+    try:
+        schedules = extract_quantity_schedules(ifc_file, warnings)
+    except Exception as exc:
+        warnings.append(f"quantity schedule extraction failed: {exc}")
+
+    # ── Views: IFC representation contexts ───────────────────────────────────
+    try:
+        views = extract_views(ifc_file, warnings)
+    except Exception as exc:
+        warnings.append(f"view context extraction failed: {exc}")
+
     # ── Tier-2 structural skip summary ───────────────────────────────────────
     tier2_counts: dict[str, int] = {}
     for t2_type in _TIER2_SKIPPED_TYPES:
@@ -258,13 +296,23 @@ def parse_ifc_file(path: Path) -> IFCImportResult:
         )
 
     stats = {
-        "sites":    len(sites),
-        "levels":   len(bim["levels"]),
-        "walls":    len(bim["walls"]),
-        "slabs":    len(bim["slabs"]),
-        "spaces":   len(bim["spaces"]),
-        "openings": len(bim["openings"]),
-        "mep":      len(bim["mep"]),
+        "sites":     len(sites),
+        "levels":    len(bim["levels"]),
+        "walls":     len(bim["walls"]),
+        "slabs":     len(bim["slabs"]),
+        "spaces":    len(bim["spaces"]),
+        "openings":  len(bim["openings"]),
+        "mep":       len(bim["mep"]),
+        "families":  len(families),
+        "schedules": len(schedules),
+        "views":     len(views),
     }
 
-    return IFCImportResult(bim_payload=bim, stats=stats, warnings=warnings)
+    return IFCImportResult(
+        bim_payload=bim,
+        stats=stats,
+        warnings=warnings,
+        families=families,
+        schedules=schedules,
+        views=views,
+    )
