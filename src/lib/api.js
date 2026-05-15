@@ -563,6 +563,16 @@ export const api = {
       method: 'POST',
       body: { source },
     }),
+
+  // ---- 3D-print slicing (kerf-slicing plugin, CuraEngine subprocess) ----
+  // Slices the STL mesh referenced by the .print config file via the
+  // pyworker POST /run-print-slice route. Returns G-code metadata + preview.
+  // Response shape: { gcode, layer_count, print_time_s, filament_mm,
+  //                   gcode_bytes, warnings, error }
+  runPrintSlice: (projectId, fileId) =>
+    request(`/api/projects/${projectId}/files/${fileId}/print-slice`, {
+      method: 'POST',
+    }),
 }
 
 // ---------------------------------------------------------------------------

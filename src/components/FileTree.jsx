@@ -3,7 +3,7 @@ import {
   ChevronDown, ChevronRight,
   FileCode, Folder, FolderOpen, Layers,
   FilePlus, FolderPlus, Plus, Trash2, Box, Upload, Ruler, PenTool, X, RefreshCw,
-  Package, Cylinder, CircuitBoard, Loader2, AlertCircle, Variable, FileBox, Cable, Scissors, Wrench, SquareCode, Grid3x3,
+  Package, Cylinder, CircuitBoard, Loader2, AlertCircle, Variable, FileBox, Cable, Scissors, Wrench, SquareCode, Grid3x3, Printer,
 } from 'lucide-react'
 import { useWorkspace } from '../store/workspace.js'
 import { FreeCADImportDialog, isFCStdFile } from './FreeCADImport.jsx'
@@ -45,6 +45,7 @@ function KindIcon({ kind, name, open }) {
   if (kind === 'tool') return <Wrench size={14} className={`${cls} text-kerf-300`} />
   if (kind === 'plc_st')   return <SquareCode size={14} className={`${cls} text-lime-300`} />
   if (kind === 'quadmesh') return <Grid3x3 size={14} className={`${cls} text-indigo-300`} />
+  if (kind === 'print') return <Printer size={14} className={`${cls} text-orange-300`} />
   if (kind === 'step-ref') return (
     <span className="relative flex-shrink-0 inline-flex items-center">
       <Box size={14} className="text-cyan-edge" />
@@ -73,6 +74,7 @@ function KindIcon({ kind, name, open }) {
   if (lower.endsWith('.equations')) {
     return <Variable size={14} className={`${cls} text-kerf-300`} />
   }
+<<<<<<< HEAD
   if (lower.endsWith('.wiring')) {
     return <Cable size={14} className={`${cls} text-orange-300`} />
   }
@@ -90,6 +92,9 @@ function KindIcon({ kind, name, open }) {
   }
   if (lower.endsWith('.plc.st')) {
     return <SquareCode size={14} className={`${cls} text-lime-300`} />
+  }
+  if (lower.endsWith('.print')) {
+    return <Printer size={14} className={`${cls} text-orange-300`} />
   }
   return <FileCode size={14} className={`${cls} text-ink-200`} />
 }
