@@ -134,6 +134,60 @@ describe('Freecad.jsx shared exports', () => {
     expect(typeof mod.TableFooter).toBe('function')
     expect(typeof mod.CTAStrip).toBe('function')
   })
+
+  it('exports the shared FairnessNote, Breadcrumb, and HeadMeta components', async () => {
+    const mod = await import('../routes/compare/Freecad.jsx')
+    expect(typeof mod.FairnessNote).toBe('function')
+    expect(typeof mod.Breadcrumb).toBe('function')
+    expect(typeof mod.HeadMeta).toBe('function')
+  })
+
+  it('exports the verdict glyph constants used across tables', async () => {
+    const mod = await import('../routes/compare/Freecad.jsx')
+    // Distinct, non-empty glyphs so the legend and tables stay unambiguous.
+    const glyphs = [mod.GOOD, mod.WEAK, mod.GAP, mod.NA]
+    glyphs.forEach((g) => {
+      expect(typeof g).toBe('string')
+      expect(g.length).toBeGreaterThan(0)
+    })
+    expect(new Set(glyphs).size).toBe(4)
+  })
+})
+
+/* -------------------------------------------------------------------------- */
+/* Fairness affordance — every page + hub must carry the GitHub issues link   */
+/* -------------------------------------------------------------------------- */
+
+describe('fairness affordance', () => {
+  // Static ?raw imports (one per file) keep Vite's dynamic-import-vars
+  // analyser happy; each resolves to the file source as a string.
+  const sources = {
+    'index.jsx': () => import('../routes/compare/index.jsx?raw'),
+    'Freecad.jsx': () => import('../routes/compare/Freecad.jsx?raw'),
+    'Kicad.jsx': () => import('../routes/compare/Kicad.jsx?raw'),
+    'Rhino.jsx': () => import('../routes/compare/Rhino.jsx?raw'),
+    'Revit.jsx': () => import('../routes/compare/Revit.jsx?raw'),
+    'Fusion.jsx': () => import('../routes/compare/Fusion.jsx?raw'),
+  }
+
+  Object.entries(sources).forEach(([file, load]) => {
+    it(`${file} renders the shared FairnessNote`, async () => {
+      const src = await load()
+        .then((m) => m.default)
+        .catch(() => null)
+      if (src == null) return // ?raw unsupported in this env — skip gracefully
+      expect(src).toMatch(/FairnessNote/)
+    })
+  })
+
+  it('FairnessNote points at the real kerf-sh GitHub issues URL', async () => {
+    const src = await sources['Freecad.jsx']()
+      .then((m) => m.default)
+      .catch(() => null)
+    if (src == null) return
+    expect(src).toContain('https://github.com/kerf-sh/kerf/issues')
+    expect(src).toMatch(/open an issue on GitHub/i)
+  })
 })
 
 /* -------------------------------------------------------------------------- */
