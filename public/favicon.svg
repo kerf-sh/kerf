@@ -1,16 +1,10 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" shape-rendering="geometricPrecision">
   <title>kerf</title>
-  <!-- Dark surface, rounded so it sits well as a tab favicon -->
   <rect width="32" height="32" rx="6" fill="#0a0b0d"/>
-
-  <!--
-    Kerf mark: a solid yellow block sliced by a saw kerf running from
-    upper-right to lower-left. The lower-right half is shifted (+1.5, +1.5)
-    so you can see the cut actually parted the material.
-    The thin dark diagonal between the two halves IS the kerf.
-  -->
-  <!-- Upper-left half of the cut block: square corner at (5,5)-(25,5)-(5,25) -->
-  <path d="M5 5 H24 L5 24 Z" fill="#ffd633"/>
-  <!-- Lower-right half, offset perpendicular to the cut so the kerf is visible -->
-  <path d="M27 8 V27 H8 Z" fill="#ffd633"/>
+  <!-- K stem -->
+  <rect x="7" y="6" width="3.5" height="20" fill="#ffd633"/>
+  <!-- Upper arm triangle -->
+  <polygon points="10.5,16 26,6 26,13" fill="#ffd633"/>
+  <!-- Lower arm triangle -->
+  <polygon points="10.5,16 26,19 26,26" fill="#ffd633"/>
 </svg>
