@@ -2,12 +2,13 @@
 
 ## Overview
 
-Two LLM tools handle the jewelry gemstone workflow:
+Three LLM tools handle the jewelry gemstone workflow:
 
 | Tool | Write | Purpose |
 |------|-------|---------|
 | `jewelry_create_gemstone` | yes | Append a `gemstone` parametric solid node to a `.feature` file |
 | `jewelry_cut_gem_seat`    | yes | Append a `gem_seat` cutter node; optionally chain a `boolean` cut |
+| `jewelry_gem_report`      | no  | Read-only gemologist-style proportion report + grade |
 
 ---
 
@@ -441,8 +442,11 @@ constraint.
   are stored in the feature tree but will show a "worker op not implemented"
   error in the evaluator.  Pure-Python geometry math (proportions, seat
   clearances) is fully functional.
-- FeatureView dropdown does not yet list the 6 new fancy cuts (radiant, asscher,
-  trillion, heart, baguette, briolette).  The Python spec + generic worker op
-  are complete; a consolidated frontend pass will add them to the UI enum.
+- FeatureView dropdown does not yet list the 6 fancy cuts (radiant, asscher,
+  trillion, heart, baguette, briolette) nor the 13 new historical/specialty
+  cuts (old_european, old_mine, rose_cut, single_cut, french_cut, half_moon,
+  trapezoid, kite, bullet, tapered_baguette, lozenge, shield, calf_head).
+  The Python spec + facet-family routing are complete; a consolidated frontend
+  pass will add them to the UI dropdown enum.
 - Setting styles (prong, bezel, channel, pavé) are not yet modelled — only
   the seat void is generated.

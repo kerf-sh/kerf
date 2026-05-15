@@ -35,6 +35,8 @@ from kerf_cad_core.jewelry.gemstones import (
     gemstone_proportions,
     jewelry_create_gemstone_spec,
     run_jewelry_create_gemstone,
+    jewelry_gem_report_spec,
+    run_jewelry_gem_report,
 )
 
 
@@ -78,6 +80,18 @@ def run_tool(ctx, file_id, **kwargs):
     try:
         raw = loop.run_until_complete(
             run_jewelry_create_gemstone(ctx, json.dumps(args).encode())
+        )
+    finally:
+        loop.close()
+    return json.loads(raw)
+
+
+def run_report(ctx, **kwargs):
+    """Call run_jewelry_gem_report and return the parsed JSON result."""
+    loop = asyncio.new_event_loop()
+    try:
+        raw = loop.run_until_complete(
+            run_jewelry_gem_report(ctx, json.dumps(kwargs).encode())
         )
     finally:
         loop.close()
@@ -649,3 +663,387 @@ class TestColourStoneCaratCorrection:
         assert result.get("error") is None, result
         # 6.5 mm ruby should give MORE than 1 carat (ruby is denser)
         assert result["carat_approx"] > 1.0
+
+
+# ---------------------------------------------------------------------------
+# New historical / specialty cuts (third slice)
+# ---------------------------------------------------------------------------
+
+NEW_CUTS = [
+    "old_european", "old_mine", "rose_cut", "single_cut", "french_cut",
+    "half_moon", "trapezoid", "kite", "bullet", "tapered_baguette",
+    "lozenge", "shield", "calf_head",
+]
+
+# Maps each new cut to the existing facet family it delegates to
+NEW_CUT_FAMILIES = {
+    "old_european":    "round_brilliant",
+    "old_mine":        "cushion",
+    "rose_cut":        "round_brilliant",
+    "single_cut":      "round_brilliant",
+    "french_cut":      "princess",
+    "half_moon":       "oval",
+    "trapezoid":       "baguette",
+    "kite":            "trillion",
+    "bullet":          "pear",
+    "tapered_baguette":"baguette",
+    "lozenge":         "marquise",
+    "shield":          "trillion",
+    "calf_head":       "pear",
+}
+
+
+class TestNewCutsRegistry:
+    """All 13 new cuts appear in GEMSTONE_CUTS, _CARAT_REF, and _CUT_DEFAULTS."""
+
+    def test_all_new_cuts_in_gemstone_cuts(self):
+        for cut in NEW_CUTS:
+            assert cut in GEMSTONE_CUTS, f"{cut!r} missing from GEMSTONE_CUTS"
+
+    def test_total_count_at_least_26(self):
+        assert len(GEMSTONE_CUTS) >= 26
+
+    def test_new_cuts_in_carat_ref(self):
+        from kerf_cad_core.jewelry.gemstones import _CARAT_REF
+        for cut in NEW_CUTS:
+            assert cut in _CARAT_REF, f"{cut!r} missing from _CARAT_REF"
+
+    def test_new_cuts_in_cut_defaults(self):
+        from kerf_cad_core.jewelry.gemstones import _CUT_DEFAULTS
+        for cut in NEW_CUTS:
+            assert cut in _CUT_DEFAULTS, f"{cut!r} missing from _CUT_DEFAULTS"
+
+
+class TestNewCutsProportions:
+    """Each new cut produces valid, industry-sane proportions."""
+
+    @pytest.mark.parametrize("cut", NEW_CUTS)
+    def test_valid_proportions(self, cut):
+        props = gemstone_proportions(cut, diameter_mm=5.0)
+        assert props.diameter_mm == pytest.approx(5.0)
+        assert 0 <= props.table_pct < 100
+        assert 0 < props.crown_angle_deg < 90
+        assert 0 < props.pavilion_angle_deg < 90
+        assert props.girdle_pct > 0
+        assert props.total_depth_pct > 0
+        assert 0 < props.aspect_ratio <= 1.0
+
+    @pytest.mark.parametrize("cut", NEW_CUTS)
+    def test_total_depth_is_sum(self, cut):
+        props = gemstone_proportions(cut, diameter_mm=5.0)
+        expected = props.crown_height_pct + props.girdle_pct + props.pavilion_depth_pct
+        assert props.total_depth_pct == pytest.approx(expected, rel=1e-6)
+
+    @pytest.mark.parametrize("cut", NEW_CUTS)
+    def test_carat_round_trip(self, cut):
+        for dim in [3.0, 5.0, 8.0]:
+            ct = carat_from_mm(cut, dim)
+            back = mm_from_carat(cut, ct)
+            assert back == pytest.approx(dim, rel=1e-9), (
+                f"{cut}: round-trip failed for dim={dim}"
+            )
+
+    @pytest.mark.parametrize("cut", NEW_CUTS)
+    def test_facet_family_in_extras(self, cut):
+        """Each new cut stores its facet_family in extras."""
+        props = gemstone_proportions(cut, diameter_mm=5.0)
+        assert "facet_family" in props.extras, (
+            f"{cut!r}: missing facet_family in extras"
+        )
+        expected_family = NEW_CUT_FAMILIES[cut]
+        assert props.extras["facet_family"] == expected_family, (
+            f"{cut!r}: facet_family={props.extras['facet_family']!r}, "
+            f"expected {expected_family!r}"
+        )
+
+    @pytest.mark.parametrize("cut", NEW_CUTS)
+    def test_tool_succeeds(self, cut):
+        ctx, store, fid = make_ctx()
+        result = run_tool(ctx, fid, cut=cut, diameter_mm=5.0)
+        assert result.get("error") is None, f"{cut}: {result}"
+        assert result["op"] == "gemstone"
+        assert result["cut"] == cut
+        assert result["carat_approx"] > 0
+
+    def test_old_european_high_crown(self):
+        """Old European cut has a high crown angle (>38°) and large culet."""
+        props = gemstone_proportions("old_european", diameter_mm=6.5)
+        assert props.crown_angle_deg >= 38.0, (
+            f"Old European crown angle should be ≥38°, got {props.crown_angle_deg}"
+        )
+        assert props.extras.get("culet") == "large"
+        assert props.table_pct < 55.0  # small table
+
+    def test_old_mine_high_crown_cushion(self):
+        """Old Mine cut is a cushion with high crown and large culet."""
+        props = gemstone_proportions("old_mine", diameter_mm=5.5)
+        assert props.crown_angle_deg >= 36.0
+        assert props.extras.get("culet") == "large"
+        assert props.extras.get("facet_family") == "cushion"
+        assert props.aspect_ratio == pytest.approx(1.0)  # square cushion
+
+    def test_rose_cut_flat_base(self):
+        """Rose cut has no table, flat base, dome crown."""
+        props = gemstone_proportions("rose_cut", diameter_mm=7.0)
+        assert props.table_pct == pytest.approx(0.0)
+        assert props.extras.get("flat_base") is True
+        assert "facet_rows" in props.extras
+
+    def test_single_cut_17_facets(self):
+        """Single cut has exactly 17 facets."""
+        props = gemstone_proportions("single_cut", diameter_mm=3.0)
+        assert props.extras.get("facet_count") == 17
+
+    def test_french_cut_step_row_1(self):
+        """French cut is a square step with 1 step row and no corner cut."""
+        props = gemstone_proportions("french_cut", diameter_mm=4.0)
+        assert props.extras.get("step_rows") == 1
+        assert props.extras.get("corner_cut_ratio") == pytest.approx(0.0)
+        assert props.aspect_ratio == pytest.approx(1.0)
+
+    def test_half_moon_straight_edge(self):
+        """Half moon has a straight edge flag and oval family."""
+        props = gemstone_proportions("half_moon", diameter_mm=6.0)
+        assert props.extras.get("straight_edge") is True
+        assert props.extras.get("facet_family") == "oval"
+
+    def test_trapezoid_has_taper(self):
+        """Trapezoid has a taper_ratio and baguette family."""
+        props = gemstone_proportions("trapezoid", diameter_mm=5.0)
+        assert "taper_ratio" in props.extras
+        assert props.extras.get("facet_family") == "baguette"
+        assert props.extras.get("step_rows") == 2
+
+    def test_kite_has_4_sides(self):
+        """Kite is a 4-sided trillion-family stone."""
+        props = gemstone_proportions("kite", diameter_mm=6.0)
+        assert props.extras.get("sides") == 4
+        assert props.extras.get("facet_family") == "trillion"
+
+    def test_bullet_flat_top(self):
+        """Bullet has a flat_top flag and pear family."""
+        props = gemstone_proportions("bullet", diameter_mm=5.0)
+        assert props.extras.get("flat_top") is True
+        assert props.extras.get("facet_family") == "pear"
+
+    def test_tapered_baguette_has_taper(self):
+        """Tapered baguette has a taper_ratio < 1."""
+        props = gemstone_proportions("tapered_baguette", diameter_mm=5.0)
+        assert "taper_ratio" in props.extras
+        tr = props.extras["taper_ratio"]
+        assert 0 < tr < 1.0
+        assert props.extras.get("facet_family") == "baguette"
+
+    def test_lozenge_step_rows(self):
+        """Lozenge is a marquise-family step cut."""
+        props = gemstone_proportions("lozenge", diameter_mm=6.5)
+        assert "step_rows" in props.extras
+        assert props.extras.get("facet_family") == "marquise"
+
+    def test_shield_5_sides(self):
+        """Shield has 5 sides and trillion family."""
+        props = gemstone_proportions("shield", diameter_mm=7.0)
+        assert props.extras.get("sides") == 5
+        assert props.extras.get("facet_family") == "trillion"
+
+    def test_calf_head_wider_than_pear(self):
+        """Calf head (bouche) is wider than standard pear."""
+        pear_ar = gemstone_proportions("pear", diameter_mm=8.0).aspect_ratio
+        calf_ar = gemstone_proportions("calf_head", diameter_mm=8.0).aspect_ratio
+        assert calf_ar > pear_ar, (
+            f"calf_head aspect_ratio ({calf_ar}) should be > pear ({pear_ar})"
+        )
+        assert calf_ar >= 0.70
+
+
+# ---------------------------------------------------------------------------
+# jewelry_gem_report spec
+# ---------------------------------------------------------------------------
+
+class TestGemReportSpec:
+    def test_name(self):
+        assert jewelry_gem_report_spec.name == "jewelry_gem_report"
+
+    def test_required_only_cut(self):
+        req = jewelry_gem_report_spec.input_schema.get("required", [])
+        assert "cut" in req
+        # carat and diameter_mm are NOT required (one-of validation at runtime)
+        assert "carat" not in req
+        assert "diameter_mm" not in req
+        assert "file_id" not in req  # read-only; no file_id needed
+
+    def test_cut_enum_matches_registry(self):
+        props = jewelry_gem_report_spec.input_schema["properties"]
+        enum = set(props["cut"].get("enum", []))
+        assert enum == GEMSTONE_CUTS
+
+
+# ---------------------------------------------------------------------------
+# jewelry_gem_report runner — success paths
+# ---------------------------------------------------------------------------
+
+class TestGemReportRunner:
+    """Run the gem report tool and verify output fields + values."""
+
+    def _ctx(self):
+        ctx, _, _ = make_ctx()
+        return ctx
+
+    def test_round_brilliant_1ct_spread_approx_6pt5mm(self):
+        """Standard reference: 1 ct round brilliant spread ≈ 6.5 mm."""
+        ctx = self._ctx()
+        result = run_report(ctx, cut="round_brilliant", carat=1.0)
+        assert result.get("error") is None, result
+        assert result["spread_mm"] == pytest.approx(6.5, rel=0.01)
+        assert result["carat_est"] == pytest.approx(1.0, rel=0.01)
+
+    def test_all_expected_fields_present(self):
+        ctx = self._ctx()
+        result = run_report(ctx, cut="round_brilliant", carat=1.0)
+        for field in (
+            "cut", "facet_family", "material",
+            "spread_mm", "width_mm", "depth_mm", "carat_est",
+            "table_pct", "total_depth_pct", "crown_height_pct",
+            "pavilion_depth_pct", "girdle_pct",
+            "crown_angle_deg", "pavilion_angle_deg",
+            "aspect_ratio", "lw_ratio",
+            "proportion_grade",
+        ):
+            assert field in result, f"Missing field: {field!r}"
+
+    def test_proportion_grade_is_valid_string(self):
+        ctx = self._ctx()
+        for cut in ["round_brilliant", "princess", "emerald", "old_european", "rose_cut"]:
+            result = run_report(ctx, cut=cut, diameter_mm=5.0)
+            assert result.get("proportion_grade") in (
+                "Excellent", "Very Good", "Good", "Fair"
+            ), f"{cut}: unexpected grade {result.get('proportion_grade')!r}"
+
+    def test_round_brilliant_ideal_grade(self):
+        """Default round brilliant proportions (Tolkowsky ideal) grade Excellent."""
+        ctx = self._ctx()
+        result = run_report(ctx, cut="round_brilliant", diameter_mm=6.5)
+        # Default Tolkowsky proportions are within GIA ideal windows
+        assert result["proportion_grade"] in ("Excellent", "Very Good")
+
+    def test_depth_mm_gt_0(self):
+        ctx = self._ctx()
+        for cut in ["round_brilliant", "princess", "emerald", "briolette"]:
+            result = run_report(ctx, cut=cut, diameter_mm=5.0)
+            assert result["depth_mm"] > 0, f"{cut}: depth_mm should be > 0"
+
+    def test_lw_ratio_round_brilliant_is_1(self):
+        """Round brilliant has L:W ratio = 1.0 (circular)."""
+        ctx = self._ctx()
+        result = run_report(ctx, cut="round_brilliant", diameter_mm=6.5)
+        assert result["lw_ratio"] == pytest.approx(1.0, rel=1e-6)
+
+    def test_lw_ratio_marquise_gt_1(self):
+        """Marquise (2:1 L:W) has lw_ratio > 1."""
+        ctx = self._ctx()
+        result = run_report(ctx, cut="marquise", diameter_mm=10.0)
+        assert result["lw_ratio"] > 1.5, (
+            f"Marquise lw_ratio should be > 1.5, got {result['lw_ratio']}"
+        )
+
+    def test_facet_family_new_cut(self):
+        """New cuts report their facet_family correctly."""
+        ctx = self._ctx()
+        for cut, expected_family in NEW_CUT_FAMILIES.items():
+            result = run_report(ctx, cut=cut, diameter_mm=5.0)
+            assert result.get("error") is None, f"{cut}: {result}"
+            assert result["facet_family"] == expected_family, (
+                f"{cut}: expected facet_family={expected_family!r}, "
+                f"got {result['facet_family']!r}"
+            )
+
+    def test_material_defaults_to_diamond(self):
+        ctx = self._ctx()
+        result = run_report(ctx, cut="round_brilliant", diameter_mm=6.5)
+        assert result["material"] == "diamond"
+
+    def test_material_ruby_smaller_spread(self):
+        """1 ct ruby has smaller spread than 1 ct diamond (ruby is denser)."""
+        ctx = self._ctx()
+        r_diamond = run_report(ctx, cut="round_brilliant", carat=1.0)
+        r_ruby    = run_report(ctx, cut="round_brilliant", carat=1.0, material="ruby")
+        assert r_ruby["spread_mm"] < r_diamond["spread_mm"]
+
+    def test_rose_cut_no_lw_ratio_issue(self):
+        """Rose cut has flat base; depth_mm is still positive (from crown only)."""
+        ctx = self._ctx()
+        result = run_report(ctx, cut="rose_cut", diameter_mm=7.0)
+        assert result.get("error") is None, result
+        assert result["depth_mm"] > 0
+        assert result["table_pct"] == pytest.approx(0.0)
+
+    @pytest.mark.parametrize("cut", list(GEMSTONE_CUTS))
+    def test_all_cuts_report_succeeds(self, cut):
+        ctx = self._ctx()
+        result = run_report(ctx, cut=cut, diameter_mm=5.0)
+        assert result.get("error") is None, f"{cut}: {result}"
+        assert result["carat_est"] > 0
+        assert result["spread_mm"] == pytest.approx(5.0, rel=1e-6)
+
+    def test_by_carat_and_by_diameter_consistent(self):
+        """Report from carat=1.0 and from diameter_mm=6.5 agree for round brilliant."""
+        ctx = self._ctx()
+        r_carat = run_report(ctx, cut="round_brilliant", carat=1.0)
+        r_mm    = run_report(ctx, cut="round_brilliant", diameter_mm=6.5)
+        assert r_carat["spread_mm"] == pytest.approx(r_mm["spread_mm"], rel=0.001)
+        assert r_carat["proportion_grade"] == r_mm["proportion_grade"]
+
+
+# ---------------------------------------------------------------------------
+# jewelry_gem_report runner — error paths
+# ---------------------------------------------------------------------------
+
+class TestGemReportErrors:
+    def _ctx(self):
+        ctx, _, _ = make_ctx()
+        return ctx
+
+    def test_missing_cut(self):
+        ctx = self._ctx()
+        result = run_report(ctx, diameter_mm=5.0)
+        assert result.get("code") == "BAD_ARGS"
+
+    def test_unknown_cut(self):
+        ctx = self._ctx()
+        result = run_report(ctx, cut="not_a_real_cut", diameter_mm=5.0)
+        assert result.get("code") == "BAD_ARGS"
+
+    def test_missing_size(self):
+        ctx = self._ctx()
+        result = run_report(ctx, cut="round_brilliant")
+        assert result.get("code") == "BAD_ARGS"
+
+    def test_both_carat_and_diameter(self):
+        ctx = self._ctx()
+        result = run_report(ctx, cut="round_brilliant", carat=1.0, diameter_mm=6.5)
+        assert result.get("code") == "BAD_ARGS"
+
+    def test_negative_carat(self):
+        ctx = self._ctx()
+        result = run_report(ctx, cut="round_brilliant", carat=-1.0)
+        assert result.get("code") == "BAD_ARGS"
+
+    def test_zero_diameter(self):
+        ctx = self._ctx()
+        result = run_report(ctx, cut="round_brilliant", diameter_mm=0.0)
+        assert result.get("code") == "BAD_ARGS"
+
+    def test_negative_density(self):
+        ctx = self._ctx()
+        result = run_report(ctx, cut="round_brilliant", diameter_mm=5.0,
+                            density_g_cm3=-1.0)
+        assert result.get("code") == "BAD_ARGS"
+
+    def test_invalid_json(self):
+        ctx, _, _ = make_ctx()
+        loop = asyncio.new_event_loop()
+        raw = loop.run_until_complete(
+            run_jewelry_gem_report(ctx, b"not json")
+        )
+        loop.close()
+        assert json.loads(raw).get("code") == "BAD_ARGS"

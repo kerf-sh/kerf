@@ -1158,3 +1158,322 @@ async def run_jewelry_create_gemstone(ctx: ProjectCtx, args: bytes) -> str:
         ),
         "total_depth_mm": round(props.total_depth_pct / 100 * props.diameter_mm, 3),
     })
+
+
+# ---------------------------------------------------------------------------
+# LLM tool: jewelry_gem_report  (read-only)
+# ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# Light-return / proportion grade heuristic
+# ---------------------------------------------------------------------------
+
+# Per-family ideal proportion windows used to grade light return.
+# Keys: facet family label → {
+#   "table_pct"     : (min, max),  # ideal table % range
+#   "depth_pct"     : (min, max),  # ideal total depth % range
+#   "crown_angle"   : (min, max),  # ideal crown angle (degrees)
+#   "pavilion_angle": (min, max),  # ideal pavilion angle (degrees)
+# }
+# Grades: Excellent (all in ideal), Very Good (1 miss), Good (2 miss), Fair (3+).
+# Sources: GIA 4Cs cut grade methodology; AGS cut grading system.
+_GRADE_WINDOWS: dict[str, dict] = {
+    "round_brilliant": {
+        "table_pct":      (53.0, 58.0),
+        "depth_pct":      (59.0, 62.5),
+        "crown_angle":    (33.7, 35.8),
+        "pavilion_angle": (40.6, 41.8),
+    },
+    "princess": {
+        "table_pct":      (62.0, 82.0),
+        "depth_pct":      (64.0, 75.0),
+        "crown_angle":    (25.0, 35.0),
+        "pavilion_angle": (40.0, 45.0),
+    },
+    "oval": {
+        "table_pct":      (53.0, 63.0),
+        "depth_pct":      (58.0, 62.0),
+        "crown_angle":    (30.0, 38.0),
+        "pavilion_angle": (38.0, 43.0),
+    },
+    "emerald": {
+        "table_pct":      (60.0, 72.0),
+        "depth_pct":      (60.0, 68.0),
+        "crown_angle":    (12.0, 20.0),
+        "pavilion_angle": (43.0, 48.0),
+    },
+    "marquise": {
+        "table_pct":      (53.0, 63.0),
+        "depth_pct":      (58.0, 62.0),
+        "crown_angle":    (30.0, 36.0),
+        "pavilion_angle": (38.0, 43.0),
+    },
+    "pear": {
+        "table_pct":      (53.0, 63.0),
+        "depth_pct":      (58.0, 62.0),
+        "crown_angle":    (30.0, 38.0),
+        "pavilion_angle": (38.0, 43.0),
+    },
+    "cushion": {
+        "table_pct":      (55.0, 68.0),
+        "depth_pct":      (60.0, 68.0),
+        "crown_angle":    (30.0, 38.0),
+        "pavilion_angle": (38.0, 44.0),
+    },
+    "radiant": {
+        "table_pct":      (58.0, 72.0),
+        "depth_pct":      (59.0, 67.0),
+        "crown_angle":    (28.0, 36.0),
+        "pavilion_angle": (38.0, 44.0),
+    },
+    "asscher": {
+        "table_pct":      (60.0, 68.0),
+        "depth_pct":      (60.0, 66.0),
+        "crown_angle":    (20.0, 30.0),
+        "pavilion_angle": (40.0, 46.0),
+    },
+    "trillion": {
+        "table_pct":      (50.0, 60.0),
+        "depth_pct":      (36.0, 52.0),
+        "crown_angle":    (30.0, 38.0),
+        "pavilion_angle": (38.0, 44.0),
+    },
+    "heart": {
+        "table_pct":      (53.0, 63.0),
+        "depth_pct":      (58.0, 62.0),
+        "crown_angle":    (32.0, 37.0),
+        "pavilion_angle": (39.0, 43.0),
+    },
+    "baguette": {
+        "table_pct":      (60.0, 75.0),
+        "depth_pct":      (42.0, 52.0),
+        "crown_angle":    (5.0, 15.0),
+        "pavilion_angle": (40.0, 46.0),
+    },
+    "briolette": {
+        # No flat table; graded on crown/pavilion balance only.
+        "table_pct":      (0.0, 5.0),    # effectively 0
+        "depth_pct":      (95.0, 110.0), # deep double-cone
+        "crown_angle":    (25.0, 35.0),
+        "pavilion_angle": (40.0, 50.0),
+    },
+    # Historical / specialty — use nearest-family windows
+    "old_european":    {"table_pct": (35.0, 53.0), "depth_pct": (58.0, 70.0),
+                        "crown_angle": (38.0, 44.0), "pavilion_angle": (38.0, 43.0)},
+    "old_mine":        {"table_pct": (35.0, 53.0), "depth_pct": (58.0, 70.0),
+                        "crown_angle": (36.0, 42.0), "pavilion_angle": (38.0, 44.0)},
+    "rose_cut":        {"table_pct": (0.0, 5.0), "depth_pct": (20.0, 35.0),
+                        "crown_angle": (15.0, 27.0), "pavilion_angle": (0.0, 5.0)},
+    "single_cut":      {"table_pct": (55.0, 75.0), "depth_pct": (48.0, 58.0),
+                        "crown_angle": (25.0, 35.0), "pavilion_angle": (38.0, 44.0)},
+    "french_cut":      {"table_pct": (60.0, 74.0), "depth_pct": (50.0, 64.0),
+                        "crown_angle": (22.0, 34.0), "pavilion_angle": (40.0, 46.0)},
+    "half_moon":       {"table_pct": (52.0, 64.0), "depth_pct": (56.0, 64.0),
+                        "crown_angle": (30.0, 38.0), "pavilion_angle": (38.0, 43.0)},
+    "trapezoid":       {"table_pct": (60.0, 74.0), "depth_pct": (42.0, 52.0),
+                        "crown_angle": (7.0, 15.0), "pavilion_angle": (40.0, 46.0)},
+    "kite":            {"table_pct": (50.0, 62.0), "depth_pct": (44.0, 56.0),
+                        "crown_angle": (30.0, 38.0), "pavilion_angle": (38.0, 44.0)},
+    "bullet":          {"table_pct": (52.0, 62.0), "depth_pct": (54.0, 64.0),
+                        "crown_angle": (29.0, 37.0), "pavilion_angle": (38.0, 44.0)},
+    "tapered_baguette":{"table_pct": (62.0, 76.0), "depth_pct": (40.0, 50.0),
+                        "crown_angle": (5.0, 13.0), "pavilion_angle": (40.0, 46.0)},
+    "lozenge":         {"table_pct": (52.0, 68.0), "depth_pct": (44.0, 56.0),
+                        "crown_angle": (14.0, 24.0), "pavilion_angle": (38.0, 46.0)},
+    "shield":          {"table_pct": (50.0, 62.0), "depth_pct": (44.0, 56.0),
+                        "crown_angle": (31.0, 39.0), "pavilion_angle": (38.0, 44.0)},
+    "calf_head":       {"table_pct": (52.0, 62.0), "depth_pct": (54.0, 64.0),
+                        "crown_angle": (29.0, 36.0), "pavilion_angle": (37.0, 43.0)},
+}
+
+
+def _proportion_grade(props: GemProportions) -> str:
+    """Return a simple light-return / proportion grade for the given proportions.
+
+    Grades:
+        Excellent  — all four proportion indicators fall within the ideal window
+        Very Good  — one indicator outside the ideal window
+        Good       — two indicators outside the ideal window
+        Fair       — three or more indicators outside the ideal window
+
+    The ideal windows are per-cut (see ``_GRADE_WINDOWS``).  For cuts not in
+    the table, the nearest applicable family is used.
+    """
+    windows = _GRADE_WINDOWS.get(props.cut, _GRADE_WINDOWS["round_brilliant"])
+
+    def _in(val: float, lo: float, hi: float) -> bool:
+        return lo <= val <= hi
+
+    checks = [
+        _in(props.table_pct,         *windows["table_pct"]),
+        _in(props.total_depth_pct,   *windows["depth_pct"]),
+        _in(props.crown_angle_deg,   *windows["crown_angle"]),
+        _in(props.pavilion_angle_deg,*windows["pavilion_angle"]),
+    ]
+    misses = checks.count(False)
+    if misses == 0:
+        return "Excellent"
+    if misses == 1:
+        return "Very Good"
+    if misses == 2:
+        return "Good"
+    return "Fair"
+
+
+jewelry_gem_report_spec = ToolSpec(
+    name="jewelry_gem_report",
+    description=(
+        "Read-only gemologist-style report for a gemstone cut + size. "
+        "Given a cut and either carat or diameter_mm (plus optional material), "
+        "returns: estimated carat, spread (mm), depth %, table %, length/width ratio, "
+        "crown and pavilion angle summary, and a light-return/proportion grade "
+        "(Excellent / Very Good / Good / Fair) based on GIA/AGS ideal windows. "
+        "Does NOT write any file — use this to inspect proportions before calling "
+        "jewelry_create_gemstone."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "cut": {
+                "type": "string",
+                "enum": sorted(GEMSTONE_CUTS),
+                "description": "Gemstone cut style.",
+            },
+            "carat": {
+                "type": "number",
+                "description": (
+                    "Stone weight in carats. Converted to mm via the carat formula. "
+                    "Provide carat OR diameter_mm, not both."
+                ),
+            },
+            "diameter_mm": {
+                "type": "number",
+                "description": (
+                    "Primary dimension in mm (girdle diameter for round_brilliant, "
+                    "long axis for all others). Provide diameter_mm OR carat, not both."
+                ),
+            },
+            "material": {
+                "type": "string",
+                "description": (
+                    "Stone material for density lookup (e.g. 'diamond', 'ruby', 'sapphire'). "
+                    "Affects carat↔mm conversion only.  Default: 'diamond'."
+                ),
+            },
+            "density_g_cm3": {
+                "type": "number",
+                "description": "Explicit material density in g/cm³. Overrides material lookup.",
+            },
+        },
+        "required": ["cut"],
+    },
+)
+
+
+@register(jewelry_gem_report_spec, write=False)
+async def run_jewelry_gem_report(ctx: ProjectCtx, args: bytes) -> str:
+    """Read-only gemologist report — computes from spec, writes nothing."""
+    try:
+        a = json.loads(args)
+    except Exception as e:
+        return err_payload(f"invalid args: {e}", "BAD_ARGS")
+
+    cut           = a.get("cut", "").strip()
+    carat         = a.get("carat", None)
+    diameter_mm   = a.get("diameter_mm", None)
+    material      = a.get("material", None)
+    density_g_cm3 = a.get("density_g_cm3", None)
+
+    if not cut:
+        return err_payload("cut is required", "BAD_ARGS")
+    if cut not in GEMSTONE_CUTS:
+        return err_payload(
+            f"Unknown cut {cut!r}. Valid cuts: {sorted(GEMSTONE_CUTS)}", "BAD_ARGS"
+        )
+    if carat is not None and diameter_mm is not None:
+        return err_payload("Provide carat OR diameter_mm, not both", "BAD_ARGS")
+    if carat is None and diameter_mm is None:
+        return err_payload("One of carat or diameter_mm is required", "BAD_ARGS")
+
+    if carat is not None:
+        try:
+            carat = float(carat)
+        except Exception:
+            return err_payload("carat must be a number", "BAD_ARGS")
+        if carat <= 0:
+            return err_payload("carat must be positive", "BAD_ARGS")
+
+    if diameter_mm is not None:
+        try:
+            diameter_mm = float(diameter_mm)
+        except Exception:
+            return err_payload("diameter_mm must be a number", "BAD_ARGS")
+        if diameter_mm <= 0:
+            return err_payload("diameter_mm must be positive", "BAD_ARGS")
+
+    if density_g_cm3 is not None:
+        try:
+            density_g_cm3 = float(density_g_cm3)
+        except Exception:
+            return err_payload("density_g_cm3 must be a number", "BAD_ARGS")
+        if density_g_cm3 <= 0:
+            return err_payload("density_g_cm3 must be positive", "BAD_ARGS")
+
+    try:
+        props = gemstone_proportions(
+            cut,
+            diameter_mm=diameter_mm,
+            carat=carat,
+            material=str(material) if material else None,
+            density_g_cm3=density_g_cm3,
+        )
+    except ValueError as e:
+        return err_payload(str(e), "BAD_ARGS")
+
+    mat_label = str(material) if material else None
+    carat_est = carat_from_mm(
+        cut, props.diameter_mm, material=mat_label, density_g_cm3=density_g_cm3
+    )
+
+    # Length/width ratio: long axis / short axis (≥ 1.0).
+    # For round brilliant both axes equal, so lw_ratio = 1.0.
+    # For others: long axis = diameter_mm, short axis = diameter_mm * aspect_ratio.
+    if props.aspect_ratio > 0:
+        lw_ratio = round(1.0 / props.aspect_ratio, 3)
+    else:
+        lw_ratio = None  # degenerate
+
+    # Depth in mm
+    depth_mm = round(props.total_depth_pct / 100.0 * props.diameter_mm, 3)
+    # Width (short axis) in mm
+    width_mm = round(props.diameter_mm * props.aspect_ratio, 3)
+
+    grade = _proportion_grade(props)
+
+    # Facet family (from extras if tagged, else the cut itself)
+    facet_family = props.extras.get("facet_family", cut)
+
+    return ok_payload({
+        "cut": cut,
+        "facet_family": facet_family,
+        "material": mat_label or "diamond",
+        # Sizing
+        "spread_mm": round(props.diameter_mm, 3),
+        "width_mm": width_mm,
+        "depth_mm": depth_mm,
+        "carat_est": round(carat_est, 3),
+        # Proportions
+        "table_pct": round(props.table_pct, 1),
+        "total_depth_pct": round(props.total_depth_pct, 1),
+        "crown_height_pct": round(props.crown_height_pct, 1),
+        "pavilion_depth_pct": round(props.pavilion_depth_pct, 1),
+        "girdle_pct": round(props.girdle_pct, 1),
+        # Angles
+        "crown_angle_deg": round(props.crown_angle_deg, 2),
+        "pavilion_angle_deg": round(props.pavilion_angle_deg, 2),
+        # Shape
+        "aspect_ratio": round(props.aspect_ratio, 3),
+        "lw_ratio": lw_ratio,
+        # Grade
+        "proportion_grade": grade,
+    })
