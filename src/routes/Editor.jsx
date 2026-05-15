@@ -37,6 +37,7 @@ import MEPView from '../components/MEPView.jsx'
 import StairView from '../components/StairView.jsx'
 import RailingView from '../components/RailingView.jsx'
 import PLCView from '../components/PLCView.jsx'
+import QuadMeshView from '../components/QuadMeshView.jsx'
 import ConfigurationsPanel from '../components/ConfigurationsPanel.jsx'
 import ActivityTimeline from '../components/ActivityTimeline.jsx'
 import { useWorkspace, loadFilePartsForProject } from '../store/workspace.js'
@@ -413,6 +414,13 @@ function isPLCFile(file) {
   return n.endsWith('.plc.st')
 }
 
+function isQuadMeshFile(file) {
+  if (!file) return false
+  if (file.kind === 'quadmesh') return true
+  const n = (file.name || '').toLowerCase()
+  return n.endsWith('.quadmesh')
+}
+
 export default function Editor() {
   const { projectId, fileId } = useParams()
   const navigate = useNavigate()
@@ -480,6 +488,7 @@ export default function Editor() {
     if (isRailingFile(w.currentFile)) return
     if (isFemFile(w.currentFile)) return
     if (isPLCFile(w.currentFile)) return
+    if (isQuadMeshFile(w.currentFile)) return
     if (runTimerRef.current) clearTimeout(runTimerRef.current)
     const code = w.currentFileContent
     const delay = runDebounceFor(code)
@@ -822,8 +831,9 @@ export default function Editor() {
   const stairFile = isStairFile(w.currentFile)
   const railingFile = isRailingFile(w.currentFile)
   const femFile = isFemFile(w.currentFile)
-  const sectionFile = isSectionFile(w.currentFile)
-  const plcFile = isPLCFile(w.currentFile)
+  const sectionFile   = isSectionFile(w.currentFile)
+  const plcFile       = isPLCFile(w.currentFile)
+  const quadMeshFile  = isQuadMeshFile(w.currentFile)
 
   // Build a THREE.BufferGeometry from the current parts to pass into FEMView
   // so DeformedShapeOverlay can render the morphed surface (instead of a proxy
@@ -1597,6 +1607,20 @@ export default function Editor() {
                 fileName={w.currentFile?.name}
                 onContentChange={(v) => w.editContent(v)}
                 className="h-full"
+              />
+              {w.toast && (
+                <div className="absolute bottom-3 right-3 z-20 px-3 py-2 rounded-md bg-ink-900 border border-kerf-300/60 text-kerf-300 text-xs shadow-xl"
+                  onClick={() => w.dismissToast()}>
+                  {w.toast}
+                </div>
+              )}
+            </div>
+          ) : quadMeshFile ? (
+            <div className="flex-1 min-h-0 relative">
+              <QuadMeshView
+                viewRef={currentViewRef}
+                content={w.currentFileContent}
+                fileName={w.currentFile?.name}
               />
               {w.toast && (
                 <div className="absolute bottom-3 right-3 z-20 px-3 py-2 rounded-md bg-ink-900 border border-kerf-300/60 text-kerf-300 text-xs shadow-xl"
