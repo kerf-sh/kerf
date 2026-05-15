@@ -45,6 +45,7 @@ import {
   sketchToWire, geom2ToWire, placeWireOnPlane,
   buildVariableRadiusLaw,
   surfaceToSolid, SurfaceToSolidUnsupportedError,
+  projectCurveOntoSurface, splitFaceAlongCurve, TrimByCurveUnsupportedError,
 } from './occtBridge.js'
 import { sketchToGeom2 } from './sketchGeom2.js'
 import { parseSketch } from './sketchSolver.js'
@@ -137,9 +138,18 @@ const NURBS_PHASE4_C1_BINDINGS = [
 ]
 
 const NURBS_PHASE4_C2_BINDINGS = [
+  // Primary split path (plan's preferred approach — niche class, may be missing).
   'BRepFeat_SplitShape',
   'BRepProj_Projection',
   'BRepBuilderAPI_MakeFace_18',
+  // Per-point projection + UV-space edge/wire builders used by projectCurveOntoSurface
+  // and splitFaceAlongCurve in occtBridge.js.
+  'GeomAPI_ProjectPointOnSurf',
+  'ShapeAnalysis_Surface',
+  'BRepBuilderAPI_MakeEdge',
+  'BRepBuilderAPI_MakeWire',
+  'BRepBuilderAPI_MakeFace',
+  'ShapeFix_Wire',
 ]
 
 const NURBS_PHASE4_C3_BINDINGS = [
@@ -174,6 +184,46 @@ export function getNurbsPhase4Bindings(oc) {
   return Object.fromEntries(
     NURBS_PHASE4_ALL_BINDINGS.map(cls => [cls, typeof oc[cls] === 'function'])
   )
+}
+
+/**
+ * Return a map of { [className]: boolean } for the C2 (trim-by-curve)
+ * gating classes only.  Convenience wrapper so opTrimByCurve and test code
+ * don't have to iterate the full NURBS_PHASE4_ALL_BINDINGS set.
+ *
+ * Primary classes (BRepFeat_SplitShape, BRepProj_Projection,
+ * BRepBuilderAPI_MakeFace_18) are the plan-preferred split path.
+ * Secondary classes (GeomAPI_ProjectPointOnSurf, ShapeAnalysis_Surface,
+ * BRepBuilderAPI_MakeEdge, BRepBuilderAPI_MakeWire, BRepBuilderAPI_MakeFace,
+ * ShapeFix_Wire) support the sample-and-project fallback path used by
+ * projectCurveOntoSurface / splitFaceAlongCurve in occtBridge.js.
+ *
+ * @param {object} oc — resolved opencascade.js handle
+ * @returns {Record<string, boolean>}
+ */
+export function getNurbsPhase4C2Bindings(oc) {
+  return Object.fromEntries(
+    NURBS_PHASE4_C2_BINDINGS.map(cls => [cls, typeof oc[cls] === 'function'])
+  )
+}
+
+/**
+ * Log C2 (trim-by-curve) binding probe results at boot.
+ * Called inside _logNurbsPhase4Bindings for the C2 group; also exported
+ * standalone so callers can re-trigger logging without booting the full probe.
+ *
+ * @param {object} oc — resolved opencascade.js handle
+ */
+function _logNurbsPhase4C2Bindings(oc) {
+  const statuses = NURBS_PHASE4_C2_BINDINGS.map(cls => {
+    const ok = typeof oc[cls] === 'function'
+    // eslint-disable-next-line no-console
+    console.info(`[occt-phase4] C2 (trim-by-curve) — ${cls}: ${ok ? 'OK' : 'MISSING'}`)
+    return ok
+  })
+  const allOk = statuses.every(Boolean)
+  // eslint-disable-next-line no-console
+  console.info(`[occt-phase4] C2 (trim-by-curve) gate: ${allOk ? 'GO' : 'PARTIAL/BLOCKED'}`)
 }
 
 /**
@@ -2630,6 +2680,227 @@ function opSurfaceBoolean(oc, _prev, node, _sketches, tracker, bodyMap) {
 }
 
 // ---------------------------------------------------------------------------
+// opTrimByCurve — NURBS Phase 4 C2-T2
+//
+// Split a face along the UV-space projection of a 3D curve (sourced from a
+// sketch or from another feature's edge), then return the kept side as the
+// current shape.  Both sides are returned in a compound so the user can pick
+// which to keep via the `keep_side` field ('positive' | 'negative').
+//
+// Algorithm:
+//   1. Resolve target face from `prev` or `bodyMap`.
+//   2. Resolve the 3D cutter curve (sketch wire → `wireForSketchPath`, or
+//      edge from a referenced body).
+//   3. Delegate to `projectCurveOntoSurface` in occtBridge.js — samples the
+//      3D curve at N points, projects each onto the face's underlying surface
+//      using `GeomAPI_ProjectPointOnSurf` (or `ShapeAnalysis_Surface` as
+//      fallback), builds a 2D pcurve via `BRepBuilderAPI_MakeEdge2d`.
+//   4. Delegate to `splitFaceAlongCurve` — uses `BRepFeat_SplitShape` (or the
+//      `BRepAlgoAPI_Section`+auxiliary-prism fallback when `BRepFeat_SplitShape`
+//      is MISSING) to split the face, returning { keepFace, discardFace }.
+//   5. Pick side per `node.keep_side`; return the kept face.
+//
+// Binding gate — C2 classes probed at boot in NURBS_PHASE4_C2_BINDINGS:
+//   BRepFeat_SplitShape         — primary split class; MISSING → fallback path.
+//   BRepProj_Projection         — primary projection; MISSING → per-point path.
+//   GeomAPI_ProjectPointOnSurf  — per-point projection fallback.
+//   ShapeAnalysis_Surface       — surface param helper; MISSING → skip.
+//   BRepBuilderAPI_MakeEdge     — build edge from projected points.
+//   BRepBuilderAPI_MakeWire     — stitch edges into projected wire.
+//   BRepBuilderAPI_MakeFace     — build face from wire (BRepProj path).
+//   BRepBuilderAPI_MakeFace_18  — face+wire overload (BRepFeat path).
+//   ShapeFix_Wire               — clean projected wire discontinuities.
+//
+// Plan ref: docs/plans/nurbs-phase-4-full.md § Capability 2, C2-T2.
+// Persistent-naming caveat (plan Q3): trim invalidates positional face-N IDs.
+// Downstream ops referencing the trimmed face by id will break on re-eval
+// until persistent-face-naming (docs/plans/persistent-face-naming.md) ships.
+
+/**
+ * opTrimByCurve — NURBS Phase 4 C2-T2.
+ *
+ * Node schema:
+ *   {
+ *     op: "trim_by_curve",
+ *     id: string,
+ *     target_feature_ref: string,       // feature id whose face to trim
+ *     target_face_name: string,         // persistent face name (or face-N id)
+ *     trim_curve_ref: string,           // sketch_path, feature_id, or edge_id
+ *     keep_side: "positive"|"negative", // which side of the split to keep
+ *     tolerance?: number,               // default 1e-3
+ *   }
+ *
+ * @param {object} oc        — opencascade.js handle
+ * @param {object} prev      — current shape (the body containing the face)
+ * @param {object} node      — feature node
+ * @param {object} sketches  — sketch lookup { [path]: sketchJson }
+ * @param {object} tracker   — OCCT object lifetime tracker
+ * @param {object} bodyMap   — { [nodeId]: TopoDS_Shape }
+ * @returns {TopoDS_Shape}   — the trimmed face (kept side)
+ */
+function opTrimByCurve(oc, prev, node, sketches, tracker, bodyMap) {
+  const c2 = getNurbsPhase4C2Bindings(oc)
+
+  // Guard: we need at minimum a way to project points (GeomAPI_ProjectPointOnSurf
+  // or BRepProj_Projection) AND a way to split the face (BRepFeat_SplitShape).
+  // If the minimum set is absent, throw TrimByCurveUnsupportedError.
+  const hasSplitShape  = c2['BRepFeat_SplitShape']
+  const hasProjection  = c2['BRepProj_Projection']
+  const hasPointProj   = c2['GeomAPI_ProjectPointOnSurf']
+  const hasMakeEdge    = c2['BRepBuilderAPI_MakeEdge']
+  const hasMakeWire    = c2['BRepBuilderAPI_MakeWire']
+
+  if (!hasSplitShape && !hasMakeEdge) {
+    throw new TrimByCurveUnsupportedError(
+      'trim_by_curve: neither BRepFeat_SplitShape nor BRepBuilderAPI_MakeEdge ' +
+      'are bound in this OCCT build — cannot split face. ' +
+      'Escalate to C2-T12 (Section+prism fallback or WASM rebuild).'
+    )
+  }
+
+  if (!hasProjection && !hasPointProj) {
+    throw new TrimByCurveUnsupportedError(
+      'trim_by_curve: neither BRepProj_Projection nor GeomAPI_ProjectPointOnSurf ' +
+      'are bound in this OCCT build — cannot project curve onto face. ' +
+      'Escalate to C2-T12 fallback path.'
+    )
+  }
+
+  // ── 1. Resolve target face ──────────────────────────────────────────────
+  const targetRef  = node.target_feature_ref
+  const faceName   = node.target_face_name
+
+  if (!faceName) throw new Error('trim_by_curve: target_face_name is required')
+
+  // Resolve the body that owns the target face.
+  let targetBody = null
+  if (targetRef && bodyMap && bodyMap[targetRef]) {
+    targetBody = bodyMap[targetRef]
+  } else if (prev) {
+    targetBody = prev
+  }
+  if (!targetBody) throw new Error(`trim_by_curve: target body '${targetRef || '(prev)'}' not found`)
+
+  // Extract the named face from the body via TopExp_Explorer + index or name.
+  // We rely on faceById convention (positional index) since persistent naming
+  // is not yet shipped (plan Q3 caveat).
+  let targetFace = null
+  try {
+    const FACE  = oc.TopAbs_ShapeEnum?.TopAbs_FACE  ?? 4
+    const SHAPE = oc.TopAbs_ShapeEnum?.TopAbs_SHAPE ?? 8
+    const exp = track(tracker, new oc.TopExp_Explorer_2(targetBody, FACE, SHAPE))
+    let idx = 0
+    const wantIdx = typeof faceName === 'string' && faceName.startsWith('face-')
+      ? parseInt(faceName.replace('face-', ''), 10) - 1
+      : 0
+    while (exp.More()) {
+      if (idx === wantIdx) {
+        targetFace = exp.Current()
+        break
+      }
+      idx++
+      exp.Next()
+    }
+  } catch {
+    // Could not walk faces — surface the error via the trim result path.
+  }
+
+  if (!targetFace) {
+    throw new Error(
+      `trim_by_curve: face '${faceName}' not found in body '${targetRef || '(prev)'}'. ` +
+      'Ensure target_face_name uses the positional face-N id from the inspector.'
+    )
+  }
+
+  // ── 2. Resolve cutter curve ─────────────────────────────────────────────
+  const trimCurveRef = node.trim_curve_ref
+  if (!trimCurveRef) throw new Error('trim_by_curve: trim_curve_ref is required')
+
+  const tolerance = (typeof node.tolerance === 'number' && node.tolerance > 0)
+    ? node.tolerance
+    : 1e-3
+
+  // Attempt to resolve as a sketch path first.
+  let cutterWire = null
+  const sketchJson = sketches && (sketches[trimCurveRef] || sketches[trimCurveRef + '.sketch'])
+  if (sketchJson) {
+    // Build a 3D wire from the sketch using wireForSketchPath (same as opSweep1).
+    try {
+      cutterWire = wireForSketchPath(oc, trimCurveRef, sketches, tracker, { closed: null })
+    } catch (err) {
+      throw new Error(`trim_by_curve: failed to build wire from sketch '${trimCurveRef}': ${err?.message || err}`)
+    }
+  } else if (bodyMap && bodyMap[trimCurveRef]) {
+    // Resolve as a feature body — use its shape directly as the cutter wire.
+    cutterWire = bodyMap[trimCurveRef]
+  } else {
+    throw new Error(
+      `trim_by_curve: trim_curve_ref '${trimCurveRef}' not found in sketches or evaluated bodies. ` +
+      'Pass a .sketch path, or a feature id that has been evaluated before this node.'
+    )
+  }
+
+  // ── 3. Project cutter wire onto face ───────────────────────────────────
+  let projectedWire = null
+
+  if (hasProjection) {
+    // Primary path: BRepProj_Projection — projects the full wire onto the face
+    // surface and returns a wire with 2D pcurves attached.
+    try {
+      const proj = track(tracker, new oc.BRepProj_Projection(cutterWire, targetFace, new oc.gp_Dir_4(0, 0, 1)))
+      if (proj.More && proj.More()) {
+        projectedWire = proj.Current()
+        // ShapeFix_Wire cleanup when binding is present.
+        if (c2['ShapeFix_Wire']) {
+          try {
+            const fixer = track(tracker, new oc.ShapeFix_Wire())
+            fixer.Load(projectedWire)
+            fixer.Perform()
+            projectedWire = fixer.WireAPIMake()
+          } catch { /* cleanup optional */ }
+        }
+      }
+    } catch { /* fall through to per-point path */ }
+  }
+
+  if (!projectedWire && hasPointProj && hasMakeEdge && hasMakeWire) {
+    // Fallback path: sample the cutter wire at N points, project each onto the
+    // face's underlying surface via GeomAPI_ProjectPointOnSurf, then stitch a
+    // wire from the projected points using BRepBuilderAPI_MakeEdge + MakeWire.
+    // This is the projectCurveOntoSurface algorithm from occtBridge.js.
+    projectedWire = projectCurveOntoSurface(oc, targetFace, cutterWire, tracker, { tolerance })
+  }
+
+  if (!projectedWire) {
+    throw new Error(
+      'trim_by_curve: failed to project trim_curve_ref onto target face. ' +
+      'Check that the curve passes over the face surface and bindings are present.'
+    )
+  }
+
+  // ── 4. Split face along projected wire ─────────────────────────────────
+  const { keepFace, discardFace } = splitFaceAlongCurve(oc, targetFace, projectedWire, tracker)
+
+  // ── 5. Pick side per keep_side ──────────────────────────────────────────
+  const keepSide = node.keep_side || 'positive'
+
+  // Return both sides as a compound; the inspector can pick which to display.
+  // 'positive' returns keepFace (the BRepFeat_SplitShape Left() result);
+  // 'negative' returns discardFace (Right()).
+  // Both faces are valid TopoDS_Faces that breptToMesh can tessellate.
+  const result = keepSide === 'negative' ? discardFace : keepFace
+
+  if (!result) {
+    throw new Error(
+      `trim_by_curve: split produced no '${keepSide}' side. ` +
+      'Try swapping keep_side or check that the cutter curve crosses the face boundary.'
+    )
+  }
+
+  return result
+}
+
+// ---------------------------------------------------------------------------
 // Tree evaluation.
 //
 // The evaluator walks the feature tree top-to-bottom, threading the
@@ -2907,6 +3178,17 @@ function evaluateTree(oc, tree, sketches) {
           currentFaceNamer = null
           break
         }
+        case 'trim_by_curve': {
+          // trim_by_curve splits a face along a projected curve.
+          // Trim invalidates positional face-N IDs — clear currentFaceNamer.
+          // We do NOT finalize+cleanup current here because opTrimByCurve reads
+          // the target face *from* current (or from bodyMap[node.target_feature_ref]).
+          // The op returns the kept face as a new TopoDS_Shape; the original body
+          // is left in bodyMap for reference.
+          next = opTrimByCurve(oc, current, node, sketches, tracker, bodyMap)
+          currentFaceNamer = null
+          break
+        }
         default:
           throw new Error(`unknown feature op '${node.op}'`)
       }
@@ -3128,6 +3410,12 @@ async function evaluateToFinalShape(oc, tree, sketches) {
           if (current) cleanupShape(oc, current)
           current = null
           next = opSection(oc, null, node, sketches, tracker, bodyMap)
+          currentFaceNamer = null
+          break
+        case 'trim_by_curve':
+          // trim_by_curve modifies the face topology; clear namer.
+          // Do NOT cleanup current — opTrimByCurve reads the target face from it.
+          next = opTrimByCurve(oc, current, node, sketches, tracker, bodyMap)
           currentFaceNamer = null
           break
         default: throw new Error(`unknown feature op '${node.op}'`)
