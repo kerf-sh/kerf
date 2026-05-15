@@ -66,7 +66,8 @@ export default function Footer() {
               className="inline-flex items-center gap-2 self-start rounded-md border border-ink-800 bg-ink-900/60 px-2.5 py-1.5 text-xs text-ink-300 hover:border-ink-700 hover:text-ink-100 transition-colors"
             >
               <Github size={13} />
-              <span className="font-mono">kerf-sh/kerf</span>
+              {/* open-source pitch: invite contributors */}
+              <span className="font-mono">Open source — contributors welcome</span>
             </a>
           </div>
 
