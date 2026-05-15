@@ -57,6 +57,7 @@ _TOOL_MODULES = [
     "kerf_cad_core.gdt_callouts.tools",
     "kerf_cad_core.family.tools",
     "kerf_cad_core.shaft.tools",
+    "kerf_cad_core.gearbox.tools",
 ]
 
 # ── kerf_core contract (built by kerf-core agent in parallel) ─────────────────
