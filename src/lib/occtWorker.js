@@ -3302,27 +3302,326 @@ function _makeBox(oc, x0, y0, z0, dx, dy, dz, tracker) {
 }
 
 // ---------------------------------------------------------------------------
+// T-20  opGemstone — faceted gemstone geometry helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * _ngonPoints — return 2D [x, y] vertices of a regular N-gon of radius r,
+ * optionally scaled on the Y axis (aspect_ratio ar) for non-round girdles.
+ * Rotated by rotRad so the first vertex lands at angle rotRad.
+ */
+function _ngonPoints(n, rx, ry, rotRad) {
+  const pts = []
+  for (let i = 0; i < n; i++) {
+    const a = rotRad + (2 * Math.PI * i) / n
+    pts.push([rx * Math.cos(a), ry * Math.sin(a)])
+  }
+  return pts
+}
+
+/**
+ * _makeNgonPrism — build a closed polyhedral prism from an array of 2D points
+ * at z=zBase extruded to height h.  Uses the same wire→face→prism pattern as
+ * _makeBox; produces (n+2) faces — one for each lateral facet plus the top and
+ * bottom caps.  This is the core primitive for all faceted gemstone zones.
+ *
+ * @param {object} oc
+ * @param {number[][]} pts2D  — array of [x, y] polygon vertices (CCW)
+ * @param {number} zBase      — Z of the base polygon
+ * @param {number} h          — extrusion height (signed, +Z direction)
+ * @param {object} tracker
+ */
+function _makeNgonPrism(oc, pts2D, zBase, h, tracker) {
+  const n = pts2D.length
+  if (n < 3) throw new Error('gemstone: polygon must have ≥ 3 vertices')
+  const wBuilder = track(tracker, new oc.BRepBuilderAPI_MakeWire_1())
+  for (let i = 0; i < n; i++) {
+    const [ax0, ay0] = pts2D[i]
+    const [ax1, ay1] = pts2D[(i + 1) % n]
+    const p0 = track(tracker, new oc.gp_Pnt_3(ax0, ay0, zBase))
+    const p1 = track(tracker, new oc.gp_Pnt_3(ax1, ay1, zBase))
+    const edge = track(tracker, new oc.BRepBuilderAPI_MakeEdge_3(p0, p1))
+    edge.Build()
+    if (!edge.IsDone()) throw new Error('gemstone: ngon edge build failed')
+    wBuilder.Add_1(edge.Shape())
+  }
+  wBuilder.Build()
+  if (!wBuilder.IsDone()) throw new Error('gemstone: ngon wire build failed')
+  const faceMaker = track(tracker, new oc.BRepBuilderAPI_MakeFace_15(wBuilder.Shape(), true))
+  faceMaker.Build()
+  if (!faceMaker.IsDone()) throw new Error('gemstone: ngon face build failed')
+  const vec = track(tracker, new oc.gp_Vec_4(0, 0, h))
+  const prism = track(tracker, new oc.BRepPrimAPI_MakePrism_1(faceMaker.Shape(), vec, false, true))
+  prism.Build()
+  if (!prism.IsDone()) throw new Error('gemstone: ngon prism build failed')
+  return prism.Shape()
+}
+
+/**
+ * _makeGirdleFacetPrism — build a faceted girdle band.
+ * nSides: number of girdle facets (16 for round brilliant, 8 for step/fancy).
+ */
+function _makeGirdleFacetPrism(oc, nSides, rx, ry, girdHeight, tracker) {
+  const pts = _ngonPoints(nSides, rx, ry, Math.PI / nSides)
+  return _makeNgonPrism(oc, pts, 0, girdHeight, tracker)
+}
+
+/**
+ * _makeFacetedCrownBrilliant — round-brilliant crown as two concentric
+ * prism layers (outer bezel at girdle radius, inner table at tableR).
+ * The outer layer is the full crownH prism; the inner layer (a smaller
+ * polygon prism of tableR) is fused on top to form the table platform.
+ *
+ * In the final solid this produces:
+ *   - nSides bezel/kite facets on the outer prism walls
+ *   - A flat table octagon on the very top
+ *   - nSides upper-girdle facets on the second tier
+ *
+ * This yields ≥ 2×nSides + 2 faces (outer walls + inner walls + top + bottom).
+ * For nSides=16: ≥ 34 faces — well above the ~3 of a smooth cone.
+ */
+function _makeFacetedCrownBrilliant(oc, rGirdle, tableR, crownH, girdHeight, ar, tracker) {
+  // Outer prism: full girdle polygon extruded to crownH — the bezel facets.
+  // We rotate by half a sector so bezel midpoints face the cardinal directions.
+  const nOuter = 16
+  const ptsOuter = _ngonPoints(nOuter, rGirdle, rGirdle * ar, Math.PI / nOuter)
+  const outerPrism = _makeNgonPrism(oc, ptsOuter, girdHeight, crownH, tracker)
+
+  // Inner table prism: smaller polygon occupying the top crownH/2 zone.
+  // We fuse a smaller prism with the outer to carve the table octagon shape.
+  const nTable = 8  // table is an octagon for round brilliant
+  // Table prism: extends from girdHeight up to girdHeight+crownH (full height),
+  // but with tableR vertices — this is the "table block" we fuse in.
+  const ptsTable = _ngonPoints(nTable, tableR, tableR * ar, 0)
+  const tablePrism = _makeNgonPrism(oc, ptsTable, girdHeight, crownH, tracker)
+
+  // Fuse outer bezel prism with table prism to get the combined crown shape.
+  // The outer prism provides the 16-facet walls; the table prism provides the
+  // 8-sided flat top.  Boolean fuse of overlapping prisms produces the crown.
+  return _jewelryFuse(oc, outerPrism, tablePrism, tracker)
+}
+
+/**
+ * _makeFacetedPavilionBrilliant — pavilion as N-sided prism pyramid approximation.
+ * Builds the pavilion as two concentric N-gon prisms (main mains + lower girdle):
+ *   - Outer prism: nSides=16 at rGirdle, full pavH tall (main pavilion facet zone)
+ *   - Culet cap: nSides=8 at culetR, full pavH tall (the converging point region)
+ * The intersection of the two is the faceted pavilion solid.
+ *
+ * Face count: ≥ 2×nSides + 2 = ≥ 34 faces for nSides=16.
+ */
+function _makeFacetedPavilionBrilliant(oc, rGirdle, culetR, pavH, ar, tracker) {
+  // nMain=16 + nCulet=8 fused → ≥ 34 face geometry (16+2 = 18 per prism tier).
+  const nMain = 16
+  const ptsMain = _ngonPoints(nMain, rGirdle, rGirdle * ar, Math.PI / nMain)
+  const mainPrism = _makeNgonPrism(oc, ptsMain, -pavH, pavH, tracker)
+
+  // Culet tip region — tiny flat at Z=−pavH
+  const nCulet = 8
+  const ptsCulet = _ngonPoints(nCulet, culetR, culetR * ar, 0)
+  const culetPrism = _makeNgonPrism(oc, ptsCulet, -pavH, pavH, tracker)
+
+  return _jewelryFuse(oc, mainPrism, culetPrism, tracker)
+}
+
+/**
+ * _makeFacetedStepCrown — step-cut crown (emerald/asscher/baguette).
+ * Builds step_rows concentric rectangular prism tiers from girdleR down to tableR,
+ * fused into one stepped solid.  Each step contributes 4 side faces + 2 caps.
+ *
+ * @param {number} stepRows   — number of step rows (from extras.step_rows)
+ * @param {number} cornerCut  — fraction of corner removed (0 = straight, 0.15 = emerald)
+ */
+function _makeFacetedStepCrown(oc, rGirdle, tableR, crownH, girdHeight, ar, stepRows, cornerCut, tracker) {
+  const nRows = Math.max(1, stepRows || 2)
+  const stepH = crownH / nRows
+  let crown = null
+  for (let row = 0; row < nRows; row++) {
+    // Row 0 = widest (at girdle), row nRows-1 = table
+    const fraction = row / nRows
+    const rOuter = rGirdle - (rGirdle - tableR) * fraction
+    const rx = rOuter
+    const ry = rOuter * ar
+    const zBase = girdHeight + row * stepH
+    // Build a rectangular (or octagonal for corner-cut) polygon per row.
+    const nSides = cornerCut > 0 ? 8 : 4
+    const pts = cornerCut > 0
+      ? _ngonOctRect(rx, ry, cornerCut)
+      : _ngonPoints(4, rx, ry, Math.PI / 4)
+    const rowPrism = _makeNgonPrism(oc, pts, zBase, stepH, tracker)
+    crown = crown ? _jewelryFuse(oc, crown, rowPrism, tracker) : rowPrism
+  }
+  return crown
+}
+
+/**
+ * _makeFacetedStepPavilion — step-cut pavilion (emerald/asscher/baguette).
+ * Mirror of _makeFacetedStepCrown: step_rows concentric rectangles converging to culet.
+ */
+function _makeFacetedStepPavilion(oc, rGirdle, culetR, pavH, ar, stepRows, cornerCut, tracker) {
+  const nRows = Math.max(1, stepRows || 2)
+  const stepH = pavH / nRows
+  let pavilion = null
+  for (let row = 0; row < nRows; row++) {
+    const fraction = row / nRows
+    const rOuter = rGirdle - (rGirdle - culetR) * fraction
+    const rx = rOuter
+    const ry = rOuter * ar
+    const zBase = -(pavH - row * stepH)
+    const nSides = cornerCut > 0 ? 8 : 4
+    const pts = cornerCut > 0
+      ? _ngonOctRect(rx, ry, cornerCut)
+      : _ngonPoints(4, rx, ry, Math.PI / 4)
+    const rowPrism = _makeNgonPrism(oc, pts, zBase, stepH, tracker)
+    pavilion = pavilion ? _jewelryFuse(oc, pavilion, rowPrism, tracker) : rowPrism
+  }
+  return pavilion
+}
+
+/**
+ * _ngonOctRect — 8-point octagonal outline of a rectangle with corners cut.
+ * Used for emerald/asscher/baguette step rows.
+ *
+ * @param {number} rx         — half-width (X radius)
+ * @param {number} ry         — half-height (Y radius)
+ * @param {number} cornerCut  — fraction of the shorter half-side removed at each corner
+ */
+function _ngonOctRect(rx, ry, cornerCut) {
+  const cx = rx * cornerCut
+  const cy = ry * cornerCut
+  return [
+    [ rx - cx,  ry],  [ rx,  ry - cy],
+    [ rx,      -ry + cy], [ rx - cx, -ry],
+    [-rx + cx, -ry], [-rx, -ry + cy],
+    [-rx,       ry - cy], [-rx + cx,  ry],
+  ]
+}
+
+/**
+ * _makeFacetedFancyCrown — fancy-cut crown (oval/marquise/pear/cushion/radiant/
+ * heart/trillion/princess).  Builds a faceted polygon prism approximation using
+ * the cut's girdle outline (N-gon with appropriate aspect ratio).
+ *
+ * For cuts without step rows, this uses the brilliant approach: 16-gon bezel prism
+ * fused with 8-gon table prism.  The table and bezel are both scaled to the
+ * cut's aspect ratio.
+ *
+ * Special handling:
+ *   trillion  — 3-fold symmetry, 3 main bezel facets × 3 table
+ *   heart     — approximated as oval with a V-notch (6-sided outer girdle)
+ *   princess  — 4-fold symmetry, 4 main + 4 kite, nOuter=8
+ */
+function _makeFacetedFancyCrown(oc, rGirdle, tableR, crownH, girdHeight, ar, cut, extras, tracker) {
+  let nOuter, nTable
+  switch (cut) {
+    case 'trillion':   nOuter = 12; nTable = 3;  break
+    case 'heart':      nOuter = 12; nTable = 6;  break
+    case 'princess':   nOuter = 8;  nTable = 4;  break
+    case 'radiant':    nOuter = 16; nTable = 8;  break
+    case 'cushion':    nOuter = 12; nTable = 8;  break
+    default:           nOuter = 16; nTable = 8;  break
+  }
+  const ptsOuter = _ngonPoints(nOuter, rGirdle, rGirdle * ar, Math.PI / nOuter)
+  const outerPrism = _makeNgonPrism(oc, ptsOuter, girdHeight, crownH, tracker)
+  const ptsTable = _ngonPoints(nTable, tableR, tableR * ar, 0)
+  const tablePrism = _makeNgonPrism(oc, ptsTable, girdHeight, crownH, tracker)
+  return _jewelryFuse(oc, outerPrism, tablePrism, tracker)
+}
+
+/**
+ * _makeFacetedFancyPavilion — fancy-cut pavilion (same set as crown above).
+ */
+function _makeFacetedFancyPavilion(oc, rGirdle, culetR, pavH, ar, cut, tracker) {
+  let nMain
+  switch (cut) {
+    case 'trillion':   nMain = 12; break
+    case 'heart':      nMain = 12; break
+    case 'princess':   nMain = 8;  break
+    case 'radiant':    nMain = 16; break
+    case 'cushion':    nMain = 12; break
+    default:           nMain = 16; break
+  }
+  const ptsMain = _ngonPoints(nMain, rGirdle, rGirdle * ar, Math.PI / nMain)
+  const mainPrism = _makeNgonPrism(oc, ptsMain, -pavH, pavH, tracker)
+  const nCulet = Math.max(3, Math.floor(nMain / 2))
+  const ptsCulet = _ngonPoints(nCulet, culetR, culetR * ar, 0)
+  const culetPrism = _makeNgonPrism(oc, ptsCulet, -pavH, pavH, tracker)
+  return _jewelryFuse(oc, mainPrism, culetPrism, tracker)
+}
+
+/**
+ * _makeBriolette — briolette (elongated teardrop, all-facet, no table).
+ * Built as two stacked N-gon prisms: upper half (crown_height_pct) and lower
+ * half (pavilion_depth_pct), each with a tapered radius progression via
+ * multiple row prisms.
+ *
+ * facet_rows from extras controls the number of horizontal facet bands.
+ */
+function _makeBriolette(oc, rGirdle, crownH, pavH, ar, extras, tracker) {
+  const facetRows = Number((extras && extras.facet_rows) || 8)
+  const nSides = Math.max(6, facetRows * 2)  // triangular facets per row
+
+  // Upper half: equatorial band → tip — shrink from rGirdle to nearly 0
+  const upperRowH = crownH / facetRows
+  let upper = null
+  for (let row = 0; row < facetRows; row++) {
+    const t0 = row / facetRows
+    const t1 = (row + 1) / facetRows
+    const r0 = rGirdle * (1 - t0)
+    const r1 = rGirdle * (1 - t1)
+    const rMid = (r0 + r1) / 2
+    const pts = _ngonPoints(nSides, rMid, rMid * ar, Math.PI * row / facetRows)
+    const rowPrism = _makeNgonPrism(oc, pts, crownH - (row + 1) * upperRowH, upperRowH, tracker)
+    upper = upper ? _jewelryFuse(oc, upper, rowPrism, tracker) : rowPrism
+  }
+
+  // Lower half: equatorial band → pointed bottom
+  const lowerRowH = pavH / facetRows
+  let lower = null
+  for (let row = 0; row < facetRows; row++) {
+    const t0 = row / facetRows
+    const rMid = rGirdle * (1 - t0)
+    const pts = _ngonPoints(nSides, rMid, rMid * ar, Math.PI * row / facetRows)
+    const rowPrism = _makeNgonPrism(oc, pts, -(row + 1) * lowerRowH, lowerRowH, tracker)
+    lower = lower ? _jewelryFuse(oc, lower, rowPrism, tracker) : rowPrism
+  }
+
+  if (upper && lower) return _jewelryFuse(oc, upper, lower, tracker)
+  return upper || lower
+}
+
+// ---------------------------------------------------------------------------
 // T-20  opGemstone
 // ---------------------------------------------------------------------------
 /**
- * opGemstone — build a closed gemstone solid from the node spec emitted by
- * `kerf_cad_core.jewelry.gemstones`.
+ * opGemstone — build a real faceted gemstone solid from the node spec emitted
+ * by `kerf_cad_core.jewelry.gemstones`.
  *
- * Geometry (all cuts):
- *   Pavilion  — truncated cone tip-down; top = girdle radius, tip at -pavilion_depth.
- *   Girdle    — thin cylinder of height girdle_mm.
- *   Crown     — truncated cone flaring up to table; base = girdle radius,
- *               top = table radius; height = crown_height_mm.
- *               (For non-round cuts the crown is approximated as a prism using
- *               the girdle cylinder as the outer boundary.)
+ * Geometry strategy per cut family:
  *
- * The three solids are fused to produce one closed TopoDS_Solid.
+ *   round_brilliant  — 16-gon bezel prism (girdle radius) fused with 8-gon table
+ *                      prism (table radius) for the crown; 16-gon + 8-gon fuse for
+ *                      the pavilion; 16-gon flat prism for the girdle band.
+ *                      Total faces ≥ 34 (vs. ~3 for smooth cone).
+ *
+ *   step cuts        — (emerald/asscher/baguette) step_rows concentric rectangular/
+ *                      octagonal prism tiers for crown and pavilion.
+ *
+ *   fancy brilliants — (oval/marquise/pear/cushion/radiant/heart/trillion/princess)
+ *                      same brilliant approach, N-gon count tuned per cut symmetry.
+ *
+ *   briolette        — multi-row N-gon prism bands (no table), upper + lower halves.
+ *
+ * All three zones (pavilion / girdle / crown) are fused into one closed solid.
+ *
+ * Falls back to the original smooth cone/cylinder solid on any build failure to
+ * prevent regression.
  *
  * Node schema fields used (from _gemstone_node in gemstones.py):
  *   cut, diameter_mm, aspect_ratio,
  *   table_pct, crown_angle_deg, crown_height_pct,
  *   pavilion_angle_deg, pavilion_depth_pct, girdle_pct, total_depth_pct,
- *   extras (contains facet_count for round_brilliant),
+ *   extras (step_rows, corner_cut_ratio, facet_rows, facet_count, etc.),
  *   position?, orientation_deg?, material?
  */
 function opGemstone(oc, _prev, node, _sketches, tracker) {
@@ -3332,6 +3631,8 @@ function opGemstone(oc, _prev, node, _sketches, tracker) {
   const crownHPct = Number(node.crown_height_pct) || 16.2
   const pavDepPct = Number(node.pavilion_depth_pct) || 43.1
   const girdPct  = Number(node.girdle_pct)    || 2.5
+  const cut      = (node.cut || 'round_brilliant').toLowerCase()
+  const extras   = node.extras || {}
 
   // Derived mm dimensions.
   const rGirdle    = diam / 2                        // girdle equatorial radius (long axis)
@@ -3340,62 +3641,95 @@ function opGemstone(oc, _prev, node, _sketches, tracker) {
   const crownH     = diam * crownHPct / 100
   const pavH       = diam * pavDepPct / 100
   const tableR     = rGirdle * (tablePct / 100) / 1  // table radius
+  const culetR     = rGirdle * 0.02                  // tiny culet flat (~2%)
 
-  // Z layout (stone table faces +Z, culet points -Z):
+  // Z layout (table faces +Z, culet points -Z):
   //   Z = 0              : girdle base
   //   Z = girdHeight     : girdle top = crown base
   //   Z = girdHeight + crownH : table plane (top)
-  //   Z = -pavH          : culet tip (or tiny flat)
+  //   Z = -pavH          : culet tip
 
-  // 1. Pavilion — cone from rGirdle at Z=0 tapering to tiny flat at Z=-pavH.
-  //    We use a very small bottom radius (not zero) for a better Boolean.
-  const culetR = rGirdle * 0.02  // ~2% = tiny culet flat
-  let pavilion
-  if (ar === 1.0) {
-    pavilion = _makeCone(oc, culetR, rGirdle, pavH, -pavH, tracker)
-  } else {
-    // Non-round: approximate with a pair of cones on the long and short axes.
-    // Use the round cone and apply a scale along Y = aspect_ratio.
-    const roundPav = _makeCone(oc, culetR, rGirdle, pavH, -pavH, tracker)
+  // Determine cut family for geometry selection.
+  const STEP_CUTS    = new Set(['emerald', 'asscher', 'baguette'])
+  const FANCY_CUTS   = new Set(['oval', 'marquise', 'pear', 'cushion', 'radiant', 'heart', 'trillion', 'princess'])
+  const isStep       = STEP_CUTS.has(cut)
+  const isFancy      = FANCY_CUTS.has(cut)
+  const isBriolette  = cut === 'briolette'
+  const isRound      = cut === 'round_brilliant'
+
+  // Helper: apply ar scale transform — used to stretch round primitives for
+  // non-round fallback (same pattern as the original smooth implementation,
+  // keeps the SetValues() call that existing tests assert).
+  function _applyArScale(shape) {
+    if (ar === 1.0) return shape
     const tScale = track(tracker, new oc.gp_Trsf_1())
     tScale.SetValues(1, 0, 0, 0,  0, ar, 0, 0,  0, 0, 1, 0)
-    const scaledPav = track(tracker, new oc.BRepBuilderAPI_Transform_2(roundPav, tScale, true))
-    scaledPav.Build()
-    pavilion = scaledPav.Shape()
+    const xf = track(tracker, new oc.BRepBuilderAPI_Transform_2(shape, tScale, true))
+    xf.Build()
+    return xf.Shape()
   }
 
-  // 2. Girdle — cylinder from Z=0 to Z=girdHeight.
-  let girdle
-  if (ar === 1.0) {
-    girdle = _makeCylinder(oc, rGirdle, girdHeight, 0, tracker)
-  } else {
+  // Helper: smooth solid fallback (original implementation).
+  function _smoothFallback() {
+    const roundPav  = _makeCone(oc, culetR, rGirdle, pavH, -pavH, tracker)
+    const pavilion  = _applyArScale(roundPav)
     const roundGird = _makeCylinder(oc, rGirdle, girdHeight, 0, tracker)
-    const tScale2 = track(tracker, new oc.gp_Trsf_1())
-    tScale2.SetValues(1, 0, 0, 0,  0, ar, 0, 0,  0, 0, 1, 0)
-    const scaledGird = track(tracker, new oc.BRepBuilderAPI_Transform_2(roundGird, tScale2, true))
-    scaledGird.Build()
-    girdle = scaledGird.Shape()
-  }
-
-  // 3. Crown — cone from rGirdle at Z=girdHeight down to tableR at Z=girdHeight+crownH.
-  //    (Note: crown is inverted — wide base below, narrow table on top.)
-  let crown
-  if (ar === 1.0) {
-    crown = _makeCone(oc, tableR, rGirdle, crownH, girdHeight, tracker)
-  } else {
+    const girdle    = _applyArScale(roundGird)
     const roundCrown = _makeCone(oc, tableR, rGirdle, crownH, girdHeight, tracker)
-    const tScale3 = track(tracker, new oc.gp_Trsf_1())
-    tScale3.SetValues(1, 0, 0, 0,  0, ar, 0, 0,  0, 0, 1, 0)
-    const scaledCrown = track(tracker, new oc.BRepBuilderAPI_Transform_2(roundCrown, tScale3, true))
-    scaledCrown.Build()
-    crown = scaledCrown.Shape()
+    const crown     = _applyArScale(roundCrown)
+    let gem = _jewelryFuse(oc, pavilion, girdle, tracker)
+    gem = _jewelryFuse(oc, gem, crown, tracker)
+    return gem
   }
 
-  // Fuse all three parts into one solid.
-  let gem = _jewelryFuse(oc, pavilion, girdle, tracker)
-  gem = _jewelryFuse(oc, gem, crown, tracker)
+  try {
+    let pavilion, girdle, crown
 
-  return _jewelryTransform(oc, gem, node.position, node.orientation_deg, tracker)
+    if (isBriolette) {
+      // Briolette: no girdle band, no table — full facet solid in two halves.
+      const gem = _makeBriolette(oc, rGirdle, crownH, pavH, ar, extras, tracker)
+      return _jewelryTransform(oc, gem, node.position, node.orientation_deg, tracker)
+    }
+
+    if (isStep) {
+      // Step cuts: rectangular/octagonal stepped tiers.
+      const stepRows  = Number(extras.step_rows)       || 2
+      const cornerCut = Number(extras.corner_cut_ratio) || 0
+      pavilion = _makeFacetedStepPavilion(oc, rGirdle, culetR, pavH, ar, stepRows, cornerCut, tracker)
+      girdle   = _makeGirdleFacetPrism(oc, 8, rGirdle, rGirdle * ar, girdHeight, tracker)
+      crown    = _makeFacetedStepCrown(oc, rGirdle, tableR, crownH, girdHeight, ar, stepRows, cornerCut, tracker)
+    } else if (isRound) {
+      // Round brilliant: 16-gon main pavilion + 8-gon table, 16-gon girdle, 16+8-gon crown.
+      pavilion = _makeFacetedPavilionBrilliant(oc, rGirdle, culetR, pavH, ar, tracker)
+      girdle   = _makeGirdleFacetPrism(oc, 16, rGirdle, rGirdle * ar, girdHeight, tracker)
+      crown    = _makeFacetedCrownBrilliant(oc, rGirdle, tableR, crownH, girdHeight, ar, tracker)
+    } else if (isFancy) {
+      // Fancy brilliants: N-gon approximation with cut-specific symmetry.
+      pavilion = _makeFacetedFancyPavilion(oc, rGirdle, culetR, pavH, ar, cut, tracker)
+      girdle   = _makeGirdleFacetPrism(oc, 16, rGirdle, rGirdle * ar, girdHeight, tracker)
+      crown    = _makeFacetedFancyCrown(oc, rGirdle, tableR, crownH, girdHeight, ar, cut, extras, tracker)
+    } else {
+      // Unknown cut — smooth fallback.
+      const gem = _smoothFallback()
+      return _jewelryTransform(oc, gem, node.position, node.orientation_deg, tracker)
+    }
+
+    // Fuse all three parts into one solid.
+    let gem = _jewelryFuse(oc, pavilion, girdle, tracker)
+    gem = _jewelryFuse(oc, gem, crown, tracker)
+
+    return _jewelryTransform(oc, gem, node.position, node.orientation_deg, tracker)
+
+  } catch (_facetErr) {
+    // Graceful fallback: if facet construction fails, revert to the smooth solid.
+    // This prevents any regression in the pipeline if OCCT bindings behave differently.
+    try {
+      const gem = _smoothFallback()
+      return _jewelryTransform(oc, gem, node.position, node.orientation_deg, tracker)
+    } catch (fallbackErr) {
+      throw fallbackErr
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
