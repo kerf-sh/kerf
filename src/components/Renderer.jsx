@@ -9,6 +9,7 @@ import { getTopologyLazy } from '../lib/topology.js'
 import { distance, formatDistance } from '../lib/measure.js'
 import { cullByFrustum, setUserVisible, frustumCullEnabled } from '../lib/frustumCull.js'
 import { planInstances, instancingEnabled } from '../lib/instancingPlan.js'
+import { createZebraMaterial } from '../lib/zebraMaterial.js'
 
 const PALETTE = [0xc9a96b, 0x6b9bc9, 0xc96b89, 0x89c96b, 0xc9b86b, 0x9b6bc9]
 const HIGHLIGHT_EMISSIVE = 0x4d3c00 // kerf yellow tint
@@ -101,6 +102,7 @@ function Renderer({
   const stateRef = useRef(null) // holds three.js objects across renders
   const [hudId, setHudId] = useState(null)
   const [leaderHtml, setLeaderHtml] = useState(null) // {x, y, text} screen coords
+  const [zebraOn, setZebraOn] = useState(false)
   const modeRef = useRef(mode)
   const selectedFeaturesRef = useRef(selectedFeatures)
   const onPickFeatureRef = useRef(onPickFeature)
@@ -643,6 +645,33 @@ function Renderer({
     }
   }, [selectedFeatures, parts, topologies])
 
+  // ----- Zebra / reflection-line overlay -----
+  // When zebraOn is true we swap every mesh in meshGroup to a ZebraMaterial
+  // and store the original material so we can restore it on toggle-off.
+  // We do NOT touch edge/vertex aux, overlays, or leader lines — those are
+  // unaffected by the surface analysis overlay.
+  useEffect(() => {
+    const s = stateRef.current
+    if (!s) return
+    for (const mesh of s.meshGroup.children) {
+      if (zebraOn) {
+        if (!mesh.userData._origMaterial) {
+          mesh.userData._origMaterial = mesh.material
+        }
+        // Create a fresh ZebraMaterial per mesh so each can be disposed
+        // independently on parts rebuild.
+        const zm = createZebraMaterial()
+        mesh.material = zm
+      } else {
+        if (mesh.userData._origMaterial) {
+          mesh.material.dispose()
+          mesh.material = mesh.userData._origMaterial
+          mesh.userData._origMaterial = null
+        }
+      }
+    }
+  }, [zebraOn, parts])
+
   // ----- Imperative handle: expose canvas snapshot for thumbnails -----
   // The Editor calls this after a successful save (debounced) to grab a
   // small JPEG of the current scene. We render once more synchronously
@@ -717,6 +746,19 @@ function Renderer({
           {mode} mode · click to pick · shift+click to add
         </div>
       )}
+      {/* Zebra / reflection-line toggle — top-right corner of the viewport */}
+      <button
+        type="button"
+        onClick={() => setZebraOn((v) => !v)}
+        title="Toggle zebra / reflection lines (Class-A surface analysis)"
+        className={`absolute top-3 right-3 z-10 px-2 py-1 rounded text-[11px] font-mono transition-colors ${
+          zebraOn
+            ? 'bg-kerf-300 text-ink-950 border border-kerf-300'
+            : 'bg-ink-900/80 text-ink-300 border border-ink-700 hover:text-kerf-300 hover:border-kerf-300/50 backdrop-blur'
+        }`}
+      >
+        Zebra
+      </button>
     </div>
   )
 }
