@@ -70,8 +70,21 @@ def convert_sources(
     return all_parts
 
 
-def write_notice(generated_dir: Path, sources: list[Source]) -> Path:
-    """Emit the attribution/NOTICE into the GITIGNORED generated dir."""
+def write_notice(
+    generated_dir: Path,
+    sources: list[Source],
+    parts: Optional[list[KerfPart]] = None,
+) -> Path:
+    """Emit the attribution/NOTICE into the GITIGNORED generated dir.
+
+    The per-part section is regenerated from the SAME structured
+    ``attribution`` blocks that are embedded in each part's metadata (single
+    source of truth), so the side NOTICE file and the in-part attribution
+    can never diverge. ``parts`` is optional only so the manifest-only
+    summary still renders before conversion / for scaffold-only runs.
+    """
+    from .provenance import notice_lines_for_parts
+
     generated_dir.mkdir(parents=True, exist_ok=True)
     lines = [
         "ATTRIBUTION / NOTICE — locally generated, NOT redistributed by Kerf",
@@ -93,6 +106,20 @@ def write_notice(generated_dir: Path, sources: list[Source]) -> Path:
             f"    license  : {s.license}",
             "",
         ]
+
+    attributions = [
+        (p.metadata or {}).get("attribution")
+        for p in (parts or [])
+        if (p.metadata or {}).get("attribution")
+    ]
+    if attributions:
+        lines += [
+            "Per-part original authorship (same data embedded in every",
+            "part's metadata — regenerated here so the two never diverge):",
+            "",
+        ]
+        lines += notice_lines_for_parts(attributions)
+
     lines += [
         "KiCad official libraries are CC-BY-SA-4.0 with the KiCad Library",
         "Exception (the 'KiCad Library Exception'). That permits local",
@@ -334,7 +361,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     print(f"{len(parts)} total part(s) ready")
 
     generated_dir = cache_dir / GENERATED_DIRNAME
-    notice = write_notice(generated_dir, selected)
+    notice = write_notice(generated_dir, selected, parts)
     print(f"attribution NOTICE -> {notice} (gitignored)")
 
     if args.dry_run:
