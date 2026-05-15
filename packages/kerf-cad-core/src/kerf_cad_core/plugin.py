@@ -37,6 +37,7 @@ _TOOL_MODULES = [
     "kerf_cad_core.jewelry.decorative",
     "kerf_cad_core.jewelry.pieces",
     "kerf_cad_core.jewelry.casting_export",
+    "kerf_cad_core.jewelry.templates",
     "kerf_cad_core.sheet_metal",
 ]
 
