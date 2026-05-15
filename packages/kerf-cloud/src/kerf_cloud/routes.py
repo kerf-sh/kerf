@@ -21,6 +21,7 @@ from kerf_core.storage import get_storage_required
 from kerf_core.storage.s3 import S3Storage
 from kerf_core.storage.git_storer import S3GitStorer, StorerConcurrencyError
 from kerf_core.utils.encrypt import encrypt_secret, decrypt_secret
+from kerf_cloud.github_app import app_jwt as _gh_app_jwt, installation_token as _gh_installation_token, install_url as _gh_install_url
 
 router = APIRouter()
 settings = get_settings()
@@ -568,8 +569,18 @@ async def github_auth_start(
     request: Request,
     payload: dict = Depends(require_auth),
 ):
-    if not settings.cloud_github_client_id or not settings.cloud_github_client_secret:
-        raise HTTPException(status_code=503, detail="GitHub OAuth not configured")
+    """Redirect the authenticated user to the GitHub App installation page.
+
+    The user selects repos to grant access to. GitHub redirects back to
+    /github/callback with installation_id (and setup_action=install or
+    setup_action=update).
+
+    Falls back gracefully when the GitHub App is not configured (503).
+    """
+    if not settings.cloud_github_app_id or not settings.github_private_key_pem:
+        raise HTTPException(status_code=503, detail="GitHub App not configured")
+    if not settings.cloud_github_app_slug:
+        raise HTTPException(status_code=503, detail="GitHub App slug not configured")
 
     user_id = payload["sub"]
     redirect_query_param = request.query_params.get("redirect", "")
@@ -578,15 +589,10 @@ async def github_auth_start(
     state_data = {"n": nonce, "u": user_id, "r": redirect_query_param}
     state = base64.urlsafe_b64encode(json.dumps(state_data).encode()).decode().rstrip("=")
 
+    location = _gh_install_url(settings.cloud_github_app_slug, state)
+
     response = Response(status_code=302)
-    response.headers["Location"] = (
-        "https://github.com/login/oauth/authorize"
-        f"?client_id={settings.cloud_github_client_id}"
-        f"&redirect_uri={settings.cloud_github_redirect_url}"
-        "&scope=repo"
-        f"&state={state}"
-        "&response_type=code"
-    )
+    response.headers["Location"] = location
     response.set_cookie(
         key="kerf_github_oauth_state",
         value=state,
@@ -600,8 +606,17 @@ async def github_auth_start(
 
 @github_oauth_router.get("/github/callback")
 async def github_auth_callback(request: Request):
-    if not settings.cloud_github_client_id or not settings.cloud_github_client_secret:
-        raise HTTPException(status_code=503, detail="GitHub OAuth not configured")
+    """Handle GitHub App installation callback.
+
+    GitHub redirects here after the user installs (or updates) the App,
+    sending ?installation_id=<id>&setup_action=install&state=<state>.
+
+    We persist the installation_id against the user row in
+    cloud_github_tokens. The actual short-lived installation access token is
+    NEVER stored — it is minted on demand via github_app.installation_token().
+    """
+    if not settings.cloud_github_app_id or not settings.github_private_key_pem:
+        raise HTTPException(status_code=503, detail="GitHub App not configured")
 
     state_cookie = request.cookies.get("kerf_github_oauth_state")
     state_param = request.query_params.get("state", "")
@@ -627,56 +642,60 @@ async def github_auth_callback(request: Request):
         path="/",
     )
 
-    code = request.query_params.get("code", "")
-    if not code:
-        response.headers["Location"] = f"{settings.cors_origin}/auth/callback?provider=github&error=no_code"
+    installation_id_str = request.query_params.get("installation_id", "")
+    if not installation_id_str:
+        response.headers["Location"] = f"{settings.cors_origin}/auth/callback?provider=github&error=no_installation"
         return response
 
     try:
-        async with httpx.AsyncClient() as client:
-            token_resp = await client.post(
-                "https://github.com/login/oauth/access_token",
-                data={
-                    "client_id": settings.cloud_github_client_id,
-                    "client_secret": settings.cloud_github_client_secret,
-                    "code": code,
-                    "redirect_uri": settings.cloud_github_redirect_url,
-                },
-                headers={"Accept": "application/json"},
-            )
-            token_data = token_resp.json()
-            access_token = token_data.get("access_token", "")
-            scope = token_data.get("scope", "")
+        installation_id = int(installation_id_str)
+    except ValueError:
+        response.headers["Location"] = f"{settings.cors_origin}/auth/callback?provider=github&error=bad_installation_id"
+        return response
+
+    try:
+        # Mint a token to confirm the installation is valid and fetch the
+        # GitHub user/login associated with this installation.
+        inst_token = await _gh_installation_token(
+            installation_id,
+            settings.cloud_github_app_id,
+            settings.github_private_key_pem,
+        )
 
         async with httpx.AsyncClient() as client:
             user_resp = await client.get(
-                "https://api.github.com/user",
-                headers={"Authorization": f"Bearer {access_token}", "Accept": "application/json"},
+                "https://api.github.com/installation/token",
+                headers={"Authorization": f"Bearer {inst_token}", "Accept": "application/vnd.github+json"},
             )
-            github_user = user_resp.json()
-            github_user_id = github_user.get("id")
-            github_login = github_user.get("login", "")
-
-        encrypted_token = encrypt_secret(access_token.encode(), "cloud:github-token")
+            # Fall back gracefully if this endpoint isn't accessible
+            github_user_id = None
+            github_login = ""
+            if user_resp.status_code < 400:
+                gh_data = user_resp.json()
+                github_login = gh_data.get("login", "")
 
         pool = await get_pool_required()
         async with pool.acquire() as conn:
             await conn.execute(
                 """
-                INSERT INTO cloud_github_tokens (user_id, access_token_encrypted, scope, github_user_id, github_login, updated_at)
-                VALUES ($1, $2, $3, $4, $5, now())
+                INSERT INTO cloud_github_tokens (
+                    user_id, access_token_encrypted, scope,
+                    github_user_id, github_login, github_installation_id, updated_at
+                )
+                VALUES ($1, $2, '', $3, $4, $5, now())
                 ON CONFLICT (user_id) DO UPDATE SET
-                    access_token_encrypted = EXCLUDED.access_token_encrypted,
-                    scope = EXCLUDED.scope,
-                    github_user_id = EXCLUDED.github_user_id,
-                    github_login = EXCLUDED.github_login,
+                    github_installation_id = EXCLUDED.github_installation_id,
+                    github_login = COALESCE(NULLIF(EXCLUDED.github_login, ''), cloud_github_tokens.github_login),
                     updated_at = now()
                 """,
                 user_id,
-                encrypted_token,
-                scope,
+                # Placeholder encrypted blob — the OAuth token is no longer used;
+                # we store a zero-length encrypted sentinel so the NOT NULL
+                # constraint is satisfied on new rows.
+                encrypt_secret(b"", "cloud:github-token"),
                 github_user_id,
                 github_login,
+                installation_id,
             )
 
         redirect_url = f"{settings.cors_origin}/auth/callback?provider=github"
@@ -685,7 +704,7 @@ async def github_auth_callback(request: Request):
         response.headers["Location"] = redirect_url
 
     except Exception:
-        response.headers["Location"] = f"{settings.cors_origin}/auth/callback?provider=github&error=oauth_failed"
+        response.headers["Location"] = f"{settings.cors_origin}/auth/callback?provider=github&error=install_failed"
 
     return response
 
