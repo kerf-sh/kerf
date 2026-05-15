@@ -33,7 +33,7 @@ Public API
     ring_diameter_to_size(system, diameter_mm) -> str|float
 
     compute_shank_params(ring_size, system, band_width, thickness,
-                         profile, taper_ratio) -> dict
+                         profile, taper_ratio, ...) -> dict
 
     build_shank_node(file_id, ring_size, system, band_width, thickness,
                      profile, shoulder_style, taper_ratio, node_id) -> dict
@@ -42,6 +42,26 @@ LLM tools registered
 ---------------------
     jewelry_ring_size_to_diameter
     jewelry_create_ring_shank
+
+New profiles (v2)
+-----------------
+    cigar_band   — wide, flat-topped band with heavy bevelled edges
+    bombe        — domed (convex) outer surface, flat inner bore
+    concave      — concave outer channel running around the band
+    square       — square cross-section with sharp corners
+    hammered     — faceted outer surface; facet_count controls the number
+                   of hammer-strike facets around the circumference
+    split_band   — geometry hint for a true split-band (two parallel rails);
+                   gap_mm controls the gap between the rails
+
+New node-spec fields (v2)
+--------------------------
+    engraving          — EngravingSpec: text on band (geometry hint, no OCCT render)
+    sizing_beads       — SizingBeadSpec: small interior beads for snug fit
+    comfort_fit_radius — float: interior dome radius override (mm)
+    finger_fit_taper   — float: asymmetric taper angle (degrees) for knuckle fit
+    width_profile      — list[float]: width taper curve (shoulder→back, 2–10 points,
+                         each 0 < v ≤ 1.0, relative to band_width)
 """
 
 from __future__ import annotations
@@ -49,7 +69,8 @@ from __future__ import annotations
 import json
 import math
 import uuid
-from typing import Optional
+from dataclasses import dataclass, field
+from typing import List, Optional
 
 from kerf_chat.tools.registry import ToolSpec, err_payload, ok_payload, register
 from kerf_core.utils.context import ProjectCtx
@@ -172,6 +193,7 @@ _EU_MAX_CIRC = 76.0
 
 # Valid profile strings
 _VALID_PROFILES = frozenset([
+    # original profiles
     "d_shape",
     "comfort_fit",
     "flat",
@@ -179,6 +201,13 @@ _VALID_PROFILES = frozenset([
     "knife_edge",
     "euro",
     "tapered",
+    # v2 profiles
+    "cigar_band",
+    "bombe",
+    "concave",
+    "square",
+    "hammered",
+    "split_band",
 ])
 
 # Valid shoulder styles
@@ -359,6 +388,7 @@ def _normalise_uk_key(size) -> str:
 
 # Profile cross-section descriptions for the feature node
 _PROFILE_DESCRIPTIONS: dict[str, str] = {
+    # original
     "d_shape":     "Flat outside, curved inside — classic men's band.",
     "comfort_fit": "Domed outside, rounded inside for comfort — slides on easily.",
     "flat":        "Fully flat top and bottom, squared edges — contemporary style.",
@@ -366,7 +396,298 @@ _PROFILE_DESCRIPTIONS: dict[str, str] = {
     "knife_edge":  "V-shaped ridge along centre of outer face — architectural look.",
     "euro":        "Slightly squared profile (≈rectangular with rounded corners).",
     "tapered":     "Width and/or thickness taper from shoulder to base.",
+    # v2
+    "cigar_band":  "Wide flat-topped band with heavy bevelled edges — bold statement.",
+    "bombe":       "Convex domed outer surface, flat inner bore — full rounded look.",
+    "concave":     "Concave channel carved into the outer face — elegant groove detail.",
+    "square":      "Square cross-section with sharp 90° corners — architectural/modern.",
+    "hammered":    "Outer surface divided into flat hammer-strike facets — artisan texture.",
+    "split_band":  "Two parallel rail bands separated by a central gap — open split look.",
 }
+
+
+# ---------------------------------------------------------------------------
+# v2 spec dataclasses
+# ---------------------------------------------------------------------------
+
+@dataclass
+class EngravingSpec:
+    """Parametric band-engraving descriptor.
+
+    Geometry hint only — the occtWorker subtracts an engraved text channel
+    from the outer face of the band.  Actual OCCT font / text rendering is
+    deferred to the worker; this spec carries only the layout parameters.
+
+    Fields
+    ------
+    text : str
+        The text string to engrave (UTF-8, max 200 chars).
+    font_height_mm : float
+        Nominal glyph cap-height in mm.  > 0.
+    depth_mm : float
+        Engraving cut depth below the outer surface, mm.  > 0, must be < thickness.
+    position_deg : float
+        Angular start position around the band in degrees (0 = bottom / 6-o'clock,
+        positive = clockwise when viewed from below).  0–360.
+    align : str
+        Text alignment relative to position_deg: "centre", "left", or "right".
+    """
+    text: str
+    font_height_mm: float = 1.5
+    depth_mm: float = 0.3
+    position_deg: float = 180.0  # bottom of the band by default
+    align: str = "centre"
+
+    # valid alignment tokens
+    _VALID_ALIGN = frozenset(["centre", "left", "right"])
+
+    def validate(self) -> None:
+        if not self.text or not str(self.text).strip():
+            raise ValueError("engraving.text must be a non-empty string")
+        if len(str(self.text)) > 200:
+            raise ValueError("engraving.text must be ≤ 200 characters")
+        if self.font_height_mm <= 0:
+            raise ValueError(f"engraving.font_height_mm must be > 0; got {self.font_height_mm}")
+        if self.depth_mm <= 0:
+            raise ValueError(f"engraving.depth_mm must be > 0; got {self.depth_mm}")
+        if not (0.0 <= self.position_deg <= 360.0):
+            raise ValueError(
+                f"engraving.position_deg must be 0–360; got {self.position_deg}"
+            )
+        if self.align not in self._VALID_ALIGN:
+            raise ValueError(
+                f"engraving.align must be one of {sorted(self._VALID_ALIGN)}; "
+                f"got {self.align!r}"
+            )
+
+    def to_dict(self) -> dict:
+        self.validate()
+        return {
+            "text": str(self.text),
+            "font_height_mm": self.font_height_mm,
+            "depth_mm": self.depth_mm,
+            "position_deg": self.position_deg,
+            "align": self.align,
+        }
+
+
+@dataclass
+class SizingBeadSpec:
+    """Small hemispherical protrusions on the inner bore to snug ring fit.
+
+    The worker adds two diametrically-opposed (or equidistant) beads on
+    the inner surface.  This is a geometry hint; the worker resolves the
+    bead subtraction / union from the band solid.
+
+    Fields
+    ------
+    count : int
+        Number of beads equally spaced around the bore.  1–4.
+    bead_diameter_mm : float
+        Diameter of each bead hemisphere, mm.  > 0, typically 0.8–1.5 mm.
+    bead_height_mm : float
+        How far each bead protrudes inward from the inner surface, mm.  > 0.
+        Must be < (thickness / 4) to avoid punching through the band.
+    position_deg : float
+        Angular position of the first bead (0 = bottom of the ring,
+        positive clockwise from below).  0–360.
+    """
+    count: int = 2
+    bead_diameter_mm: float = 1.0
+    bead_height_mm: float = 0.4
+    position_deg: float = 270.0  # 9-o'clock = comfortable lateral position
+
+    def validate(self, band_thickness_mm: float = 0.0) -> None:
+        if not (1 <= self.count <= 4):
+            raise ValueError(f"sizing_beads.count must be 1–4; got {self.count}")
+        if self.bead_diameter_mm <= 0:
+            raise ValueError(
+                f"sizing_beads.bead_diameter_mm must be > 0; got {self.bead_diameter_mm}"
+            )
+        if self.bead_height_mm <= 0:
+            raise ValueError(
+                f"sizing_beads.bead_height_mm must be > 0; got {self.bead_height_mm}"
+            )
+        if not (0.0 <= self.position_deg <= 360.0):
+            raise ValueError(
+                f"sizing_beads.position_deg must be 0–360; got {self.position_deg}"
+            )
+        if band_thickness_mm > 0 and self.bead_height_mm >= band_thickness_mm / 4.0:
+            raise ValueError(
+                f"sizing_beads.bead_height_mm ({self.bead_height_mm}) must be < "
+                f"thickness/4 ({band_thickness_mm / 4.0:.3f}) to avoid perforation"
+            )
+
+    def to_dict(self) -> dict:
+        self.validate()
+        return {
+            "count": self.count,
+            "bead_diameter_mm": self.bead_diameter_mm,
+            "bead_height_mm": self.bead_height_mm,
+            "position_deg": self.position_deg,
+        }
+
+
+def _validate_width_profile(curve: list) -> list[float]:
+    """Validate and normalise a width_profile curve.
+
+    Parameters
+    ----------
+    curve : list
+        2–10 floats, each in range (0, 1].  Index 0 = shoulder end,
+        last index = back of the band.  1.0 = full band_width.
+
+    Returns
+    -------
+    list[float]
+        Validated list of floats.
+
+    Raises
+    ------
+    ValueError
+    """
+    if not isinstance(curve, (list, tuple)) or len(curve) < 2 or len(curve) > 10:
+        raise ValueError(
+            f"width_profile must be a list of 2–10 floats; got {len(curve) if isinstance(curve, (list, tuple)) else type(curve)}"
+        )
+    result = []
+    for i, v in enumerate(curve):
+        try:
+            fv = float(v)
+        except (TypeError, ValueError):
+            raise ValueError(f"width_profile[{i}] must be a number; got {v!r}")
+        if fv <= 0 or fv > 1.0:
+            raise ValueError(
+                f"width_profile[{i}] must be in (0, 1]; got {fv}"
+            )
+        result.append(fv)
+    return result
+
+
+def _profile_extra_hints(
+    profile: str,
+    thickness: float,
+    band_width: float,
+    *,
+    hammered_facet_count: int = 32,
+    split_band_gap_mm: float = 1.0,
+    bombe_dome_ratio: float = 0.5,
+    concave_depth_ratio: float = 0.3,
+    cigar_bevel_ratio: float = 0.2,
+) -> dict:
+    """Return profile-specific geometry hints for v2 profiles.
+
+    Original profiles return an empty dict (no extra hints beyond profile name).
+    v2 profiles return a hints sub-dict embedded in the node under
+    ``profile_hints``.
+
+    Parameters
+    ----------
+    profile : str
+        One of the _VALID_PROFILES values.
+    thickness : float
+        Band radial wall thickness, mm.
+    band_width : float
+        Band width along finger axis, mm.
+    hammered_facet_count : int
+        Number of flat facets around the outer circumference for
+        ``hammered`` profile.  4–128.  Default 32.
+    split_band_gap_mm : float
+        Gap between the two rails for ``split_band`` profile.  > 0.
+        Must be < band_width − 0.5 mm (leaves at least 0.25 mm per rail).
+        Default 1.0 mm.
+    bombe_dome_ratio : float
+        Outer dome height as a fraction of the half-width for ``bombe``.
+        0 < v ≤ 1.0.  Default 0.5.
+    concave_depth_ratio : float
+        Depth of the concave channel as a fraction of band_width for
+        ``concave``.  0 < v < 0.5.  Default 0.3.
+    cigar_bevel_ratio : float
+        Bevel edge width as a fraction of band_width for ``cigar_band``.
+        0 < v < 0.4.  Default 0.2 (so bevel occupies 20% of each edge).
+    """
+    _ORIG_PROFILES = frozenset([
+        "d_shape", "comfort_fit", "flat", "half_round",
+        "knife_edge", "euro", "tapered",
+    ])
+    if profile in _ORIG_PROFILES:
+        return {}
+
+    if profile == "cigar_band":
+        if not (0 < cigar_bevel_ratio < 0.4):
+            raise ValueError(
+                f"cigar_bevel_ratio must be in (0, 0.4); got {cigar_bevel_ratio}"
+            )
+        bevel_mm = round(band_width * cigar_bevel_ratio, 3)
+        return {
+            "type": "cigar_band",
+            "bevel_width_mm": bevel_mm,
+            "flat_top_width_mm": round(band_width * (1.0 - 2 * cigar_bevel_ratio), 3),
+        }
+
+    elif profile == "bombe":
+        if not (0 < bombe_dome_ratio <= 1.0):
+            raise ValueError(
+                f"bombe_dome_ratio must be in (0, 1]; got {bombe_dome_ratio}"
+            )
+        dome_height = round(band_width * 0.5 * bombe_dome_ratio, 3)
+        return {
+            "type": "bombe",
+            "dome_height_mm": dome_height,
+            "dome_ratio": bombe_dome_ratio,
+        }
+
+    elif profile == "concave":
+        if not (0 < concave_depth_ratio < 0.5):
+            raise ValueError(
+                f"concave_depth_ratio must be in (0, 0.5); got {concave_depth_ratio}"
+            )
+        channel_depth = round(thickness * concave_depth_ratio, 3)
+        channel_width = round(band_width * 0.6, 3)
+        return {
+            "type": "concave",
+            "channel_depth_mm": channel_depth,
+            "channel_width_mm": channel_width,
+        }
+
+    elif profile == "square":
+        return {
+            "type": "square",
+            "corner_radius_mm": 0.0,  # truly sharp — worker may add micro-fillet
+        }
+
+    elif profile == "hammered":
+        fc = int(hammered_facet_count)
+        if not (4 <= fc <= 128):
+            raise ValueError(
+                f"hammered_facet_count must be 4–128; got {fc}"
+            )
+        facet_arc_deg = round(360.0 / fc, 4)
+        return {
+            "type": "hammered",
+            "facet_count": fc,
+            "facet_arc_deg": facet_arc_deg,
+        }
+
+    elif profile == "split_band":
+        if split_band_gap_mm <= 0:
+            raise ValueError(
+                f"split_band_gap_mm must be > 0; got {split_band_gap_mm}"
+            )
+        min_rail = 0.25
+        if split_band_gap_mm >= band_width - 2 * min_rail:
+            raise ValueError(
+                f"split_band_gap_mm ({split_band_gap_mm}) too large for "
+                f"band_width {band_width} — each rail must be ≥ {min_rail} mm"
+            )
+        rail_width = round((band_width - split_band_gap_mm) / 2.0, 3)
+        return {
+            "type": "split_band",
+            "gap_mm": round(split_band_gap_mm, 3),
+            "rail_width_mm": rail_width,
+        }
+
+    return {}
 
 
 def compute_shank_params(
@@ -377,6 +698,19 @@ def compute_shank_params(
     profile: str = "comfort_fit",
     taper_ratio: float = 1.0,
     shoulder_style: str = "plain",
+    # v2 profile-specific params
+    hammered_facet_count: int = 32,
+    split_band_gap_mm: float = 1.0,
+    bombe_dome_ratio: float = 0.5,
+    concave_depth_ratio: float = 0.3,
+    cigar_bevel_ratio: float = 0.2,
+    # v2 engraving
+    engraving: Optional[EngravingSpec] = None,
+    # v2 sizing / fit features
+    sizing_beads: Optional[SizingBeadSpec] = None,
+    comfort_fit_radius: Optional[float] = None,
+    finger_fit_taper: float = 0.0,
+    width_profile: Optional[list] = None,
 ) -> dict:
     """Compute validated parametric shank descriptor.
 
@@ -394,17 +728,47 @@ def compute_shank_params(
     thickness : float
         Radial thickness of the band wall, mm.  > 0.
     profile : str
-        One of: d_shape, comfort_fit, flat, half_round, knife_edge, euro, tapered.
+        One of: d_shape, comfort_fit, flat, half_round, knife_edge, euro,
+        tapered, cigar_band, bombe, concave, square, hammered, split_band.
     taper_ratio : float
         Width/thickness scale at the base of the shank relative to the shoulder
         top.  1.0 = uniform; 0.6 = base is 60 % of shoulder dimension.
     shoulder_style : str
         One of: plain, cathedral, split_shank, bypass.
+    hammered_facet_count : int
+        Number of hammer-strike facets (only used for ``hammered`` profile).
+        4–128, default 32.
+    split_band_gap_mm : float
+        Gap between rails in mm (only used for ``split_band`` profile).  > 0.
+    bombe_dome_ratio : float
+        Dome height fraction of half-width (only ``bombe``).  0 < v ≤ 1.0.
+    concave_depth_ratio : float
+        Concave channel depth as fraction of thickness (only ``concave``).
+        0 < v < 0.5.
+    cigar_bevel_ratio : float
+        Bevel edge width fraction of band_width (only ``cigar_band``).
+        0 < v < 0.4.
+    engraving : EngravingSpec | None
+        Optional band-engraving geometry hint.  See EngravingSpec.
+    sizing_beads : SizingBeadSpec | None
+        Optional interior sizing beads for snug fit.  See SizingBeadSpec.
+    comfort_fit_radius : float | None
+        Override the interior dome radius (mm) when using comfort_fit profile.
+        If None, the worker uses its default (≈ 0.8 × inner_radius).  > 0.
+    finger_fit_taper : float
+        Asymmetric taper angle (degrees) to accommodate knuckle sizing.
+        The band is slightly wider on one side by this taper angle.
+        0 = symmetric (default); 0–15 degrees accepted.
+    width_profile : list[float] | None
+        2–10 floats (0 < v ≤ 1.0) describing width ratio from shoulder (index 0)
+        to back of band (last index).  1.0 = full band_width.
+        None = no width taper (uniform).
 
     Returns
     -------
     dict
-        Inner diameter, circumference, profile, shoulder_style, geometry hints.
+        Inner diameter, circumference, profile, shoulder_style, geometry hints,
+        and all v2 feature fields.
     """
     if profile not in _VALID_PROFILES:
         raise ValueError(
@@ -422,6 +786,17 @@ def compute_shank_params(
     if taper_ratio <= 0:
         raise ValueError(f"taper_ratio must be > 0; got {taper_ratio}")
 
+    # v2 param validation
+    if comfort_fit_radius is not None:
+        if comfort_fit_radius <= 0:
+            raise ValueError(
+                f"comfort_fit_radius must be > 0; got {comfort_fit_radius}"
+            )
+    if not (0.0 <= finger_fit_taper <= 15.0):
+        raise ValueError(
+            f"finger_fit_taper must be 0–15 degrees; got {finger_fit_taper}"
+        )
+
     id_mm = ring_size_to_diameter(system, ring_size)
     circ_mm = _id_mm_to_circumference(id_mm)
     outer_diameter = id_mm + 2 * thickness
@@ -429,7 +804,19 @@ def compute_shank_params(
     # Shoulder geometry hints (multipliers / offsets, not full BREP)
     shoulder_hints = _shoulder_hints(shoulder_style, id_mm, band_width)
 
-    return {
+    # v2 profile hints
+    profile_hints = _profile_extra_hints(
+        profile,
+        thickness,
+        band_width,
+        hammered_facet_count=hammered_facet_count,
+        split_band_gap_mm=split_band_gap_mm,
+        bombe_dome_ratio=bombe_dome_ratio,
+        concave_depth_ratio=concave_depth_ratio,
+        cigar_bevel_ratio=cigar_bevel_ratio,
+    )
+
+    result: dict = {
         "inner_diameter_mm": round(id_mm, 4),
         "outer_diameter_mm": round(outer_diameter, 4),
         "circumference_mm": round(circ_mm, 4),
@@ -442,6 +829,33 @@ def compute_shank_params(
         "size_system": system,
         "ring_size": ring_size,
     }
+
+    if profile_hints:
+        result["profile_hints"] = profile_hints
+
+    # Engraving spec
+    if engraving is not None:
+        engraving.validate()
+        result["engraving"] = engraving.to_dict()
+
+    # Sizing beads
+    if sizing_beads is not None:
+        sizing_beads.validate(band_thickness_mm=thickness)
+        result["sizing_beads"] = sizing_beads.to_dict()
+
+    # Comfort fit interior radius override
+    if comfort_fit_radius is not None:
+        result["comfort_fit_radius_mm"] = round(comfort_fit_radius, 4)
+
+    # Asymmetric finger-fit taper
+    if finger_fit_taper != 0.0:
+        result["finger_fit_taper_deg"] = round(finger_fit_taper, 4)
+
+    # Width profile curve
+    if width_profile is not None:
+        result["width_profile"] = _validate_width_profile(width_profile)
+
+    return result
 
 
 def _shoulder_hints(style: str, id_mm: float, band_width: float) -> dict:
@@ -630,10 +1044,19 @@ jewelry_create_ring_shank_spec = ToolSpec(
         "comfort_fit (domed outside / rounded inside — standard ladies' band), "
         "flat (contemporary squared profile), half_round (classic domed top), "
         "knife_edge (V-ridge centre line), euro (square-ish), "
-        "tapered (width+thickness taper from shoulder to base). "
+        "tapered (width+thickness taper from shoulder to base), "
+        "cigar_band (wide flat-top with bevelled edges), "
+        "bombe (convex domed outer surface), "
+        "concave (concave outer channel), "
+        "square (sharp 90° corners), "
+        "hammered (faceted artisan texture, use hammered_facet_count to control), "
+        "split_band (two parallel rails with a central gap, use split_band_gap_mm). "
         "Shoulder styles: plain (uniform band), cathedral (arched shoulders "
         "rising to a centre setting), split_shank (band splits into two prongs "
         "near the setting), bypass (ends pass alongside each other). "
+        "v2 extras: engraving (text on band), sizing_beads (interior snug-fit beads), "
+        "comfort_fit_radius (custom interior dome radius), finger_fit_taper (knuckle "
+        "asymmetry), width_profile (taper curve shoulder→back). "
         "All dimensions in mm. Ring size is auto-converted to inner diameter. "
         "The feature node is stored and evaluated by the occtWorker opRingShank "
         "sweep using a corrected_frenet frame on the circular path."
@@ -667,8 +1090,12 @@ jewelry_create_ring_shank_spec = ToolSpec(
             },
             "profile": {
                 "type": "string",
-                "enum": ["d_shape", "comfort_fit", "flat", "half_round",
-                         "knife_edge", "euro", "tapered"],
+                "enum": [
+                    "d_shape", "comfort_fit", "flat", "half_round",
+                    "knife_edge", "euro", "tapered",
+                    "cigar_band", "bombe", "concave", "square",
+                    "hammered", "split_band",
+                ],
                 "description": "Cross-section profile. Default 'comfort_fit'.",
             },
             "taper_ratio": {
@@ -676,13 +1103,113 @@ jewelry_create_ring_shank_spec = ToolSpec(
                 "description": (
                     "Width+thickness scale at the back of the shank relative to "
                     "the shoulder. 1.0 = uniform; 0.6 = back is 60% of shoulder. "
-                    "Only used when profile='tapered'. Default 1.0."
+                    "Default 1.0."
                 ),
             },
             "shoulder_style": {
                 "type": "string",
                 "enum": ["plain", "cathedral", "split_shank", "bypass"],
                 "description": "How the shank meets the head/setting. Default 'plain'.",
+            },
+            # v2 profile-specific params
+            "hammered_facet_count": {
+                "type": "integer",
+                "description": (
+                    "Number of flat hammer-strike facets around the outer "
+                    "circumference. Only used for profile='hammered'. "
+                    "Range 4–128. Default 32."
+                ),
+            },
+            "split_band_gap_mm": {
+                "type": "number",
+                "description": (
+                    "Gap between the two parallel rails for profile='split_band'. "
+                    "Must be > 0 and < band_width − 0.5 mm. Default 1.0 mm."
+                ),
+            },
+            "bombe_dome_ratio": {
+                "type": "number",
+                "description": (
+                    "Dome height as fraction of half-band-width for profile='bombe'. "
+                    "0 < v ≤ 1.0. Default 0.5."
+                ),
+            },
+            "concave_depth_ratio": {
+                "type": "number",
+                "description": (
+                    "Concave channel depth as fraction of thickness for "
+                    "profile='concave'. 0 < v < 0.5. Default 0.3."
+                ),
+            },
+            "cigar_bevel_ratio": {
+                "type": "number",
+                "description": (
+                    "Bevel edge fraction of band_width for profile='cigar_band'. "
+                    "0 < v < 0.4. Default 0.2."
+                ),
+            },
+            # v2 engraving
+            "engraving": {
+                "type": "object",
+                "description": (
+                    "Optional band-engraving spec (geometry hint only; "
+                    "OCCT text rendering deferred to occtWorker). "
+                    "Fields: text (str, required), font_height_mm (float, default 1.5), "
+                    "depth_mm (float, default 0.3), position_deg (float 0–360, default 180), "
+                    "align ('centre'|'left'|'right', default 'centre')."
+                ),
+                "properties": {
+                    "text": {"type": "string"},
+                    "font_height_mm": {"type": "number"},
+                    "depth_mm": {"type": "number"},
+                    "position_deg": {"type": "number"},
+                    "align": {"type": "string", "enum": ["centre", "left", "right"]},
+                },
+                "required": ["text"],
+            },
+            # v2 sizing/fit
+            "sizing_beads": {
+                "type": "object",
+                "description": (
+                    "Optional interior sizing-bead spec for snug fit. "
+                    "Fields: count (int 1–4, default 2), bead_diameter_mm (float, "
+                    "default 1.0), bead_height_mm (float, default 0.4), "
+                    "position_deg (float 0–360, default 270)."
+                ),
+                "properties": {
+                    "count": {"type": "integer"},
+                    "bead_diameter_mm": {"type": "number"},
+                    "bead_height_mm": {"type": "number"},
+                    "position_deg": {"type": "number"},
+                },
+            },
+            "comfort_fit_radius": {
+                "type": "number",
+                "description": (
+                    "Override for the interior dome radius (mm) when using "
+                    "comfort_fit profile. If omitted the worker uses its default "
+                    "(≈ 0.8 × inner_radius). Must be > 0."
+                ),
+            },
+            "finger_fit_taper": {
+                "type": "number",
+                "description": (
+                    "Asymmetric taper angle (degrees) to accommodate a larger "
+                    "knuckle: the band is slightly wider on the knuckle side. "
+                    "0 = symmetric (default). Range 0–15."
+                ),
+            },
+            "width_profile": {
+                "type": "array",
+                "description": (
+                    "Width taper curve from shoulder (index 0) to back of band "
+                    "(last index). Each value is a ratio relative to band_width "
+                    "(0 < v ≤ 1.0). Must have 2–10 elements. "
+                    "Omit for uniform width (no taper)."
+                ),
+                "items": {"type": "number"},
+                "minItems": 2,
+                "maxItems": 10,
             },
             "id": {
                 "type": "string",
@@ -710,6 +1237,22 @@ async def run_jewelry_create_ring_shank(ctx: ProjectCtx, args: bytes) -> str:
     taper_ratio = a.get("taper_ratio", 1.0)
     shoulder_style = str(a.get("shoulder_style", "plain")).strip()
     node_id = str(a.get("id", "")).strip()
+
+    # v2 profile-specific params
+    hammered_facet_count = a.get("hammered_facet_count", 32)
+    split_band_gap_mm = a.get("split_band_gap_mm", 1.0)
+    bombe_dome_ratio = a.get("bombe_dome_ratio", 0.5)
+    concave_depth_ratio = a.get("concave_depth_ratio", 0.3)
+    cigar_bevel_ratio = a.get("cigar_bevel_ratio", 0.2)
+
+    # v2 engraving
+    engraving_raw = a.get("engraving", None)
+
+    # v2 sizing/fit
+    sizing_beads_raw = a.get("sizing_beads", None)
+    comfort_fit_radius = a.get("comfort_fit_radius", None)
+    finger_fit_taper = a.get("finger_fit_taper", 0.0)
+    width_profile = a.get("width_profile", None)
 
     if not file_id_str:
         return err_payload("file_id is required", "BAD_ARGS")
@@ -747,6 +1290,69 @@ async def run_jewelry_create_ring_shank(ctx: ProjectCtx, args: bytes) -> str:
     if taper_ratio <= 0:
         return err_payload(f"taper_ratio must be > 0; got {taper_ratio}", "BAD_ARGS")
 
+    # Parse v2 numeric params
+    try:
+        hammered_facet_count = int(hammered_facet_count)
+        split_band_gap_mm = float(split_band_gap_mm)
+        bombe_dome_ratio = float(bombe_dome_ratio)
+        concave_depth_ratio = float(concave_depth_ratio)
+        cigar_bevel_ratio = float(cigar_bevel_ratio)
+    except (TypeError, ValueError) as e:
+        return err_payload(f"v2 profile param error: {e}", "BAD_ARGS")
+
+    # Parse comfort_fit_radius
+    if comfort_fit_radius is not None:
+        try:
+            comfort_fit_radius = float(comfort_fit_radius)
+        except (TypeError, ValueError) as e:
+            return err_payload(f"comfort_fit_radius must be a number: {e}", "BAD_ARGS")
+        if comfort_fit_radius <= 0:
+            return err_payload(
+                f"comfort_fit_radius must be > 0; got {comfort_fit_radius}", "BAD_ARGS"
+            )
+
+    # Parse finger_fit_taper
+    try:
+        finger_fit_taper = float(finger_fit_taper)
+    except (TypeError, ValueError) as e:
+        return err_payload(f"finger_fit_taper must be a number: {e}", "BAD_ARGS")
+
+    # Parse engraving
+    engraving_spec: Optional[EngravingSpec] = None
+    if engraving_raw is not None:
+        if not isinstance(engraving_raw, dict):
+            return err_payload("engraving must be an object", "BAD_ARGS")
+        eng_text = engraving_raw.get("text", "")
+        if not eng_text:
+            return err_payload("engraving.text is required", "BAD_ARGS")
+        try:
+            engraving_spec = EngravingSpec(
+                text=str(eng_text),
+                font_height_mm=float(engraving_raw.get("font_height_mm", 1.5)),
+                depth_mm=float(engraving_raw.get("depth_mm", 0.3)),
+                position_deg=float(engraving_raw.get("position_deg", 180.0)),
+                align=str(engraving_raw.get("align", "centre")),
+            )
+            engraving_spec.validate()
+        except ValueError as e:
+            return err_payload(str(e), "BAD_ARGS")
+
+    # Parse sizing beads
+    sizing_beads_spec: Optional[SizingBeadSpec] = None
+    if sizing_beads_raw is not None:
+        if not isinstance(sizing_beads_raw, dict):
+            return err_payload("sizing_beads must be an object", "BAD_ARGS")
+        try:
+            sizing_beads_spec = SizingBeadSpec(
+                count=int(sizing_beads_raw.get("count", 2)),
+                bead_diameter_mm=float(sizing_beads_raw.get("bead_diameter_mm", 1.0)),
+                bead_height_mm=float(sizing_beads_raw.get("bead_height_mm", 0.4)),
+                position_deg=float(sizing_beads_raw.get("position_deg", 270.0)),
+            )
+            # full validation (with thickness) happens inside compute_shank_params
+        except (TypeError, ValueError) as e:
+            return err_payload(f"sizing_beads parse error: {e}", "BAD_ARGS")
+
     # Validate and compute ring sizing
     try:
         shank_params = compute_shank_params(
@@ -757,6 +1363,16 @@ async def run_jewelry_create_ring_shank(ctx: ProjectCtx, args: bytes) -> str:
             profile=profile,
             taper_ratio=taper_ratio,
             shoulder_style=shoulder_style,
+            hammered_facet_count=hammered_facet_count,
+            split_band_gap_mm=split_band_gap_mm,
+            bombe_dome_ratio=bombe_dome_ratio,
+            concave_depth_ratio=concave_depth_ratio,
+            cigar_bevel_ratio=cigar_bevel_ratio,
+            engraving=engraving_spec,
+            sizing_beads=sizing_beads_spec,
+            comfort_fit_radius=comfort_fit_radius,
+            finger_fit_taper=finger_fit_taper,
+            width_profile=width_profile,
         )
     except ValueError as e:
         return err_payload(str(e), "BAD_ARGS")
