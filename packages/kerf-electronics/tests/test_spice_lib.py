@@ -15,6 +15,16 @@ import math
 import os
 import re
 import sys
+# ── Prefer the real kerf_chat (installed in this monorepo). Pinning it into
+#    sys.modules BEFORE the stub setdefaults means those become no-ops and the
+#    stub never shadows the real, populated Registry that other suites import.
+try:
+    import kerf_chat as _kc_pkg  # noqa: F401
+    import kerf_chat.tools as _kc_tools  # noqa: F401
+    import kerf_chat.tools.registry as _kc_real  # noqa: F401
+except Exception:
+    _kc_real = None
+
 import types
 import unittest
 
@@ -28,6 +38,7 @@ _SRC = os.path.join(os.path.dirname(_HERE), "src", "kerf_electronics", "tools", 
 
 # Stub kerf_chat.tools.registry so @register doesn't need the real stack
 _reg_stub = types.ModuleType("kerf_chat.tools.registry")
+_reg_stub.Registry = type("Registry", (list,), {})  # real Registry is a list subclass; keep leaked stub import-compatible
 _reg_stub.ToolSpec = type("ToolSpec", (), {"__init__": lambda s, **kw: s.__dict__.update(kw)})
 _reg_stub.err_payload = lambda msg, code: json.dumps({"error": msg, "code": code})
 _reg_stub.ok_payload = lambda v: json.dumps(v)
@@ -43,8 +54,12 @@ _tools_pkg = types.ModuleType("kerf_chat.tools")
 _pkg.tools = _tools_pkg
 sys.modules.setdefault("kerf_chat", _pkg)
 sys.modules.setdefault("kerf_chat.tools", _tools_pkg)
-sys.modules["kerf_chat.tools.registry"] = _reg_stub
-
+_KERF_CHAT_SAVED = {
+    _n: sys.modules.get(_n)
+    for _n in ("kerf_chat", "kerf_chat.tools", "kerf_chat.tools.registry")
+}
+if _kc_real is None:
+    sys.modules["kerf_chat.tools.registry"] = _reg_stub
 _spec = importlib.util.spec_from_file_location("kerf_electronics.tools.spice_lib", _SRC)
 _mod = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_mod)
@@ -513,3 +528,15 @@ class TestParametricHelpers(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# ── Restore sys.modules so the kerf_chat stub does not leak into other test
+#    modules (real kerf_chat.tools.registry is a populated list other suites
+#    iterate; a leaked stub breaks ~100 downstream tests). ───────────────────
+def teardown_module(module):  # noqa: D401  (pytest module teardown)
+    import sys as _sys
+    for _name, _orig in _KERF_CHAT_SAVED.items():
+        if _orig is None:
+            _sys.modules.pop(_name, None)
+        else:
+            _sys.modules[_name] = _orig

@@ -719,10 +719,11 @@ function PerDomain() {
 /* -------------------------------------------------------------------------- */
 
 const COMPARE_LINKS = [
-  { label: 'Kerf vs Onshape', href: '/compare/onshape' },
-  { label: 'Kerf vs Fusion 360', href: '/compare/fusion360' },
   { label: 'Kerf vs FreeCAD', href: '/compare/freecad' },
+  { label: 'Kerf vs Fusion 360', href: '/compare/fusion' },
   { label: 'Kerf vs KiCad', href: '/compare/kicad' },
+  { label: 'Kerf vs Rhino', href: '/compare/rhino' },
+  { label: 'Kerf vs Revit', href: '/compare/revit' },
 ]
 
 function Compare() {

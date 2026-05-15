@@ -38,7 +38,7 @@ import Footer from '../../components/Footer.jsx'
 import Button from '../../components/Button.jsx'
 import { META_TITLE, META_DESCRIPTION, META_OG_IMAGE, META_URL, FEATURES, JSON_LD } from './mechanical.meta.js'
 
-const GITHUB_URL = 'https://github.com/imranp/kerf'
+const GITHUB_URL = 'https://github.com/kerf-sh/kerf'
 
 /* -------------------------------------------------------------------------- */
 /* SEO head injection (inline <script> + meta via document mutation)          */

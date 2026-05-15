@@ -38,7 +38,7 @@ import Footer from '../../components/Footer.jsx'
 import Button from '../../components/Button.jsx'
 import { ARCH_META, buildArchJsonLd } from './architecture.meta.js'
 
-const GITHUB_URL = 'https://github.com/imranp/kerf'
+const GITHUB_URL = 'https://github.com/kerf-sh/kerf'
 
 /* -------------------------------------------------------------------------- */
 /* Exported data — consumed by tests                                           */

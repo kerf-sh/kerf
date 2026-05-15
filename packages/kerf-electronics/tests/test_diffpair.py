@@ -9,6 +9,16 @@ import importlib.util
 import json
 import math
 import sys
+# ── Prefer the real kerf_chat (installed in this monorepo). Pinning it into
+#    sys.modules BEFORE the stub setdefaults means those become no-ops and the
+#    stub never shadows the real, populated Registry that other suites import.
+try:
+    import kerf_chat as _kc_pkg  # noqa: F401
+    import kerf_chat.tools as _kc_tools  # noqa: F401
+    import kerf_chat.tools.registry as _kc_real  # noqa: F401
+except Exception:
+    _kc_real = None
+
 import types
 import pytest
 
@@ -16,6 +26,7 @@ import pytest
 # ── Stub kerf_chat.tools.registry ────────────────────────────────────────────
 
 _reg_stub = types.ModuleType("kerf_chat.tools.registry")
+_reg_stub.Registry = type("Registry", (list,), {})  # real Registry is a list subclass; keep leaked stub import-compatible
 _reg_stub.ToolSpec = type("ToolSpec", (), {"__init__": lambda s, **kw: s.__dict__.update(kw)})
 _reg_stub.err_payload = lambda msg, code: json.dumps({"error": msg, "code": code})
 _reg_stub.ok_payload = lambda v: json.dumps(v)
@@ -27,8 +38,12 @@ _kerf_chat_tools_stub = types.ModuleType("kerf_chat.tools")
 
 sys.modules.setdefault("kerf_chat", _kerf_chat_stub)
 sys.modules.setdefault("kerf_chat.tools", _kerf_chat_tools_stub)
-sys.modules["kerf_chat.tools.registry"] = _reg_stub
-
+_KERF_CHAT_SAVED = {
+    _n: sys.modules.get(_n)
+    for _n in ("kerf_chat", "kerf_chat.tools", "kerf_chat.tools.registry")
+}
+if _kc_real is None:
+    sys.modules["kerf_chat.tools.registry"] = _reg_stub
 _spec = importlib.util.spec_from_file_location(
     "kerf_electronics.tools.diffpair",
     "packages/kerf-electronics/src/kerf_electronics/tools/diffpair.py",
@@ -674,3 +689,15 @@ class TestCheckLengthMatch:
         assert nets["UNROUTED"]["current_length_mm"] == 0.0
         assert abs(nets["UNROUTED"]["delta_mm"] - 20.0) < 0.01
         assert nets["UNROUTED"]["needs_tuning"] is True
+
+
+# ── Restore sys.modules so the kerf_chat stub does not leak into other test
+#    modules (real kerf_chat.tools.registry is a populated list other suites
+#    iterate; a leaked stub breaks ~100 downstream tests). ───────────────────
+def teardown_module(module):  # noqa: D401  (pytest module teardown)
+    import sys as _sys
+    for _name, _orig in _KERF_CHAT_SAVED.items():
+        if _orig is None:
+            _sys.modules.pop(_name, None)
+        else:
+            _sys.modules[_name] = _orig

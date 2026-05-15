@@ -31,7 +31,7 @@ import Footer from '../../components/Footer.jsx'
 import Button from '../../components/Button.jsx'
 import { JEWELRY_META, JEWELRY_FEATURES, buildJsonLd } from './jewelry.meta.js'
 
-const GITHUB_URL = 'https://github.com/imranp/kerf'
+const GITHUB_URL = 'https://github.com/kerf-sh/kerf'
 
 /* -------------------------------------------------------------------------- */
 /* SEO helmet (inject into <head> imperatively — no Helmet dep)               */
@@ -536,7 +536,7 @@ function ComparisonTable() {
         <p className="mt-4 text-[11px] text-ink-500 font-mono">
           Comparisons updated 2026-05-15 — file an issue at{' '}
           <a
-            href="https://github.com/imranp/kerf/issues"
+            href="https://github.com/kerf-sh/kerf/issues"
             target="_blank"
             rel="noreferrer"
             className="text-ink-400 hover:text-ink-200 underline underline-offset-2 transition-colors"

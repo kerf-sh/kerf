@@ -235,7 +235,7 @@ function TableFooter() {
     <p className="mt-3 text-xs text-ink-500 font-mono">
       Comparisons updated 2026-05-15 — open an issue at{' '}
       <a
-        href="https://github.com/imranp/kerf/issues"
+        href="https://github.com/kerf-sh/kerf/issues"
         target="_blank"
         rel="noreferrer"
         className="text-ink-400 hover:text-ink-200 underline underline-offset-2"

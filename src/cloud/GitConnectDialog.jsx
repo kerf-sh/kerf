@@ -30,7 +30,7 @@ function parseGithubUrl(url) {
   // git@github.com:owner/repo
   let m = trimmed.match(/^git@github\.com:([^/]+)\/([^/]+?)$/i)
   if (m) return { owner: m[1], repo: m[2] }
-  // https://github.com/owner/repo[/...]
+  // https://github.com/kerf-sh/kerf[/...]
   m = trimmed.match(/github\.com\/([^/]+)\/([^/]+?)(?:\/.*)?$/i)
   if (m) return { owner: m[1], repo: m[2] }
   // owner/repo shorthand
@@ -184,7 +184,7 @@ export default function GitConnectDialog({ projectId, githubLogin, onClose, onDo
               )}
               <Input
                 label="Repository URL"
-                placeholder="https://github.com/owner/repo"
+                placeholder="https://github.com/kerf-sh/kerf"
                 value={importUrl}
                 onChange={(e) => setImportUrl(e.target.value)}
                 hint="HTTPS, SSH, or owner/repo shorthand all work."
