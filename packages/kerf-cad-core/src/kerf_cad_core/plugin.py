@@ -53,6 +53,7 @@ _TOOL_MODULES = [
     "kerf_cad_core.harness.tools",
     "kerf_cad_core.clash.tools",
     "kerf_cad_core.marine.tools",
+    "kerf_cad_core.scan.tools",
 ]
 
 # ── kerf_core contract (built by kerf-core agent in parallel) ─────────────────
