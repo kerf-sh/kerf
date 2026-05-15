@@ -58,6 +58,15 @@ async def register(app: "FastAPI", ctx):
     provides.append("imports.subd-mesh")
 
     try:
+        from kerf_imports.dwg.bridge import dwg_bridge_available
+        if dwg_bridge_available():
+            provides.append("imports.dwg")
+        else:
+            logger.info("kerf-imports: libredwg not available; DWG import disabled")
+    except Exception:
+        logger.info("kerf-imports: DWG bridge check failed; DWG import disabled")
+
+    try:
         from kerf_core.plugin import PluginManifest  # type: ignore
     except ImportError:
         return {
@@ -91,6 +100,7 @@ def _register_tools(ctx, provides: list) -> None:
         "kerf_imports.tools.feature_multi_transform",
         "kerf_imports.tools.feature_rib",
         "kerf_imports.tools.sheet_revisions",
+        "kerf_imports.tools.import_dwg",
     ]
 
     for module_path in tool_modules:
