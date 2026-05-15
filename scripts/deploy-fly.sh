@@ -45,7 +45,9 @@ done
 
 ENV_FILE=".env.${ENV_NAME}"
 if [[ "$ENV_NAME" == "main" ]]; then
-  APP_NAME="kerf"
+  # Global app name "kerf" is taken on fly.io; production app is
+  # "kerf-prod" (public domain kerf.sh is mapped via flyctl certs).
+  APP_NAME="kerf-prod"
   WORKER_APP_NAME="kerf-workers"
 else
   APP_NAME="kerf-${ENV_NAME}"

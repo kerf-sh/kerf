@@ -5,7 +5,7 @@
 # probes. The image is the same one built from the root Dockerfile.
 
 app = "kerf-workers"
-primary_region = "jnb"
+primary_region = "fra"
 
 [build]
   dockerfile = "Dockerfile"

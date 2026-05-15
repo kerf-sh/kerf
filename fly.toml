@@ -4,11 +4,13 @@
 # which deploys a separate `kerf-worker` fly app sharing the same image
 # but running with --workers-only and no public HTTP service.
 #
-# Primary: jnb (Johannesburg)  ·  Secondary: fra (Frankfurt).
-# Deploy: `fly deploy --config fly.toml`
+# Primary: fra (Frankfurt). The global app name "kerf" is taken on
+# fly.io, so the production app is "kerf-prod"; the public domain
+# kerf.sh is attached via `flyctl certs` and is independent of the
+# internal app name. Deploy: `./scripts/deploy-fly.sh` (main).
 
-app = "kerf"
-primary_region = "jnb"
+app = "kerf-prod"
+primary_region = "fra"
 
 [build]
   dockerfile = "Dockerfile"
