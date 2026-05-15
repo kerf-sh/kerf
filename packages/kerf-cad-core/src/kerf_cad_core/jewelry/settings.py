@@ -1,7 +1,7 @@
 """
 kerf_cad_core.jewelry.settings — Parametric stone setting generators.
 
-Twenty-two setting types, each with:
+Twenty-eight setting types, each with:
   1. A pure-Python geometry helper that returns a node-spec dict (no OCCT
      required — the dict is consumed by the OCCT worker's opJewelry* handlers).
   2. An LLM tool (ToolSpec + @register runner) following the exact pattern
@@ -30,6 +30,15 @@ head_gallery  — basket/peg head + decorative gallery rail (plain, scalloped,
 under_bezel   — sub-collet that elevates a stone above the shank.
 peg_setting   — post head for earrings and pendants.
 coronet       — tapered crown of graduated prongs (vintage/Victorian look).
+
+suspension_mount    — articulated dangle mount (pivot ring + stone seat) for drop
+                      earrings and pendants.
+vtip_protector      — protective metal V-tip caps for pointed stone corners
+                      (pear, marquise, heart, trillion).
+bombe_cluster       — domed multi-stone cluster on a curved surface (bombé style).
+patterned_bezel     — decorative bezel collar with petal/compass/star outline cutouts.
+trellis_prong       — interwoven cross-prong basket setting.
+bar_channel_graduated — row of graduated stones with bar separators between each stone.
 
 Geometry approach (shared)
 --------------------------
@@ -3737,4 +3746,1411 @@ async def run_jewelry_create_coronet(ctx: ProjectCtx, args: bytes) -> str:
         "prong_count": pc,
         "_base_diameter": node["_base_diameter"],
         "_tip_diameter": node["_tip_diameter"],
+    })
+
+
+# ===========================================================================
+# SUSPENSION / DANGLE MOUNT
+# ===========================================================================
+#
+# An articulated stone mount that swings — used for drop earrings and
+# pendants.  Consists of a jump-ring-style pivot loop attached to a stone
+# seat (bezel cup or prong cup).
+# ---------------------------------------------------------------------------
+
+_VALID_SEAT_STYLES = {"bezel_cup", "prong_cup", "claw_cup"}
+
+
+def build_suspension_mount_node(
+    node_id: str,
+    stone_diameter: float,
+    seat_style: str,
+    seat_depth: float,
+    ring_wire_diameter: float,
+    ring_inner_diameter: float,
+    bail_height: float,
+) -> dict:
+    """
+    Compute the suspension / dangle mount node spec.
+
+    The worker's opJewelrySuspensionMount builds:
+      - A stone seat of `seat_style` ('bezel_cup', 'prong_cup', or 'claw_cup')
+        sized to `stone_diameter`, with a seating depth of `seat_depth`.
+      - A jump-ring-style pivot loop of wire diameter `ring_wire_diameter`
+        and inner diameter `ring_inner_diameter` soldered to the top of the
+        seat.  The loop passes through a finding (ear wire or pendant bail) and
+        allows the mount to swing freely.
+      - A short bail cylinder of height `bail_height` that connects the seat
+        body to the pivot ring; provides extra metal above the stone for
+        structural strength.
+
+    The ring's outer diameter = ring_inner_diameter + 2 × ring_wire_diameter.
+    The total assembly height = seat_depth + bail_height + ring_wire_diameter.
+
+    Derived hints:
+      _ring_outer_diameter — ring_inner_diameter + 2 * ring_wire_diameter.
+      _total_height        — seat_depth + bail_height + ring_wire_diameter.
+      _seat_radius         — stone_diameter / 2.
+    """
+    ring_outer_diameter = ring_inner_diameter + 2.0 * ring_wire_diameter
+    total_height = seat_depth + bail_height + ring_wire_diameter
+    seat_radius = stone_diameter / 2.0
+
+    return {
+        "id": node_id,
+        "op": "jewelry_suspension_mount",
+        "stone_diameter": stone_diameter,
+        "seat_style": seat_style,
+        "seat_depth": seat_depth,
+        "ring_wire_diameter": ring_wire_diameter,
+        "ring_inner_diameter": ring_inner_diameter,
+        "bail_height": bail_height,
+        "_ring_outer_diameter": round(ring_outer_diameter, 4),
+        "_total_height": round(total_height, 4),
+        "_seat_radius": round(seat_radius, 4),
+    }
+
+
+jewelry_suspension_mount_spec = ToolSpec(
+    name="jewelry_create_suspension_mount",
+    description=(
+        "Append a `jewelry_suspension_mount` node to a `.feature` file. "
+        "Generates an articulated dangle mount for drop earrings and pendants — "
+        "a stone seat attached to a jump-ring-style pivot loop that lets the "
+        "setting swing freely on an ear wire or pendant bail. "
+        "\n\nSeat styles:\n"
+        "- **`bezel_cup`** — a full bezel collar seat.\n"
+        "- **`prong_cup`** — an open prong-head cup (typically 4 prongs).\n"
+        "- **`claw_cup`** — a claw-tip prong cup for maximum stone visibility.\n"
+        "\nThe pivot ring is sized by `ring_inner_diameter` (the passage diameter "
+        "through which the ear wire or bail slides) and `ring_wire_diameter` "
+        "(the ring cross-section). A short `bail_height` cylinder connects the "
+        "seat to the ring. "
+        "Output: node spec consumed by opJewelrySuspensionMount."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "file_id": {
+                "type": "string",
+                "description": "Target .feature file id (uuid).",
+            },
+            "stone_diameter": {
+                "type": "number",
+                "description": "Girdle diameter of the stone in mm.",
+            },
+            "seat_style": {
+                "type": "string",
+                "enum": sorted(_VALID_SEAT_STYLES),
+                "description": (
+                    "Stone seat type. "
+                    "'bezel_cup': full bezel collar. "
+                    "'prong_cup': open 4-prong cup. "
+                    "'claw_cup': claw-tip prong cup."
+                ),
+            },
+            "seat_depth": {
+                "type": "number",
+                "description": "Depth of the stone seat in mm (typically 40–60% of stone depth).",
+            },
+            "ring_wire_diameter": {
+                "type": "number",
+                "description": "Wire cross-section diameter of the pivot jump ring in mm (typical 0.7–1.2).",
+            },
+            "ring_inner_diameter": {
+                "type": "number",
+                "description": "Inner passage diameter of the pivot ring in mm. Must be > ring_wire_diameter.",
+            },
+            "bail_height": {
+                "type": "number",
+                "description": "Height of the bail cylinder connecting seat to pivot ring in mm (typical 1.0–3.0).",
+            },
+            "id": {
+                "type": "string",
+                "description": "Optional explicit node id.",
+            },
+        },
+        "required": [
+            "file_id", "stone_diameter", "seat_style", "seat_depth",
+            "ring_wire_diameter", "ring_inner_diameter", "bail_height",
+        ],
+    },
+)
+
+
+@register(jewelry_suspension_mount_spec, write=True)
+async def run_jewelry_create_suspension_mount(ctx: ProjectCtx, args: bytes) -> str:
+    try:
+        a = json.loads(args)
+    except Exception as e:
+        return err_payload(f"invalid args: {e}", "BAD_ARGS")
+
+    file_id_str = a.get("file_id", "").strip()
+    stone_diameter = a.get("stone_diameter")
+    seat_style = a.get("seat_style", "bezel_cup")
+    seat_depth = a.get("seat_depth")
+    ring_wire_diameter = a.get("ring_wire_diameter")
+    ring_inner_diameter = a.get("ring_inner_diameter")
+    bail_height = a.get("bail_height")
+    node_id = a.get("id", "").strip()
+
+    if not file_id_str:
+        return err_payload("file_id is required", "BAD_ARGS")
+
+    for fname, fval in [
+        ("stone_diameter", stone_diameter),
+        ("seat_depth", seat_depth),
+        ("ring_wire_diameter", ring_wire_diameter),
+        ("ring_inner_diameter", ring_inner_diameter),
+        ("bail_height", bail_height),
+    ]:
+        err = _positive(fname, fval)
+        if err:
+            return err_payload(err, "BAD_ARGS")
+
+    seat_style_clean = (seat_style or "bezel_cup").strip().lower()
+    if seat_style_clean not in _VALID_SEAT_STYLES:
+        return err_payload(
+            f"seat_style must be one of {sorted(_VALID_SEAT_STYLES)}; got {seat_style!r}",
+            "BAD_ARGS",
+        )
+
+    try:
+        rwd = float(ring_wire_diameter)
+        rid = float(ring_inner_diameter)
+    except (TypeError, ValueError):
+        return err_payload("ring_wire_diameter and ring_inner_diameter must be numbers", "BAD_ARGS")
+
+    if rid <= rwd:
+        return err_payload(
+            f"ring_inner_diameter ({rid}) must be > ring_wire_diameter ({rwd})",
+            "BAD_ARGS",
+        )
+
+    try:
+        fid = uuid.UUID(file_id_str)
+    except Exception:
+        return err_payload("file_id must be a uuid", "BAD_ARGS")
+
+    content, err = read_feature_content(ctx, fid)
+    if err:
+        return err_payload(f"file not found: {err}", "NOT_FOUND")
+
+    if not node_id:
+        node_id = next_node_id(content, "jewelry_suspension_mount")
+
+    node = build_suspension_mount_node(
+        node_id=node_id,
+        stone_diameter=float(stone_diameter),
+        seat_style=seat_style_clean,
+        seat_depth=float(seat_depth),
+        ring_wire_diameter=rwd,
+        ring_inner_diameter=rid,
+        bail_height=float(bail_height),
+    )
+
+    _, nid, err = append_feature_node(ctx, fid, node)
+    if err:
+        return err_payload(err, "ERROR")
+
+    return ok_payload({
+        "file_id": file_id_str,
+        "id": nid,
+        "op": "jewelry_suspension_mount",
+        "stone_diameter": float(stone_diameter),
+        "seat_style": seat_style_clean,
+        "_ring_outer_diameter": node["_ring_outer_diameter"],
+        "_total_height": node["_total_height"],
+    })
+
+
+# ===========================================================================
+# TRILLIANT / FANCY-SHAPED V-TIP PROTECTOR SETTING
+# ===========================================================================
+#
+# Protective metal V-tip caps placed over each pointed corner of a fancy-cut
+# stone (pear, marquise, heart, trillion).  Each cap is a thin channel-like
+# metal sleeve that wraps around the stone's sharp corner to protect it from
+# chipping.
+# ---------------------------------------------------------------------------
+
+_VALID_STONE_SHAPES = {"pear", "marquise", "heart", "trillion"}
+
+
+def build_vtip_protector_node(
+    node_id: str,
+    stone_shape: str,
+    tip_count: int,
+    tip_width: float,
+    tip_length: float,
+    wall_thickness: float,
+    seat_angle_deg: float,
+) -> dict:
+    """
+    Compute the V-tip protector setting node spec.
+
+    The worker's opJewelryVtipProtector builds:
+      - `tip_count` V-channel caps evenly distributed at the stone's pointed
+        corners.  For 'pear' and 'marquise': typically 1 or 2 tips; for
+        'trillion': 3 tips; for 'heart': 2 tips.
+      - Each cap is an open V-channel of width `tip_width` at the base and
+        length `tip_length` along the stone's edge from the corner, with wall
+        thickness `wall_thickness`.
+      - The internal angle of the V-channel is `seat_angle_deg` — this should
+        match the included angle of the stone's pointed corner for a snug fit
+        (typical 40–70° for pear/marquise, 60° for trillion).
+
+    Derived hints:
+      _tip_opening_width — width at the open end of the V = 2 × tip_length ×
+                           tan(seat_angle_deg / 2).
+      _cap_area_approx   — approximate cross-sectional area of each cap
+                           (triangular section) = 0.5 × tip_width × tip_length.
+    """
+    half_angle_rad = math.radians(seat_angle_deg / 2.0)
+    tip_opening_width = 2.0 * tip_length * math.tan(half_angle_rad)
+    cap_area_approx = 0.5 * tip_width * tip_length
+
+    return {
+        "id": node_id,
+        "op": "jewelry_vtip_protector",
+        "stone_shape": stone_shape,
+        "tip_count": tip_count,
+        "tip_width": tip_width,
+        "tip_length": tip_length,
+        "wall_thickness": wall_thickness,
+        "seat_angle_deg": seat_angle_deg,
+        "_tip_opening_width": round(tip_opening_width, 4),
+        "_cap_area_approx": round(cap_area_approx, 4),
+    }
+
+
+jewelry_vtip_protector_spec = ToolSpec(
+    name="jewelry_create_vtip_protector",
+    description=(
+        "Append a `jewelry_vtip_protector` node to a `.feature` file. "
+        "Generates protective V-tip metal caps for the pointed corners of "
+        "fancy-cut stones (pear, marquise, heart, trillion). "
+        "Each cap is a V-channel sleeve that wraps snugly around the stone's "
+        "sharp corner to prevent chipping during wear. "
+        "\n\nStone shapes supported:\n"
+        "- **`pear`** — 1 pointed tip (bottom culet) or 2 (top and bottom).\n"
+        "- **`marquise`** — 2 pointed tips (both ends of the oval).\n"
+        "- **`heart`** — 2 tips (the two lower lobes of the cleft).\n"
+        "- **`trillion`** — 3 tips (one per corner of the triangular stone).\n"
+        "\nThe V-channel internal angle `seat_angle_deg` must match the stone's "
+        "corner included angle for a snug fit (typical 40–70° pear/marquise; "
+        "60° trillion). "
+        "`tip_count` overrides the default count if you need custom cap placement. "
+        "Output: node spec consumed by opJewelryVtipProtector."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "file_id": {
+                "type": "string",
+                "description": "Target .feature file id (uuid).",
+            },
+            "stone_shape": {
+                "type": "string",
+                "enum": sorted(_VALID_STONE_SHAPES),
+                "description": "Shape of the fancy-cut stone. One of: pear, marquise, heart, trillion.",
+            },
+            "tip_count": {
+                "type": "integer",
+                "description": (
+                    "Number of V-tip caps to generate. "
+                    "Default per shape: pear=1, marquise=2, heart=2, trillion=3. "
+                    "Must be >= 1."
+                ),
+            },
+            "tip_width": {
+                "type": "number",
+                "description": "Width of the V-channel opening at the base in mm (typical 0.4–1.0).",
+            },
+            "tip_length": {
+                "type": "number",
+                "description": "Length of the cap along the stone edge from the corner in mm (typical 0.5–1.5).",
+            },
+            "wall_thickness": {
+                "type": "number",
+                "description": "Wall thickness of the V-channel cap in mm (typical 0.2–0.5).",
+            },
+            "seat_angle_deg": {
+                "type": "number",
+                "description": (
+                    "Internal angle of the V-channel in degrees — must match the "
+                    "stone's corner included angle. Typical: 40–70° (pear/marquise), "
+                    "60° (trillion). Must be in (0, 180)."
+                ),
+            },
+            "id": {
+                "type": "string",
+                "description": "Optional explicit node id.",
+            },
+        },
+        "required": [
+            "file_id", "stone_shape", "tip_count", "tip_width",
+            "tip_length", "wall_thickness", "seat_angle_deg",
+        ],
+    },
+)
+
+
+@register(jewelry_vtip_protector_spec, write=True)
+async def run_jewelry_create_vtip_protector(ctx: ProjectCtx, args: bytes) -> str:
+    try:
+        a = json.loads(args)
+    except Exception as e:
+        return err_payload(f"invalid args: {e}", "BAD_ARGS")
+
+    file_id_str = a.get("file_id", "").strip()
+    stone_shape = a.get("stone_shape", "pear")
+    tip_count = a.get("tip_count")
+    tip_width = a.get("tip_width")
+    tip_length = a.get("tip_length")
+    wall_thickness = a.get("wall_thickness")
+    seat_angle_deg = a.get("seat_angle_deg")
+    node_id = a.get("id", "").strip()
+
+    if not file_id_str:
+        return err_payload("file_id is required", "BAD_ARGS")
+
+    stone_shape_clean = (stone_shape or "pear").strip().lower()
+    if stone_shape_clean not in _VALID_STONE_SHAPES:
+        return err_payload(
+            f"stone_shape must be one of {sorted(_VALID_STONE_SHAPES)}; got {stone_shape!r}",
+            "BAD_ARGS",
+        )
+
+    for fname, fval in [
+        ("tip_width", tip_width),
+        ("tip_length", tip_length),
+        ("wall_thickness", wall_thickness),
+        ("seat_angle_deg", seat_angle_deg),
+    ]:
+        err = _positive(fname, fval)
+        if err:
+            return err_payload(err, "BAD_ARGS")
+
+    try:
+        sa = float(seat_angle_deg)
+    except (TypeError, ValueError):
+        return err_payload("seat_angle_deg must be a number", "BAD_ARGS")
+    if sa >= 180.0:
+        return err_payload(
+            f"seat_angle_deg must be < 180°; got {sa}", "BAD_ARGS"
+        )
+
+    try:
+        tc = int(tip_count)
+    except (TypeError, ValueError):
+        return err_payload("tip_count must be an integer", "BAD_ARGS")
+    if tc < 1:
+        return err_payload(f"tip_count must be >= 1; got {tc}", "BAD_ARGS")
+
+    try:
+        fid = uuid.UUID(file_id_str)
+    except Exception:
+        return err_payload("file_id must be a uuid", "BAD_ARGS")
+
+    content, err = read_feature_content(ctx, fid)
+    if err:
+        return err_payload(f"file not found: {err}", "NOT_FOUND")
+
+    if not node_id:
+        node_id = next_node_id(content, "jewelry_vtip_protector")
+
+    node = build_vtip_protector_node(
+        node_id=node_id,
+        stone_shape=stone_shape_clean,
+        tip_count=tc,
+        tip_width=float(tip_width),
+        tip_length=float(tip_length),
+        wall_thickness=float(wall_thickness),
+        seat_angle_deg=sa,
+    )
+
+    _, nid, err = append_feature_node(ctx, fid, node)
+    if err:
+        return err_payload(err, "ERROR")
+
+    return ok_payload({
+        "file_id": file_id_str,
+        "id": nid,
+        "op": "jewelry_vtip_protector",
+        "stone_shape": stone_shape_clean,
+        "tip_count": tc,
+        "_tip_opening_width": node["_tip_opening_width"],
+    })
+
+
+# ===========================================================================
+# BOMBÉ / DOME CLUSTER SETTING
+# ===========================================================================
+#
+# A multi-stone cluster on a strongly curved (bombé / domed) surface.
+# Distinct from the flat cluster setting: stones are projected onto a
+# spherical cap of given radius, not onto a shallow dome.
+# ---------------------------------------------------------------------------
+
+def _compute_bombe_positions(
+    dome_radius: float,
+    stone_size: float,
+    stone_count: int,
+) -> list:
+    """
+    Distribute `stone_count` stones of `stone_size` on a spherical cap of
+    radius `dome_radius`.
+
+    Uses a sunflower (Fibonacci) spiral on the sphere to distribute stones
+    evenly across the visible hemisphere.  Each position is expressed as
+    (polar_angle_deg, azimuth_deg) and the corresponding Cartesian (x, y, z)
+    on the sphere surface.
+
+    Returns list of {"x": float, "y": float, "z": float,
+                      "polar_deg": float, "azimuth_deg": float}.
+    """
+    positions = []
+    golden_angle = math.pi * (3.0 - math.sqrt(5.0))  # ~137.5°
+
+    for i in range(stone_count):
+        # Uniformly sample the upper hemisphere (z in [0, 1]).
+        # For a single stone, place it at the pole.
+        if stone_count == 1:
+            t = 0.0
+        else:
+            t = i / (stone_count - 1) if stone_count > 1 else 0.0
+
+        # Map t from 0 (pole) to a maximum polar angle limited to 80° so
+        # stones stay on the visible front face of the dome.
+        polar_deg = t * 80.0
+        polar_rad = math.radians(polar_deg)
+        azimuth_rad = i * golden_angle
+        azimuth_deg = math.degrees(azimuth_rad) % 360.0
+
+        x = dome_radius * math.sin(polar_rad) * math.cos(azimuth_rad)
+        y = dome_radius * math.sin(polar_rad) * math.sin(azimuth_rad)
+        z = dome_radius * math.cos(polar_rad)
+        positions.append({
+            "x": round(x, 4),
+            "y": round(y, 4),
+            "z": round(z, 4),
+            "polar_deg": round(polar_deg, 4),
+            "azimuth_deg": round(azimuth_deg, 4),
+        })
+    return positions
+
+
+def build_bombe_cluster_node(
+    node_id: str,
+    dome_radius: float,
+    stone_size: float,
+    stone_count: int,
+    cap_half_angle_deg: float,
+    base_height: float,
+) -> dict:
+    """
+    Compute the bombé cluster setting node spec.
+
+    The worker's opJewelryBombeCluster builds:
+      - A spherical cap of radius `dome_radius`, subtending a half-angle of
+        `cap_half_angle_deg` at the pole (this is the visible curved face).
+      - `stone_count` stone seats of diameter `stone_size` distributed across
+        the dome surface according to `positions` (Fibonacci-spiral layout).
+      - A flat base ring of height `base_height` at the equator of the cap
+        for fusing onto a shank or gallery.
+
+    Derived hints:
+      _cap_arc_length   — arc length from pole to equator = dome_radius × cap_half_angle_rad.
+      _base_diameter    — diameter at the equator of the cap = 2 × dome_radius × sin(cap_half_angle).
+      positions         — per-stone Cartesian + polar positions on the sphere surface.
+    """
+    cap_half_angle_rad = math.radians(cap_half_angle_deg)
+    cap_arc_length = dome_radius * cap_half_angle_rad
+    base_diameter = 2.0 * dome_radius * math.sin(cap_half_angle_rad)
+    positions = _compute_bombe_positions(
+        dome_radius=dome_radius,
+        stone_size=stone_size,
+        stone_count=stone_count,
+    )
+
+    return {
+        "id": node_id,
+        "op": "jewelry_bombe_cluster",
+        "dome_radius": dome_radius,
+        "stone_size": stone_size,
+        "stone_count": stone_count,
+        "cap_half_angle_deg": cap_half_angle_deg,
+        "base_height": base_height,
+        "positions": positions,
+        "_cap_arc_length": round(cap_arc_length, 4),
+        "_base_diameter": round(base_diameter, 4),
+        "_actual_count": len(positions),
+    }
+
+
+jewelry_bombe_cluster_spec = ToolSpec(
+    name="jewelry_create_bombe_cluster",
+    description=(
+        "Append a `jewelry_bombe_cluster` node to a `.feature` file. "
+        "Generates a bombé (dome) cluster setting — a strongly domed multi-stone "
+        "cluster where stone seats are distributed across a spherical cap surface. "
+        "Unlike the flat `jewelry_cluster`, the bombé uses a full spherical-cap "
+        "dome geometry described by `dome_radius` and `cap_half_angle_deg`. "
+        "Stones are placed using a Fibonacci-spiral layout for even coverage. "
+        "`stone_count` stones of `stone_size` are distributed across the dome; "
+        "a flat base ring of `base_height` closes the bottom for shank attachment. "
+        "Output: node spec consumed by opJewelryBombeCluster. The evaluate result "
+        "includes `seat_positions` — per-stone world-space transforms on the dome."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "file_id": {
+                "type": "string",
+                "description": "Target .feature file id (uuid).",
+            },
+            "dome_radius": {
+                "type": "number",
+                "description": "Radius of the spherical dome in mm (typical 4–15 mm).",
+            },
+            "stone_size": {
+                "type": "number",
+                "description": "Girdle diameter of each stone in the cluster in mm.",
+            },
+            "stone_count": {
+                "type": "integer",
+                "description": "Number of stones distributed across the dome. Must be >= 1.",
+            },
+            "cap_half_angle_deg": {
+                "type": "number",
+                "description": (
+                    "Half-angle subtended by the dome cap at the sphere centre, in degrees. "
+                    "Controls how much of the sphere is visible. "
+                    "Typical range: 45–80°. Must be in (0, 90)."
+                ),
+            },
+            "base_height": {
+                "type": "number",
+                "description": "Height of the flat base ring at the cap equator in mm.",
+            },
+            "id": {
+                "type": "string",
+                "description": "Optional explicit node id.",
+            },
+        },
+        "required": ["file_id", "dome_radius", "stone_size", "stone_count", "cap_half_angle_deg", "base_height"],
+    },
+)
+
+
+@register(jewelry_bombe_cluster_spec, write=True)
+async def run_jewelry_create_bombe_cluster(ctx: ProjectCtx, args: bytes) -> str:
+    try:
+        a = json.loads(args)
+    except Exception as e:
+        return err_payload(f"invalid args: {e}", "BAD_ARGS")
+
+    file_id_str = a.get("file_id", "").strip()
+    dome_radius = a.get("dome_radius")
+    stone_size = a.get("stone_size")
+    stone_count = a.get("stone_count")
+    cap_half_angle_deg = a.get("cap_half_angle_deg")
+    base_height = a.get("base_height")
+    node_id = a.get("id", "").strip()
+
+    if not file_id_str:
+        return err_payload("file_id is required", "BAD_ARGS")
+
+    for fname, fval in [
+        ("dome_radius", dome_radius),
+        ("stone_size", stone_size),
+        ("cap_half_angle_deg", cap_half_angle_deg),
+        ("base_height", base_height),
+    ]:
+        err = _positive(fname, fval)
+        if err:
+            return err_payload(err, "BAD_ARGS")
+
+    try:
+        cha = float(cap_half_angle_deg)
+    except (TypeError, ValueError):
+        return err_payload("cap_half_angle_deg must be a number", "BAD_ARGS")
+    if cha >= 90.0:
+        return err_payload(
+            f"cap_half_angle_deg must be < 90°; got {cha}", "BAD_ARGS"
+        )
+
+    try:
+        sc = int(stone_count)
+    except (TypeError, ValueError):
+        return err_payload("stone_count must be an integer", "BAD_ARGS")
+    if sc < 1:
+        return err_payload(f"stone_count must be >= 1; got {sc}", "BAD_ARGS")
+
+    try:
+        fid = uuid.UUID(file_id_str)
+    except Exception:
+        return err_payload("file_id must be a uuid", "BAD_ARGS")
+
+    content, err = read_feature_content(ctx, fid)
+    if err:
+        return err_payload(f"file not found: {err}", "NOT_FOUND")
+
+    if not node_id:
+        node_id = next_node_id(content, "jewelry_bombe_cluster")
+
+    node = build_bombe_cluster_node(
+        node_id=node_id,
+        dome_radius=float(dome_radius),
+        stone_size=float(stone_size),
+        stone_count=sc,
+        cap_half_angle_deg=cha,
+        base_height=float(base_height),
+    )
+
+    _, nid, err = append_feature_node(ctx, fid, node)
+    if err:
+        return err_payload(err, "ERROR")
+
+    return ok_payload({
+        "file_id": file_id_str,
+        "id": nid,
+        "op": "jewelry_bombe_cluster",
+        "stone_count": sc,
+        "dome_radius": float(dome_radius),
+        "_base_diameter": node["_base_diameter"],
+        "_actual_count": node["_actual_count"],
+    })
+
+
+# ===========================================================================
+# LOTUS / COMPASS / STAR PATTERNED BEZEL
+# ===========================================================================
+#
+# A decorative bezel collar whose wall is pierced or shaped into a repeating
+# petal, compass-point, or star-outline pattern.
+# ---------------------------------------------------------------------------
+
+_VALID_BEZEL_PATTERNS = {"lotus", "compass", "star", "plain"}
+
+
+def build_patterned_bezel_node(
+    node_id: str,
+    stone_diameter: float,
+    wall_thickness: float,
+    bezel_height: float,
+    bearing_ledge_height: float,
+    pattern: str,
+    petal_count: int,
+) -> dict:
+    """
+    Compute the patterned bezel (lotus/compass/star) node spec.
+
+    The worker's opJewelryPatternedBezel builds:
+      - A full 360° bezel collar of inner diameter = `stone_diameter` and
+        outer diameter = `stone_diameter + 2 × wall_thickness`, extruded
+        to `bezel_height` with a bearing ledge at `bearing_ledge_height`.
+      - The bezel wall is then pierced or shaped with `petal_count` repeating
+        decorative motifs controlled by `pattern`:
+
+        'lotus'   — rounded petal cutouts alternating inward from the top
+                    edge; each petal is a semicircle of diameter ≈ wall_thickness.
+        'compass' — pointed compass-rose projections extending outward at
+                    `petal_count` cardinal / inter-cardinal directions.
+        'star'    — V-notch star outline cut into the top edge, creating
+                    alternating peaks and valleys around the collar.
+        'plain'   — no decorative cutouts (standard full bezel).
+
+    Derived hints:
+      _outer_diameter   — stone_diameter + 2 * wall_thickness.
+      _petal_pitch_deg  — 360 / petal_count (angular pitch between motifs).
+    """
+    outer_diameter = stone_diameter + 2.0 * wall_thickness
+    petal_pitch_deg = 360.0 / petal_count if petal_count > 0 else 0.0
+
+    return {
+        "id": node_id,
+        "op": "jewelry_patterned_bezel",
+        "stone_diameter": stone_diameter,
+        "wall_thickness": wall_thickness,
+        "bezel_height": bezel_height,
+        "bearing_ledge_height": bearing_ledge_height,
+        "pattern": pattern,
+        "petal_count": petal_count,
+        "_outer_diameter": round(outer_diameter, 4),
+        "_petal_pitch_deg": round(petal_pitch_deg, 4),
+    }
+
+
+jewelry_patterned_bezel_spec = ToolSpec(
+    name="jewelry_create_patterned_bezel",
+    description=(
+        "Append a `jewelry_patterned_bezel` node to a `.feature` file. "
+        "Generates a decorative bezel collar with a repeating patterned outline "
+        "— lotus petal, compass point, or star-notch — cut into the bezel wall. "
+        "\n\nPatterns:\n"
+        "- **`lotus`** — rounded petal cutouts from the top edge; classic floral "
+        "look popular in Indian and Art Nouveau jewellery.\n"
+        "- **`compass`** — pointed projections at `petal_count` compass directions "
+        "extending outward beyond the stone (compass rose / sun-ray bezel).\n"
+        "- **`star`** — V-notch star outline along the top edge, creating "
+        "alternating peaks and valleys (star bezel).\n"
+        "- **`plain`** — a standard full bezel with no decorative cutouts.\n"
+        "\n`petal_count` controls the number of repeating motif units (typical 6–16). "
+        "The `bearing_ledge_height` stone seat is unaffected by the pattern. "
+        "Output: node spec consumed by opJewelryPatternedBezel."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "file_id": {
+                "type": "string",
+                "description": "Target .feature file id (uuid).",
+            },
+            "stone_diameter": {
+                "type": "number",
+                "description": "Girdle diameter of the stone in mm.",
+            },
+            "wall_thickness": {
+                "type": "number",
+                "description": "Bezel wall thickness in mm (typical 0.3–0.8).",
+            },
+            "bezel_height": {
+                "type": "number",
+                "description": "Total height of the bezel collar in mm.",
+            },
+            "bearing_ledge_height": {
+                "type": "number",
+                "description": "Height of the bearing ledge from base in mm. Must be < bezel_height.",
+            },
+            "pattern": {
+                "type": "string",
+                "enum": sorted(_VALID_BEZEL_PATTERNS),
+                "description": "Decorative pattern for the bezel collar. One of: lotus, compass, star, plain.",
+            },
+            "petal_count": {
+                "type": "integer",
+                "description": (
+                    "Number of repeating decorative motif units around the collar. "
+                    "Must be >= 3. Typical: 6, 8, 12, 16. Ignored for 'plain' pattern."
+                ),
+            },
+            "id": {
+                "type": "string",
+                "description": "Optional explicit node id.",
+            },
+        },
+        "required": [
+            "file_id", "stone_diameter", "wall_thickness", "bezel_height",
+            "bearing_ledge_height", "pattern", "petal_count",
+        ],
+    },
+)
+
+
+@register(jewelry_patterned_bezel_spec, write=True)
+async def run_jewelry_create_patterned_bezel(ctx: ProjectCtx, args: bytes) -> str:
+    try:
+        a = json.loads(args)
+    except Exception as e:
+        return err_payload(f"invalid args: {e}", "BAD_ARGS")
+
+    file_id_str = a.get("file_id", "").strip()
+    stone_diameter = a.get("stone_diameter")
+    wall_thickness = a.get("wall_thickness")
+    bezel_height = a.get("bezel_height")
+    bearing_ledge_height = a.get("bearing_ledge_height")
+    pattern = a.get("pattern", "lotus")
+    petal_count = a.get("petal_count")
+    node_id = a.get("id", "").strip()
+
+    if not file_id_str:
+        return err_payload("file_id is required", "BAD_ARGS")
+
+    for fname, fval in [
+        ("stone_diameter", stone_diameter),
+        ("wall_thickness", wall_thickness),
+        ("bezel_height", bezel_height),
+        ("bearing_ledge_height", bearing_ledge_height),
+    ]:
+        err = _positive(fname, fval)
+        if err:
+            return err_payload(err, "BAD_ARGS")
+
+    try:
+        bh = float(bezel_height)
+        blh = float(bearing_ledge_height)
+    except (TypeError, ValueError):
+        return err_payload("bezel_height and bearing_ledge_height must be numbers", "BAD_ARGS")
+
+    if blh >= bh:
+        return err_payload(
+            f"bearing_ledge_height ({blh}) must be less than bezel_height ({bh})",
+            "BAD_ARGS",
+        )
+
+    pattern_clean = (pattern or "lotus").strip().lower()
+    if pattern_clean not in _VALID_BEZEL_PATTERNS:
+        return err_payload(
+            f"pattern must be one of {sorted(_VALID_BEZEL_PATTERNS)}; got {pattern!r}",
+            "BAD_ARGS",
+        )
+
+    try:
+        pc = int(petal_count)
+    except (TypeError, ValueError):
+        return err_payload("petal_count must be an integer", "BAD_ARGS")
+    if pc < 3:
+        return err_payload(f"petal_count must be >= 3; got {pc}", "BAD_ARGS")
+
+    try:
+        fid = uuid.UUID(file_id_str)
+    except Exception:
+        return err_payload("file_id must be a uuid", "BAD_ARGS")
+
+    content, err = read_feature_content(ctx, fid)
+    if err:
+        return err_payload(f"file not found: {err}", "NOT_FOUND")
+
+    if not node_id:
+        node_id = next_node_id(content, "jewelry_patterned_bezel")
+
+    node = build_patterned_bezel_node(
+        node_id=node_id,
+        stone_diameter=float(stone_diameter),
+        wall_thickness=float(wall_thickness),
+        bezel_height=bh,
+        bearing_ledge_height=blh,
+        pattern=pattern_clean,
+        petal_count=pc,
+    )
+
+    _, nid, err = append_feature_node(ctx, fid, node)
+    if err:
+        return err_payload(err, "ERROR")
+
+    return ok_payload({
+        "file_id": file_id_str,
+        "id": nid,
+        "op": "jewelry_patterned_bezel",
+        "pattern": pattern_clean,
+        "stone_diameter": float(stone_diameter),
+        "petal_count": pc,
+        "_outer_diameter": node["_outer_diameter"],
+        "_petal_pitch_deg": node["_petal_pitch_deg"],
+    })
+
+
+# ===========================================================================
+# TRELLIS / CROSS-PRONG SETTING
+# ===========================================================================
+#
+# An interwoven prong basket where adjacent prong wires cross each other in
+# an X-pattern, creating a trellis or cross-prong cage around the stone.
+# Different from the trellis style of prong_head (which uses the same wires)
+# in that each crossing point is explicitly parametrised and the wires actually
+# interleave in 3D.
+# ---------------------------------------------------------------------------
+
+_VALID_TRELLIS_WEAVES = {"x_cross", "diagonal", "square"}
+
+
+def build_trellis_prong_node(
+    node_id: str,
+    stone_diameter: float,
+    prong_count: int,
+    wire_gauge: float,
+    prong_height: float,
+    weave_style: str,
+    cross_height: float,
+) -> dict:
+    """
+    Compute the trellis / cross-prong basket node spec.
+
+    The worker's opJewelryTrellisProng builds:
+      - `prong_count` prong wires (must be even) of diameter `wire_gauge`
+        arranged in pairs.  Each pair crosses its neighbour at `cross_height`
+        above the bearing seat (measured from the girdle plane).
+      - Weave styles control the crossing geometry:
+
+        'x_cross'   — adjacent prong pairs form a clean X; wires pass over/under
+                      alternately (plain weave).
+        'diagonal'  — all crossing wires slant in the same direction (twill-
+                      style), creating a diagonal hatching.
+        'square'    — prongs run straight up but are connected at `cross_height`
+                      by short cross-bars (square lattice — similar to cathedral
+                      but horizontal).
+
+    The base ring (below the bearing ledge) is a standard collet cylinder of
+    outer diameter = `stone_diameter + 2 × wire_gauge`.
+
+    Derived hints:
+      _outer_diameter  — stone_diameter + 2 * wire_gauge.
+      _cross_clearance — wire_gauge × 2 (minimum metal thickness at the cross
+                         point before wires would merge).
+      _prong_pitch_deg — 360 / prong_count.
+    """
+    outer_diameter = stone_diameter + 2.0 * wire_gauge
+    cross_clearance = wire_gauge * 2.0
+    prong_pitch_deg = 360.0 / prong_count if prong_count > 0 else 0.0
+
+    return {
+        "id": node_id,
+        "op": "jewelry_trellis_prong",
+        "stone_diameter": stone_diameter,
+        "prong_count": prong_count,
+        "wire_gauge": wire_gauge,
+        "prong_height": prong_height,
+        "weave_style": weave_style,
+        "cross_height": cross_height,
+        "_outer_diameter": round(outer_diameter, 4),
+        "_cross_clearance": round(cross_clearance, 4),
+        "_prong_pitch_deg": round(prong_pitch_deg, 4),
+    }
+
+
+jewelry_trellis_prong_spec = ToolSpec(
+    name="jewelry_create_trellis_prong",
+    description=(
+        "Append a `jewelry_trellis_prong` node to a `.feature` file. "
+        "Generates a trellis (cross-prong) basket setting — prong wires that "
+        "cross each other in an interwoven pattern, forming a decorative cage "
+        "around the stone. "
+        "\n\nWeave styles:\n"
+        "- **`x_cross`** — adjacent prong pairs form a clean X; wires pass "
+        "over/under alternately (plain weave).\n"
+        "- **`diagonal`** — all crossing wires slant the same direction (twill "
+        "style), creating diagonal hatching.\n"
+        "- **`square`** — straight prongs connected by horizontal cross-bars at "
+        "`cross_height` (square lattice look).\n"
+        "\n`prong_count` must be even (pairs cross each other). "
+        "`cross_height` sets the height above the girdle plane where wires cross. "
+        "Output: node spec consumed by opJewelryTrellisProng."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "file_id": {
+                "type": "string",
+                "description": "Target .feature file id (uuid).",
+            },
+            "stone_diameter": {
+                "type": "number",
+                "description": "Girdle diameter of the stone in mm.",
+            },
+            "prong_count": {
+                "type": "integer",
+                "description": (
+                    "Number of prong wires. Must be even (>= 4) so wires pair for crossing. "
+                    "Typical: 4, 6, 8."
+                ),
+            },
+            "wire_gauge": {
+                "type": "number",
+                "description": "Prong wire diameter in mm (typical 0.8–1.5).",
+            },
+            "prong_height": {
+                "type": "number",
+                "description": "Height the prong extends above the stone's girdle plane in mm.",
+            },
+            "weave_style": {
+                "type": "string",
+                "enum": sorted(_VALID_TRELLIS_WEAVES),
+                "description": "Crossing/weave pattern. One of: diagonal, square, x_cross.",
+            },
+            "cross_height": {
+                "type": "number",
+                "description": (
+                    "Height above the girdle plane at which adjacent prong wires cross, "
+                    "in mm. Must be > 0 and < prong_height."
+                ),
+            },
+            "id": {
+                "type": "string",
+                "description": "Optional explicit node id.",
+            },
+        },
+        "required": [
+            "file_id", "stone_diameter", "prong_count", "wire_gauge",
+            "prong_height", "weave_style", "cross_height",
+        ],
+    },
+)
+
+
+@register(jewelry_trellis_prong_spec, write=True)
+async def run_jewelry_create_trellis_prong(ctx: ProjectCtx, args: bytes) -> str:
+    try:
+        a = json.loads(args)
+    except Exception as e:
+        return err_payload(f"invalid args: {e}", "BAD_ARGS")
+
+    file_id_str = a.get("file_id", "").strip()
+    stone_diameter = a.get("stone_diameter")
+    prong_count = a.get("prong_count")
+    wire_gauge = a.get("wire_gauge")
+    prong_height = a.get("prong_height")
+    weave_style = a.get("weave_style", "x_cross")
+    cross_height = a.get("cross_height")
+    node_id = a.get("id", "").strip()
+
+    if not file_id_str:
+        return err_payload("file_id is required", "BAD_ARGS")
+
+    for fname, fval in [
+        ("stone_diameter", stone_diameter),
+        ("wire_gauge", wire_gauge),
+        ("prong_height", prong_height),
+        ("cross_height", cross_height),
+    ]:
+        err = _positive(fname, fval)
+        if err:
+            return err_payload(err, "BAD_ARGS")
+
+    try:
+        pc = int(prong_count)
+    except (TypeError, ValueError):
+        return err_payload("prong_count must be an integer", "BAD_ARGS")
+    if pc < 4:
+        return err_payload(f"prong_count must be >= 4; got {pc}", "BAD_ARGS")
+    if pc % 2 != 0:
+        return err_payload(
+            f"prong_count must be even for trellis crossing; got {pc}", "BAD_ARGS"
+        )
+
+    weave_style_clean = (weave_style or "x_cross").strip().lower()
+    if weave_style_clean not in _VALID_TRELLIS_WEAVES:
+        return err_payload(
+            f"weave_style must be one of {sorted(_VALID_TRELLIS_WEAVES)}; got {weave_style!r}",
+            "BAD_ARGS",
+        )
+
+    try:
+        ph = float(prong_height)
+        ch = float(cross_height)
+    except (TypeError, ValueError):
+        return err_payload("prong_height and cross_height must be numbers", "BAD_ARGS")
+
+    if ch >= ph:
+        return err_payload(
+            f"cross_height ({ch}) must be less than prong_height ({ph})",
+            "BAD_ARGS",
+        )
+
+    try:
+        fid = uuid.UUID(file_id_str)
+    except Exception:
+        return err_payload("file_id must be a uuid", "BAD_ARGS")
+
+    content, err = read_feature_content(ctx, fid)
+    if err:
+        return err_payload(f"file not found: {err}", "NOT_FOUND")
+
+    if not node_id:
+        node_id = next_node_id(content, "jewelry_trellis_prong")
+
+    node = build_trellis_prong_node(
+        node_id=node_id,
+        stone_diameter=float(stone_diameter),
+        prong_count=pc,
+        wire_gauge=float(wire_gauge),
+        prong_height=ph,
+        weave_style=weave_style_clean,
+        cross_height=ch,
+    )
+
+    _, nid, err = append_feature_node(ctx, fid, node)
+    if err:
+        return err_payload(err, "ERROR")
+
+    return ok_payload({
+        "file_id": file_id_str,
+        "id": nid,
+        "op": "jewelry_trellis_prong",
+        "stone_diameter": float(stone_diameter),
+        "prong_count": pc,
+        "weave_style": weave_style_clean,
+        "_outer_diameter": node["_outer_diameter"],
+    })
+
+
+# ===========================================================================
+# BAR-CHANNEL HYBRID & GRADUATED ROW SETTING
+# ===========================================================================
+#
+# A row of graduated (decreasing-size) stones held between pairs of vertical
+# metal bars between each stone.  Combines the bar setting's clean look with
+# a channel floor and supports a graduated stone sequence for tapered bands
+# and eternity rings.
+# ---------------------------------------------------------------------------
+
+def _compute_graduated_row(
+    stone_count: int,
+    largest_diameter: float,
+    smallest_diameter: float,
+    stone_spacing: float,
+) -> list:
+    """
+    Compute per-stone centre positions and diameters for a graduated row.
+
+    Stones are arranged linearly along the X-axis.  Stone 0 is the largest,
+    stone (stone_count - 1) is the smallest.  Sizes decrease linearly from
+    `largest_diameter` to `smallest_diameter`.
+
+    Returns a list of {"index": int, "diameter": float, "x_center": float}
+    dicts.  x_center is measured from the left edge of the first stone (x=0).
+    """
+    if stone_count == 1:
+        return [{"index": 0, "diameter": round(largest_diameter, 4), "x_center": round(largest_diameter / 2.0, 4)}]
+
+    stones = []
+    x = 0.0
+    for i in range(stone_count):
+        t = i / (stone_count - 1)  # 0 at first, 1 at last
+        diameter = largest_diameter + t * (smallest_diameter - largest_diameter)
+        radius = diameter / 2.0
+        if i == 0:
+            x_center = radius
+        else:
+            prev_radius = stones[-1]["diameter"] / 2.0
+            x = stones[-1]["x_center"] + prev_radius + stone_spacing + radius
+            x_center = x
+        stones.append({
+            "index": i,
+            "diameter": round(diameter, 4),
+            "x_center": round(x_center, 4),
+        })
+        x = x_center
+    return stones
+
+
+def build_bar_channel_graduated_node(
+    node_id: str,
+    stone_count: int,
+    largest_diameter: float,
+    smallest_diameter: float,
+    stone_spacing: float,
+    bar_width: float,
+    bar_height: float,
+    floor_thickness: float,
+) -> dict:
+    """
+    Compute the bar-channel graduated-row node spec.
+
+    The worker's opJewelryBarChannelGraduated builds:
+      - A row of `stone_count` graduated stones.  Stone diameters decrease
+        linearly from `largest_diameter` (first / centre stone) to
+        `smallest_diameter` (last / end stone).
+      - A pair of vertical metal bars between each adjacent stone pair (not
+        rails running the full length; each bar is a separate pillar of width
+        `bar_width` and height `bar_height`).  This gives individual framing
+        between stones while preserving the bar look.
+      - A channel floor of thickness `floor_thickness` running the full row
+        length.
+
+    The total row spans from x = 0 to x = last stone centre + last stone radius.
+
+    Derived hints:
+      _total_row_length  — overall X-extent of the graduated row.
+      _bar_count         — (stone_count - 1) pairs of bars between stones.
+      stones             — per-stone {index, diameter, x_center} list.
+    """
+    stones = _compute_graduated_row(
+        stone_count=stone_count,
+        largest_diameter=largest_diameter,
+        smallest_diameter=smallest_diameter,
+        stone_spacing=stone_spacing,
+    )
+    if stones:
+        last = stones[-1]
+        total_row_length = last["x_center"] + last["diameter"] / 2.0
+    else:
+        total_row_length = 0.0
+
+    bar_count = max(0, stone_count - 1)
+
+    return {
+        "id": node_id,
+        "op": "jewelry_bar_channel_graduated",
+        "stone_count": stone_count,
+        "largest_diameter": largest_diameter,
+        "smallest_diameter": smallest_diameter,
+        "stone_spacing": stone_spacing,
+        "bar_width": bar_width,
+        "bar_height": bar_height,
+        "floor_thickness": floor_thickness,
+        "stones": stones,
+        "_total_row_length": round(total_row_length, 4),
+        "_bar_count": bar_count,
+        "_actual_stone_count": len(stones),
+    }
+
+
+jewelry_bar_channel_graduated_spec = ToolSpec(
+    name="jewelry_create_bar_channel_graduated",
+    description=(
+        "Append a `jewelry_bar_channel_graduated` node to a `.feature` file. "
+        "Generates a graduated-row setting combining bar separators and a channel "
+        "floor — a row of stones that decreases in size from largest (centre) to "
+        "smallest (ends), with a pair of metal bar pillars between each adjacent "
+        "stone pair. "
+        "Useful for tapered eternity bands, graduated diamond rows, and bypass rings "
+        "where the stone sizes follow the ring taper. "
+        "`stone_count` stones are sized linearly from `largest_diameter` to "
+        "`smallest_diameter`; bars of `bar_width` × `bar_height` stand between "
+        "each adjacent pair; a `floor_thickness` floor closes the bottom. "
+        "The evaluate result includes `stones` — per-stone {index, diameter, "
+        "x_center} for downstream boolean seat cutting. "
+        "Output: node spec consumed by opJewelryBarChannelGraduated."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "file_id": {
+                "type": "string",
+                "description": "Target .feature file id (uuid).",
+            },
+            "stone_count": {
+                "type": "integer",
+                "description": "Number of stones in the graduated row. Must be >= 1.",
+            },
+            "largest_diameter": {
+                "type": "number",
+                "description": "Girdle diameter of the largest (first/centre) stone in mm.",
+            },
+            "smallest_diameter": {
+                "type": "number",
+                "description": (
+                    "Girdle diameter of the smallest (last/end) stone in mm. "
+                    "Must be <= largest_diameter."
+                ),
+            },
+            "stone_spacing": {
+                "type": "number",
+                "description": "Edge-to-edge gap between adjacent stones in mm (typical 0.1–0.3).",
+            },
+            "bar_width": {
+                "type": "number",
+                "description": "Width (thickness) of each bar pillar between stones in mm (typical 0.4–1.0).",
+            },
+            "bar_height": {
+                "type": "number",
+                "description": "Height of the bar pillars above the stone seat in mm (typical 0.5–1.5).",
+            },
+            "floor_thickness": {
+                "type": "number",
+                "description": "Thickness of the channel floor in mm.",
+            },
+            "id": {
+                "type": "string",
+                "description": "Optional explicit node id.",
+            },
+        },
+        "required": [
+            "file_id", "stone_count", "largest_diameter", "smallest_diameter",
+            "stone_spacing", "bar_width", "bar_height", "floor_thickness",
+        ],
+    },
+)
+
+
+@register(jewelry_bar_channel_graduated_spec, write=True)
+async def run_jewelry_create_bar_channel_graduated(ctx: ProjectCtx, args: bytes) -> str:
+    try:
+        a = json.loads(args)
+    except Exception as e:
+        return err_payload(f"invalid args: {e}", "BAD_ARGS")
+
+    file_id_str = a.get("file_id", "").strip()
+    stone_count = a.get("stone_count")
+    largest_diameter = a.get("largest_diameter")
+    smallest_diameter = a.get("smallest_diameter")
+    stone_spacing = a.get("stone_spacing")
+    bar_width = a.get("bar_width")
+    bar_height = a.get("bar_height")
+    floor_thickness = a.get("floor_thickness")
+    node_id = a.get("id", "").strip()
+
+    if not file_id_str:
+        return err_payload("file_id is required", "BAD_ARGS")
+
+    for fname, fval in [
+        ("largest_diameter", largest_diameter),
+        ("bar_width", bar_width),
+        ("bar_height", bar_height),
+        ("floor_thickness", floor_thickness),
+    ]:
+        err = _positive(fname, fval)
+        if err:
+            return err_payload(err, "BAD_ARGS")
+
+    # stone_spacing may be 0 (stones touching) — only forbid negative.
+    try:
+        ss = float(stone_spacing)
+    except (TypeError, ValueError):
+        return err_payload("stone_spacing must be a number", "BAD_ARGS")
+    if ss < 0:
+        return err_payload(f"stone_spacing must be >= 0; got {ss}", "BAD_ARGS")
+
+    # smallest_diameter must be positive.
+    err = _positive("smallest_diameter", smallest_diameter)
+    if err:
+        return err_payload(err, "BAD_ARGS")
+
+    try:
+        ld = float(largest_diameter)
+        sd = float(smallest_diameter)
+    except (TypeError, ValueError):
+        return err_payload("largest_diameter and smallest_diameter must be numbers", "BAD_ARGS")
+
+    if sd > ld:
+        return err_payload(
+            f"smallest_diameter ({sd}) must be <= largest_diameter ({ld})",
+            "BAD_ARGS",
+        )
+
+    try:
+        sc = int(stone_count)
+    except (TypeError, ValueError):
+        return err_payload("stone_count must be an integer", "BAD_ARGS")
+    if sc < 1:
+        return err_payload(f"stone_count must be >= 1; got {sc}", "BAD_ARGS")
+
+    try:
+        fid = uuid.UUID(file_id_str)
+    except Exception:
+        return err_payload("file_id must be a uuid", "BAD_ARGS")
+
+    content, err = read_feature_content(ctx, fid)
+    if err:
+        return err_payload(f"file not found: {err}", "NOT_FOUND")
+
+    if not node_id:
+        node_id = next_node_id(content, "jewelry_bar_channel_graduated")
+
+    node = build_bar_channel_graduated_node(
+        node_id=node_id,
+        stone_count=sc,
+        largest_diameter=ld,
+        smallest_diameter=sd,
+        stone_spacing=ss,
+        bar_width=float(bar_width),
+        bar_height=float(bar_height),
+        floor_thickness=float(floor_thickness),
+    )
+
+    _, nid, err = append_feature_node(ctx, fid, node)
+    if err:
+        return err_payload(err, "ERROR")
+
+    return ok_payload({
+        "file_id": file_id_str,
+        "id": nid,
+        "op": "jewelry_bar_channel_graduated",
+        "stone_count": sc,
+        "largest_diameter": ld,
+        "smallest_diameter": sd,
+        "_total_row_length": node["_total_row_length"],
+        "_bar_count": node["_bar_count"],
     })
