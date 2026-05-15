@@ -112,7 +112,10 @@ dev = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = []
+# Root is a deps-only meta-package (real code lives in packages/*); ship an
+# empty wheel. Newer hatchling rejects `packages = []`; bypass-selection is
+# the documented way to allow a sourceless project.
+bypass-selection = true
 
 [tool.uv.workspace]
 members = [
