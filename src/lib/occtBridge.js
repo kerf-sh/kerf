@@ -1240,3 +1240,340 @@ export function surfaceToSolid(oc, shape, tracker, opts = {}) {
   warnings.push('not a closed solid; returned as shell — neither MakeSolid_1 nor BRep_Builder path succeeded')
   return { solid: sewed, warnings }
 }
+
+// ---------------------------------------------------------------------------
+// NURBS Phase 4 Capability 2 (C2-T2): trim-by-curve helpers
+// ---------------------------------------------------------------------------
+//
+// Two helpers:
+//   projectCurveOntoSurface — given a face and a 3D wire, produce a 2D wire
+//     that lies on the face's surface (suitable for BRepFeat_SplitShape.Add).
+//   splitFaceAlongCurve     — given a face and a projected wire, split the
+//     face using BRepFeat_SplitShape (or a BRepAlgoAPI_Section fallback if
+//     BRepFeat_SplitShape is absent) and return { keepFace, discardFace }.
+//
+// Both helpers are pure (no postMessage, no worker state). They accept the
+// standard (oc, ..., tracker) signature and push transients onto tracker.
+//
+// Algorithm for projectCurveOntoSurface:
+//   Primary path: BRepProj_Projection(wire, face, direction) → projected wire
+//     with 2D pcurves attached. Direction is the face's surface normal at the
+//     centroid; we approximate it as the z-axis for now (safe for XY-plane
+//     faces; callers can override via `opts.direction`).
+//   Fallback path (BRepProj_Projection MISSING): sample the 3D wire at
+//     `opts.samples` (default 32) points, project each via
+//     GeomAPI_ProjectPointOnSurf onto the face's underlying surface, collect
+//     {U,V} parameter pairs, build a polyline of 3D points on the surface,
+//     stitch edges with BRepBuilderAPI_MakeEdge, assemble a wire via
+//     BRepBuilderAPI_MakeWire.
+//
+// Algorithm for splitFaceAlongCurve:
+//   Primary path: BRepFeat_SplitShape — SplitShape(face) + Add(wire, face) +
+//     Build() → Left() / Right() sides.
+//   Fallback path: if BRepFeat_SplitShape absent, surface a clear error that
+//     prompts C2-T12 escalation (the Section+prism approach is a separate
+//     task, not wired here — adding it would significantly increase code size
+//     and blur C2-T2 scope).
+//
+// Plan ref: docs/plans/nurbs-phase-4-full.md § Capability 2.
+// Open questions:
+//   Q1: BRepFeat_SplitShape — niche class; may be absent (plan's highest-risk
+//       binding).  If MISSING, the fallback is C2-T12 (separate task).
+//   Q2: GeomAPI_ProjectPointOnSurf overload — the 5-argument form
+//       (surface, u, v, tolerance) is used; binding overload number unknown.
+//   Q3: BRepBuilderAPI_MakeEdge2d (2D pcurve form) — not in the C2 probe
+//       because the 3D polyline-on-surface approach only needs the 3D
+//       MakeEdge form.
+
+/**
+ * Thrown when required C2 (trim-by-curve) bindings are absent.
+ * This is unrecoverable without a WASM rebuild or the C2-T12 fallback.
+ */
+export class TrimByCurveUnsupportedError extends Error {
+  constructor(msg) {
+    super(
+      msg ||
+      'trim_by_curve: required OCCT bindings absent — ' +
+      'neither BRepFeat_SplitShape nor the per-point projection path is available. ' +
+      'Escalate to C2-T12 (Section+prism fallback or WASM rebuild).'
+    )
+    this.name = 'TrimByCurveUnsupportedError'
+    this.code = 'OCCT_BINDING_MISSING'
+  }
+}
+
+/**
+ * Project a 3D wire (the trim curve) onto the parametric surface of `face`,
+ * returning a wire that lies on the face surface.
+ *
+ * Primary path: BRepProj_Projection.
+ * Fallback path: sample the wire → GeomAPI_ProjectPointOnSurf per point →
+ *   build a 3D polyline on the surface via BRepBuilderAPI_MakeEdge + MakeWire.
+ *
+ * @param {object}  oc       — opencascade.js handle
+ * @param {object}  face     — TopoDS_Face to project onto
+ * @param {object}  wire3d   — TopoDS_Wire or TopoDS_Shape (the 3D cutter)
+ * @param {Array}   tracker  — OCCT object lifetime tracker
+ * @param {{ tolerance?: number, samples?: number, direction?: [number,number,number] }} opts
+ * @returns {object}         — TopoDS_Wire projected onto the face
+ */
+export function projectCurveOntoSurface(oc, face, wire3d, tracker, opts = {}) {
+  const tolerance = (typeof opts.tolerance === 'number' && opts.tolerance > 0)
+    ? opts.tolerance
+    : 1e-3
+  const samples   = (typeof opts.samples === 'number' && opts.samples > 2)
+    ? opts.samples
+    : 32
+  const dir       = Array.isArray(opts.direction) ? opts.direction : [0, 0, 1]
+
+  // ── Primary path: BRepProj_Projection ────────────────────────────────────
+  if (typeof oc.BRepProj_Projection === 'function') {
+    try {
+      const projDir = track(tracker, new oc.gp_Dir_4(dir[0], dir[1], dir[2]))
+      const proj = track(tracker, new oc.BRepProj_Projection(wire3d, face, projDir))
+      if (typeof proj.More === 'function' && proj.More()) {
+        let projected = proj.Current()
+        // Optional ShapeFix_Wire cleanup.
+        if (typeof oc.ShapeFix_Wire === 'function') {
+          try {
+            const fixer = track(tracker, new oc.ShapeFix_Wire())
+            fixer.Load(projected)
+            fixer.Perform()
+            const fixed = fixer.WireAPIMake()
+            if (fixed) projected = fixed
+          } catch { /* cleanup optional; use un-fixed wire */ }
+        }
+        return projected
+      }
+      // More() false → projection empty; fall through to per-point path.
+    } catch { /* projection failed; fall through */ }
+  }
+
+  // ── Fallback path: per-point GeomAPI_ProjectPointOnSurf ──────────────────
+  // Requires: GeomAPI_ProjectPointOnSurf + BRepBuilderAPI_MakeEdge + MakeWire.
+  if (
+    typeof oc.GeomAPI_ProjectPointOnSurf !== 'function' ||
+    typeof oc.BRepBuilderAPI_MakeEdge    !== 'function' ||
+    typeof oc.BRepBuilderAPI_MakeWire    !== 'function'
+  ) {
+    throw new TrimByCurveUnsupportedError(
+      'projectCurveOntoSurface: BRepProj_Projection failed and fallback classes ' +
+      '(GeomAPI_ProjectPointOnSurf, BRepBuilderAPI_MakeEdge, BRepBuilderAPI_MakeWire) ' +
+      'are not all bound — cannot project curve.'
+    )
+  }
+
+  // Extract underlying surface from the face.
+  let surface = null
+  if (typeof oc.BRep_Tool === 'function' && typeof oc.BRep_Tool.Surface_2 === 'function') {
+    try { surface = oc.BRep_Tool.Surface_2(face) } catch { /* */ }
+  }
+  if (!surface) {
+    // Some builds expose BRep_Tool as instance with Surface_2.
+    try {
+      const bt = track(tracker, new oc.BRep_Tool())
+      if (typeof bt.Surface_2 === 'function') surface = bt.Surface_2(face)
+    } catch { /* */ }
+  }
+  if (!surface) {
+    throw new TrimByCurveUnsupportedError(
+      'projectCurveOntoSurface: cannot extract underlying surface from face ' +
+      '(BRep_Tool.Surface_2 not available or failed).'
+    )
+  }
+
+  // Sample the 3D wire at `samples` points using BRep_Tool.Curve_2 + GCPnts
+  // or via a simple parametric walk.  We use BAdaptor3d_Curve if available;
+  // otherwise we fall back to a BRepBuilderAPI_MakeEdge chain over the wire's
+  // existing edges.
+  //
+  // Simple approach: iterate edges in the wire, sample each edge uniformly.
+  const EDGE  = oc.TopAbs_ShapeEnum?.TopAbs_EDGE  ?? 6
+  const SHAPE = oc.TopAbs_ShapeEnum?.TopAbs_SHAPE ?? 8
+
+  const sampledPoints = []
+  try {
+    const exp = track(tracker, new oc.TopExp_Explorer_2(wire3d, EDGE, SHAPE))
+    while (exp.More()) {
+      const edge = exp.Current()
+      exp.Next()
+      // Get curve + parameter range from the edge.
+      const loc   = track(tracker, new oc.TopLoc_Location_1())
+      let first = { current: 0 }, last = { current: 1 }
+      let curve3d = null
+      try {
+        // BRep_Tool.Curve_3 returns (Geom_Curve, location, first, last)
+        if (typeof oc.BRep_Tool?.Curve_3 === 'function') {
+          curve3d = oc.BRep_Tool.Curve_3(edge, loc, first, last)
+        }
+      } catch { /* */ }
+
+      const t0 = typeof first.current === 'number' ? first.current : 0
+      const t1 = typeof last.current  === 'number' ? last.current  : 1
+      const nSeg = Math.max(2, Math.round(samples / 4))
+      for (let i = 0; i <= nSeg; i++) {
+        const t = t0 + (t1 - t0) * (i / nSeg)
+        if (curve3d && typeof curve3d.Value === 'function') {
+          try {
+            const pt = track(tracker, curve3d.Value(t))
+            sampledPoints.push(pt)
+          } catch { /* skip */ }
+        }
+      }
+    }
+  } catch { /* fall through with empty sampledPoints */ }
+
+  if (sampledPoints.length < 2) {
+    throw new TrimByCurveUnsupportedError(
+      'projectCurveOntoSurface: could not sample 3D wire — no edge curves extracted.'
+    )
+  }
+
+  // Project each sampled point onto the surface, collect the 3D surface-lying point.
+  const projectedPts = []
+  for (const pt of sampledPoints) {
+    try {
+      const pOnS = track(tracker, new oc.GeomAPI_ProjectPointOnSurf(pt, surface))
+      if (typeof pOnS.NbPoints === 'function' && pOnS.NbPoints() > 0) {
+        const nearest = track(tracker, pOnS.NearestPoint())
+        projectedPts.push(nearest)
+      }
+    } catch { /* skip degenerate projections */ }
+  }
+
+  if (projectedPts.length < 2) {
+    throw new TrimByCurveUnsupportedError(
+      'projectCurveOntoSurface: per-point projection produced no results — ' +
+      'cutter wire may not pass over the face. Check trim_curve_ref positioning.'
+    )
+  }
+
+  // Stitch projected points into edges → wire.
+  const wireMaker = track(tracker, new oc.BRepBuilderAPI_MakeWire_1())
+  for (let i = 0; i < projectedPts.length - 1; i++) {
+    try {
+      const edgeMaker = track(tracker,
+        new oc.BRepBuilderAPI_MakeEdge_3(projectedPts[i], projectedPts[i + 1])
+      )
+      if (typeof edgeMaker.IsDone === 'function' && edgeMaker.IsDone()) {
+        wireMaker.Add_1(edgeMaker.Edge())
+      }
+    } catch { /* skip bad segment */ }
+  }
+
+  if (typeof wireMaker.IsDone !== 'function' || !wireMaker.IsDone()) {
+    throw new TrimByCurveUnsupportedError(
+      'projectCurveOntoSurface: BRepBuilderAPI_MakeWire failed to assemble projected wire.'
+    )
+  }
+
+  let projectedWire = wireMaker.Wire()
+
+  // Optional ShapeFix_Wire cleanup.
+  if (typeof oc.ShapeFix_Wire === 'function') {
+    try {
+      const fixer = track(tracker, new oc.ShapeFix_Wire())
+      fixer.Load(projectedWire)
+      fixer.Perform()
+      const fixed = fixer.WireAPIMake()
+      if (fixed) projectedWire = fixed
+    } catch { /* cleanup optional */ }
+  }
+
+  return projectedWire
+}
+
+/**
+ * Split a face along a projected wire.
+ *
+ * Primary path: BRepFeat_SplitShape — the niche class from OCCT's "feature"
+ *   module.  If present, this is the cleanest approach: feeds both face and
+ *   wire to the builder, calls Build(), then retrieves Left/Right halves.
+ *
+ * Fallback: throws TrimByCurveUnsupportedError with a C2-T12 escalation hint.
+ *   The Section+prism fallback is a separate task (C2-T12) to keep scope clean.
+ *
+ * @param {object}  oc            — opencascade.js handle
+ * @param {object}  face          — TopoDS_Face to split
+ * @param {object}  projectedWire — wire lying on the face (from projectCurveOntoSurface)
+ * @param {Array}   tracker       — OCCT object lifetime tracker
+ * @returns {{ keepFace: object, discardFace: object }}
+ *   Both are TopoDS_Face (or TopoDS_Compound of face fragments).
+ *   'keepFace' corresponds to BRepFeat_SplitShape.Left() (first result).
+ *   'discardFace' corresponds to BRepFeat_SplitShape.Right() (second result).
+ */
+export function splitFaceAlongCurve(oc, face, projectedWire, tracker) {
+  if (typeof oc.BRepFeat_SplitShape === 'function') {
+    try {
+      const splitter = track(tracker, new oc.BRepFeat_SplitShape(face))
+      splitter.Add(projectedWire, face)
+      if (typeof oc.Message_ProgressRange_1 === 'function') {
+        splitter.Build(new oc.Message_ProgressRange_1())
+      } else {
+        splitter.Build()
+      }
+
+      // Retrieve both sides.
+      let keepFace    = null
+      let discardFace = null
+
+      // Left() and Right() return TopTools_ListOfShape.
+      // We extract the first shape from each via a list iterator.
+      try {
+        if (typeof splitter.Left === 'function') {
+          const leftList = splitter.Left()
+          if (typeof leftList.First === 'function') {
+            keepFace = leftList.First()
+          } else if (typeof leftList.Size === 'function' && leftList.Size() > 0) {
+            keepFace = leftList.First()
+          }
+        }
+      } catch { /* Left() may return an empty list */ }
+
+      try {
+        if (typeof splitter.Right === 'function') {
+          const rightList = splitter.Right()
+          if (typeof rightList.First === 'function') {
+            discardFace = rightList.First()
+          }
+        }
+      } catch { /* Right() may return an empty list */ }
+
+      // Fallback: extract faces from the shape result if Left/Right failed.
+      if (!keepFace) {
+        try {
+          const FACE  = oc.TopAbs_ShapeEnum?.TopAbs_FACE  ?? 4
+          const SHAPE = oc.TopAbs_ShapeEnum?.TopAbs_SHAPE ?? 8
+          const result = splitter.Shape()
+          const exp = track(tracker, new oc.TopExp_Explorer_2(result, FACE, SHAPE))
+          if (exp.More()) { keepFace    = exp.Current(); exp.Next() }
+          if (exp.More()) { discardFace = exp.Current() }
+        } catch { /* */ }
+      }
+
+      if (!keepFace) {
+        throw new TrimByCurveUnsupportedError(
+          'splitFaceAlongCurve: BRepFeat_SplitShape.Build() produced no faces. ' +
+          'The cutter wire may not cross the face boundary (must be a full crossing or closed loop).'
+        )
+      }
+
+      return { keepFace, discardFace: discardFace || keepFace }
+    } catch (err) {
+      if (err instanceof TrimByCurveUnsupportedError) throw err
+      // Other runtime failure — escalate.
+      throw new TrimByCurveUnsupportedError(
+        `splitFaceAlongCurve: BRepFeat_SplitShape failed: ${err?.message || err}. ` +
+        'If the projected wire does not fully cross the face boundary, re-check ' +
+        'trim_curve_ref positioning.  For the Section+prism fallback, escalate to C2-T12.'
+      )
+    }
+  }
+
+  // BRepFeat_SplitShape absent — escalate.
+  throw new TrimByCurveUnsupportedError(
+    'splitFaceAlongCurve: BRepFeat_SplitShape is not bound in this OCCT build. ' +
+    'This is the highest-risk binding in the C2 plan (plan Q1). ' +
+    'Escalate to C2-T12 (Section+prism fallback) or rebuild the WASM module.'
+  )
+}
