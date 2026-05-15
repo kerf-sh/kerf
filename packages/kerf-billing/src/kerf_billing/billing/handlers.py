@@ -32,6 +32,13 @@ class Handlers:
         if not uid:
             return JSONResponse(status_code=401, content={"error": "unauthorized"})
 
+        # Defense-in-depth: reject payment attempts when cloud beta is active.
+        if getattr(self.cfg, "cloud_beta", False):
+            return JSONResponse(
+                status_code=403,
+                content={"error": "billing disabled in beta — everyone is on Free"},
+            )
+
         try:
             body = await request.json()
         except Exception:

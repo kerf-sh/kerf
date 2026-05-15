@@ -222,6 +222,28 @@ class MeResponse(BaseModel):
     default_workspace: Optional[dict] = None
 
 
+@router.get("/config")
+async def get_config():
+    """Public bootstrap endpoint consumed by the frontend's useCloudConfig hook.
+
+    Returns the minimal set of server-side flags the browser needs before the
+    user is authenticated. No auth required — no secrets are returned here.
+    """
+    payload = {
+        "cloud_enabled": settings.cloud_enabled,
+        "local_mode": settings.local_mode,
+    }
+    if settings.cloud_enabled:
+        # cloud_beta: billing-disabled mode. Mirrored from KERF_CLOUD_BETA env.
+        if settings.cloud_beta:
+            payload["cloud_beta"] = True
+        if settings.google_client_id:
+            payload["google_client_id"] = settings.google_client_id
+        if settings.cloud_paystack_public_key:
+            payload["paystack_public_key"] = settings.cloud_paystack_public_key
+    return payload
+
+
 @router.get("/me")
 async def me(payload: dict = Depends(require_auth)):
     user_id = payload.get("sub")

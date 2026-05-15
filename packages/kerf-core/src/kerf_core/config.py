@@ -62,6 +62,10 @@ class Settings(BaseSettings):
     system_user_password: str = ""
 
     cloud_enabled: bool = False
+    # Cloud beta: when True billing is disabled server-side and the frontend
+    # renders payment controls as visibly greyed-out. Set KERF_CLOUD_BETA=true
+    # on the server; the value is mirrored to the frontend via /api/config.
+    cloud_beta: bool = False
     cloud_paystack_secret_key: str = ""
     cloud_paystack_public_key: str = ""
     cloud_paystack_webhook_secret: str = ""

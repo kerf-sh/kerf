@@ -81,6 +81,13 @@ async def topup(
     if not uid:
         raise HTTPException(status_code=401, detail="unauthorized")
 
+    # Defense-in-depth: reject payment attempts when cloud beta is active.
+    if settings.cloud_beta:
+        raise HTTPException(
+            status_code=403,
+            detail="billing disabled in beta — everyone is on Free",
+        )
+
     handlers = _get_billing_handlers()
     if not handlers:
         raise HTTPException(status_code=503, detail="paystack not configured")
