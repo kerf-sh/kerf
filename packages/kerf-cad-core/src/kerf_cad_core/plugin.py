@@ -74,6 +74,8 @@ _TOOL_MODULES = [
     "kerf_cad_core.fluidpower.tools",
     "kerf_cad_core.gearstrength.tools",
     "kerf_cad_core.vibration.tools",
+    "kerf_cad_core.fatigue.tools",
+    "kerf_cad_core.matsel.tools",
 ]
 
 # ── kerf_core contract (built by kerf-core agent in parallel) ─────────────────
