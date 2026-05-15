@@ -7,7 +7,7 @@ Body: { "bim_content": string }
 Returns: { "ifc_base64": string, "warnings": [], "errors": [] }
 """
 
-from fastapi import APIRouter
+from fastapi import APIRouter, File, HTTPException, UploadFile
 import base64
 import json
 import math
@@ -45,6 +45,70 @@ async def compile_ifc(req: dict):
 async def compile_bim(req: dict):
     """Alias kept for backend/tools/bim.py compatibility."""
     return await compile_ifc(req)
+
+
+@router.post("/import-ifc")
+async def import_ifc(file: UploadFile = File(...)):
+    """
+    Parse an uploaded .ifc file and return a structured .bim payload.
+
+    Does not persist anything to the database; the LLM tool handles that.
+
+    Returns::
+
+        {
+          "bim_payload": { ... },   # conforms to .bim JSON schema
+          "stats": {
+              "sites": N,
+              "levels": N,
+              "walls": N,
+              "slabs": N,
+              "spaces": N
+          },
+          "warnings": [ "...", ... ]
+        }
+
+    Raises HTTP 503 if IfcOpenShell is not installed.
+    Raises HTTP 400 for non-.ifc uploads or parse failures.
+    """
+    filename = file.filename or ""
+    if not filename.lower().endswith(".ifc"):
+        raise HTTPException(
+            status_code=400,
+            detail="Only .ifc files are accepted by this endpoint.",
+        )
+
+    content: bytes = await file.read()
+
+    # Write to a temp file so ifcopenshell.open() can read it
+    with tempfile.NamedTemporaryFile(suffix=".ifc", delete=False) as tmp:
+        tmp.write(content)
+        tmp_path = Path(tmp.name)
+
+    try:
+        from kerf_bim.import_ifc import parse_ifc_file
+        from kerf_bim.import_ifc.types import IFCOpenShellNotInstalled, IFCImportError
+
+        try:
+            result = parse_ifc_file(tmp_path)
+        except IFCOpenShellNotInstalled as exc:
+            raise HTTPException(
+                status_code=503,
+                detail=str(exc),
+            )
+        except IFCImportError as exc:
+            raise HTTPException(
+                status_code=400,
+                detail=str(exc),
+            )
+    finally:
+        tmp_path.unlink(missing_ok=True)
+
+    return {
+        "bim_payload": result.bim_payload,
+        "stats": result.stats,
+        "warnings": result.warnings,
+    }
 
 
 # ---------------------------------------------------------------------------
