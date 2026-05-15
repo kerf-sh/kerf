@@ -51,6 +51,20 @@ async def register(app: "FastAPI", ctx):
     # Fab output (Gerber, Excellon, P&P, BOM, IPC-2581) — pure Python, always available
     provides.append("electronics.fab")
 
+    # 3D STEP board export — requires pythonOCC (optional)
+    try:
+        from kerf_electronics.fab.board_step import _OCC_AVAILABLE as _step_occ
+        if _step_occ:
+            provides.append("electronics.board_step")
+        else:
+            logger.info(
+                "kerf-electronics: pythonOCC not available; "
+                "3D board STEP export disabled (export_board_step tool still registered "
+                "and returns a friendly error when called without OCC)"
+            )
+    except ImportError:
+        logger.info("kerf-electronics: board_step module unavailable")
+
     try:
         from kerf_core.plugin import PluginManifest  # type: ignore
     except ImportError:
