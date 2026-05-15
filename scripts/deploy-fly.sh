@@ -23,6 +23,14 @@
 
 set -euo pipefail
 
+# ── Project-scoped flyctl config ─────────────────────────────────────────────
+# Use a repo-local fly config dir (./.fly, gitignored) instead of the
+# machine-global ~/.fly, so deploys can't accidentally target whatever
+# account is globally logged in. One-time auth:
+#   FLY_CONFIG_DIR="$PWD/.fly" flyctl auth login
+_REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+export FLY_CONFIG_DIR="${FLY_CONFIG_DIR:-$_REPO_ROOT/.fly}"
+
 # ── Argument parsing ─────────────────────────────────────────────────────────
 ENV_NAME="main"
 SECRETS_ONLY=false

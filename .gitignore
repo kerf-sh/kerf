@@ -36,6 +36,9 @@ dist-ssr
 
 # fly.io deploy secrets — gitignored. The only committed template is
 # .env.z.example; copy it to `.env.dev` / `.env.main` (both ignored above).
+# Project-local flyctl config dir (FLY_CONFIG_DIR) — holds the fly auth
+# token; never commit.
+.fly/
 
 # Backend config (commit only kerf.example.toml).
 kerf.toml
