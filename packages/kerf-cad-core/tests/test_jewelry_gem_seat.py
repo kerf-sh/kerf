@@ -1174,7 +1174,7 @@ class TestRunJewelryCutGemSeatErrors:
 
     def test_unknown_cut(self):
         ctx, _, fid = make_ctx()
-        result = run_gem_seat(ctx, fid, cut="kite", diameter_mm=5.0)
+        result = run_gem_seat(ctx, fid, cut="__not_a_cut__", diameter_mm=5.0)
         assert result.get("code") == "BAD_ARGS"
 
     def test_negative_carat(self):
@@ -1229,7 +1229,7 @@ class TestRunJewelryCutGemSeatErrors:
     def test_invalid_girdle_shape(self):
         ctx, _, fid = make_ctx()
         result = run_gem_seat(ctx, fid, cut="round_brilliant", diameter_mm=6.5,
-                              girdle_shape="kite")
+                              girdle_shape="__not_a_cut__")
         assert result.get("code") == "BAD_ARGS"
 
 
@@ -1972,7 +1972,7 @@ class TestRunClusterHaloSeat:
     def test_invalid_center_cut_rejected(self):
         ctx, store, fid = make_ctx()
         result = run_halo(ctx, fid,
-                          center_cut="kite", center_diameter_mm=6.5,
+                          center_cut="__not_a_cut__", center_diameter_mm=6.5,
                           accent_cut="round_brilliant", accent_diameter_mm=1.5,
                           n_accent=8, halo_radius_mm=4.5)
         assert result.get("code") == "BAD_ARGS"
