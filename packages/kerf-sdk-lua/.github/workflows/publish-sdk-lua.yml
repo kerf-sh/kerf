@@ -1,0 +1,35 @@
+name: Publish kerf-sdk to LuaRocks
+
+on:
+  push:
+    tags:
+      - "sdk-lua-v*"
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/kerf-sdk-lua
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Lua 5.4
+        uses: leafo/gh-actions-lua@v10
+        with:
+          luaVersion: "5.4"
+
+      - name: Set up LuaRocks
+        uses: leafo/gh-actions-luarocks@v4
+
+      - name: Install dependencies
+        run: luarocks install lua-cjson && luarocks install luasec && luarocks install luasocket
+
+      - name: Run tests
+        run: lua spec/client_spec.lua
+
+      - name: Upload to LuaRocks
+        env:
+          LUAROCKS_API_KEY: ${{ secrets.LUAROCKS_API_KEY }}
+        run: luarocks upload kerf-sdk-0.1.0-1.rockspec --api-key="$LUAROCKS_API_KEY"
