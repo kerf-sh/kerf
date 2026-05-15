@@ -81,6 +81,18 @@ class Settings(BaseSettings):
     cloud_github_client_secret: str = ""
     cloud_github_redirect_url: str = "http://localhost:8080/auth/github/callback"
 
+    # ---------------------------------------------------------------------------
+    # Transactional email — provider selection + credentials.
+    # email_provider: "smtp" (default, no regression) | "resend" | "ses"
+    # email_from: default From address, e.g. "Kerf <noreply@kerf.app>"
+    # ---------------------------------------------------------------------------
+    email_provider: str = "smtp"
+    email_from: str = ""
+    resend_api_key: str = ""
+    ses_region: str = ""
+    ses_access_key_id: str = ""
+    ses_secret_access_key: str = ""
+
     @model_validator(mode="after")
     def _enforce_cloud_disables_local_mode(self):
         if self.cloud_enabled and self.local_mode:
