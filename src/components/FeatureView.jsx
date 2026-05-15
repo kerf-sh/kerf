@@ -705,6 +705,43 @@ const FEATURE_KINDS = [
       ] },
     ],
   },
+  // T-1 Sheet metal — folded flange primitive.
+  // Unfold (T-2), flat-pattern (T-3), and bend table (T-4) are follow-ups.
+  {
+    op: 'sheet_metal_flange',
+    label: 'Sheet Flange',
+    icon: Layers,
+    defaults: {
+      base_width: 100,
+      base_depth: 80,
+      thickness: 1.5,
+      edge_ref: 'top-front',
+      flange_length: 25,
+      bend_angle_deg: 90,
+      bend_radius: 2,
+      k_factor: 0.44,
+    },
+    caption: (
+      'Folded sheet-metal flange: base plate + bent wall along a chosen top edge. ' +
+      'k_factor (0 < k < 1) stores the neutral-axis offset for unfold (T-2, not yet shipped). ' +
+      'Edge ref: top-front | top-back | top-left | top-right.'
+    ),
+    fields: [
+      { key: 'base_width',      kind: 'number',  label: 'Base width (mm)',        min: 0.1, step: 1 },
+      { key: 'base_depth',      kind: 'number',  label: 'Base depth (mm)',         min: 0.1, step: 1 },
+      { key: 'thickness',       kind: 'number',  label: 'Sheet thickness (mm)',    min: 0.1, step: 0.1 },
+      { key: 'edge_ref',        kind: 'select',  label: 'Fold edge', options: [
+        { value: 'top-front',  label: 'Top front' },
+        { value: 'top-back',   label: 'Top back' },
+        { value: 'top-left',   label: 'Top left' },
+        { value: 'top-right',  label: 'Top right' },
+      ] },
+      { key: 'flange_length',   kind: 'number',  label: 'Flange length (mm)',      min: 0.1, step: 1 },
+      { key: 'bend_angle_deg',  kind: 'number',  label: 'Bend angle (°)',          min: 0.1, max: 180, step: 1 },
+      { key: 'bend_radius',     kind: 'number',  label: 'Inside bend radius (mm)', min: 0,   step: 0.5 },
+      { key: 'k_factor',        kind: 'number',  label: 'K-factor (0–1)',          min: 0.01, max: 0.99, step: 0.01 },
+    ],
+  },
 ]
 
 const KIND_BY_OP = Object.fromEntries(FEATURE_KINDS.map((k) => [k.op, k]))
@@ -715,6 +752,7 @@ const FEATURE_CATEGORIES = [
   { id: 'pattern',  label: 'Pattern',       ops: ['linear_pattern', 'polar_pattern', 'mirror_pattern'] },
   { id: 'surface',  label: 'Surfacing',     ops: ['sweep1', 'sweep2', 'loft', 'network_srf', 'blend_srf', 'surface_boolean', 'surface_curvature_combs'] },
   { id: 'jewelry',  label: 'Jewelry',       ops: ['gemstone', 'gem_seat', 'ring_shank', 'jewelry_prong_head', 'jewelry_bezel', 'jewelry_channel', 'jewelry_pave'] },
+  { id: 'sheetmetal', label: 'Sheet Metal', ops: ['sheet_metal_flange'] },
 ]
 
 const DEBOUNCE_MS = 300
