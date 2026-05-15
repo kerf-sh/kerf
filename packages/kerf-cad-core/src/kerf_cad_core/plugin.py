@@ -46,6 +46,7 @@ _TOOL_MODULES = [
     "kerf_cad_core.assembly.tools",
     "kerf_cad_core.weldment",
     "kerf_cad_core.civil.tools",
+    "kerf_cad_core.gears",
 ]
 
 # ── kerf_core contract (built by kerf-core agent in parallel) ─────────────────
