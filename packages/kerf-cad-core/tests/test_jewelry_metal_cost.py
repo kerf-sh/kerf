@@ -22,20 +22,32 @@ import math
 import pytest
 
 from kerf_cad_core.jewelry.metal_cost import (
+    CARATS_PER_GRAM,
+    DEFAULT_FINISHING_COST,
+    DEFAULT_SETTING_FEE_PER_STONE,
+    FINISHING_TYPES,
     GRAMS_PER_DWT,
     GRAMS_PER_OZT,
     METAL_DENSITY_G_CM3,
+    METAL_FINENESS_LABEL,
+    METAL_HALLMARK,
     METAL_LABELS,
+    METAL_PRICE_PRESETS,
     MM3_PER_CM3,
+    SETTING_TYPES,
     casting_cost,
     casting_weight,
     dwt_to_grams,
     grams_to_dwt,
     grams_to_ozt,
+    jewelry_quote,
+    labour_cost,
     metal_weight,
+    mm_to_carat,
     multi_metal_compare,
     ozt_to_grams,
     resolve_density,
+    stone_cost_line_items,
 )
 
 
@@ -501,3 +513,564 @@ class TestRunJewelryMetalCost:
         mod = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(mod)
         assert "kerf_cad_core.jewelry.tool_metal_cost" in mod._TOOL_MODULES
+
+
+# ── Extended alloys + hallmarks ───────────────────────────────────────────────
+
+class TestExtendedAlloys:
+    def test_22k_white_present(self):
+        assert "22k_white" in METAL_DENSITY_G_CM3
+        assert METAL_DENSITY_G_CM3["22k_white"] > 17.0
+
+    def test_22k_rose_present(self):
+        assert "22k_rose" in METAL_DENSITY_G_CM3
+        assert METAL_DENSITY_G_CM3["22k_rose"] > 17.0
+
+    def test_platinum_900_present(self):
+        assert "platinum_900" in METAL_DENSITY_G_CM3
+        assert 21.0 <= METAL_DENSITY_G_CM3["platinum_900"] <= 22.0
+        # Pt900 lighter than Pt950 (less platinum, more iridium)
+        assert METAL_DENSITY_G_CM3["platinum_900"] <= METAL_DENSITY_G_CM3["platinum_950"]
+
+    def test_palladium_500_present(self):
+        assert "palladium_500" in METAL_DENSITY_G_CM3
+        assert 10.0 <= METAL_DENSITY_G_CM3["palladium_500"] <= 11.5
+
+    def test_argentium_935_present(self):
+        assert "argentium_935" in METAL_DENSITY_G_CM3
+        assert 10.0 <= METAL_DENSITY_G_CM3["argentium_935"] <= 11.0
+
+    def test_all_new_alloys_have_labels(self):
+        for k in ["22k_white", "22k_rose", "platinum_900", "palladium_500", "argentium_935"]:
+            assert k in METAL_LABELS, f"Missing label for {k}"
+            assert METAL_LABELS[k]  # non-empty
+
+    def test_all_new_alloys_have_hallmarks(self):
+        for k in ["22k_white", "22k_rose", "platinum_900", "palladium_500", "argentium_935"]:
+            assert k in METAL_HALLMARK, f"Missing hallmark for {k}"
+
+    def test_hallmark_values_correct(self):
+        assert METAL_HALLMARK["10k_yellow"] == 417
+        assert METAL_HALLMARK["14k_yellow"] == 583
+        assert METAL_HALLMARK["18k_yellow"] == 750
+        assert METAL_HALLMARK["22k_yellow"] == 917
+        assert METAL_HALLMARK["24k_yellow"] == 999
+        assert METAL_HALLMARK["platinum_950"] == 950
+        assert METAL_HALLMARK["platinum_900"] == 900
+        assert METAL_HALLMARK["palladium_950"] == 950
+        assert METAL_HALLMARK["palladium_500"] == 500
+        assert METAL_HALLMARK["sterling_925"] == 925
+        assert METAL_HALLMARK["fine_silver"] == 999
+        assert METAL_HALLMARK["argentium_935"] == 935
+
+    def test_non_precious_hallmark_none(self):
+        for k in ["titanium", "brass", "bronze"]:
+            assert METAL_HALLMARK[k] is None
+
+    def test_fineness_label_matches_hallmark(self):
+        assert METAL_FINENESS_LABEL["18k_yellow"] == "750"
+        assert METAL_FINENESS_LABEL["platinum_950"] == "950"
+        assert METAL_FINENESS_LABEL["titanium"] == "—"
+
+    def test_all_metals_have_hallmark_entry(self):
+        for k in METAL_DENSITY_G_CM3:
+            assert k in METAL_HALLMARK, f"Missing METAL_HALLMARK entry for '{k}'"
+
+    def test_price_presets_structure(self):
+        assert "usd_2024_approx" in METAL_PRICE_PRESETS
+        preset = METAL_PRICE_PRESETS["usd_2024_approx"]
+        # Every metal should have a price in the preset
+        for k in METAL_DENSITY_G_CM3:
+            assert k in preset, f"Preset missing price for '{k}'"
+            assert preset[k] >= 0.0
+
+
+# ── mm_to_carat ───────────────────────────────────────────────────────────────
+
+class TestMmToCarat:
+    def test_round_brilliant_1ct_approx_6_5mm(self):
+        # Standard: 1 ct round brilliant ≈ 6.5 mm diameter
+        ct = mm_to_carat(6.5, "round_brilliant")
+        # Roughly 0.9–1.1 ct
+        assert 0.85 <= ct <= 1.15
+
+    def test_0_5ct_round_brilliant_approx_5mm(self):
+        ct = mm_to_carat(5.0, "round_brilliant")
+        # 5 mm round brilliant ≈ 0.46 ct
+        assert 0.40 <= ct <= 0.60
+
+    def test_different_cuts_give_different_values(self):
+        round_ct = mm_to_carat(6.0, "round_brilliant")
+        marquise_ct = mm_to_carat(6.0, "marquise")
+        # Marquise is shallower → different carat for same mm
+        assert round_ct != marquise_ct
+
+    def test_negative_mm_raises(self):
+        with pytest.raises(ValueError):
+            mm_to_carat(-1.0)
+
+    def test_zero_mm_raises(self):
+        with pytest.raises(ValueError):
+            mm_to_carat(0.0)
+
+    def test_unknown_cut_falls_back_to_round_brilliant(self):
+        ct_known = mm_to_carat(6.0, "round_brilliant")
+        ct_unknown = mm_to_carat(6.0, "unknown_fantasy_cut")
+        assert ct_known == approx(ct_unknown)
+
+    def test_larger_stone_heavier(self):
+        small = mm_to_carat(3.0)
+        large = mm_to_carat(6.0)
+        assert large > small
+
+
+# ── stone_cost_line_items ─────────────────────────────────────────────────────
+
+class TestStoneCostLineItems:
+    def test_single_stone_explicit_carat(self):
+        result = stone_cost_line_items([
+            {"cut": "round_brilliant", "carat": 0.5, "price_per_carat": 2000.0}
+        ])
+        assert result["total_cost"] == approx(1000.0)
+        assert result["total_carats"] == approx(0.5)
+        assert result["total_stones"] == 1
+        assert len(result["line_items"]) == 1
+
+    def test_multiple_stones_same_spec(self):
+        result = stone_cost_line_items([
+            {"cut": "round_brilliant", "carat": 0.1, "price_per_carat": 500.0, "count": 4}
+        ])
+        assert result["total_cost"] == approx(200.0)
+        assert result["total_carats"] == approx(0.4)
+        assert result["total_stones"] == 4
+
+    def test_multiple_stone_specs(self):
+        stones = [
+            {"carat": 1.0, "price_per_carat": 5000.0, "cut": "round_brilliant"},
+            {"carat": 0.2, "price_per_carat": 300.0, "cut": "pave", "count": 10},
+        ]
+        result = stone_cost_line_items(stones)
+        expected_total = 1.0 * 5000.0 + 0.2 * 300.0 * 10
+        assert result["total_cost"] == approx(expected_total)
+        assert result["total_stones"] == 11
+
+    def test_stone_with_mm_instead_of_carat(self):
+        result = stone_cost_line_items([
+            {"cut": "round_brilliant", "mm": 6.5, "price_per_carat": 2000.0}
+        ])
+        # mm→carat ≈ 1 ct for 6.5mm round; total cost ~$2000
+        assert result["total_cost"] >= 1500.0
+        assert result["total_cost"] <= 2500.0
+
+    def test_empty_list_returns_zeros(self):
+        result = stone_cost_line_items([])
+        assert result["total_cost"] == 0.0
+        assert result["total_carats"] == 0.0
+        assert result["total_stones"] == 0
+        assert result["line_items"] == []
+
+    def test_note_preserved(self):
+        result = stone_cost_line_items([
+            {"carat": 0.5, "price_per_carat": 2000.0, "note": "VS1 G colour"}
+        ])
+        assert result["line_items"][0]["note"] == "VS1 G colour"
+
+    def test_missing_price_per_carat_raises(self):
+        with pytest.raises(ValueError, match="price_per_carat"):
+            stone_cost_line_items([{"carat": 0.5}])
+
+    def test_negative_carat_raises(self):
+        with pytest.raises(ValueError):
+            stone_cost_line_items([{"carat": -0.5, "price_per_carat": 100.0}])
+
+    def test_negative_price_raises(self):
+        with pytest.raises(ValueError):
+            stone_cost_line_items([{"carat": 0.5, "price_per_carat": -1.0}])
+
+    def test_zero_count_raises(self):
+        with pytest.raises(ValueError):
+            stone_cost_line_items([{"carat": 0.5, "price_per_carat": 100.0, "count": 0}])
+
+    def test_neither_carat_nor_mm_raises(self):
+        with pytest.raises(ValueError):
+            stone_cost_line_items([{"price_per_carat": 100.0}])
+
+    def test_not_a_list_raises(self):
+        with pytest.raises(ValueError):
+            stone_cost_line_items("not a list")
+
+
+# ── labour_cost ───────────────────────────────────────────────────────────────
+
+class TestLabourCost:
+    def test_basic_bench_hours(self):
+        result = labour_cost(bench_hours=4.0, hourly_rate=75.0)
+        assert result["bench_labour_cost"] == approx(300.0)
+        assert result["setting_cost"] == approx(0.0)  # no stones
+        assert result["finishing_cost"] == approx(0.0)
+        assert result["total_labour"] == approx(300.0)
+
+    def test_setting_cost_prong_default(self):
+        stones = [{"carat": 0.5, "price_per_carat": 2000.0, "count": 1}]
+        result = labour_cost(setting_type="prong", stones=stones)
+        expected = DEFAULT_SETTING_FEE_PER_STONE["prong"] * 1
+        assert result["setting_cost"] == approx(expected)
+
+    def test_setting_cost_pave_multi_stone(self):
+        stones = [{"carat": 0.05, "price_per_carat": 200.0, "count": 20}]
+        result = labour_cost(setting_type="pave", stones=stones)
+        expected = DEFAULT_SETTING_FEE_PER_STONE["pave"] * 20
+        assert result["setting_cost"] == approx(expected)
+
+    def test_custom_setting_fee_override(self):
+        stones = [{"carat": 0.5, "price_per_carat": 2000.0, "count": 3}]
+        result = labour_cost(setting_fee_per_stone=25.0, stones=stones)
+        assert result["setting_cost"] == approx(75.0)
+
+    def test_finishing_type_rhodium(self):
+        result = labour_cost(finishing_type="rhodium")
+        assert result["finishing_cost"] == approx(DEFAULT_FINISHING_COST["rhodium"])
+        assert result["finishing_type"] == "rhodium"
+
+    def test_finishing_cost_explicit_override(self):
+        result = labour_cost(finishing_cost=50.0)
+        assert result["finishing_cost"] == approx(50.0)
+
+    def test_total_is_sum(self):
+        stones = [{"carat": 0.5, "price_per_carat": 2000.0, "count": 2}]
+        result = labour_cost(
+            bench_hours=3.0, hourly_rate=80.0,
+            stones=stones, setting_type="bezel",
+            finishing_type="rhodium",
+        )
+        expected = (3.0 * 80.0
+                    + DEFAULT_SETTING_FEE_PER_STONE["bezel"] * 2
+                    + DEFAULT_FINISHING_COST["rhodium"])
+        assert result["total_labour"] == approx(expected)
+
+    def test_negative_bench_hours_raises(self):
+        with pytest.raises(ValueError):
+            labour_cost(bench_hours=-1.0)
+
+    def test_negative_hourly_rate_raises(self):
+        with pytest.raises(ValueError):
+            labour_cost(hourly_rate=-10.0)
+
+    def test_unknown_setting_type_raises(self):
+        with pytest.raises(ValueError, match="setting_type"):
+            labour_cost(setting_type="telekinesis")
+
+    def test_unknown_finishing_type_raises(self):
+        with pytest.raises(ValueError, match="finishing_type"):
+            labour_cost(finishing_type="unicorn_sheen")
+
+    def test_all_setting_types_have_defaults(self):
+        for stype in SETTING_TYPES:
+            result = labour_cost(setting_type=stype)
+            assert result["setting_cost"] == 0.0  # no stones
+            assert result["setting_type"] == stype
+
+    def test_no_stones_zero_setting_cost(self):
+        result = labour_cost(setting_type="prong", stones=[])
+        assert result["stone_count"] == 0
+        assert result["setting_cost"] == 0.0
+
+
+# ── jewelry_quote ─────────────────────────────────────────────────────────────
+
+class TestJewelryQuote:
+    """Full quote combines metal + stones + labour + markup correctly."""
+
+    def _basic_quote(self, **kwargs):
+        defaults = dict(
+            volume_mm3=300.0,
+            metal="18k_yellow",
+            metal_price_per_gram=48.0,
+        )
+        defaults.update(kwargs)
+        return jewelry_quote(**defaults)
+
+    def test_keys_present(self):
+        q = self._basic_quote()
+        for k in [
+            "metal", "label", "hallmark", "density_g_cm3", "volume_mm3",
+            "net_grams", "net_dwt", "net_ozt", "allowance_pct", "gross_grams",
+            "metal_price_per_gram", "metal_cost", "casting_cost",
+            "stones", "stone_cost", "labour", "labour_total",
+            "subtotal", "markup_pct", "markup_amount", "total",
+        ]:
+            assert k in q, f"Missing key: {k}"
+
+    def test_no_stones_no_labour_total_equals_metal_cost(self):
+        q = self._basic_quote(markup_pct=0.0)
+        assert q["subtotal"] == approx(q["metal_cost"])
+        assert q["total"] == approx(q["metal_cost"])
+
+    def test_subtotal_is_sum_of_parts(self):
+        stones = [{"carat": 0.5, "price_per_carat": 2000.0}]
+        q = jewelry_quote(
+            volume_mm3=300.0, metal="18k_yellow",
+            metal_price_per_gram=48.0,
+            stones=stones,
+            bench_hours=4.0, hourly_rate=75.0,
+            setting_type="prong",
+            finishing_type="rhodium",
+            markup_pct=0.0,
+        )
+        expected_subtotal = q["metal_cost"] + q["stone_cost"] + q["labour_total"]
+        assert q["subtotal"] == approx(expected_subtotal)
+
+    def test_total_with_markup(self):
+        q = self._basic_quote(markup_pct=20.0)
+        expected_markup = q["subtotal"] * 0.20
+        expected_total = q["subtotal"] + expected_markup
+        assert q["markup_amount"] == approx(expected_markup, rel=1e-4)
+        assert q["total"] == approx(expected_total, rel=1e-4)
+
+    def test_full_example_18k_ring_with_stones(self):
+        """
+        18k yellow gold ring, 300 mm³:
+          metal cost: gross_grams(5.375) × $48 ≈ $258.00
+          stone: 0.5 ct × $2000 = $1000
+          labour: 4h × $75 = $300
+          setting: 1 prong × $12 = $12
+          finishing: rhodium $35
+          subtotal ≈ $1605
+          markup 20% ≈ $321
+          total ≈ $1926
+        """
+        q = jewelry_quote(
+            volume_mm3=300.0,
+            metal="18k_yellow",
+            metal_price_per_gram=48.0,
+            stones=[{"carat": 0.5, "price_per_carat": 2000.0, "count": 1}],
+            bench_hours=4.0,
+            hourly_rate=75.0,
+            setting_type="prong",
+            finishing_type="rhodium",
+            markup_pct=20.0,
+        )
+        # Metal cost check
+        assert q["net_grams"] == approx(4.674, rel=0.01)
+        assert q["gross_grams"] == approx(4.674 * 1.15, rel=0.01)
+        assert q["metal_cost"] == approx(q["gross_grams"] * 48.0, rel=1e-4)
+        # Stone cost check
+        assert q["stone_cost"] == approx(1000.0)
+        # Labour + setting + finishing
+        expected_labour = (4.0 * 75.0
+                           + DEFAULT_SETTING_FEE_PER_STONE["prong"] * 1
+                           + DEFAULT_FINISHING_COST["rhodium"])
+        assert q["labour_total"] == approx(expected_labour)
+        # Subtotal / total
+        expected_sub = q["metal_cost"] + q["stone_cost"] + q["labour_total"]
+        assert q["subtotal"] == approx(expected_sub, rel=1e-4)
+        assert q["total"] == approx(expected_sub * 1.20, rel=1e-4)
+
+    def test_hallmark_included(self):
+        q = self._basic_quote()
+        assert q["hallmark"] == 750  # 18k = 750
+
+    def test_hallmark_platinum_950(self):
+        q = jewelry_quote(volume_mm3=300.0, metal="platinum_950",
+                          metal_price_per_gram=32.0)
+        assert q["hallmark"] == 950
+
+    def test_casting_cost_alias_equals_metal_cost(self):
+        q = self._basic_quote()
+        assert q["casting_cost"] == q["metal_cost"]
+
+    def test_negative_markup_raises(self):
+        with pytest.raises(ValueError, match="markup_pct"):
+            self._basic_quote(markup_pct=-5.0)
+
+    def test_zero_markup_no_extra_cost(self):
+        q = self._basic_quote(markup_pct=0.0)
+        assert q["markup_amount"] == 0.0
+        assert q["total"] == approx(q["subtotal"])
+
+    def test_price_preset_used_when_price_zero(self):
+        q = jewelry_quote(
+            volume_mm3=300.0,
+            metal="18k_yellow",
+            metal_price_per_gram=0.0,
+            price_preset="usd_2024_approx",
+        )
+        preset_price = METAL_PRICE_PRESETS["usd_2024_approx"]["18k_yellow"]
+        assert q["metal_price_per_gram"] == approx(preset_price)
+        assert q["metal_cost"] > 0.0
+
+    def test_explicit_price_overrides_preset(self):
+        explicit_price = 99.0
+        q = jewelry_quote(
+            volume_mm3=300.0,
+            metal="18k_yellow",
+            metal_price_per_gram=explicit_price,
+            price_preset="usd_2024_approx",
+        )
+        assert q["metal_price_per_gram"] == approx(explicit_price)
+
+    def test_unknown_price_preset_raises(self):
+        with pytest.raises(ValueError, match="price_preset"):
+            jewelry_quote(volume_mm3=300.0, metal="18k_yellow",
+                          price_preset="nonexistent_preset")
+
+    def test_multi_stone_types_sum_correctly(self):
+        stones = [
+            {"carat": 1.0, "price_per_carat": 5000.0},
+            {"carat": 0.05, "price_per_carat": 100.0, "count": 8},
+        ]
+        q = jewelry_quote(
+            volume_mm3=300.0, metal="18k_yellow",
+            metal_price_per_gram=48.0, stones=stones,
+        )
+        expected_stone_cost = 1.0 * 5000.0 + 0.05 * 100.0 * 8
+        assert q["stone_cost"] == approx(expected_stone_cost)
+        assert q["stones"]["total_stones"] == 9
+
+    def test_explicit_density_accepted(self):
+        q = jewelry_quote(volume_mm3=300.0, density_g_cm3=15.0,
+                          metal_price_per_gram=40.0)
+        assert q["net_grams"] == approx(15.0 * 0.3)
+
+    def test_pave_setting_many_stones(self):
+        stones = [{"carat": 0.03, "price_per_carat": 150.0, "count": 30}]
+        q = jewelry_quote(
+            volume_mm3=300.0, metal="18k_white",
+            metal_price_per_gram=49.0,
+            stones=stones,
+            setting_type="pave",
+            bench_hours=3.0, hourly_rate=85.0,
+            markup_pct=25.0,
+        )
+        expected_stone_cost = 0.03 * 150.0 * 30
+        assert q["stone_cost"] == approx(expected_stone_cost)
+        expected_setting = DEFAULT_SETTING_FEE_PER_STONE["pave"] * 30
+        assert q["labour"]["setting_cost"] == approx(expected_setting)
+        assert q["total"] == approx(q["subtotal"] * 1.25, rel=1e-4)
+
+    def test_backwards_compat_existing_casting_cost_unchanged(self):
+        """jewelry_quote with no stones/labour/markup = same as casting_cost."""
+        q = jewelry_quote(
+            volume_mm3=1000.0, metal="14k_yellow",
+            metal_price_per_gram=30.0,
+        )
+        c = casting_cost(
+            volume_mm3=1000.0, metal="14k_yellow",
+            metal_price_per_gram=30.0,
+        )
+        assert q["net_grams"] == approx(c["net_grams"])
+        assert q["gross_grams"] == approx(c["gross_grams"])
+        assert q["metal_cost"] == approx(c["metal_cost"])
+        assert q["total"] == approx(c["total_cost"])
+
+
+# ── Tool — full quote path ────────────────────────────────────────────────────
+
+class TestRunJewelryMetalCostFullQuote:
+    """Tests for the new full-quote code path in the LLM tool."""
+
+    def test_quote_with_stones_returns_full_quote_mode(self):
+        result = run_tool(
+            volume_mm3=300.0,
+            metal="18k_yellow",
+            metal_price_per_gram=48.0,
+            stones=[{"carat": 0.5, "price_per_carat": 2000.0}],
+        )
+        assert "error" not in result
+        assert result.get("mode") == "full_quote"
+        est = result["estimate"]
+        assert "stone_cost" in est
+        assert est["stone_cost"] == approx(1000.0)
+
+    def test_quote_with_markup(self):
+        result = run_tool(
+            volume_mm3=300.0,
+            metal="18k_yellow",
+            metal_price_per_gram=48.0,
+            markup_pct=20.0,
+        )
+        assert "error" not in result
+        est = result["estimate"]
+        assert est["markup_pct"] == approx(20.0)
+        assert est["total"] == approx(est["subtotal"] * 1.20, rel=1e-4)
+
+    def test_quote_with_price_preset(self):
+        result = run_tool(
+            volume_mm3=300.0,
+            metal="18k_yellow",
+            price_preset="usd_2024_approx",
+        )
+        assert "error" not in result
+        est = result["estimate"]
+        assert est["metal_cost"] > 0.0
+
+    def test_invalid_price_preset_returns_bad_args(self):
+        result = run_tool(
+            volume_mm3=300.0,
+            metal="18k_yellow",
+            price_preset="made_up_preset",
+        )
+        assert "error" in result
+        assert result.get("code") == "BAD_ARGS"
+
+    def test_quote_stones_bad_spec_returns_bad_args(self):
+        result = run_tool(
+            volume_mm3=300.0,
+            metal="18k_yellow",
+            metal_price_per_gram=48.0,
+            stones=[{"carat": 0.5}],  # missing price_per_carat
+        )
+        assert "error" in result
+        assert result.get("code") == "BAD_ARGS"
+
+    def test_quote_negative_markup_returns_bad_args(self):
+        result = run_tool(
+            volume_mm3=300.0,
+            metal="18k_yellow",
+            metal_price_per_gram=48.0,
+            markup_pct=-10.0,
+        )
+        assert "error" in result
+        assert result.get("code") == "BAD_ARGS"
+
+    def test_quote_with_setting_and_finishing(self):
+        result = run_tool(
+            volume_mm3=300.0,
+            metal="18k_white",
+            metal_price_per_gram=49.0,
+            stones=[{"carat": 0.5, "price_per_carat": 2000.0, "count": 1}],
+            bench_hours=4.0,
+            hourly_rate=75.0,
+            setting_type="bezel",
+            finishing_type="rhodium",
+        )
+        assert "error" not in result
+        est = result["estimate"]
+        assert est["labour"]["setting_type"] == "bezel"
+        assert est["labour"]["finishing_type"] == "rhodium"
+
+    def test_legacy_casting_cost_path_unchanged(self):
+        """Calls without new params still use legacy casting_cost path."""
+        result = run_tool(
+            volume_mm3=1000.0,
+            metal="14k_yellow",
+            metal_price_per_gram=30.0,
+            labor=50.0,
+            finishing=20.0,
+        )
+        assert "error" not in result
+        assert result.get("mode") == "casting_cost"
+        est = result["estimate"]
+        assert est["total_cost"] == approx(est["metal_cost"] + 50.0 + 20.0)
+
+    def test_hallmark_in_full_quote(self):
+        result = run_tool(
+            volume_mm3=300.0,
+            metal="18k_yellow",
+            metal_price_per_gram=48.0,
+            markup_pct=20.0,  # markup triggers full_quote path
+        )
+        assert "error" not in result
+        assert result.get("mode") == "full_quote"
+        est = result["estimate"]
+        assert est.get("hallmark") == 750
