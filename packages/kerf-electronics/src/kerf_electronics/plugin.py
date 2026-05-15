@@ -98,6 +98,7 @@ def _register_tools(ctx, provides: list) -> None:
         "kerf_electronics.tools.autoroute",
         "kerf_electronics.tools.pour",
         "kerf_electronics.tools.pcb_drc",
+        "kerf_electronics.tools.drc_presets",
         "kerf_electronics.tools.pcb_layer_tools",
         "kerf_electronics.tools.routing",
         "kerf_electronics.tools.sim",
