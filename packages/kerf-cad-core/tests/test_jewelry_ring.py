@@ -2450,3 +2450,1016 @@ class TestRingShankOCC:
         }
         missing = required_keys - set(p.keys())
         assert not missing, f"Missing keys in shank params: {missing}"
+
+
+# ===========================================================================
+# v4 Composite / Style Ring Builders
+# ===========================================================================
+
+from kerf_cad_core.jewelry.ring import (
+    # v4 specs
+    SolitaireRingSpec,
+    MensBandSpec,
+    WeddingSetSpec,
+    CocktailRingSpec,
+    BypassRingSpec,
+    # v4 compute functions
+    compute_solitaire_ring_params,
+    compute_mens_band_params,
+    compute_wedding_set_params,
+    compute_cocktail_ring_params,
+    compute_bypass_ring_params,
+    # v4 tool specs and runners
+    jewelry_create_solitaire_ring_spec,
+    jewelry_create_mens_band_spec,
+    jewelry_create_wedding_set_spec,
+    jewelry_create_cocktail_ring_spec,
+    jewelry_create_bypass_ring_spec,
+    run_jewelry_create_solitaire_ring,
+    run_jewelry_create_mens_band,
+    run_jewelry_create_wedding_set,
+    run_jewelry_create_cocktail_ring,
+    run_jewelry_create_bypass_ring,
+    # v4 constants
+    _VALID_MENS_PROFILES,
+    _VALID_MENS_SURFACE_HINTS,
+    _VALID_COCKTAIL_MOUNT_STYLES,
+    _VALID_BYPASS_CROSS_STYLES,
+)
+
+
+# ---------------------------------------------------------------------------
+# TestSolitaireRing — spec, compute, tool runner
+# ---------------------------------------------------------------------------
+
+class TestSolitaireRingSpec:
+
+    def test_defaults_validate(self):
+        spec = SolitaireRingSpec(ring_size=7, system="us")
+        spec.validate()
+
+    def test_to_dict_has_required_keys(self):
+        id_mm = ring_size_to_diameter("us", 7)
+        spec = SolitaireRingSpec(ring_size=7, system="us")
+        d = spec.to_dict(id_mm)
+        for key in ("inner_diameter_mm", "outer_diameter_mm", "shank",
+                    "head_height_mm", "center_stone_diameter_mm",
+                    "attach_points", "composite_ops"):
+            assert key in d, f"Missing key: {key}"
+
+    def test_attach_point_schema(self):
+        id_mm = ring_size_to_diameter("us", 7)
+        spec = SolitaireRingSpec(ring_size=7, system="us",
+                                 head_height_mm=6.0,
+                                 center_stone_diameter_mm=7.0)
+        d = spec.to_dict(id_mm)
+        ap = d["attach_points"][0]
+        assert ap["type"] == "circular_seat"
+        assert ap["position_deg"] == 0.0
+        assert abs(ap["height_mm"] - 6.0) < 1e-6
+        assert abs(ap["diameter_mm"] - 7.0) < 1e-6
+        assert ap["normal"] == [0, 0, 1]
+
+    def test_invalid_profile_raises(self):
+        with pytest.raises(ValueError, match="shank_profile"):
+            SolitaireRingSpec(ring_size=7, shank_profile="nope").validate()
+
+    def test_invalid_shoulder_raises(self):
+        with pytest.raises(ValueError, match="shoulder_style"):
+            SolitaireRingSpec(ring_size=7, shoulder_style="crown").validate()
+
+    def test_negative_band_width_raises(self):
+        with pytest.raises(ValueError, match="band_width_mm"):
+            SolitaireRingSpec(ring_size=7, band_width_mm=-1.0).validate()
+
+    def test_zero_thickness_raises(self):
+        with pytest.raises(ValueError, match="thickness_mm"):
+            SolitaireRingSpec(ring_size=7, thickness_mm=0).validate()
+
+    def test_zero_head_height_raises(self):
+        with pytest.raises(ValueError, match="head_height_mm"):
+            SolitaireRingSpec(ring_size=7, head_height_mm=0).validate()
+
+    def test_zero_stone_diameter_raises(self):
+        with pytest.raises(ValueError, match="center_stone_diameter_mm"):
+            SolitaireRingSpec(ring_size=7, center_stone_diameter_mm=0).validate()
+
+    def test_taper_ratio_zero_raises(self):
+        with pytest.raises(ValueError, match="taper_ratio"):
+            SolitaireRingSpec(ring_size=7, taper_ratio=0).validate()
+
+    def test_taper_ratio_over_one_raises(self):
+        with pytest.raises(ValueError, match="taper_ratio"):
+            SolitaireRingSpec(ring_size=7, taper_ratio=1.5).validate()
+
+
+class TestComputeSolitaireRing:
+
+    def test_basic_us7(self):
+        p = compute_solitaire_ring_params(7, "us")
+        assert p["inner_diameter_mm"] > 0
+        assert p["outer_diameter_mm"] > p["inner_diameter_mm"]
+        assert len(p["attach_points"]) == 1
+        assert p["attach_points"][0]["type"] == "circular_seat"
+
+    def test_composite_ops_present(self):
+        p = compute_solitaire_ring_params(7)
+        assert "ring_shank" in p["composite_ops"]
+        assert "setting_mount" in p["composite_ops"]
+
+    def test_shank_sub_dict_present(self):
+        p = compute_solitaire_ring_params(7)
+        assert "shank" in p
+        assert "inner_diameter_mm" in p["shank"]
+
+    def test_cathedral_shoulder_default(self):
+        p = compute_solitaire_ring_params(7)
+        assert p["shank"]["shoulder_style"] == "cathedral"
+
+    def test_size_system_stored(self):
+        p = compute_solitaire_ring_params("N", system="uk")
+        assert p["size_system"] == "uk"
+
+    def test_circumference_present(self):
+        p = compute_solitaire_ring_params(7)
+        assert "circumference_mm" in p
+
+    def test_invalid_ring_size_raises(self):
+        with pytest.raises(ValueError):
+            compute_solitaire_ring_params(99, "us")
+
+    def test_head_height_stored_in_attach_point(self):
+        p = compute_solitaire_ring_params(7, head_height_mm=7.5)
+        assert abs(p["attach_points"][0]["height_mm"] - 7.5) < 1e-4
+
+    def test_stone_diam_stored_in_attach_point(self):
+        p = compute_solitaire_ring_params(7, center_stone_diameter_mm=8.0)
+        assert abs(p["attach_points"][0]["diameter_mm"] - 8.0) < 1e-4
+
+
+class TestRunJewelryCreateSolitaireRing:
+
+    def _call(self, ctx, fid, **kwargs):
+        args = {"file_id": str(fid), "ring_size": 7, **kwargs}
+        return run_tool_sync(run_jewelry_create_solitaire_ring(
+            ctx, json.dumps(args).encode()
+        ))
+
+    def test_basic_success(self):
+        ctx, store, fid = make_ctx()
+        r = self._call(ctx, fid)
+        assert "error" not in r
+        assert r["op"] == "solitaire_ring"
+        assert r["id"] == "solitaire_ring-1"
+
+    def test_node_appended_to_doc(self):
+        ctx, store, fid = make_ctx()
+        self._call(ctx, fid)
+        doc = json.loads(store["content"])
+        ops = [f["op"] for f in doc["features"]]
+        assert "solitaire_ring" in ops
+
+    def test_attach_points_in_response(self):
+        ctx, store, fid = make_ctx()
+        r = self._call(ctx, fid)
+        assert "attach_points" in r
+        assert len(r["attach_points"]) == 1
+        assert r["attach_points"][0]["type"] == "circular_seat"
+
+    def test_missing_file_id_returns_bad_args(self):
+        ctx, store, fid = make_ctx()
+        r = run_tool_sync(run_jewelry_create_solitaire_ring(
+            ctx, json.dumps({"ring_size": 7}).encode()
+        ))
+        assert r.get("code") == "BAD_ARGS"
+
+    def test_missing_ring_size_returns_bad_args(self):
+        ctx, store, fid = make_ctx()
+        r = run_tool_sync(run_jewelry_create_solitaire_ring(
+            ctx, json.dumps({"file_id": str(fid)}).encode()
+        ))
+        assert r.get("code") == "BAD_ARGS"
+
+    def test_invalid_profile_returns_bad_args(self):
+        ctx, store, fid = make_ctx()
+        r = self._call(ctx, fid, shank_profile="nope")
+        assert r.get("code") == "BAD_ARGS"
+
+    def test_bad_taper_ratio_returns_bad_args(self):
+        ctx, store, fid = make_ctx()
+        r = self._call(ctx, fid, taper_ratio=2.0)
+        assert r.get("code") == "BAD_ARGS"
+
+    def test_spec_has_required_fields(self):
+        props = jewelry_create_solitaire_ring_spec.input_schema["properties"]
+        assert "file_id" in props
+        assert "ring_size" in props
+        assert "shank_profile" in props
+        assert "head_height_mm" in props
+        assert "center_stone_diameter_mm" in props
+
+    def test_sequential_ids(self):
+        ctx, store, fid = make_ctx()
+        r1 = self._call(ctx, fid)
+        r2 = self._call(ctx, fid)
+        assert r1["id"] == "solitaire_ring-1"
+        assert r2["id"] == "solitaire_ring-2"
+
+    def test_uk_size_accepted(self):
+        ctx, store, fid = make_ctx()
+        args = {"file_id": str(fid), "ring_size": "N", "system": "uk"}
+        r = run_tool_sync(run_jewelry_create_solitaire_ring(
+            ctx, json.dumps(args).encode()
+        ))
+        assert "error" not in r
+
+
+# ---------------------------------------------------------------------------
+# TestMensBand — spec, compute, tool runner
+# ---------------------------------------------------------------------------
+
+class TestMensBandSpec:
+
+    def test_defaults_validate(self):
+        spec = MensBandSpec(ring_size=10, system="us")
+        spec.validate()
+
+    def test_invalid_profile_raises(self):
+        with pytest.raises(ValueError, match="mens_band.profile"):
+            MensBandSpec(ring_size=10, profile="knife_edge").validate()
+
+    def test_zero_band_width_raises(self):
+        with pytest.raises(ValueError, match="band_width_mm"):
+            MensBandSpec(ring_size=10, band_width_mm=0).validate()
+
+    def test_zero_thickness_raises(self):
+        with pytest.raises(ValueError, match="thickness_mm"):
+            MensBandSpec(ring_size=10, thickness_mm=0).validate()
+
+    def test_zero_taper_ratio_raises(self):
+        with pytest.raises(ValueError, match="taper_ratio"):
+            MensBandSpec(ring_size=10, taper_ratio=0).validate()
+
+    def test_groove_too_deep_raises(self):
+        with pytest.raises(ValueError, match="groove_depth_mm"):
+            MensBandSpec(ring_size=10, thickness_mm=2.0,
+                          groove_depth_mm=1.1).validate()
+
+    def test_groove_width_zero_when_groove_set_raises(self):
+        with pytest.raises(ValueError, match="groove_width_mm"):
+            MensBandSpec(ring_size=10, thickness_mm=2.0,
+                          groove_depth_mm=0.5, groove_width_mm=0).validate()
+
+    def test_groove_wider_than_band_raises(self):
+        with pytest.raises(ValueError, match="groove_width_mm"):
+            MensBandSpec(ring_size=10, band_width_mm=5.0,
+                          thickness_mm=2.0, groove_depth_mm=0.5,
+                          groove_width_mm=6.0).validate()
+
+    def test_invalid_surface_finish_raises(self):
+        with pytest.raises(ValueError, match="surface_finish"):
+            MensBandSpec(ring_size=10, surface_finish="velvet").validate()
+
+    def test_milgrain_zero_bead_raises(self):
+        with pytest.raises(ValueError, match="milgrain_bead_diameter_mm"):
+            MensBandSpec(ring_size=10, milgrain_edges=True,
+                          milgrain_bead_diameter_mm=0).validate()
+
+    def test_hammered_facet_count_bounds(self):
+        with pytest.raises(ValueError, match="hammered_facet_count"):
+            MensBandSpec(ring_size=10, hammered_facet_count=2).validate()
+
+    def test_to_dict_no_groove(self):
+        id_mm = ring_size_to_diameter("us", 10)
+        spec = MensBandSpec(ring_size=10)
+        d = spec.to_dict(id_mm)
+        assert "groove_hint" not in d
+        assert "milgrain_hint" not in d
+
+    def test_to_dict_with_groove(self):
+        id_mm = ring_size_to_diameter("us", 10)
+        spec = MensBandSpec(ring_size=10, groove_depth_mm=0.5,
+                             groove_width_mm=2.0, thickness_mm=2.5,
+                             band_width_mm=8.0)
+        d = spec.to_dict(id_mm)
+        assert "groove_hint" in d
+        g = d["groove_hint"]
+        assert g["type"] == "centre_groove"
+        assert abs(g["depth_mm"] - 0.5) < 1e-4
+        assert abs(g["width_mm"] - 2.0) < 1e-4
+
+    def test_to_dict_with_milgrain(self):
+        id_mm = ring_size_to_diameter("us", 10)
+        spec = MensBandSpec(ring_size=10, milgrain_edges=True,
+                             milgrain_bead_diameter_mm=0.4)
+        d = spec.to_dict(id_mm)
+        assert "milgrain_hint" in d
+        m = d["milgrain_hint"]
+        assert m["type"] == "milgrain_edge"
+        assert abs(m["bead_diameter_mm"] - 0.4) < 1e-4
+        assert "top" in m["edges"] and "bottom" in m["edges"]
+
+    def test_hammered_surface_hint(self):
+        id_mm = ring_size_to_diameter("us", 10)
+        spec = MensBandSpec(ring_size=10, surface_finish="hammered",
+                             hammered_facet_count=24)
+        d = spec.to_dict(id_mm)
+        assert "surface_hint" in d
+        sh = d["surface_hint"]
+        assert sh["type"] == "hammered"
+        assert sh["facet_count"] == 24
+
+    def test_matte_surface_hint(self):
+        id_mm = ring_size_to_diameter("us", 10)
+        spec = MensBandSpec(ring_size=10, surface_finish="matte")
+        d = spec.to_dict(id_mm)
+        assert d.get("surface_hint", {}).get("type") == "matte"
+
+    def test_polished_no_surface_hint(self):
+        id_mm = ring_size_to_diameter("us", 10)
+        spec = MensBandSpec(ring_size=10, surface_finish="polished")
+        d = spec.to_dict(id_mm)
+        assert "surface_hint" not in d
+
+
+class TestComputeMensBand:
+
+    def test_basic_us10(self):
+        p = compute_mens_band_params(10, "us")
+        assert p["inner_diameter_mm"] > 0
+        assert p["outer_diameter_mm"] > p["inner_diameter_mm"]
+        assert "band_width_mm" in p
+        assert p["band_width_mm"] == 8.0
+
+    def test_groove_hint_propagated(self):
+        p = compute_mens_band_params(
+            10, groove_depth_mm=0.5, groove_width_mm=2.0,
+            band_width_mm=8.0, thickness_mm=2.5,
+        )
+        assert "groove_hint" in p
+
+    def test_milgrain_hint_propagated(self):
+        p = compute_mens_band_params(10, milgrain_edges=True)
+        assert "milgrain_hint" in p
+
+    def test_invalid_profile_raises(self):
+        with pytest.raises(ValueError):
+            compute_mens_band_params(10, profile="knife_edge")
+
+    def test_jp_size_accepted(self):
+        p = compute_mens_band_params(15, system="jp")
+        assert p["size_system"] == "jp"
+
+
+class TestRunJewelryCreateMensBand:
+
+    def _call(self, ctx, fid, **kwargs):
+        args = {"file_id": str(fid), "ring_size": 10, **kwargs}
+        return run_tool_sync(run_jewelry_create_mens_band(
+            ctx, json.dumps(args).encode()
+        ))
+
+    def test_basic_success(self):
+        ctx, store, fid = make_ctx()
+        r = self._call(ctx, fid)
+        assert "error" not in r
+        assert r["op"] == "mens_band"
+        assert r["id"] == "mens_band-1"
+
+    def test_node_in_doc(self):
+        ctx, store, fid = make_ctx()
+        self._call(ctx, fid)
+        doc = json.loads(store["content"])
+        assert any(f["op"] == "mens_band" for f in doc["features"])
+
+    def test_with_groove(self):
+        ctx, store, fid = make_ctx()
+        r = self._call(ctx, fid, groove_depth_mm=0.5, groove_width_mm=2.0,
+                       thickness_mm=2.5, band_width_mm=8.0)
+        assert "error" not in r
+        doc = json.loads(store["content"])
+        node = next(f for f in doc["features"] if f["op"] == "mens_band")
+        assert "groove_hint" in node
+
+    def test_with_milgrain(self):
+        ctx, store, fid = make_ctx()
+        r = self._call(ctx, fid, milgrain_edges=True)
+        assert "error" not in r
+        doc = json.loads(store["content"])
+        node = next(f for f in doc["features"] if f["op"] == "mens_band")
+        assert "milgrain_hint" in node
+
+    def test_invalid_profile_bad_args(self):
+        ctx, store, fid = make_ctx()
+        r = self._call(ctx, fid, profile="knife_edge")
+        assert r.get("code") == "BAD_ARGS"
+
+    def test_invalid_surface_finish_bad_args(self):
+        ctx, store, fid = make_ctx()
+        r = self._call(ctx, fid, surface_finish="velvet")
+        assert r.get("code") == "BAD_ARGS"
+
+    def test_missing_file_id_bad_args(self):
+        ctx, store, fid = make_ctx()
+        r = run_tool_sync(run_jewelry_create_mens_band(
+            ctx, json.dumps({"ring_size": 10}).encode()
+        ))
+        assert r.get("code") == "BAD_ARGS"
+
+    def test_spec_required_fields(self):
+        req = jewelry_create_mens_band_spec.input_schema.get("required", [])
+        assert "file_id" in req
+        assert "ring_size" in req
+
+    def test_profile_enum_in_spec(self):
+        props = jewelry_create_mens_band_spec.input_schema["properties"]
+        allowed = set(props["profile"]["enum"])
+        assert "comfort_fit" in allowed
+        assert "euro" in allowed
+        assert "knife_edge" not in allowed  # knife_edge not in mens profiles
+
+    def test_surface_finish_enum_in_spec(self):
+        props = jewelry_create_mens_band_spec.input_schema["properties"]
+        allowed = set(props["surface_finish"]["enum"])
+        assert allowed == _VALID_MENS_SURFACE_HINTS
+
+
+# ---------------------------------------------------------------------------
+# TestWeddingSet — spec, compute, tool runner
+# ---------------------------------------------------------------------------
+
+class TestWeddingSetSpec:
+
+    def test_defaults_validate(self):
+        spec = WeddingSetSpec(ring_size=7, system="us")
+        spec.validate()
+
+    def test_invalid_eng_profile_raises(self):
+        with pytest.raises(ValueError, match="eng_profile"):
+            WeddingSetSpec(ring_size=7, eng_profile="nope").validate()
+
+    def test_invalid_band_profile_raises(self):
+        with pytest.raises(ValueError, match="band_profile"):
+            WeddingSetSpec(ring_size=7, band_profile="hammered").validate()
+
+    def test_invalid_contour_style_raises(self):
+        with pytest.raises(ValueError, match="contour_style"):
+            WeddingSetSpec(ring_size=7, contour_style="diagonal").validate()
+
+    def test_notch_depth_too_large_raises(self):
+        with pytest.raises(ValueError, match="notch_depth_mm"):
+            WeddingSetSpec(ring_size=7, notch_depth_mm=2.0,
+                            band_thickness_mm=1.6).validate()
+
+    def test_notch_width_too_large_raises(self):
+        with pytest.raises(ValueError, match="notch_width_mm"):
+            WeddingSetSpec(ring_size=7, notch_width_mm=5.0,
+                            band_width_mm=3.0).validate()
+
+    def test_to_dict_has_both_rings(self):
+        id_mm = ring_size_to_diameter("us", 7)
+        spec = WeddingSetSpec(ring_size=7)
+        d = spec.to_dict(id_mm)
+        assert "engagement_ring" in d
+        assert "wedding_band" in d
+
+    def test_engagement_ring_op_is_ring_shank(self):
+        id_mm = ring_size_to_diameter("us", 7)
+        spec = WeddingSetSpec(ring_size=7)
+        d = spec.to_dict(id_mm)
+        assert d["engagement_ring"]["op"] == "ring_shank"
+
+    def test_wedding_band_op_is_contoured_band(self):
+        id_mm = ring_size_to_diameter("us", 7)
+        spec = WeddingSetSpec(ring_size=7)
+        d = spec.to_dict(id_mm)
+        assert d["wedding_band"]["op"] == "contoured_band"
+
+    def test_match_radius_equals_eng_outer_radius(self):
+        id_mm = ring_size_to_diameter("us", 7)
+        spec = WeddingSetSpec(ring_size=7, eng_thickness_mm=1.6)
+        d = spec.to_dict(id_mm)
+        expected_radius = (id_mm + 2 * 1.6) / 2.0
+        assert abs(d["match_radius_mm"] - expected_radius) < 1e-3
+
+    def test_contour_hints_present(self):
+        id_mm = ring_size_to_diameter("us", 7)
+        spec = WeddingSetSpec(ring_size=7)
+        d = spec.to_dict(id_mm)
+        assert "contour_hints" in d["wedding_band"]
+        assert "notch_half_angle_deg" in d["wedding_band"]["contour_hints"]
+
+    def test_composite_ops(self):
+        id_mm = ring_size_to_diameter("us", 7)
+        spec = WeddingSetSpec(ring_size=7)
+        d = spec.to_dict(id_mm)
+        assert "ring_shank" in d["composite_ops"]
+        assert "contoured_band" in d["composite_ops"]
+
+
+class TestComputeWeddingSet:
+
+    def test_basic_us7(self):
+        p = compute_wedding_set_params(7, "us")
+        assert p["inner_diameter_mm"] > 0
+        assert "engagement_ring" in p
+        assert "wedding_band" in p
+
+    def test_match_radius_positive(self):
+        p = compute_wedding_set_params(7)
+        assert p["match_radius_mm"] > 0
+
+    def test_eu_size_accepted(self):
+        p = compute_wedding_set_params(54, system="eu")
+        assert p["size_system"] == "eu"
+
+    def test_invalid_ring_size_raises(self):
+        with pytest.raises(ValueError):
+            compute_wedding_set_params(99, "us")
+
+    def test_circumference_present(self):
+        p = compute_wedding_set_params(7)
+        assert "circumference_mm" in p
+
+
+class TestRunJewelryCreateWeddingSet:
+
+    def _call(self, ctx, fid, **kwargs):
+        args = {"file_id": str(fid), "ring_size": 7, **kwargs}
+        return run_tool_sync(run_jewelry_create_wedding_set(
+            ctx, json.dumps(args).encode()
+        ))
+
+    def test_basic_success(self):
+        ctx, store, fid = make_ctx()
+        r = self._call(ctx, fid)
+        assert "error" not in r
+        assert r["op"] == "wedding_set"
+        assert r["id"] == "wedding_set-1"
+
+    def test_node_in_doc(self):
+        ctx, store, fid = make_ctx()
+        self._call(ctx, fid)
+        doc = json.loads(store["content"])
+        assert any(f["op"] == "wedding_set" for f in doc["features"])
+
+    def test_match_radius_in_response(self):
+        ctx, store, fid = make_ctx()
+        r = self._call(ctx, fid)
+        assert "match_radius_mm" in r
+
+    def test_invalid_eng_profile_bad_args(self):
+        ctx, store, fid = make_ctx()
+        r = self._call(ctx, fid, eng_profile="nope")
+        assert r.get("code") == "BAD_ARGS"
+
+    def test_invalid_band_profile_bad_args(self):
+        ctx, store, fid = make_ctx()
+        r = self._call(ctx, fid, band_profile="hammered")
+        assert r.get("code") == "BAD_ARGS"
+
+    def test_notch_depth_bad_args(self):
+        ctx, store, fid = make_ctx()
+        r = self._call(ctx, fid, notch_depth_mm=2.0, band_thickness_mm=1.6)
+        assert r.get("code") == "BAD_ARGS"
+
+    def test_missing_file_id_bad_args(self):
+        ctx, store, fid = make_ctx()
+        r = run_tool_sync(run_jewelry_create_wedding_set(
+            ctx, json.dumps({"ring_size": 7}).encode()
+        ))
+        assert r.get("code") == "BAD_ARGS"
+
+    def test_spec_required_fields(self):
+        req = jewelry_create_wedding_set_spec.input_schema.get("required", [])
+        assert "file_id" in req
+        assert "ring_size" in req
+
+    def test_spec_band_profile_enum(self):
+        props = jewelry_create_wedding_set_spec.input_schema["properties"]
+        allowed = set(props["band_profile"]["enum"])
+        assert "flat" in allowed
+        assert "hammered" not in allowed
+
+    def test_contour_style_enum(self):
+        props = jewelry_create_wedding_set_spec.input_schema["properties"]
+        assert set(props["contour_style"]["enum"]) == {"curved", "notched"}
+
+
+# ---------------------------------------------------------------------------
+# TestCocktailRing — spec, compute, tool runner
+# ---------------------------------------------------------------------------
+
+class TestCocktailRingSpec:
+
+    def test_defaults_validate(self):
+        spec = CocktailRingSpec(ring_size=7, system="us")
+        spec.validate()
+
+    def test_invalid_profile_raises(self):
+        with pytest.raises(ValueError, match="shank_profile"):
+            CocktailRingSpec(ring_size=7, shank_profile="nope").validate()
+
+    def test_invalid_mount_style_raises(self):
+        with pytest.raises(ValueError, match="mount_style"):
+            CocktailRingSpec(ring_size=7, mount_style="pyramid").validate()
+
+    def test_zero_mount_diameter_raises(self):
+        with pytest.raises(ValueError, match="mount_diameter_mm"):
+            CocktailRingSpec(ring_size=7, mount_diameter_mm=0).validate()
+
+    def test_zero_mount_height_raises(self):
+        with pytest.raises(ValueError, match="mount_height_mm"):
+            CocktailRingSpec(ring_size=7, mount_height_mm=0).validate()
+
+    def test_stone_larger_than_mount_raises(self):
+        with pytest.raises(ValueError, match="stone_diameter_mm"):
+            CocktailRingSpec(ring_size=7, stone_diameter_mm=20.0,
+                              mount_diameter_mm=18.0).validate()
+
+    def test_taper_over_one_raises(self):
+        with pytest.raises(ValueError, match="taper_ratio"):
+            CocktailRingSpec(ring_size=7, taper_ratio=1.5).validate()
+
+    def test_attach_point_schema(self):
+        id_mm = ring_size_to_diameter("us", 7)
+        spec = CocktailRingSpec(ring_size=7, mount_height_mm=9.0,
+                                stone_diameter_mm=12.0,
+                                mount_diameter_mm=16.0,
+                                mount_style="cluster")
+        d = spec.to_dict(id_mm)
+        ap = d["attach_points"][0]
+        assert ap["type"] == "circular_seat"
+        assert ap["mount_style"] == "cluster"
+        assert abs(ap["height_mm"] - 9.0) < 1e-4
+        assert abs(ap["diameter_mm"] - 12.0) < 1e-4
+        assert abs(ap["mount_diameter_mm"] - 16.0) < 1e-4
+        assert ap["normal"] == [0, 0, 1]
+
+    def test_composite_ops(self):
+        id_mm = ring_size_to_diameter("us", 7)
+        spec = CocktailRingSpec(ring_size=7)
+        d = spec.to_dict(id_mm)
+        assert "ring_shank" in d["composite_ops"]
+        assert "mount_platform" in d["composite_ops"]
+
+
+class TestComputeCocktailRing:
+
+    def test_basic_us7(self):
+        p = compute_cocktail_ring_params(7, "us")
+        assert p["inner_diameter_mm"] > 0
+        assert p["outer_diameter_mm"] > p["inner_diameter_mm"]
+        assert len(p["attach_points"]) == 1
+
+    def test_default_mount_style(self):
+        p = compute_cocktail_ring_params(7)
+        assert p["mount_style"] == "dome"
+
+    def test_default_taper_ratio(self):
+        p = compute_cocktail_ring_params(7)
+        assert abs(p["taper_ratio"] - 0.7) < 1e-6
+
+    def test_size_system_stored(self):
+        p = compute_cocktail_ring_params("Z", system="uk")
+        assert p["size_system"] == "uk"
+
+    def test_invalid_ring_size_raises(self):
+        with pytest.raises(ValueError):
+            compute_cocktail_ring_params(99, "us")
+
+
+class TestRunJewelryCreateCocktailRing:
+
+    def _call(self, ctx, fid, **kwargs):
+        args = {"file_id": str(fid), "ring_size": 7, **kwargs}
+        return run_tool_sync(run_jewelry_create_cocktail_ring(
+            ctx, json.dumps(args).encode()
+        ))
+
+    def test_basic_success(self):
+        ctx, store, fid = make_ctx()
+        r = self._call(ctx, fid)
+        assert "error" not in r
+        assert r["op"] == "cocktail_ring"
+        assert r["id"] == "cocktail_ring-1"
+
+    def test_node_in_doc(self):
+        ctx, store, fid = make_ctx()
+        self._call(ctx, fid)
+        doc = json.loads(store["content"])
+        assert any(f["op"] == "cocktail_ring" for f in doc["features"])
+
+    def test_attach_points_in_response(self):
+        ctx, store, fid = make_ctx()
+        r = self._call(ctx, fid)
+        assert "attach_points" in r
+        assert len(r["attach_points"]) == 1
+
+    def test_invalid_mount_style_bad_args(self):
+        ctx, store, fid = make_ctx()
+        r = self._call(ctx, fid, mount_style="pyramid")
+        assert r.get("code") == "BAD_ARGS"
+
+    def test_stone_too_big_bad_args(self):
+        ctx, store, fid = make_ctx()
+        r = self._call(ctx, fid, stone_diameter_mm=25.0, mount_diameter_mm=18.0)
+        assert r.get("code") == "BAD_ARGS"
+
+    def test_missing_file_id_bad_args(self):
+        ctx, store, fid = make_ctx()
+        r = run_tool_sync(run_jewelry_create_cocktail_ring(
+            ctx, json.dumps({"ring_size": 7}).encode()
+        ))
+        assert r.get("code") == "BAD_ARGS"
+
+    def test_mount_style_enum_in_spec(self):
+        props = jewelry_create_cocktail_ring_spec.input_schema["properties"]
+        assert set(props["mount_style"]["enum"]) == _VALID_COCKTAIL_MOUNT_STYLES
+
+    def test_sequential_ids(self):
+        ctx, store, fid = make_ctx()
+        r1 = self._call(ctx, fid)
+        r2 = self._call(ctx, fid)
+        assert r1["id"] == "cocktail_ring-1"
+        assert r2["id"] == "cocktail_ring-2"
+
+
+# ---------------------------------------------------------------------------
+# TestBypassRing — spec, compute, tool runner
+# ---------------------------------------------------------------------------
+
+class TestBypassRingSpec:
+
+    def test_defaults_validate(self):
+        spec = BypassRingSpec(ring_size=7, system="us")
+        spec.validate()
+
+    def test_invalid_cross_style_raises(self):
+        with pytest.raises(ValueError, match="cross_style"):
+            BypassRingSpec(ring_size=7, cross_style="parallel").validate()
+
+    def test_invalid_profile_raises(self):
+        with pytest.raises(ValueError, match="bypass.profile"):
+            BypassRingSpec(ring_size=7, profile="nope").validate()
+
+    def test_zero_band_width_raises(self):
+        with pytest.raises(ValueError, match="band_width_mm"):
+            BypassRingSpec(ring_size=7, band_width_mm=0).validate()
+
+    def test_zero_thickness_raises(self):
+        with pytest.raises(ValueError, match="thickness_mm"):
+            BypassRingSpec(ring_size=7, thickness_mm=0).validate()
+
+    def test_zero_bypass_offset_raises(self):
+        with pytest.raises(ValueError, match="bypass_offset_mm"):
+            BypassRingSpec(ring_size=7, bypass_offset_mm=0).validate()
+
+    def test_overlap_deg_out_of_range_raises(self):
+        with pytest.raises(ValueError, match="overlap_deg"):
+            BypassRingSpec(ring_size=7, overlap_deg=100).validate()
+
+    def test_zero_stone_a_diameter_raises(self):
+        with pytest.raises(ValueError, match="stone_a_diameter_mm"):
+            BypassRingSpec(ring_size=7, stone_a_diameter_mm=0).validate()
+
+    def test_zero_stone_b_diameter_raises(self):
+        with pytest.raises(ValueError, match="stone_b_diameter_mm"):
+            BypassRingSpec(ring_size=7, stone_b_diameter_mm=0).validate()
+
+    def test_zero_mount_height_raises(self):
+        with pytest.raises(ValueError, match="mount_height_mm"):
+            BypassRingSpec(ring_size=7, mount_height_mm=0).validate()
+
+    def test_crossover_attach_points_schema(self):
+        id_mm = ring_size_to_diameter("us", 7)
+        spec = BypassRingSpec(ring_size=7, cross_style="crossover",
+                               bypass_offset_mm=4.0, overlap_deg=20.0,
+                               stone_a_diameter_mm=6.0, stone_b_diameter_mm=5.0,
+                               mount_height_mm=4.5)
+        d = spec.to_dict(id_mm)
+        aps = d["attach_points"]
+        assert len(aps) == 2
+        for ap in aps:
+            assert ap["type"] == "circular_seat"
+            assert "arm" in ap
+            assert ap["normal"] == [0, 0, 1]
+        a_ap = next(ap for ap in aps if ap["arm"] == "A")
+        b_ap = next(ap for ap in aps if ap["arm"] == "B")
+        assert a_ap["lateral_offset_mm"] > 0
+        assert b_ap["lateral_offset_mm"] < 0
+        assert abs(a_ap["diameter_mm"] - 6.0) < 1e-4
+        assert abs(b_ap["diameter_mm"] - 5.0) < 1e-4
+
+    def test_toi_et_moi_attach_type(self):
+        id_mm = ring_size_to_diameter("us", 7)
+        spec = BypassRingSpec(ring_size=7, cross_style="toi_et_moi")
+        d = spec.to_dict(id_mm)
+        for ap in d["attach_points"]:
+            assert ap["type"] == "toi_et_moi"
+
+    def test_composite_ops(self):
+        id_mm = ring_size_to_diameter("us", 7)
+        spec = BypassRingSpec(ring_size=7)
+        d = spec.to_dict(id_mm)
+        assert "bypass_arm_a" in d["composite_ops"]
+        assert "bypass_arm_b" in d["composite_ops"]
+
+
+class TestComputeBypassRing:
+
+    def test_basic_us7_crossover(self):
+        p = compute_bypass_ring_params(7, "us")
+        assert p["inner_diameter_mm"] > 0
+        assert p["outer_diameter_mm"] > p["inner_diameter_mm"]
+        assert len(p["attach_points"]) == 2
+
+    def test_toi_et_moi(self):
+        p = compute_bypass_ring_params(7, cross_style="toi_et_moi")
+        for ap in p["attach_points"]:
+            assert ap["type"] == "toi_et_moi"
+
+    def test_asymmetric_stones(self):
+        p = compute_bypass_ring_params(7,
+                                       stone_a_diameter_mm=8.0,
+                                       stone_b_diameter_mm=5.0)
+        a_ap = next(ap for ap in p["attach_points"] if ap["arm"] == "A")
+        b_ap = next(ap for ap in p["attach_points"] if ap["arm"] == "B")
+        assert abs(a_ap["diameter_mm"] - 8.0) < 1e-4
+        assert abs(b_ap["diameter_mm"] - 5.0) < 1e-4
+
+    def test_size_system_stored(self):
+        p = compute_bypass_ring_params(20, system="jp")
+        assert p["size_system"] == "jp"
+
+    def test_invalid_ring_size_raises(self):
+        with pytest.raises(ValueError):
+            compute_bypass_ring_params(99, "us")
+
+
+class TestRunJewelryCreateBypassRing:
+
+    def _call(self, ctx, fid, **kwargs):
+        args = {"file_id": str(fid), "ring_size": 7, **kwargs}
+        return run_tool_sync(run_jewelry_create_bypass_ring(
+            ctx, json.dumps(args).encode()
+        ))
+
+    def test_basic_success(self):
+        ctx, store, fid = make_ctx()
+        r = self._call(ctx, fid)
+        assert "error" not in r
+        assert r["op"] == "bypass_ring"
+        assert r["id"] == "bypass_ring-1"
+
+    def test_node_in_doc(self):
+        ctx, store, fid = make_ctx()
+        self._call(ctx, fid)
+        doc = json.loads(store["content"])
+        assert any(f["op"] == "bypass_ring" for f in doc["features"])
+
+    def test_two_attach_points_in_response(self):
+        ctx, store, fid = make_ctx()
+        r = self._call(ctx, fid)
+        assert "attach_points" in r
+        assert len(r["attach_points"]) == 2
+
+    def test_toi_et_moi_style(self):
+        ctx, store, fid = make_ctx()
+        r = self._call(ctx, fid, cross_style="toi_et_moi")
+        assert "error" not in r
+        for ap in r["attach_points"]:
+            assert ap["type"] == "toi_et_moi"
+
+    def test_invalid_cross_style_bad_args(self):
+        ctx, store, fid = make_ctx()
+        r = self._call(ctx, fid, cross_style="parallel")
+        assert r.get("code") == "BAD_ARGS"
+
+    def test_invalid_profile_bad_args(self):
+        ctx, store, fid = make_ctx()
+        r = self._call(ctx, fid, profile="nope")
+        assert r.get("code") == "BAD_ARGS"
+
+    def test_missing_file_id_bad_args(self):
+        ctx, store, fid = make_ctx()
+        r = run_tool_sync(run_jewelry_create_bypass_ring(
+            ctx, json.dumps({"ring_size": 7}).encode()
+        ))
+        assert r.get("code") == "BAD_ARGS"
+
+    def test_cross_style_enum_in_spec(self):
+        props = jewelry_create_bypass_ring_spec.input_schema["properties"]
+        assert set(props["cross_style"]["enum"]) == _VALID_BYPASS_CROSS_STYLES
+
+    def test_sequential_ids(self):
+        ctx, store, fid = make_ctx()
+        r1 = self._call(ctx, fid)
+        r2 = self._call(ctx, fid)
+        assert r1["id"] == "bypass_ring-1"
+        assert r2["id"] == "bypass_ring-2"
+
+    def test_uk_size_accepted(self):
+        ctx, store, fid = make_ctx()
+        args = {"file_id": str(fid), "ring_size": "M", "system": "uk"}
+        r = run_tool_sync(run_jewelry_create_bypass_ring(
+            ctx, json.dumps(args).encode()
+        ))
+        assert "error" not in r
+
+
+# ---------------------------------------------------------------------------
+# TestV4NodeIdIsolation — v4 ops get independent ID sequences
+# ---------------------------------------------------------------------------
+
+class TestV4NodeIdIsolation:
+
+    def test_all_v4_ops_independent(self):
+        ctx, store, fid = make_ctx()
+        run_tool_sync(run_jewelry_create_solitaire_ring(
+            ctx, json.dumps({"file_id": str(fid), "ring_size": 7}).encode()
+        ))
+        run_tool_sync(run_jewelry_create_mens_band(
+            ctx, json.dumps({"file_id": str(fid), "ring_size": 7}).encode()
+        ))
+        run_tool_sync(run_jewelry_create_wedding_set(
+            ctx, json.dumps({"file_id": str(fid), "ring_size": 7}).encode()
+        ))
+        run_tool_sync(run_jewelry_create_cocktail_ring(
+            ctx, json.dumps({"file_id": str(fid), "ring_size": 7}).encode()
+        ))
+        run_tool_sync(run_jewelry_create_bypass_ring(
+            ctx, json.dumps({"file_id": str(fid), "ring_size": 7}).encode()
+        ))
+        doc = json.loads(store["content"])
+        ids = [f["id"] for f in doc["features"]]
+        assert "solitaire_ring-1" in ids
+        assert "mens_band-1" in ids
+        assert "wedding_set-1" in ids
+        assert "cocktail_ring-1" in ids
+        assert "bypass_ring-1" in ids
+
+    def test_v4_does_not_collide_with_v3(self):
+        ctx, store, fid = make_ctx()
+        run_tool_sync(run_jewelry_create_eternity_band(
+            ctx, json.dumps({"file_id": str(fid), "ring_size": 7}).encode()
+        ))
+        run_tool_sync(run_jewelry_create_solitaire_ring(
+            ctx, json.dumps({"file_id": str(fid), "ring_size": 7}).encode()
+        ))
+        doc = json.loads(store["content"])
+        ids = [f["id"] for f in doc["features"]]
+        assert "eternity_band-1" in ids
+        assert "solitaire_ring-1" in ids
+
+    def test_v4_second_instance_increments(self):
+        ctx, store, fid = make_ctx()
+        r1 = run_tool_sync(run_jewelry_create_wedding_set(
+            ctx, json.dumps({"file_id": str(fid), "ring_size": 7}).encode()
+        ))
+        r2 = run_tool_sync(run_jewelry_create_wedding_set(
+            ctx, json.dumps({"file_id": str(fid), "ring_size": 7}).encode()
+        ))
+        assert r1["id"] == "wedding_set-1"
+        assert r2["id"] == "wedding_set-2"
+
+
+# ---------------------------------------------------------------------------
+# TestV4SizeSystems — all v4 tools accept all ring-size systems
+# ---------------------------------------------------------------------------
+
+class TestV4SizeSystems:
+
+    def _check(self, runner, ctx, fid, ring_size, system, **kwargs):
+        args = {"file_id": str(fid), "ring_size": ring_size, "system": system, **kwargs}
+        return run_tool_sync(runner(ctx, json.dumps(args).encode()))
+
+    def test_solitaire_uk(self):
+        ctx, store, fid = make_ctx()
+        r = self._check(run_jewelry_create_solitaire_ring, ctx, fid, "N", "uk")
+        assert "error" not in r
+
+    def test_mens_eu(self):
+        ctx, store, fid = make_ctx()
+        r = self._check(run_jewelry_create_mens_band, ctx, fid, 54, "eu")
+        assert "error" not in r
+
+    def test_wedding_set_jp(self):
+        ctx, store, fid = make_ctx()
+        r = self._check(run_jewelry_create_wedding_set, ctx, fid, 13, "jp")
+        assert "error" not in r
+
+    def test_cocktail_au(self):
+        ctx, store, fid = make_ctx()
+        r = self._check(run_jewelry_create_cocktail_ring, ctx, fid, "P", "au")
+        assert "error" not in r
+
+    def test_bypass_us(self):
+        ctx, store, fid = make_ctx()
+        r = self._check(run_jewelry_create_bypass_ring, ctx, fid, 7, "us")
+        assert "error" not in r
+
+    def test_solitaire_jp(self):
+        ctx, store, fid = make_ctx()
+        r = self._check(run_jewelry_create_solitaire_ring, ctx, fid, 17, "jp")
+        assert "error" not in r
