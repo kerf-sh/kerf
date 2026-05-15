@@ -491,6 +491,65 @@ const FEATURE_KINDS = [
       { key: 'show_combs',         kind: 'boolean', label: 'Show combs' },
     ],
   },
+  // ── Jewelry ──────────────────────────────────────────────────────────────
+  {
+    op: 'gemstone',
+    label: 'Gemstone',
+    icon: Disc,
+    defaults: {
+      cut: 'round_brilliant',
+      diameter_mm: 6.5,
+      material: 'diamond',
+    },
+    fields: [
+      { key: 'cut', kind: 'select', label: 'Cut', options: [
+        { value: 'round_brilliant', label: 'Round brilliant' },
+        { value: 'princess',        label: 'Princess' },
+        { value: 'oval',            label: 'Oval' },
+        { value: 'emerald',         label: 'Emerald' },
+        { value: 'marquise',        label: 'Marquise' },
+        { value: 'pear',            label: 'Pear' },
+        { value: 'cushion',         label: 'Cushion' },
+      ] },
+      { key: 'diameter_mm',         kind: 'number',  label: 'Diameter / long-axis (mm)', min: 0.5 },
+      { key: 'material',            kind: 'text',    label: 'Material' },
+      { key: 'table_pct',           kind: 'number',  label: 'Table %',        min: 30, max: 90 },
+      { key: 'crown_angle_deg',     kind: 'number',  label: 'Crown angle (°)', min: 10, max: 50 },
+      { key: 'pavilion_angle_deg',  kind: 'number',  label: 'Pavilion angle (°)', min: 30, max: 55 },
+      { key: 'girdle_pct',          kind: 'number',  label: 'Girdle %',        min: 0.5, max: 10 },
+    ],
+  },
+  {
+    op: 'gem_seat',
+    label: 'Gem seat',
+    icon: Disc,
+    defaults: {
+      cut: 'round_brilliant',
+      diameter_mm: 6.5,
+      girdle_clearance_mm: 0.05,
+      through_hole: false,
+    },
+    caption: (
+      'Gem-seat cutter solid: bearing cone + girdle ledge + crown relief. ' +
+      'Subtract from host solid with a boolean cut to set the stone.'
+    ),
+    fields: [
+      { key: 'cut', kind: 'select', label: 'Cut', options: [
+        { value: 'round_brilliant', label: 'Round brilliant' },
+        { value: 'princess',        label: 'Princess' },
+        { value: 'oval',            label: 'Oval' },
+        { value: 'emerald',         label: 'Emerald' },
+        { value: 'marquise',        label: 'Marquise' },
+        { value: 'pear',            label: 'Pear' },
+        { value: 'cushion',         label: 'Cushion' },
+      ] },
+      { key: 'diameter_mm',          kind: 'number',  label: 'Diameter / long-axis (mm)', min: 0.5 },
+      { key: 'girdle_clearance_mm',  kind: 'number',  label: 'Girdle clearance (mm)', min: 0, step: 0.01 },
+      { key: 'culet_clearance_mm',   kind: 'number',  label: 'Culet clearance (mm)',  min: 0, step: 0.01 },
+      { key: 'crown_relief_mm',      kind: 'number',  label: 'Crown relief (mm)',     min: 0, step: 0.05 },
+      { key: 'through_hole',         kind: 'boolean', label: 'Through-hole for light' },
+    ],
+  },
 ]
 
 const KIND_BY_OP = Object.fromEntries(FEATURE_KINDS.map((k) => [k.op, k]))
@@ -500,6 +559,7 @@ const FEATURE_CATEGORIES = [
   { id: 'modify',   label: 'Modify',        ops: ['fillet', 'chamfer', 'shell', 'push_pull', 'variable_radius_fillet', 'to_solid', 'boolean', 'section', 'quad_remesh'] },
   { id: 'pattern',  label: 'Pattern',       ops: ['linear_pattern', 'polar_pattern', 'mirror_pattern'] },
   { id: 'surface',  label: 'Surfacing',     ops: ['sweep1', 'sweep2', 'loft', 'network_srf', 'blend_srf', 'surface_boolean', 'surface_curvature_combs'] },
+  { id: 'jewelry',  label: 'Jewelry',       ops: ['gemstone', 'gem_seat'] },
 ]
 
 const DEBOUNCE_MS = 300
