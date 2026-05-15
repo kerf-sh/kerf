@@ -49,7 +49,7 @@ import {
   Disc, Layers, Drill, Sigma, AlertTriangle, Loader2, Play,
   Move, Crosshair, GitBranch, Repeat, FlipHorizontal,
   PencilLine, Pointer, Waves, Layers3, Aperture, Plus,
-  X, ChevronRight, LayoutGrid, Combine, Scissors,
+  X, ChevronRight, LayoutGrid, Combine, Scissors, Grid3x3,
 } from 'lucide-react'
 import FeatureRenderer from './FeatureRenderer.jsx'
 import {
@@ -441,13 +441,35 @@ const FEATURE_KINDS = [
       { key: 'plane.normal[2]', kind: 'number', label: 'Normal Z' },
     ],
   },
+  // Quad remesh v1 — Instant Meshes subprocess (MIT).
+  // Remeshes a triangle mesh into a quad-dominant topology.
+  // Requires the `instant-meshes` binary on PATH; degrades gracefully when absent.
+  {
+    op: 'quad_remesh',
+    label: 'Quad Remesh',
+    icon: Grid3x3,
+    defaults: {
+      target_feature_ref:  '',
+      target_vertex_count: 5000,
+      crease_angle_deg:    20,
+      align_to_boundary:   true,
+      smoothness_iters:    2,
+    },
+    fields: [
+      { key: 'target_feature_ref',  kind: 'feature_picker', label: 'Source mesh / solid' },
+      { key: 'target_vertex_count', kind: 'number', label: 'Target vertex count',   min: 1, step: 500 },
+      { key: 'crease_angle_deg',    kind: 'number', label: 'Crease angle (°)',       min: 0, max: 180, step: 1 },
+      { key: 'smoothness_iters',    kind: 'number', label: 'Smoothing iterations',  min: 0, max: 6, step: 1 },
+      { key: 'align_to_boundary',   kind: 'boolean', label: 'Align to boundary' },
+    ],
+  },
 ]
 
 const KIND_BY_OP = Object.fromEntries(FEATURE_KINDS.map((k) => [k.op, k]))
 
 const FEATURE_CATEGORIES = [
   { id: 'sketch',   label: 'Sketch-based',  ops: ['pad', 'boss_with_draft', 'pocket', 'cut_from_sketch', 'revolve', 'hole', 'hole_pattern'] },
-  { id: 'modify',   label: 'Modify',        ops: ['fillet', 'chamfer', 'shell', 'push_pull', 'variable_radius_fillet', 'to_solid', 'boolean', 'section'] },
+  { id: 'modify',   label: 'Modify',        ops: ['fillet', 'chamfer', 'shell', 'push_pull', 'variable_radius_fillet', 'to_solid', 'boolean', 'section', 'quad_remesh'] },
   { id: 'pattern',  label: 'Pattern',       ops: ['linear_pattern', 'polar_pattern', 'mirror_pattern'] },
   { id: 'surface',  label: 'Surfacing',     ops: ['sweep1', 'sweep2', 'loft', 'network_srf', 'blend_srf', 'surface_boolean'] },
 ]
