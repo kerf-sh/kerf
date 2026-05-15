@@ -9,6 +9,9 @@
 import { Link } from 'react-router-dom'
 import { ArrowRight } from 'lucide-react'
 
+/* react-router Link is imported for the hub CTA below; spotlight card CTAs
+ * stay as plain anchors so existing href assertions keep passing. */
+
 /* -------------------------------------------------------------------------- */
 /* Jewelry SVG illustration — stylized ring + faceted gem                     */
 /* -------------------------------------------------------------------------- */
@@ -490,6 +493,20 @@ export default function DomainSpotlights() {
             illustrationLabel="Stylized car silhouette with surface analysis curves"
             flip
           />
+        </div>
+
+        <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-sm text-ink-400 leading-relaxed max-w-xl">
+            Jewelry and automotive are two of many — Kerf also goes deep in
+            mechanical, electronics and architecture, with more on the way.
+          </p>
+          <Link
+            to="/domains"
+            className="inline-flex shrink-0 items-center gap-1.5 text-sm font-medium text-kerf-300 hover:text-kerf-200 transition-colors"
+          >
+            Explore all domains
+            <ArrowRight size={14} />
+          </Link>
         </div>
       </div>
     </section>
