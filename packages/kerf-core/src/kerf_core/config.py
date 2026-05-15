@@ -110,6 +110,13 @@ class Settings(BaseSettings):
     ses_access_key_id: str = ""
     ses_secret_access_key: str = ""
 
+    # LLM prompt-caching controls.
+    # When True (default), the Anthropic provider attaches cache_control
+    # breakpoints to the system-prompt block and the tools block so that
+    # repeated conversation turns reuse the cached prefix.  Set to False to
+    # disable without restarting if cost-tracking or debugging is needed.
+    anthropic_prompt_cache: bool = True
+
     @model_validator(mode="after")
     def _enforce_cloud_disables_local_mode(self):
         if self.cloud_enabled and self.local_mode:

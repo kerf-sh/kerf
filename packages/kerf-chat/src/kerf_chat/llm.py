@@ -224,19 +224,24 @@ class LLMConfig:
         moonshot_api_key: str = "",
         gemini_api_key: str = "",
         default_model: str = "claude-opus-4-7",
+        anthropic_prompt_cache: bool = True,
     ):
         self.anthropic_api_key = anthropic_api_key
         self.openai_api_key = openai_api_key
         self.moonshot_api_key = moonshot_api_key
         self.gemini_api_key = gemini_api_key
         self.default_model = default_model or "claude-sonnet-4-6"
+        self.anthropic_prompt_cache = anthropic_prompt_cache
 
 
 class Registry:
     def __init__(self, cfg: LLMConfig):
         self.providers: dict[str, Provider] = {}
         if cfg.anthropic_api_key:
-            self.providers["anthropic"] = AnthropicProvider(cfg.anthropic_api_key)
+            self.providers["anthropic"] = AnthropicProvider(
+                cfg.anthropic_api_key,
+                prompt_cache=cfg.anthropic_prompt_cache,
+            )
         if cfg.openai_api_key:
             self.providers["openai"] = OpenAIProvider(cfg.openai_api_key)
         if cfg.moonshot_api_key:
@@ -268,9 +273,19 @@ class Registry:
         return provider, info["id"]
 
 
+def _anthropic_sdk_supports_cache_control() -> bool:
+    """Return True when the installed anthropic SDK exposes cache_control on ToolParam."""
+    try:
+        import anthropic.types as _t
+        return "cache_control" in getattr(_t.ToolParam, "__annotations__", {})
+    except Exception:
+        return False
+
+
 class AnthropicProvider(Provider):
-    def __init__(self, api_key: str):
+    def __init__(self, api_key: str, prompt_cache: bool = True):
         self.api_key = api_key
+        self.prompt_cache = prompt_cache
 
     def name(self) -> str:
         return "anthropic"
@@ -283,6 +298,29 @@ class AnthropicProvider(Provider):
 
         max_tokens = req.max_tokens if req.max_tokens > 0 else 4096
 
+        # Determine whether to inject cache_control breakpoints.
+        # We only do this when:
+        #   1. prompt_cache is enabled on this provider instance, AND
+        #   2. the installed SDK actually supports cache_control (feature-detect).
+        use_cache = self.prompt_cache and _anthropic_sdk_supports_cache_control()
+
+        # ── System block ─────────────────────────────────────────────────────
+        # When caching is on, wrap the system string in a single-element list
+        # of TextBlockParam with cache_control attached so Anthropic caches the
+        # entire system-prompt prefix.  The plain-string form is used otherwise
+        # for full backward compatibility.
+        if use_cache and req.system:
+            system_param: Any = [
+                {
+                    "type": "text",
+                    "text": req.system,
+                    "cache_control": {"type": "ephemeral"},
+                }
+            ]
+        else:
+            system_param: Any = req.system
+
+        # ── Tools block ──────────────────────────────────────────────────────
         tools = None
         if req.tools:
             tools = [
@@ -293,6 +331,11 @@ class AnthropicProvider(Provider):
                 }
                 for t in req.tools
             ]
+            # Attach cache_control only to the *last* tool entry.  Anthropic
+            # treats this as a breakpoint: everything up to and including this
+            # entry is eligible for the KV cache.
+            if use_cache and tools:
+                tools[-1] = dict(tools[-1], cache_control={"type": "ephemeral"})
 
         tool_choice = None
         if tools:
@@ -338,7 +381,7 @@ class AnthropicProvider(Provider):
 
         response = client.messages.create(
             model=req.model,
-            system=req.system,
+            system=system_param,
             max_tokens=max_tokens,
             temperature=req.temperature if req.temperature > 0 else None,
             messages=messages,
