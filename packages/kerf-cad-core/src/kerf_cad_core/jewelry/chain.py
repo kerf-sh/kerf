@@ -19,6 +19,30 @@ Provides:
   - Metal weight estimator: ``chain_weight_estimate``.
   - LLM tools: jewelry_create_chain (write), jewelry_chain_length (read).
 
+Composed chain pieces (v3)
+---------------------------
+Higher-level builders that compose ``chain_assembly`` link hints to describe
+more complex finished pieces.  Each returns a *composed spec* dict with an
+``op`` of the piece type; the dict carries one or more ``chain_assembly``
+sub-specs (``chains`` list) plus piece-specific fields.  The occtWorker
+evaluates these as ``opChainAssembly`` calls with the extra overlay hints.
+
+  tennis_bracelet_spec       — continuous stone line in flexible link mount
+  station_necklace_spec      — periodic stone stations on a thin chain
+  lariat_spec                — open-ended Y-necklace with a slide
+  charm_bracelet_spec        — base chain + N jump-ring attach points
+  multi_strand_spec          — 2–5 parallel chains joined at connectors
+  extender_chain_spec        — adjustable extender with end loops
+
+LLM tools registered (v3, composed pieces)
+--------------------------------------------
+    jewelry_create_tennis_bracelet
+    jewelry_create_station_necklace
+    jewelry_create_lariat
+    jewelry_create_charm_bracelet
+    jewelry_create_multi_strand
+    jewelry_create_extender_chain
+
 Geometry strategy
 -----------------
 Chain links are geometrically complex interlocking tori / swept paths.  Rather
@@ -1530,4 +1554,1483 @@ async def run_jewelry_create_chain(ctx: ProjectCtx, args: bytes) -> str:
         "total_length_mm": chain_params["total_length_mm"],
         "link_pitch_mm": chain_params["link_pitch_mm"],
         "clasp": clasp_sub["style"] if clasp_sub else None,
+    })
+
+
+# ===========================================================================
+# v3 — COMPOSED CHAIN PIECES
+# ===========================================================================
+#
+# Each builder composes existing chain_assembly link hints and emits a
+# higher-level spec dict.  The ``op`` key identifies the piece type; the dict
+# carries one or more ``chain_assembly`` sub-specs (``chains`` list) plus
+# piece-specific hint fields.  The occtWorker evaluates these as standard
+# ``opChainAssembly`` calls with the extra overlay hints applied on top.
+#
+# Contract:
+#   - Every builder calls compute_chain_params() / compute_clasp_params() —
+#     no new geometry primitives.
+#   - Every builder raises ValueError on bad input (validated the same way as
+#     compute_chain_params).
+#   - Weight is via chain_weight_estimate (existing estimator).
+#   - FeatureView inspector: deferred — the composed nodes use existing
+#     ``chain_assembly`` ops and can be evaluated by the worker immediately;
+#     only the inspector panel UI for the composed piece types is pending.
+# ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# Helpers shared by composed pieces
+# ---------------------------------------------------------------------------
+
+def _resolve_length(
+    total_length_mm: Optional[float],
+    standard_length: Optional[str],
+    link_count: Optional[int],
+) -> tuple[Optional[float], Optional[int]]:
+    """Resolve the three mutually-exclusive length sources.
+
+    Returns (total_length_mm, link_count) with at most one set.
+    Raises ValueError when more than one source is provided.
+    """
+    sources = sum([
+        total_length_mm is not None,
+        standard_length is not None,
+        link_count is not None,
+    ])
+    if sources > 1:
+        raise ValueError(
+            "Provide exactly one of total_length_mm, standard_length, or link_count."
+        )
+    if standard_length is not None:
+        if standard_length not in _STANDARD_LENGTHS_MM:
+            raise ValueError(
+                f"Unknown standard_length {standard_length!r}. "
+                f"Valid: {sorted(_STANDARD_LENGTHS_MM)}."
+            )
+        total_length_mm = _STANDARD_LENGTHS_MM[standard_length]
+    return total_length_mm, link_count
+
+
+def _require_positive(value: float, name: str) -> None:
+    if value <= 0:
+        raise ValueError(f"{name} must be > 0; got {value}")
+
+
+def _require_int_ge(value: int, minimum: int, name: str) -> None:
+    if not isinstance(value, int) or value < minimum:
+        raise ValueError(f"{name} must be an integer >= {minimum}; got {value!r}")
+
+
+# ---------------------------------------------------------------------------
+# 1. Tennis bracelet / riviera line
+# ---------------------------------------------------------------------------
+
+def tennis_bracelet_spec(
+    *,
+    stone_size_mm: float = 3.0,
+    stone_count: Optional[int] = None,
+    total_length_mm: Optional[float] = None,
+    standard_length: Optional[str] = None,
+    link_style: str = "cable",
+    wire_gauge_mm: float = 0.8,
+    clasp_style: str = "box_clasp",
+    gauge_preset: Optional[str] = None,
+) -> dict:
+    """Build a tennis bracelet / riviera line spec.
+
+    A continuous line of equal round stones in flexible link mounts.
+    Composes ``cable``-family link hints with a ``stone_station`` overlay;
+    the ``stone_count`` controls spacing.
+
+    Parameters
+    ----------
+    stone_size_mm : float
+        Diameter of each round stone in mm (default 3.0).
+    stone_count : int, optional
+        Exact number of stones.  Mutually exclusive with total_length_mm /
+        standard_length.  When omitted one of the other two must be given.
+    total_length_mm : float, optional
+        Desired bracelet length in mm; stone_count is derived.
+    standard_length : str, optional
+        Named standard length key.
+    link_style : str
+        Chain link style for the flexible mounts (default ``"cable"``).
+    wire_gauge_mm : float
+        Wire gauge in mm (default 0.8).
+    clasp_style : str
+        Clasp style (default ``"box_clasp"`` — flat profile suits tennis).
+    gauge_preset : str, optional
+        ``"fine"``, ``"medium"``, or ``"heavy"``; overrides ``wire_gauge_mm``.
+
+    Returns
+    -------
+    dict
+        Composed spec with ``op="tennis_bracelet"``.
+
+    Raises
+    ------
+    ValueError
+        On invalid inputs.
+    """
+    _require_positive(stone_size_mm, "stone_size_mm")
+
+    # Resolve gauge preset
+    if gauge_preset is not None:
+        gp = str(gauge_preset).strip().lower()
+        if gp not in _VALID_GAUGE_WEIGHTS:
+            raise ValueError(
+                f"Unknown gauge_preset {gauge_preset!r}. "
+                f"Valid: {sorted(_VALID_GAUGE_WEIGHTS)}."
+            )
+        norm_style = _STYLE_ALIASES.get(str(link_style).strip().lower(),
+                                         str(link_style).strip().lower())
+        if norm_style not in _VALID_LINK_STYLES:
+            raise ValueError(
+                f"Unknown link_style {link_style!r}."
+            )
+        wire_gauge_mm = GAUGE_PRESETS[norm_style][gp]
+
+    # Resolve length
+    tl, lc = _resolve_length(total_length_mm, standard_length, stone_count)
+
+    # Stone pitch = stone diameter + small gap (15% of stone size)
+    stone_pitch_mm = round(stone_size_mm * 1.15, 4)
+
+    if tl is not None:
+        _require_positive(tl, "total_length_mm")
+        derived_count = max(1, round(tl / stone_pitch_mm))
+    elif lc is not None:
+        _require_int_ge(lc, 1, "stone_count")
+        derived_count = lc
+        tl = round(lc * stone_pitch_mm, 3)
+    else:
+        raise ValueError(
+            "One of stone_count, total_length_mm, or standard_length is required."
+        )
+
+    if tl is None:
+        tl = round(derived_count * stone_pitch_mm, 3)
+
+    # Compose a chain_assembly sub-spec: one link per stone, link_length ≈ stone_pitch
+    link_length_mm = stone_pitch_mm
+    link_width_mm = max(stone_size_mm * 0.7, wire_gauge_mm)
+    chain_sub = compute_chain_params(
+        link_style,
+        wire_gauge_mm=wire_gauge_mm,
+        link_length_mm=link_length_mm,
+        link_width_mm=link_width_mm,
+        link_count=derived_count,
+        open_ends=True,
+    )
+
+    # Stone-station overlay hint (consumed by the worker on top of link_hints)
+    stone_station_hints = {
+        "type": "stone_station",
+        "station_type": "tennis_mount",
+        "stone_shape": "round",
+        "stone_size_mm": stone_size_mm,
+        "stone_count": derived_count,
+        "station_pitch_mm": stone_pitch_mm,
+        "prong_count": 4,
+    }
+
+    clasp_sub = compute_clasp_params(clasp_style, wire_gauge_mm)
+    weight_g = chain_weight_estimate(
+        link_style, wire_gauge_mm, tl, density_g_per_cm3=15.5
+    )
+
+    return {
+        "op": "tennis_bracelet",
+        "stone_size_mm": stone_size_mm,
+        "stone_count": derived_count,
+        "total_length_mm": round(tl, 3),
+        "stone_pitch_mm": stone_pitch_mm,
+        "stone_station_hints": stone_station_hints,
+        "chains": [chain_sub],
+        "clasp": clasp_sub,
+        "estimated_weight_18k_gold_g": weight_g,
+    }
+
+
+# ToolSpec + runner — tennis bracelet
+
+_tennis_bracelet_spec_obj = ToolSpec(
+    name="jewelry_create_tennis_bracelet",
+    description=(
+        "Append a tennis-bracelet / riviera-line node to a `.feature` file.\n\n"
+        "A continuous line of equal round stones set in flexible link mounts. "
+        "Composes existing chain_assembly link hints (default `cable`) with "
+        "stone-station overlay hints.\n\n"
+        "Specify piece length via exactly one of: stone_count, total_length_mm, "
+        "standard_length.\n"
+        "All dimensions in mm."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "file_id": {"type": "string", "description": "Target .feature file id (uuid)."},
+            "stone_size_mm": {
+                "type": "number",
+                "description": "Round stone diameter in mm. Default 3.0.",
+            },
+            "stone_count": {
+                "type": "integer",
+                "description": "Exact number of stones. Mutually exclusive with total_length_mm / standard_length.",
+            },
+            "total_length_mm": {
+                "type": "number",
+                "description": "Desired bracelet length mm. Mutually exclusive with stone_count / standard_length.",
+            },
+            "standard_length": {
+                "type": "string",
+                "description": (
+                    "Named standard length (e.g. 'bracelet_7in'). "
+                    "Mutually exclusive with stone_count / total_length_mm."
+                ),
+            },
+            "link_style": {
+                "type": "string",
+                "enum": sorted(_VALID_LINK_STYLES),
+                "description": "Chain link style for flexible mounts. Default 'cable'.",
+            },
+            "wire_gauge_mm": {
+                "type": "number",
+                "description": "Wire gauge mm. Default 0.8.",
+            },
+            "clasp_style": {
+                "type": "string",
+                "enum": sorted(_VALID_CLASP_STYLES),
+                "description": "Clasp style. Default 'box_clasp'.",
+            },
+            "gauge_preset": {
+                "type": "string",
+                "enum": sorted(_VALID_GAUGE_WEIGHTS),
+                "description": "Named weight class overriding wire_gauge_mm.",
+            },
+            "id": {"type": "string", "description": "Optional explicit node id."},
+        },
+        "required": ["file_id"],
+    },
+)
+
+
+@register(_tennis_bracelet_spec_obj, write=True)
+async def run_jewelry_create_tennis_bracelet(ctx: ProjectCtx, args: bytes) -> str:
+    try:
+        a = json.loads(args)
+    except Exception as e:
+        return err_payload(f"invalid args: {e}", "BAD_ARGS")
+
+    file_id_str = a.get("file_id", "").strip()
+    if not file_id_str:
+        return err_payload("file_id is required", "BAD_ARGS")
+    try:
+        fid = uuid.UUID(file_id_str)
+    except Exception:
+        return err_payload("file_id must be a uuid", "BAD_ARGS")
+
+    try:
+        spec = tennis_bracelet_spec(
+            stone_size_mm=float(a.get("stone_size_mm", 3.0)),
+            stone_count=int(a["stone_count"]) if "stone_count" in a else None,
+            total_length_mm=float(a["total_length_mm"]) if "total_length_mm" in a else None,
+            standard_length=a.get("standard_length"),
+            link_style=a.get("link_style", "cable"),
+            wire_gauge_mm=float(a.get("wire_gauge_mm", 0.8)),
+            clasp_style=a.get("clasp_style", "box_clasp"),
+            gauge_preset=a.get("gauge_preset"),
+        )
+    except (ValueError, KeyError) as e:
+        return err_payload(str(e), "BAD_ARGS")
+
+    content, err = read_feature_content(ctx, fid)
+    if err:
+        return err_payload(f"file not found: {err}", "NOT_FOUND")
+
+    node_id = a.get("id", "").strip() or next_node_id(content, "tennis_bracelet")
+    node = {"id": node_id, **spec}
+
+    _, saved_id, err2 = append_feature_node(ctx, fid, node)
+    if err2:
+        return err_payload(err2, "ERROR")
+
+    return ok_payload({
+        "file_id": file_id_str,
+        "id": saved_id,
+        "op": "tennis_bracelet",
+        "stone_count": spec["stone_count"],
+        "total_length_mm": spec["total_length_mm"],
+        "clasp": spec["clasp"]["style"],
+        "estimated_weight_18k_gold_g": spec["estimated_weight_18k_gold_g"],
+    })
+
+
+# ---------------------------------------------------------------------------
+# 2. Station / by-the-yard necklace
+# ---------------------------------------------------------------------------
+
+def station_necklace_spec(
+    *,
+    stone_size_mm: float = 4.0,
+    station_count: int = 5,
+    station_spacing_mm: float = 50.0,
+    carrier_style: str = "cable",
+    wire_gauge_mm: float = 0.7,
+    clasp_style: str = "lobster",
+    total_length_mm: Optional[float] = None,
+    standard_length: Optional[str] = None,
+    gauge_preset: Optional[str] = None,
+) -> dict:
+    """Build a station / by-the-yard necklace spec.
+
+    Periodic stone stations spaced along a thin carrier chain.
+
+    Parameters
+    ----------
+    stone_size_mm : float
+        Stone diameter in mm (default 4.0).
+    station_count : int
+        Number of stone stations (default 5).
+    station_spacing_mm : float
+        Centre-to-centre spacing between stations in mm (default 50.0).
+    carrier_style : str
+        Chain link style for the carrier (default ``"cable"``).
+    wire_gauge_mm : float
+        Carrier wire gauge in mm (default 0.7).
+    clasp_style : str
+        Clasp style (default ``"lobster"``).
+    total_length_mm : float, optional
+        Override total necklace length; station_spacing is preserved.
+    standard_length : str, optional
+        Named standard length key.
+    gauge_preset : str, optional
+        ``"fine"``, ``"medium"``, or ``"heavy"``; overrides ``wire_gauge_mm``.
+
+    Returns
+    -------
+    dict
+        Composed spec with ``op="station_necklace"``.
+
+    Raises
+    ------
+    ValueError
+        On invalid inputs.
+    """
+    _require_positive(stone_size_mm, "stone_size_mm")
+    _require_positive(station_spacing_mm, "station_spacing_mm")
+    _require_int_ge(station_count, 1, "station_count")
+
+    if gauge_preset is not None:
+        gp = str(gauge_preset).strip().lower()
+        if gp not in _VALID_GAUGE_WEIGHTS:
+            raise ValueError(
+                f"Unknown gauge_preset {gauge_preset!r}. "
+                f"Valid: {sorted(_VALID_GAUGE_WEIGHTS)}."
+            )
+        norm_style = _STYLE_ALIASES.get(str(carrier_style).strip().lower(),
+                                         str(carrier_style).strip().lower())
+        if norm_style not in _VALID_LINK_STYLES:
+            raise ValueError(f"Unknown carrier_style {carrier_style!r}.")
+        wire_gauge_mm = GAUGE_PRESETS[norm_style][gp]
+
+    # Resolve total length
+    if standard_length is not None:
+        if standard_length not in _STANDARD_LENGTHS_MM:
+            raise ValueError(
+                f"Unknown standard_length {standard_length!r}. "
+                f"Valid: {sorted(_STANDARD_LENGTHS_MM)}."
+            )
+        total_length_mm = _STANDARD_LENGTHS_MM[standard_length]
+
+    if total_length_mm is not None:
+        _require_positive(total_length_mm, "total_length_mm")
+    else:
+        # Derive from station count and spacing
+        total_length_mm = round(station_spacing_mm * (station_count + 1), 3)
+
+    # Compose carrier chain sub-spec
+    chain_sub = compute_chain_params(
+        carrier_style,
+        wire_gauge_mm=wire_gauge_mm,
+        total_length_mm=total_length_mm,
+        open_ends=True,
+    )
+
+    # Station hint overlay
+    station_hints = {
+        "type": "stone_station",
+        "station_type": "bezel_or_prong",
+        "stone_shape": "round",
+        "stone_size_mm": stone_size_mm,
+        "station_count": station_count,
+        "station_spacing_mm": station_spacing_mm,
+        "station_positions": "evenly_spaced",
+    }
+
+    clasp_sub = compute_clasp_params(clasp_style, wire_gauge_mm)
+    weight_g = chain_weight_estimate(
+        carrier_style, wire_gauge_mm, total_length_mm, density_g_per_cm3=15.5
+    )
+
+    return {
+        "op": "station_necklace",
+        "stone_size_mm": stone_size_mm,
+        "station_count": station_count,
+        "station_spacing_mm": station_spacing_mm,
+        "total_length_mm": round(total_length_mm, 3),
+        "station_hints": station_hints,
+        "chains": [chain_sub],
+        "clasp": clasp_sub,
+        "estimated_weight_18k_gold_g": weight_g,
+    }
+
+
+# ToolSpec + runner — station necklace
+
+_station_necklace_spec_obj = ToolSpec(
+    name="jewelry_create_station_necklace",
+    description=(
+        "Append a station / by-the-yard necklace node to a `.feature` file.\n\n"
+        "Periodic stone stations spaced along a thin carrier chain. "
+        "Composes existing chain_assembly link hints (default `cable`) with "
+        "stone-station spacing hints.\n\n"
+        "All dimensions in mm."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "file_id": {"type": "string", "description": "Target .feature file id (uuid)."},
+            "stone_size_mm": {
+                "type": "number",
+                "description": "Stone diameter mm. Default 4.0.",
+            },
+            "station_count": {
+                "type": "integer",
+                "description": "Number of stone stations. Default 5.",
+            },
+            "station_spacing_mm": {
+                "type": "number",
+                "description": "Centre-to-centre spacing between stations mm. Default 50.0.",
+            },
+            "carrier_style": {
+                "type": "string",
+                "enum": sorted(_VALID_LINK_STYLES),
+                "description": "Carrier chain link style. Default 'cable'.",
+            },
+            "wire_gauge_mm": {
+                "type": "number",
+                "description": "Carrier wire gauge mm. Default 0.7.",
+            },
+            "clasp_style": {
+                "type": "string",
+                "enum": sorted(_VALID_CLASP_STYLES),
+                "description": "Clasp style. Default 'lobster'.",
+            },
+            "total_length_mm": {
+                "type": "number",
+                "description": "Override total necklace length mm.",
+            },
+            "standard_length": {
+                "type": "string",
+                "description": "Named standard length key.",
+            },
+            "gauge_preset": {
+                "type": "string",
+                "enum": sorted(_VALID_GAUGE_WEIGHTS),
+                "description": "Named weight class overriding wire_gauge_mm.",
+            },
+            "id": {"type": "string", "description": "Optional explicit node id."},
+        },
+        "required": ["file_id"],
+    },
+)
+
+
+@register(_station_necklace_spec_obj, write=True)
+async def run_jewelry_create_station_necklace(ctx: ProjectCtx, args: bytes) -> str:
+    try:
+        a = json.loads(args)
+    except Exception as e:
+        return err_payload(f"invalid args: {e}", "BAD_ARGS")
+
+    file_id_str = a.get("file_id", "").strip()
+    if not file_id_str:
+        return err_payload("file_id is required", "BAD_ARGS")
+    try:
+        fid = uuid.UUID(file_id_str)
+    except Exception:
+        return err_payload("file_id must be a uuid", "BAD_ARGS")
+
+    try:
+        spec = station_necklace_spec(
+            stone_size_mm=float(a.get("stone_size_mm", 4.0)),
+            station_count=int(a.get("station_count", 5)),
+            station_spacing_mm=float(a.get("station_spacing_mm", 50.0)),
+            carrier_style=a.get("carrier_style", "cable"),
+            wire_gauge_mm=float(a.get("wire_gauge_mm", 0.7)),
+            clasp_style=a.get("clasp_style", "lobster"),
+            total_length_mm=float(a["total_length_mm"]) if "total_length_mm" in a else None,
+            standard_length=a.get("standard_length"),
+            gauge_preset=a.get("gauge_preset"),
+        )
+    except (ValueError, KeyError) as e:
+        return err_payload(str(e), "BAD_ARGS")
+
+    content, err = read_feature_content(ctx, fid)
+    if err:
+        return err_payload(f"file not found: {err}", "NOT_FOUND")
+
+    node_id = a.get("id", "").strip() or next_node_id(content, "station_necklace")
+    node = {"id": node_id, **spec}
+
+    _, saved_id, err2 = append_feature_node(ctx, fid, node)
+    if err2:
+        return err_payload(err2, "ERROR")
+
+    return ok_payload({
+        "file_id": file_id_str,
+        "id": saved_id,
+        "op": "station_necklace",
+        "station_count": spec["station_count"],
+        "total_length_mm": spec["total_length_mm"],
+        "clasp": spec["clasp"]["style"],
+        "estimated_weight_18k_gold_g": spec["estimated_weight_18k_gold_g"],
+    })
+
+
+# ---------------------------------------------------------------------------
+# 3. Lariat / Y-necklace
+# ---------------------------------------------------------------------------
+
+def lariat_spec(
+    *,
+    body_length_mm: float = 400.0,
+    drop_length_mm: float = 80.0,
+    body_style: str = "cable",
+    drop_style: Optional[str] = None,
+    wire_gauge_mm: float = 0.8,
+    slide_type: str = "loop_slide",
+    terminal_stone_mm: float = 5.0,
+    gauge_preset: Optional[str] = None,
+) -> dict:
+    """Build a lariat / Y-necklace spec.
+
+    Open-ended body chain with a sliding drop pendant.  No clasp — the body
+    passes through the slide so that the drop hangs at the front.
+
+    Parameters
+    ----------
+    body_length_mm : float
+        Total length of the main body chain in mm (default 400.0).
+    drop_length_mm : float
+        Length of the drop (tail) chain in mm (default 80.0).
+    body_style : str
+        Link style for the body (default ``"cable"``).
+    drop_style : str, optional
+        Link style for the drop; defaults to ``body_style``.
+    wire_gauge_mm : float
+        Wire gauge in mm for both body and drop (default 0.8).
+    slide_type : str
+        Slide mechanism hint: ``"loop_slide"`` (default) or ``"bail_slide"``.
+    terminal_stone_mm : float
+        Diameter of a round terminal stone at the drop end in mm (default 5.0).
+    gauge_preset : str, optional
+        ``"fine"``, ``"medium"``, or ``"heavy"``; overrides ``wire_gauge_mm``.
+
+    Returns
+    -------
+    dict
+        Composed spec with ``op="lariat"``.
+
+    Raises
+    ------
+    ValueError
+        On invalid inputs.
+    """
+    _require_positive(body_length_mm, "body_length_mm")
+    _require_positive(drop_length_mm, "drop_length_mm")
+    _require_positive(terminal_stone_mm, "terminal_stone_mm")
+
+    if gauge_preset is not None:
+        gp = str(gauge_preset).strip().lower()
+        if gp not in _VALID_GAUGE_WEIGHTS:
+            raise ValueError(
+                f"Unknown gauge_preset {gauge_preset!r}. "
+                f"Valid: {sorted(_VALID_GAUGE_WEIGHTS)}."
+            )
+        norm_body = _STYLE_ALIASES.get(str(body_style).strip().lower(),
+                                        str(body_style).strip().lower())
+        if norm_body not in _VALID_LINK_STYLES:
+            raise ValueError(f"Unknown body_style {body_style!r}.")
+        wire_gauge_mm = GAUGE_PRESETS[norm_body][gp]
+
+    if drop_style is None:
+        drop_style = body_style
+
+    # Compose body chain sub-spec (open_ends=False — lariat has no clasp ends)
+    body_sub = compute_chain_params(
+        body_style,
+        wire_gauge_mm=wire_gauge_mm,
+        total_length_mm=body_length_mm,
+        open_ends=False,
+    )
+
+    # Compose drop chain sub-spec
+    drop_sub = compute_chain_params(
+        drop_style,
+        wire_gauge_mm=wire_gauge_mm,
+        total_length_mm=drop_length_mm,
+        open_ends=False,
+    )
+
+    # Slide hint
+    slide_hints = {
+        "type": "slide",
+        "slide_mechanism": slide_type,
+        "inner_diameter_mm": round(wire_gauge_mm * 4.0, 3),
+    }
+
+    # Terminal stone hint
+    terminal_hints = {
+        "type": "stone_station",
+        "station_type": "drop_terminal",
+        "stone_shape": "round",
+        "stone_size_mm": terminal_stone_mm,
+        "station_count": 1,
+    }
+
+    total_metal_mm = body_length_mm + drop_length_mm
+    weight_g = chain_weight_estimate(
+        body_style, wire_gauge_mm, total_metal_mm, density_g_per_cm3=15.5
+    )
+
+    return {
+        "op": "lariat",
+        "body_length_mm": round(body_length_mm, 3),
+        "drop_length_mm": round(drop_length_mm, 3),
+        "slide_type": slide_type,
+        "terminal_stone_mm": terminal_stone_mm,
+        "slide_hints": slide_hints,
+        "terminal_hints": terminal_hints,
+        "chains": [body_sub, drop_sub],
+        "clasp": None,   # lariat has no traditional clasp
+        "estimated_weight_18k_gold_g": weight_g,
+    }
+
+
+# ToolSpec + runner — lariat
+
+_lariat_spec_obj = ToolSpec(
+    name="jewelry_create_lariat",
+    description=(
+        "Append a lariat / Y-necklace node to a `.feature` file.\n\n"
+        "Open-ended body chain with a sliding drop pendant (no clasp). "
+        "Composes two chain_assembly sub-specs (body + drop) with a slide hint "
+        "and terminal stone hint.\n\n"
+        "All dimensions in mm."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "file_id": {"type": "string", "description": "Target .feature file id (uuid)."},
+            "body_length_mm": {
+                "type": "number",
+                "description": "Main body chain length mm. Default 400.0.",
+            },
+            "drop_length_mm": {
+                "type": "number",
+                "description": "Drop (tail) chain length mm. Default 80.0.",
+            },
+            "body_style": {
+                "type": "string",
+                "enum": sorted(_VALID_LINK_STYLES),
+                "description": "Link style for the body. Default 'cable'.",
+            },
+            "drop_style": {
+                "type": "string",
+                "enum": sorted(_VALID_LINK_STYLES),
+                "description": "Link style for the drop; defaults to body_style.",
+            },
+            "wire_gauge_mm": {
+                "type": "number",
+                "description": "Wire gauge mm for body and drop. Default 0.8.",
+            },
+            "slide_type": {
+                "type": "string",
+                "enum": ["loop_slide", "bail_slide"],
+                "description": "Slide mechanism hint. Default 'loop_slide'.",
+            },
+            "terminal_stone_mm": {
+                "type": "number",
+                "description": "Diameter of terminal stone at drop end mm. Default 5.0.",
+            },
+            "gauge_preset": {
+                "type": "string",
+                "enum": sorted(_VALID_GAUGE_WEIGHTS),
+                "description": "Named weight class overriding wire_gauge_mm.",
+            },
+            "id": {"type": "string", "description": "Optional explicit node id."},
+        },
+        "required": ["file_id"],
+    },
+)
+
+
+@register(_lariat_spec_obj, write=True)
+async def run_jewelry_create_lariat(ctx: ProjectCtx, args: bytes) -> str:
+    try:
+        a = json.loads(args)
+    except Exception as e:
+        return err_payload(f"invalid args: {e}", "BAD_ARGS")
+
+    file_id_str = a.get("file_id", "").strip()
+    if not file_id_str:
+        return err_payload("file_id is required", "BAD_ARGS")
+    try:
+        fid = uuid.UUID(file_id_str)
+    except Exception:
+        return err_payload("file_id must be a uuid", "BAD_ARGS")
+
+    try:
+        spec = lariat_spec(
+            body_length_mm=float(a.get("body_length_mm", 400.0)),
+            drop_length_mm=float(a.get("drop_length_mm", 80.0)),
+            body_style=a.get("body_style", "cable"),
+            drop_style=a.get("drop_style"),
+            wire_gauge_mm=float(a.get("wire_gauge_mm", 0.8)),
+            slide_type=a.get("slide_type", "loop_slide"),
+            terminal_stone_mm=float(a.get("terminal_stone_mm", 5.0)),
+            gauge_preset=a.get("gauge_preset"),
+        )
+    except (ValueError, KeyError) as e:
+        return err_payload(str(e), "BAD_ARGS")
+
+    content, err = read_feature_content(ctx, fid)
+    if err:
+        return err_payload(f"file not found: {err}", "NOT_FOUND")
+
+    node_id = a.get("id", "").strip() or next_node_id(content, "lariat")
+    node = {"id": node_id, **spec}
+
+    _, saved_id, err2 = append_feature_node(ctx, fid, node)
+    if err2:
+        return err_payload(err2, "ERROR")
+
+    return ok_payload({
+        "file_id": file_id_str,
+        "id": saved_id,
+        "op": "lariat",
+        "body_length_mm": spec["body_length_mm"],
+        "drop_length_mm": spec["drop_length_mm"],
+        "estimated_weight_18k_gold_g": spec["estimated_weight_18k_gold_g"],
+    })
+
+
+# ---------------------------------------------------------------------------
+# 4. Charm bracelet
+# ---------------------------------------------------------------------------
+
+def charm_bracelet_spec(
+    *,
+    base_style: str = "rolo",
+    wire_gauge_mm: float = 1.2,
+    total_length_mm: Optional[float] = None,
+    standard_length: Optional[str] = None,
+    link_count: Optional[int] = None,
+    charm_count: int = 8,
+    clasp_style: str = "lobster",
+    jump_ring_gauge_mm: Optional[float] = None,
+    gauge_preset: Optional[str] = None,
+) -> dict:
+    """Build a charm bracelet spec.
+
+    A base chain with N evenly-spaced jump-ring attach points for charms.
+    Rolo / belcher links are the traditional choice because their wide round
+    openings accept jump rings easily.
+
+    Parameters
+    ----------
+    base_style : str
+        Link style for the base chain (default ``"rolo"``).
+    wire_gauge_mm : float
+        Wire gauge for the base chain in mm (default 1.2).
+    total_length_mm : float, optional
+        Total bracelet length in mm.
+    standard_length : str, optional
+        Named standard length key.
+    link_count : int, optional
+        Exact number of base links.
+    charm_count : int
+        Number of jump-ring attach points (default 8).
+    clasp_style : str
+        Clasp style (default ``"lobster"``).
+    jump_ring_gauge_mm : float, optional
+        Wire gauge of the jump rings in mm; defaults to ``wire_gauge_mm * 0.7``.
+    gauge_preset : str, optional
+        ``"fine"``, ``"medium"``, or ``"heavy"``; overrides ``wire_gauge_mm``.
+
+    Returns
+    -------
+    dict
+        Composed spec with ``op="charm_bracelet"``.
+
+    Raises
+    ------
+    ValueError
+        On invalid inputs.
+    """
+    _require_int_ge(charm_count, 1, "charm_count")
+
+    if gauge_preset is not None:
+        gp = str(gauge_preset).strip().lower()
+        if gp not in _VALID_GAUGE_WEIGHTS:
+            raise ValueError(
+                f"Unknown gauge_preset {gauge_preset!r}. "
+                f"Valid: {sorted(_VALID_GAUGE_WEIGHTS)}."
+            )
+        norm_base = _STYLE_ALIASES.get(str(base_style).strip().lower(),
+                                        str(base_style).strip().lower())
+        if norm_base not in _VALID_LINK_STYLES:
+            raise ValueError(f"Unknown base_style {base_style!r}.")
+        wire_gauge_mm = GAUGE_PRESETS[norm_base][gp]
+
+    tl, lc = _resolve_length(total_length_mm, standard_length, link_count)
+    if tl is None and lc is None:
+        raise ValueError(
+            "One of total_length_mm, standard_length, or link_count is required."
+        )
+
+    # Compose base chain sub-spec
+    if tl is not None:
+        chain_sub = compute_chain_params(
+            base_style,
+            wire_gauge_mm=wire_gauge_mm,
+            total_length_mm=tl,
+            open_ends=True,
+        )
+    else:
+        chain_sub = compute_chain_params(
+            base_style,
+            wire_gauge_mm=wire_gauge_mm,
+            link_count=lc,
+            open_ends=True,
+        )
+
+    actual_length = chain_sub["total_length_mm"]
+
+    if jump_ring_gauge_mm is None:
+        jump_ring_gauge_mm = round(wire_gauge_mm * 0.7, 3)
+    _require_positive(jump_ring_gauge_mm, "jump_ring_gauge_mm")
+
+    # Evenly spaced attach-point positions (fraction of total length)
+    spacing = actual_length / (charm_count + 1)
+    attach_positions_mm = [
+        round(spacing * (i + 1), 3) for i in range(charm_count)
+    ]
+
+    attach_hints = {
+        "type": "jump_ring_attach",
+        "count": charm_count,
+        "positions_mm": attach_positions_mm,
+        "jump_ring_inner_diameter_mm": round(wire_gauge_mm * 2.5, 3),
+        "jump_ring_wire_gauge_mm": jump_ring_gauge_mm,
+    }
+
+    clasp_sub = compute_clasp_params(clasp_style, wire_gauge_mm)
+    weight_g = chain_weight_estimate(
+        base_style, wire_gauge_mm, actual_length, density_g_per_cm3=15.5
+    )
+
+    return {
+        "op": "charm_bracelet",
+        "charm_count": charm_count,
+        "total_length_mm": actual_length,
+        "attach_hints": attach_hints,
+        "chains": [chain_sub],
+        "clasp": clasp_sub,
+        "estimated_weight_18k_gold_g": weight_g,
+    }
+
+
+# ToolSpec + runner — charm bracelet
+
+_charm_bracelet_spec_obj = ToolSpec(
+    name="jewelry_create_charm_bracelet",
+    description=(
+        "Append a charm bracelet node to a `.feature` file.\n\n"
+        "A base chain with N evenly-spaced jump-ring attach points for charms. "
+        "Composes existing chain_assembly link hints (default `rolo`) with "
+        "jump-ring attach-point hints.\n\n"
+        "Specify piece length via exactly one of: link_count, total_length_mm, "
+        "standard_length.\n"
+        "All dimensions in mm."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "file_id": {"type": "string", "description": "Target .feature file id (uuid)."},
+            "base_style": {
+                "type": "string",
+                "enum": sorted(_VALID_LINK_STYLES),
+                "description": "Link style for the base chain. Default 'rolo'.",
+            },
+            "wire_gauge_mm": {
+                "type": "number",
+                "description": "Wire gauge mm. Default 1.2.",
+            },
+            "total_length_mm": {
+                "type": "number",
+                "description": "Total bracelet length mm.",
+            },
+            "standard_length": {
+                "type": "string",
+                "description": "Named standard length key.",
+            },
+            "link_count": {
+                "type": "integer",
+                "description": "Exact number of base links.",
+            },
+            "charm_count": {
+                "type": "integer",
+                "description": "Number of jump-ring attach points. Default 8.",
+            },
+            "clasp_style": {
+                "type": "string",
+                "enum": sorted(_VALID_CLASP_STYLES),
+                "description": "Clasp style. Default 'lobster'.",
+            },
+            "jump_ring_gauge_mm": {
+                "type": "number",
+                "description": "Jump ring wire gauge mm. Defaults to wire_gauge_mm × 0.7.",
+            },
+            "gauge_preset": {
+                "type": "string",
+                "enum": sorted(_VALID_GAUGE_WEIGHTS),
+                "description": "Named weight class overriding wire_gauge_mm.",
+            },
+            "id": {"type": "string", "description": "Optional explicit node id."},
+        },
+        "required": ["file_id"],
+    },
+)
+
+
+@register(_charm_bracelet_spec_obj, write=True)
+async def run_jewelry_create_charm_bracelet(ctx: ProjectCtx, args: bytes) -> str:
+    try:
+        a = json.loads(args)
+    except Exception as e:
+        return err_payload(f"invalid args: {e}", "BAD_ARGS")
+
+    file_id_str = a.get("file_id", "").strip()
+    if not file_id_str:
+        return err_payload("file_id is required", "BAD_ARGS")
+    try:
+        fid = uuid.UUID(file_id_str)
+    except Exception:
+        return err_payload("file_id must be a uuid", "BAD_ARGS")
+
+    try:
+        spec = charm_bracelet_spec(
+            base_style=a.get("base_style", "rolo"),
+            wire_gauge_mm=float(a.get("wire_gauge_mm", 1.2)),
+            total_length_mm=float(a["total_length_mm"]) if "total_length_mm" in a else None,
+            standard_length=a.get("standard_length"),
+            link_count=int(a["link_count"]) if "link_count" in a else None,
+            charm_count=int(a.get("charm_count", 8)),
+            clasp_style=a.get("clasp_style", "lobster"),
+            jump_ring_gauge_mm=float(a["jump_ring_gauge_mm"]) if "jump_ring_gauge_mm" in a else None,
+            gauge_preset=a.get("gauge_preset"),
+        )
+    except (ValueError, KeyError) as e:
+        return err_payload(str(e), "BAD_ARGS")
+
+    content, err = read_feature_content(ctx, fid)
+    if err:
+        return err_payload(f"file not found: {err}", "NOT_FOUND")
+
+    node_id = a.get("id", "").strip() or next_node_id(content, "charm_bracelet")
+    node = {"id": node_id, **spec}
+
+    _, saved_id, err2 = append_feature_node(ctx, fid, node)
+    if err2:
+        return err_payload(err2, "ERROR")
+
+    return ok_payload({
+        "file_id": file_id_str,
+        "id": saved_id,
+        "op": "charm_bracelet",
+        "charm_count": spec["charm_count"],
+        "total_length_mm": spec["total_length_mm"],
+        "clasp": spec["clasp"]["style"],
+        "estimated_weight_18k_gold_g": spec["estimated_weight_18k_gold_g"],
+    })
+
+
+# ---------------------------------------------------------------------------
+# 5. Multi-strand / layered
+# ---------------------------------------------------------------------------
+
+_MAX_STRANDS = 5
+_MIN_STRANDS = 2
+
+
+def multi_strand_spec(
+    *,
+    strand_count: int = 3,
+    strand_styles: Optional[list] = None,
+    wire_gauge_mm: float = 0.8,
+    total_length_mm: Optional[float] = None,
+    standard_length: Optional[str] = None,
+    link_count: Optional[int] = None,
+    clasp_style: str = "box_clasp",
+    connector_type: str = "multi_strand_box",
+    gauge_preset: Optional[str] = None,
+) -> dict:
+    """Build a multi-strand / layered chain spec.
+
+    Two to five parallel chains joined at a connector + clasp.
+
+    Parameters
+    ----------
+    strand_count : int
+        Number of parallel strands, 2–5 (default 3).
+    strand_styles : list[str], optional
+        Link style for each strand.  If shorter than ``strand_count``, the
+        last entry is repeated.  Defaults to all ``"cable"``.
+    wire_gauge_mm : float
+        Wire gauge for all strands in mm (default 0.8).
+    total_length_mm : float, optional
+        Length of each strand in mm.
+    standard_length : str, optional
+        Named standard length key.
+    link_count : int, optional
+        Exact link count for each strand.
+    clasp_style : str
+        Clasp style (default ``"box_clasp"`` — multi-tab suits multi-strand).
+    connector_type : str
+        Connector / end-bar hint: ``"multi_strand_box"`` (default) or
+        ``"end_bar"``.
+    gauge_preset : str, optional
+        ``"fine"``, ``"medium"``, or ``"heavy"``; overrides ``wire_gauge_mm``.
+
+    Returns
+    -------
+    dict
+        Composed spec with ``op="multi_strand"``.
+
+    Raises
+    ------
+    ValueError
+        On invalid inputs.
+    """
+    if not isinstance(strand_count, int) or not (_MIN_STRANDS <= strand_count <= _MAX_STRANDS):
+        raise ValueError(
+            f"strand_count must be an integer between {_MIN_STRANDS} and "
+            f"{_MAX_STRANDS}; got {strand_count!r}."
+        )
+
+    if gauge_preset is not None:
+        gp = str(gauge_preset).strip().lower()
+        if gp not in _VALID_GAUGE_WEIGHTS:
+            raise ValueError(
+                f"Unknown gauge_preset {gauge_preset!r}. "
+                f"Valid: {sorted(_VALID_GAUGE_WEIGHTS)}."
+            )
+        # Use first strand style for preset lookup
+        first_style = (strand_styles[0] if strand_styles else "cable")
+        norm_first = _STYLE_ALIASES.get(str(first_style).strip().lower(),
+                                         str(first_style).strip().lower())
+        if norm_first not in _VALID_LINK_STYLES:
+            raise ValueError(f"Unknown strand style {first_style!r}.")
+        wire_gauge_mm = GAUGE_PRESETS[norm_first][gp]
+
+    # Resolve strand styles list
+    if strand_styles is None:
+        strand_styles = ["cable"] * strand_count
+    else:
+        # Extend / pad to strand_count
+        if len(strand_styles) < strand_count:
+            strand_styles = list(strand_styles) + [strand_styles[-1]] * (
+                strand_count - len(strand_styles)
+            )
+        strand_styles = strand_styles[:strand_count]
+
+    tl, lc = _resolve_length(total_length_mm, standard_length, link_count)
+    if tl is None and lc is None:
+        raise ValueError(
+            "One of total_length_mm, standard_length, or link_count is required."
+        )
+
+    # Build each strand sub-spec
+    chain_subs = []
+    for style in strand_styles:
+        if tl is not None:
+            sub = compute_chain_params(
+                style,
+                wire_gauge_mm=wire_gauge_mm,
+                total_length_mm=tl,
+                open_ends=True,
+            )
+        else:
+            sub = compute_chain_params(
+                style,
+                wire_gauge_mm=wire_gauge_mm,
+                link_count=lc,
+                open_ends=True,
+            )
+        chain_subs.append(sub)
+
+    actual_length = chain_subs[0]["total_length_mm"]
+
+    connector_hints = {
+        "type": "connector",
+        "connector_style": connector_type,
+        "strand_count": strand_count,
+        "strand_spacing_mm": round(wire_gauge_mm * 3.0, 3),
+    }
+
+    clasp_sub = compute_clasp_params(clasp_style, wire_gauge_mm)
+    total_metal_mm = actual_length * strand_count
+    weight_g = chain_weight_estimate(
+        strand_styles[0], wire_gauge_mm, total_metal_mm, density_g_per_cm3=15.5
+    )
+
+    return {
+        "op": "multi_strand",
+        "strand_count": strand_count,
+        "strand_styles": strand_styles,
+        "total_length_mm": actual_length,
+        "connector_hints": connector_hints,
+        "chains": chain_subs,
+        "clasp": clasp_sub,
+        "estimated_weight_18k_gold_g": weight_g,
+    }
+
+
+# ToolSpec + runner — multi-strand
+
+_multi_strand_spec_obj = ToolSpec(
+    name="jewelry_create_multi_strand",
+    description=(
+        "Append a multi-strand / layered chain node to a `.feature` file.\n\n"
+        "Two to five parallel chains joined at a connector and clasp. "
+        "Composes chain_assembly sub-specs for each strand with a connector hint.\n\n"
+        "Specify strand length via exactly one of: link_count, total_length_mm, "
+        "standard_length.\n"
+        "All dimensions in mm."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "file_id": {"type": "string", "description": "Target .feature file id (uuid)."},
+            "strand_count": {
+                "type": "integer",
+                "description": f"Number of parallel strands ({_MIN_STRANDS}–{_MAX_STRANDS}). Default 3.",
+            },
+            "strand_styles": {
+                "type": "array",
+                "items": {"type": "string", "enum": sorted(_VALID_LINK_STYLES)},
+                "description": (
+                    "Link style per strand. Padded/truncated to strand_count. "
+                    "Defaults to all 'cable'."
+                ),
+            },
+            "wire_gauge_mm": {
+                "type": "number",
+                "description": "Wire gauge mm for all strands. Default 0.8.",
+            },
+            "total_length_mm": {
+                "type": "number",
+                "description": "Length of each strand mm.",
+            },
+            "standard_length": {
+                "type": "string",
+                "description": "Named standard length key.",
+            },
+            "link_count": {
+                "type": "integer",
+                "description": "Exact link count per strand.",
+            },
+            "clasp_style": {
+                "type": "string",
+                "enum": sorted(_VALID_CLASP_STYLES),
+                "description": "Clasp style. Default 'box_clasp'.",
+            },
+            "connector_type": {
+                "type": "string",
+                "enum": ["multi_strand_box", "end_bar"],
+                "description": "Connector / end-bar type hint. Default 'multi_strand_box'.",
+            },
+            "gauge_preset": {
+                "type": "string",
+                "enum": sorted(_VALID_GAUGE_WEIGHTS),
+                "description": "Named weight class overriding wire_gauge_mm.",
+            },
+            "id": {"type": "string", "description": "Optional explicit node id."},
+        },
+        "required": ["file_id"],
+    },
+)
+
+
+@register(_multi_strand_spec_obj, write=True)
+async def run_jewelry_create_multi_strand(ctx: ProjectCtx, args: bytes) -> str:
+    try:
+        a = json.loads(args)
+    except Exception as e:
+        return err_payload(f"invalid args: {e}", "BAD_ARGS")
+
+    file_id_str = a.get("file_id", "").strip()
+    if not file_id_str:
+        return err_payload("file_id is required", "BAD_ARGS")
+    try:
+        fid = uuid.UUID(file_id_str)
+    except Exception:
+        return err_payload("file_id must be a uuid", "BAD_ARGS")
+
+    try:
+        spec = multi_strand_spec(
+            strand_count=int(a.get("strand_count", 3)),
+            strand_styles=a.get("strand_styles"),
+            wire_gauge_mm=float(a.get("wire_gauge_mm", 0.8)),
+            total_length_mm=float(a["total_length_mm"]) if "total_length_mm" in a else None,
+            standard_length=a.get("standard_length"),
+            link_count=int(a["link_count"]) if "link_count" in a else None,
+            clasp_style=a.get("clasp_style", "box_clasp"),
+            connector_type=a.get("connector_type", "multi_strand_box"),
+            gauge_preset=a.get("gauge_preset"),
+        )
+    except (ValueError, KeyError) as e:
+        return err_payload(str(e), "BAD_ARGS")
+
+    content, err = read_feature_content(ctx, fid)
+    if err:
+        return err_payload(f"file not found: {err}", "NOT_FOUND")
+
+    node_id = a.get("id", "").strip() or next_node_id(content, "multi_strand")
+    node = {"id": node_id, **spec}
+
+    _, saved_id, err2 = append_feature_node(ctx, fid, node)
+    if err2:
+        return err_payload(err2, "ERROR")
+
+    return ok_payload({
+        "file_id": file_id_str,
+        "id": saved_id,
+        "op": "multi_strand",
+        "strand_count": spec["strand_count"],
+        "strand_styles": spec["strand_styles"],
+        "total_length_mm": spec["total_length_mm"],
+        "clasp": spec["clasp"]["style"],
+        "estimated_weight_18k_gold_g": spec["estimated_weight_18k_gold_g"],
+    })
+
+
+# ---------------------------------------------------------------------------
+# 6. Extender chain
+# ---------------------------------------------------------------------------
+
+def extender_chain_spec(
+    *,
+    extender_style: str = "cable",
+    wire_gauge_mm: float = 0.7,
+    extender_length_mm: float = 50.0,
+    loop_count: int = 5,
+    loop_spacing_mm: Optional[float] = None,
+    end_ring_style: str = "lobster",
+    gauge_preset: Optional[str] = None,
+) -> dict:
+    """Build an adjustable extender chain spec.
+
+    A short chain with a series of end loops that allow the clasp to be
+    attached at different positions for adjustable length.
+
+    Parameters
+    ----------
+    extender_style : str
+        Link style for the extender (default ``"cable"``).
+    wire_gauge_mm : float
+        Wire gauge in mm (default 0.7).
+    extender_length_mm : float
+        Total extender chain length in mm (default 50.0).
+    loop_count : int
+        Number of attachment loops along the extender (default 5).
+    loop_spacing_mm : float, optional
+        Spacing between loops in mm; defaults to
+        ``extender_length_mm / (loop_count + 1)``.
+    end_ring_style : str
+        Clasp style attached to the extender end (default ``"lobster"``).
+    gauge_preset : str, optional
+        ``"fine"``, ``"medium"``, or ``"heavy"``; overrides ``wire_gauge_mm``.
+
+    Returns
+    -------
+    dict
+        Composed spec with ``op="extender_chain"``.
+
+    Raises
+    ------
+    ValueError
+        On invalid inputs.
+    """
+    _require_positive(extender_length_mm, "extender_length_mm")
+    _require_int_ge(loop_count, 1, "loop_count")
+
+    if gauge_preset is not None:
+        gp = str(gauge_preset).strip().lower()
+        if gp not in _VALID_GAUGE_WEIGHTS:
+            raise ValueError(
+                f"Unknown gauge_preset {gauge_preset!r}. "
+                f"Valid: {sorted(_VALID_GAUGE_WEIGHTS)}."
+            )
+        norm_ext = _STYLE_ALIASES.get(str(extender_style).strip().lower(),
+                                       str(extender_style).strip().lower())
+        if norm_ext not in _VALID_LINK_STYLES:
+            raise ValueError(f"Unknown extender_style {extender_style!r}.")
+        wire_gauge_mm = GAUGE_PRESETS[norm_ext][gp]
+
+    if loop_spacing_mm is None:
+        loop_spacing_mm = round(extender_length_mm / (loop_count + 1), 3)
+    _require_positive(loop_spacing_mm, "loop_spacing_mm")
+
+    # Compose the extender chain sub-spec
+    chain_sub = compute_chain_params(
+        extender_style,
+        wire_gauge_mm=wire_gauge_mm,
+        total_length_mm=extender_length_mm,
+        open_ends=True,
+    )
+
+    actual_length = chain_sub["total_length_mm"]
+
+    # Loop positions along the extender
+    loop_positions_mm = [
+        round(loop_spacing_mm * (i + 1), 3) for i in range(loop_count)
+    ]
+
+    loop_hints = {
+        "type": "end_loops",
+        "loop_count": loop_count,
+        "loop_positions_mm": loop_positions_mm,
+        "loop_inner_diameter_mm": round(wire_gauge_mm * 3.0, 3),
+        "loop_wire_gauge_mm": round(wire_gauge_mm * 0.8, 3),
+    }
+
+    clasp_sub = compute_clasp_params(end_ring_style, wire_gauge_mm)
+    weight_g = chain_weight_estimate(
+        extender_style, wire_gauge_mm, actual_length, density_g_per_cm3=15.5
+    )
+
+    return {
+        "op": "extender_chain",
+        "extender_length_mm": round(actual_length, 3),
+        "loop_count": loop_count,
+        "loop_spacing_mm": loop_spacing_mm,
+        "loop_hints": loop_hints,
+        "chains": [chain_sub],
+        "clasp": clasp_sub,
+        "estimated_weight_18k_gold_g": weight_g,
+    }
+
+
+# ToolSpec + runner — extender chain
+
+_extender_chain_spec_obj = ToolSpec(
+    name="jewelry_create_extender_chain",
+    description=(
+        "Append an extender chain node to a `.feature` file.\n\n"
+        "A short chain with a series of end loops for adjustable length attachment. "
+        "Composes a single chain_assembly sub-spec with loop-position hints.\n\n"
+        "All dimensions in mm."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "file_id": {"type": "string", "description": "Target .feature file id (uuid)."},
+            "extender_style": {
+                "type": "string",
+                "enum": sorted(_VALID_LINK_STYLES),
+                "description": "Link style for the extender. Default 'cable'.",
+            },
+            "wire_gauge_mm": {
+                "type": "number",
+                "description": "Wire gauge mm. Default 0.7.",
+            },
+            "extender_length_mm": {
+                "type": "number",
+                "description": "Total extender length mm. Default 50.0.",
+            },
+            "loop_count": {
+                "type": "integer",
+                "description": "Number of attachment loops. Default 5.",
+            },
+            "loop_spacing_mm": {
+                "type": "number",
+                "description": "Spacing between loops mm. Defaults to extender_length / (loop_count+1).",
+            },
+            "end_ring_style": {
+                "type": "string",
+                "enum": sorted(_VALID_CLASP_STYLES),
+                "description": "Clasp at the extender end. Default 'lobster'.",
+            },
+            "gauge_preset": {
+                "type": "string",
+                "enum": sorted(_VALID_GAUGE_WEIGHTS),
+                "description": "Named weight class overriding wire_gauge_mm.",
+            },
+            "id": {"type": "string", "description": "Optional explicit node id."},
+        },
+        "required": ["file_id"],
+    },
+)
+
+
+@register(_extender_chain_spec_obj, write=True)
+async def run_jewelry_create_extender_chain(ctx: ProjectCtx, args: bytes) -> str:
+    try:
+        a = json.loads(args)
+    except Exception as e:
+        return err_payload(f"invalid args: {e}", "BAD_ARGS")
+
+    file_id_str = a.get("file_id", "").strip()
+    if not file_id_str:
+        return err_payload("file_id is required", "BAD_ARGS")
+    try:
+        fid = uuid.UUID(file_id_str)
+    except Exception:
+        return err_payload("file_id must be a uuid", "BAD_ARGS")
+
+    try:
+        spec = extender_chain_spec(
+            extender_style=a.get("extender_style", "cable"),
+            wire_gauge_mm=float(a.get("wire_gauge_mm", 0.7)),
+            extender_length_mm=float(a.get("extender_length_mm", 50.0)),
+            loop_count=int(a.get("loop_count", 5)),
+            loop_spacing_mm=float(a["loop_spacing_mm"]) if "loop_spacing_mm" in a else None,
+            end_ring_style=a.get("end_ring_style", "lobster"),
+            gauge_preset=a.get("gauge_preset"),
+        )
+    except (ValueError, KeyError) as e:
+        return err_payload(str(e), "BAD_ARGS")
+
+    content, err = read_feature_content(ctx, fid)
+    if err:
+        return err_payload(f"file not found: {err}", "NOT_FOUND")
+
+    node_id = a.get("id", "").strip() or next_node_id(content, "extender_chain")
+    node = {"id": node_id, **spec}
+
+    _, saved_id, err2 = append_feature_node(ctx, fid, node)
+    if err2:
+        return err_payload(err2, "ERROR")
+
+    return ok_payload({
+        "file_id": file_id_str,
+        "id": saved_id,
+        "op": "extender_chain",
+        "extender_length_mm": spec["extender_length_mm"],
+        "loop_count": spec["loop_count"],
+        "clasp": spec["clasp"]["style"],
+        "estimated_weight_18k_gold_g": spec["estimated_weight_18k_gold_g"],
     })
