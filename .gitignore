@@ -34,9 +34,8 @@ dist-ssr
 .env.main
 .env.*.local
 
-# fly.io deploy secrets — gitignored (commit only .env.dev.example +
-# .env.main.example templates). `.env.dev` and `.env.main` are already
-# ignored above; this comment block is the deployment-script contract.
+# fly.io deploy secrets — gitignored. The only committed template is
+# .env.z.example; copy it to `.env.dev` / `.env.main` (both ignored above).
 
 # Backend config (commit only kerf.example.toml).
 kerf.toml

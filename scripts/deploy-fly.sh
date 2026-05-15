@@ -16,7 +16,7 @@
 #
 # Prereqs:
 #   - flyctl installed and logged in (flyctl auth login)
-#   - .env.main exists (copy from .env.main.example) — or .env.dev for --dev
+#   - .env.main exists (cp .env.z.example .env.main) — or .env.dev for --dev
 #   - fly apps created (one-time):
 #       MAIN: flyctl apps create kerf && flyctl apps create kerf-workers
 #       DEV:  flyctl apps create kerf-dev && flyctl apps create kerf-dev-workers
@@ -73,7 +73,7 @@ fi
 
 if [[ ! -f "$ENV_FILE" ]]; then
   echo "error: $ENV_FILE not found"
-  echo "Copy ${ENV_FILE}.example to $ENV_FILE and fill in values."
+  echo "Copy .env.z.example to $ENV_FILE and fill in values."
   exit 1
 fi
 

@@ -100,6 +100,25 @@ class Settings(BaseSettings):
         return self
 
     @model_validator(mode="after")
+    def _s3_env_aliases(self):
+        # Storage secrets are provisioned/staged as KERF_STORAGE_S3_* (fly
+        # Tigris convention), but the code reads s3_* (env S3_*). Map the
+        # former onto the latter when the canonical var is unset.
+        _aliases = {
+            "s3_bucket": "KERF_STORAGE_S3_BUCKET",
+            "s3_region": "KERF_STORAGE_S3_REGION",
+            "s3_access_key_id": "KERF_STORAGE_S3_ACCESS_KEY",
+            "s3_secret_access_key": "KERF_STORAGE_S3_SECRET_KEY",
+            "s3_endpoint": "KERF_STORAGE_S3_ENDPOINT",
+        }
+        for field, env_name in _aliases.items():
+            if not getattr(self, field):
+                val = os.environ.get(env_name, "")
+                if val:
+                    setattr(self, field, val)
+        return self
+
+    @model_validator(mode="after")
     def _google_client_id_single_source(self):
         # The Google OAuth client ID is a public value the frontend needs
         # at build time (VITE_GOOGLE_CLIENT_ID). Rather than duplicate it,
