@@ -29,6 +29,7 @@ import {
 import Header from '../../components/Header.jsx'
 import Footer from '../../components/Footer.jsx'
 import Button from '../../components/Button.jsx'
+import DomainSwitcher from '../../components/domains/DomainSwitcher.jsx'
 import { JEWELRY_META, JEWELRY_FEATURES, buildJsonLd } from './jewelry.meta.js'
 
 const GITHUB_URL = 'https://github.com/kerf-sh/kerf'
@@ -688,6 +689,7 @@ export default function JewelryDomainPage() {
       <JewelryHead />
       <Header />
       <Hero />
+      <DomainSwitcher active="jewelry" />
       <FeatureGrid />
       <ChatTranscript />
       <ComparisonTable />

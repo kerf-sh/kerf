@@ -34,6 +34,7 @@ import {
 import Header from '../../components/Header.jsx'
 import Footer from '../../components/Footer.jsx'
 import Button from '../../components/Button.jsx'
+import DomainSwitcher from '../../components/domains/DomainSwitcher.jsx'
 import { meta, jsonLd } from './electronics.meta.js'
 
 const GITHUB_URL = 'https://github.com/kerf-sh/kerf'
@@ -844,6 +845,7 @@ export default function Electronics() {
       <SeoHead />
       <Header />
       <Hero />
+      <DomainSwitcher active="electronics" />
       <CapabilityGrid />
       <ChatTranscript />
       <ComparisonTable />

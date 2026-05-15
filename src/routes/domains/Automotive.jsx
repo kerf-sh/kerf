@@ -28,6 +28,7 @@ import {
 import Header from '../../components/Header.jsx'
 import Footer from '../../components/Footer.jsx'
 import Button from '../../components/Button.jsx'
+import DomainSwitcher from '../../components/domains/DomainSwitcher.jsx'
 import { meta } from './automotive.meta.js'
 
 const GITHUB_URL = 'https://github.com/kerf-sh/kerf'
@@ -682,6 +683,7 @@ export default function Automotive() {
     <div className="min-h-screen bg-ink-950 text-ink-100">
       <Header />
       <Hero />
+      <DomainSwitcher active="automotive" />
 
       {/* Capability grid */}
       <section className="relative border-t border-ink-900">

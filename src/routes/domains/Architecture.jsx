@@ -36,6 +36,7 @@ import {
 import Header from '../../components/Header.jsx'
 import Footer from '../../components/Footer.jsx'
 import Button from '../../components/Button.jsx'
+import DomainSwitcher from '../../components/domains/DomainSwitcher.jsx'
 import { ARCH_META, buildArchJsonLd } from './architecture.meta.js'
 
 const GITHUB_URL = 'https://github.com/kerf-sh/kerf'
@@ -818,6 +819,7 @@ export default function Architecture() {
       <ArchMeta />
       <Header />
       <Hero />
+      <DomainSwitcher active="architecture" />
       <TodaySection />
       <ChatSection />
       <RoadmapSection />

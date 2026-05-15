@@ -36,6 +36,7 @@ import {
 import Header from '../../components/Header.jsx'
 import Footer from '../../components/Footer.jsx'
 import Button from '../../components/Button.jsx'
+import DomainSwitcher from '../../components/domains/DomainSwitcher.jsx'
 import { META_TITLE, META_DESCRIPTION, META_OG_IMAGE, META_URL, FEATURES, JSON_LD } from './mechanical.meta.js'
 
 const GITHUB_URL = 'https://github.com/kerf-sh/kerf'
@@ -806,6 +807,7 @@ export default function Mechanical() {
       <Header />
       <main>
         <Hero />
+        <DomainSwitcher active="mechanical" />
         <CapabilityGrid />
         <ChatTranscript />
         <ComparisonTable />

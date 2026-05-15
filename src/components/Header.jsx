@@ -5,7 +5,7 @@ import { LogoWordmark } from './Logo.jsx'
 import Button from './Button.jsx'
 
 const NAV_LINKS = [
-  { label: 'Domains', to: '/domains/jewelry' },
+  { label: 'Domains', to: '/domains' },
   { label: 'Compare', to: '/compare' },
   { label: 'Docs', to: '/docs' },
 ]
