@@ -5241,3 +5241,147 @@ async def run_wiring(pid: str, fid: str, request: Request, payload: dict = Depen
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=f"pyworker unreachable: {exc}",
         )
+
+
+# ---------------------------------------------------------------------------
+# Jewelry metal-cost estimator
+# ---------------------------------------------------------------------------
+# Pure-math endpoint — no file needed, only a volume and metal parameters.
+# Accepts POST /api/projects/{pid}/jewelry/metal-cost
+# The project_id is used only for access control (workspace membership check).
+
+@router.post("/projects/{pid}/jewelry/metal-cost")
+async def jewelry_metal_cost(pid: str, request: Request, payload: dict = Depends(require_auth)):
+    """
+    Estimate casting weight and cost for a jewelry piece.
+
+    Body fields (all except volume_mm3 and one of metal/density_g_cm3 are optional):
+      volume_mm3            — part volume in mm³ (required)
+      metal                 — metal key (e.g. '18k_yellow'); see METAL_DENSITY_G_CM3
+      density_g_cm3         — explicit density override (from a .material file)
+      metal_price_per_gram  — user-supplied metal price (no live feed)
+      labor                 — bench labor cost
+      finishing             — finishing / plating cost
+      casting_allowance_pct — sprue/button overhead %, default 15
+      compare_metals        — list of metal keys for a multi-metal comparison table
+      compare_prices        — {metal_key: price_per_gram} for the comparison
+    """
+    user_id = payload.get("sub")
+
+    # Access control: verify the caller is a workspace member.
+    pool = await get_pool_required()
+    async with pool.acquire() as conn:
+        ws_id = await project_workspace_id(pid)
+        if not ws_id:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="project not found")
+        role = await get_user_workspace_role(conn, ws_id, user_id)
+        if not role:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="project not found")
+
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="invalid JSON body")
+
+    try:
+        from kerf_cad_core.jewelry.metal_cost import (
+            casting_cost as _casting_cost,
+            multi_metal_compare as _multi_metal_compare,
+            METAL_DENSITY_G_CM3,
+            METAL_LABELS,
+        )
+    except ImportError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"kerf-cad-core not installed: {exc}",
+        )
+
+    volume_mm3 = body.get("volume_mm3")
+    if volume_mm3 is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="volume_mm3 is required")
+    try:
+        volume_mm3 = float(volume_mm3)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="volume_mm3 must be a number")
+    if volume_mm3 <= 0:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="volume_mm3 must be positive")
+
+    metal = body.get("metal")
+    density_g_cm3 = body.get("density_g_cm3")
+    if metal is not None:
+        metal = str(metal).strip().lower()
+        if metal not in METAL_DENSITY_G_CM3:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Unknown metal '{metal}'. Valid keys: {sorted(METAL_DENSITY_G_CM3)}",
+            )
+    if density_g_cm3 is not None:
+        try:
+            density_g_cm3 = float(density_g_cm3)
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="density_g_cm3 must be a number")
+        if density_g_cm3 <= 0:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="density_g_cm3 must be positive")
+
+    if metal is None and density_g_cm3 is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Either metal or density_g_cm3 must be provided",
+        )
+
+    def _float_param(name: str, default: float) -> float:
+        val = body.get(name, default)
+        try:
+            v = float(val)
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"{name} must be a number")
+        if v < 0:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"{name} must be >= 0")
+        return v
+
+    metal_price_per_gram  = _float_param("metal_price_per_gram",  0.0)
+    labor                 = _float_param("labor",                  0.0)
+    finishing             = _float_param("finishing",              0.0)
+    casting_allowance_pct = _float_param("casting_allowance_pct", 15.0)
+
+    try:
+        estimate = _casting_cost(
+            volume_mm3=volume_mm3,
+            metal=metal,
+            density_g_cm3=density_g_cm3,
+            metal_price_per_gram=metal_price_per_gram,
+            labor=labor,
+            finishing=finishing,
+            casting_allowance_pct=casting_allowance_pct,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+
+    estimate["label"] = METAL_LABELS.get(metal or "", metal or "custom")
+
+    result: dict = {"estimate": estimate}
+
+    compare_metals = body.get("compare_metals")
+    if compare_metals is not None:
+        if not isinstance(compare_metals, list):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="compare_metals must be an array")
+        unknown = [m for m in compare_metals if m not in METAL_DENSITY_G_CM3]
+        if unknown:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Unknown metals in compare_metals: {unknown}",
+            )
+        compare_prices = body.get("compare_prices") or {}
+        try:
+            result["comparison"] = _multi_metal_compare(
+                volume_mm3=volume_mm3,
+                metals=compare_metals,
+                metal_prices=compare_prices,
+                labor=labor,
+                finishing=finishing,
+                casting_allowance_pct=casting_allowance_pct,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+
+    return result

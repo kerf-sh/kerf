@@ -573,6 +573,20 @@ export const api = {
     request(`/api/projects/${projectId}/files/${fileId}/print-slice`, {
       method: 'POST',
     }),
+
+  // ---- Jewelry metal-cost estimator ----
+  // Pure-math endpoint — no file required.
+  // Body: { volume_mm3, metal, density_g_cm3?, metal_price_per_gram?,
+  //         labor?, finishing?, casting_allowance_pct?,
+  //         compare_metals?, compare_prices? }
+  // Response: { estimate: {...}, comparison?: [...] }
+  // estimate fields: net_grams, net_dwt, net_ozt, gross_grams, gross_dwt,
+  //   gross_ozt, metal_cost, labor, finishing, total_cost, allowance_pct, label
+  jewelryMetalCost: (projectId, params) =>
+    request(`/api/projects/${projectId}/jewelry/metal-cost`, {
+      method: 'POST',
+      body: params,
+    }),
 }
 
 // ---------------------------------------------------------------------------
