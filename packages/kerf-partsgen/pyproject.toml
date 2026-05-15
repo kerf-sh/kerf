@@ -1,0 +1,35 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "kerf-partsgen"
+version = "0.1.0"
+description = "Token-frugal, contributor-run pipeline that builds an original (MIT) parametric standard-parts library for the Kerf Workshop"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+dependencies = []
+
+[project.optional-dependencies]
+# OCCT kernel: prod Kerf uses pythonocc-core; the contributor toolchain
+# (and CI) uses cadquery, which binds the same OpenCASCADE kernel via OCP.
+# Either binding satisfies kerf_partsgen.kernel.
+kernel = [
+    "cadquery>=2.6",
+]
+# `author` phase only — bounded LLM authoring. Contributors BYO key.
+author = [
+    "anthropic>=0.39",
+]
+dev = [
+    "pytest>=8",
+]
+
+[project.scripts]
+kerf-partsgen = "kerf_partsgen.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/kerf_partsgen"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
