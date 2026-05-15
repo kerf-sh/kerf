@@ -54,6 +54,9 @@ async def register(app: "FastAPI", ctx):
     # IPC-D-356A netlist export + connectivity report — pure Python, always available
     provides.append("electronics.ipc_netlist")
 
+    # Testpoint auto-placement + bed-of-nails fixture report — pure Python, always available
+    provides.append("electronics.testpoint")
+
     # 3D STEP board export — requires pythonOCC (optional)
     try:
         from kerf_electronics.fab.board_step import _OCC_AVAILABLE as _step_occ
@@ -113,6 +116,7 @@ def _register_tools(ctx, provides: list) -> None:
         "kerf_electronics.tools.idf_export",
         "kerf_electronics.tools.lib_mgmt",
         "kerf_electronics.tools.netlist_export",
+        "kerf_electronics.tools.testpoint",
     ]
 
     for module_path in tool_modules:
