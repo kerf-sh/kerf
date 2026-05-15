@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
 """Idempotent SQL migration runner.
 
-Applied migrations are recorded in `schema_migrations`; each run executes
-only files not yet recorded (each in its own transaction, then stamped).
-Redeploys are safe — an already-applied migration is never re-run.
+Applied `*.sql` files are recorded in `kerf_migrations_ledger` (a
+filename-keyed table — deliberately NOT `schema_migrations`, which some
+legacy/ORM tooling already owns with a different schema).
 
-Pre-existing databases (migrated before this ledger existed) are
-back-stamped: if `schema_migrations` is empty but core tables already
-exist, every on-disk migration is recorded as applied without re-running
-it, so the first idempotent run doesn't choke on "already exists".
+Each unseen migration is applied in its own transaction then stamped.
+For databases that were already built by an earlier (non-idempotent)
+run, re-applying a migration raises a duplicate-object error — that's
+treated as "already applied": the error is swallowed and the file is
+stamped, so genuinely-new migrations still run while old ones don't
+re-execute. Real (non-duplicate) errors still abort the deploy.
 """
 import asyncio
 import sys
@@ -16,12 +18,23 @@ from pathlib import Path
 
 import asyncpg
 
-_LEDGER_DDL = """
-CREATE TABLE IF NOT EXISTS schema_migrations (
+_LEDGER = "kerf_migrations_ledger"
+_LEDGER_DDL = f"""
+CREATE TABLE IF NOT EXISTS {_LEDGER} (
     filename    text PRIMARY KEY,
     applied_at  timestamptz NOT NULL DEFAULT now()
 )
 """
+
+# asyncpg duplicate-object exceptions → migration already applied to a
+# DB that predates this ledger; stamp it instead of failing.
+_ALREADY_APPLIED = (
+    asyncpg.exceptions.DuplicateColumnError,
+    asyncpg.exceptions.DuplicateTableError,
+    asyncpg.exceptions.DuplicateObjectError,
+    asyncpg.exceptions.DuplicateFunctionError,
+    asyncpg.exceptions.DuplicateSchemaError,
+)
 
 
 async def run_migrations(database_url: str):
@@ -30,49 +43,43 @@ async def run_migrations(database_url: str):
         await conn.execute(_LEDGER_DDL)
         applied = {
             r["filename"]
-            for r in await conn.fetch("SELECT filename FROM schema_migrations")
+            for r in await conn.fetch(f"SELECT filename FROM {_LEDGER}")
         }
 
         migrations_dir = Path(__file__).parent
         migration_files = sorted(migrations_dir.glob("*.sql"))
 
-        # Back-stamp legacy DBs migrated before this ledger existed: if the
-        # ledger is empty but the schema is clearly already populated,
-        # record every file as applied instead of re-running it.
-        if not applied:
-            already_built = await conn.fetchval(
-                "SELECT to_regclass('public.projects') IS NOT NULL"
-            )
-            if already_built:
-                for migration_file in migration_files:
-                    await conn.execute(
-                        "INSERT INTO schema_migrations (filename) VALUES ($1) "
-                        "ON CONFLICT DO NOTHING",
-                        migration_file.name,
-                    )
-                print(
-                    f"Existing schema detected — back-stamped "
-                    f"{len(migration_files)} migrations as applied."
-                )
-                return
-
         ran = 0
+        stamped = 0
         for migration_file in migration_files:
             name = migration_file.name
             if name in applied:
-                print(f"  • {name} (already applied — skip)")
                 continue
-            print(f"Running migration: {name}")
             sql = migration_file.read_text()
-            async with conn.transaction():
-                await conn.execute(sql)
+            try:
+                async with conn.transaction():
+                    await conn.execute(sql)
                 await conn.execute(
-                    "INSERT INTO schema_migrations (filename) VALUES ($1)", name
+                    f"INSERT INTO {_LEDGER} (filename) VALUES ($1) "
+                    "ON CONFLICT DO NOTHING",
+                    name,
                 )
-            print(f"  ✓ {name}")
-            ran += 1
+                print(f"  ✓ {name}")
+                ran += 1
+            except _ALREADY_APPLIED as exc:
+                # Pre-existing schema from a legacy/non-idempotent run.
+                await conn.execute(
+                    f"INSERT INTO {_LEDGER} (filename) VALUES ($1) "
+                    "ON CONFLICT DO NOTHING",
+                    name,
+                )
+                print(f"  • {name} (already present — stamped: {type(exc).__name__})")
+                stamped += 1
 
-        print(f"\nMigrations up to date ({ran} applied this run).")
+        print(
+            f"\nMigrations up to date ({ran} applied, "
+            f"{stamped} back-stamped this run)."
+        )
     finally:
         await conn.close()
 
