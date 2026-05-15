@@ -27,6 +27,7 @@ _TOOL_MODULES = [
     "kerf_cad_core.extrude_sketch_to_jscad",
     "kerf_cad_core.surfacing",
     "kerf_cad_core.quad_remesh",
+    "kerf_cad_core.jewelry.tool_metal_cost",
 ]
 
 # ── kerf_core contract (built by kerf-core agent in parallel) ─────────────────
