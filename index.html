@@ -6,14 +6,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5" />
 
     <!-- Primary identity -->
-    <title>Kerf — chat-driven CAD</title>
+    <title>Kerf — Chat-Driven CAD for Every Discipline</title>
     <meta name="description" content="Kerf is a chat-native CAD workspace: write JSCAD, draft B-rep features, sketch with constraints, lay out PCBs, and ship real engineering drawings — with an LLM editing the source for you. MIT-licensed, runs locally or hosted." />
-    <meta name="keywords" content="CAD, JSCAD, OpenCascade, parametric design, B-rep, PCB design, tscircuit, electronic CAD, mechanical CAD, chat AI, LLM CAD, open source CAD, browser CAD" />
+    <meta name="keywords" content="CAD, JSCAD, OpenCascade, parametric design, B-rep, PCB design, tscircuit, electronic CAD, mechanical CAD, jewelry CAD, architecture CAD, chat AI, LLM CAD, open source CAD, browser CAD" />
     <meta name="author" content="Kerf" />
     <meta name="theme-color" content="#FFD633" />
     <meta name="color-scheme" content="dark" />
-    <!-- TODO: update if deploying to a different domain than kerf.app -->
-    <link rel="canonical" href="https://kerf.app/" />
+    <link rel="canonical" href="https://kerf.sh/" />
 
     <!-- Favicons -->
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
@@ -26,34 +25,71 @@
     <!-- Open Graph / Facebook / WhatsApp / LinkedIn -->
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="Kerf" />
-    <meta property="og:title" content="Kerf — chat-driven CAD" />
-    <meta property="og:description" content="A chat-native CAD workspace. JSCAD + B-rep + sketcher + PCBs + drawings. MIT-licensed; runs locally or hosted. Built in Durban." />
-    <meta property="og:url" content="https://kerf.app/" />
-    <meta property="og:image" content="https://kerf.app/og-image.png" />
+    <meta property="og:title" content="Kerf — Chat-Driven CAD for Every Discipline" />
+    <meta property="og:description" content="A chat-native CAD workspace. JSCAD + B-rep + sketcher + PCBs + drawings. MIT-licensed; runs locally or hosted." />
+    <meta property="og:url" content="https://kerf.sh/" />
+    <meta property="og:image" content="https://kerf.sh/og-image.png" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
-    <meta property="og:image:alt" content="Kerf — chat-driven CAD" />
+    <meta property="og:image:alt" content="Kerf chat-driven CAD workspace" />
     <meta property="og:locale" content="en_ZA" />
 
     <!-- Twitter -->
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="Kerf — chat-driven CAD" />
-    <meta name="twitter:description" content="A chat-native CAD workspace. JSCAD + B-rep + sketcher + PCBs + drawings. MIT-licensed." />
-    <meta name="twitter:image" content="https://kerf.app/twitter-card.png" />
-    <meta name="twitter:image:alt" content="Kerf — chat-driven CAD" />
+    <meta name="twitter:site" content="@kerf_sh" />
+    <meta name="twitter:title" content="Kerf — Chat-Driven CAD for Every Discipline" />
+    <meta name="twitter:description" content="A chat-native CAD workspace. JSCAD + B-rep + sketcher + PCBs + drawings. MIT-licensed, runs locally or hosted." />
+    <meta name="twitter:image" content="https://kerf.sh/twitter-card.png" />
+    <meta name="twitter:image:alt" content="Kerf chat-driven CAD workspace" />
 
     <!-- Robots / discovery -->
     <meta name="robots" content="index, follow, max-image-preview:large" />
     <meta name="googlebot" content="index, follow, max-snippet:-1, max-image-preview:large" />
 
-    <!-- JSON-LD structured data for rich Google results -->
+    <!-- JSON-LD: Organization -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "Organization",
+      "name": "Kerf",
+      "url": "https://kerf.sh/",
+      "logo": "https://kerf.sh/favicon.svg",
+      "description": "Makers of Kerf — a chat-native CAD workspace for mechanical, electronics, jewelry, and architecture design.",
+      "foundingLocation": {
+        "@type": "Place",
+        "name": "Durban, South Africa"
+      },
+      "sameAs": [
+        "https://github.com/imranp/kerf"
+      ]
+    }
+    </script>
+    <!-- JSON-LD: WebSite with SearchAction -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebSite",
+      "name": "Kerf",
+      "url": "https://kerf.sh/",
+      "description": "Chat-native CAD workspace: JSCAD, B-rep features, parametric sketcher, PCB layout, and engineering drawings — with an LLM editing the source. MIT-licensed.",
+      "potentialAction": {
+        "@type": "SearchAction",
+        "target": {
+          "@type": "EntryPoint",
+          "urlTemplate": "https://kerf.sh/docs?q={search_term_string}"
+        },
+        "query-input": "required name=search_term_string"
+      }
+    }
+    </script>
+    <!-- JSON-LD: SoftwareApplication -->
     <script type="application/ld+json">
     {
       "@context": "https://schema.org",
       "@type": "SoftwareApplication",
       "name": "Kerf",
       "description": "A chat-driven CAD workspace combining JSCAD code, OpenCascade B-rep features, planegcs sketcher, tscircuit electronics, and TechDraw drawings — with an LLM editing source files.",
-      "url": "https://kerf.app/",
+      "url": "https://kerf.sh/",
       "applicationCategory": "DesignApplication",
       "operatingSystem": "Browser, macOS, Linux, Windows",
       "license": "https://opensource.org/licenses/MIT",

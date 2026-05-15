@@ -2,4 +2,4 @@ User-agent: *
 Allow: /
 Disallow: /api/
 
-Sitemap: https://kerf.app/sitemap.xml
+Sitemap: https://kerf.sh/sitemap.xml
