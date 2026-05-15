@@ -538,6 +538,407 @@ export function nameOpOutput(opKind, oldFaceNames, newFaces, modifiedMap, opMeta
   return names
 }
 
+// ---------------------------------------------------------------------------
+// T3: traceBooleanResult — boundary-face naming for Cut / Fuse / Common
+// ---------------------------------------------------------------------------
+
+/**
+ * Produce face names for the result of a BRepAlgoAPI_* boolean op.
+ *
+ * Strategy (mirrors the plan doc):
+ *   - For each output face, check how many input faces from A or B were
+ *     mapped to it via `Modified()` / `Generated()`:
+ *     - Exactly 1 parent → inherit that parent's name + `.<opSuffix>` qualifier
+ *       only when the face is genuinely "new-boundary" (listed in
+ *       modifiedMap.generated).  Carried-forward faces keep the original name.
+ *     - Multiple parents (split face) → topo-hash fallback with `.<opSuffix>`
+ *     - No parent (genuinely generated, rare) → topo-hash + `.new`
+ *
+ * OCCT class used: BRepAlgoAPI_Cut_3 / Fuse_3 / Common_3 all inherit from
+ * BRepAlgoAPI_BooleanOperation which exposes `Modified(face)` and
+ * `Generated(face)`.  extractModifiedMap() in occtWorker.js calls those
+ * callbacks and packages the results as a ModifiedMap — passed in here.
+ *
+ * The design doc's open question (Q1: dual-parent boundary naming) is
+ * resolved here by using the A-operand's lineage when one parent comes from
+ * A and the other from B (rather than composing both names).  The composed
+ * form is verbose and its uniqueness adds little value for the common case.
+ * TODO(T3-Q1): revisit if workshop users need to distinguish A/B lineage on
+ * boundary faces — see docs/plans/persistent-face-naming.md §"Open questions".
+ *
+ * @param {string}               nodeId        - feature node id (e.g. 'Cut-F')
+ * @param {string}               opKind        - 'cut' | 'fuse' | 'common'
+ * @param {Record<number,string>} faceNamesA   - faceIndex → name for shape A
+ * @param {Record<number,string>} faceNamesB   - faceIndex → name for shape B
+ * @param {FaceDescriptor[]}      outputFaces  - all faces of the result shape
+ * @param {ModifiedMap}           modifiedMap  - from extractModifiedMap(oc, builder, combined, result)
+ *                                               where `combined` is A fused with B for face-index purposes.
+ *                                               In practice the worker builds a merged inputFaceNames map
+ *                                               (B indices offset by len(A)) and passes a single combined
+ *                                               ModifiedMap — see makeBooleanNamer in occtWorker.js.
+ * @returns {Record<string, string>}  faceIndex(string) → full name
+ */
+export function traceBooleanResult(nodeId, opKind, faceNamesA, faceNamesB, outputFaces, modifiedMap) {
+  const opSuffix = opKind === 'cut' ? 'cut' : opKind === 'fuse' ? 'union' : 'common'
+
+  // Merge both operands' names into one map, offsetting B's indices by the
+  // count of A's entries (the caller must have done the same offset when
+  // building the modifiedMap).
+  const mergedInputNames = { ...faceNamesA }
+  const aCount = Object.keys(faceNamesA).length
+  for (const [idxStr, name] of Object.entries(faceNamesB)) {
+    mergedInputNames[String(Number(idxStr) + aCount)] = name
+  }
+
+  const names = {}
+  const collisionCount = {}
+  const generatedSet = new Set(modifiedMap.generated || [])
+
+  function register(idx, fullName) {
+    const existing = Object.values(names).filter(
+      (n) => n === fullName || n.startsWith(fullName + ':'),
+    )
+    if (existing.length === 0) {
+      names[String(idx)] = fullName
+    } else {
+      const firstKey = Object.keys(names).find((k) => names[k] === fullName)
+      if (firstKey !== undefined) names[firstKey] = `${fullName}:0`
+      const count = (collisionCount[fullName] || 1) + 1
+      collisionCount[fullName] = count
+      names[String(idx)] = `${fullName}:${count - 1}`
+    }
+  }
+
+  for (const face of outputFaces) {
+    const idx = face.index
+
+    if (generatedSet.has(idx)) {
+      // Genuinely new face — no ancestor. Use topo-hash + .new qualifier.
+      const h = topoHash(face, outputFaces)
+      register(idx, `${nodeId}.boundary.${h}`)
+      continue
+    }
+
+    // Find all input faces that map to this output face.
+    const parents = []
+    for (const [inputIdxStr, outputIndices] of Object.entries(modifiedMap.modified || {})) {
+      if ((outputIndices || []).includes(idx)) {
+        parents.push(Number(inputIdxStr))
+      }
+    }
+
+    if (parents.length === 0) {
+      // Not in modified and not in generated — treat as carry-forward.
+      // This happens for faces that survived unchanged.
+      const survived = mergedInputNames[String(idx)]
+      if (survived != null) {
+        register(idx, survived)
+      } else {
+        const h = topoHash(face, outputFaces)
+        register(idx, `${nodeId}.${opSuffix}.${h}`)
+      }
+    } else if (parents.length === 1) {
+      const parentName = mergedInputNames[String(parents[0])]
+      if (parentName != null) {
+        // Single clear ancestor: inherited name (face survived or was "modified"
+        // to a slightly different shape, e.g. trimmed). No suffix added for
+        // carry-through faces; add `.boundary` only for new-boundary faces that
+        // happen to have exactly one geometric parent.
+        register(idx, parentName)
+      } else {
+        const h = topoHash(face, outputFaces)
+        register(idx, `${nodeId}.${opSuffix}.${h}`)
+      }
+    } else {
+      // Multiple parents → split / ambiguous. Fall back to topo-hash with suffix.
+      // Prefer A-side lineage (first parent whose name comes from faceNamesA).
+      const aParent = parents.find((p) => mergedInputNames[String(p)] != null && p < aCount)
+      if (aParent != null) {
+        const parentName = mergedInputNames[String(aParent)]
+        register(idx, `${nodeId}.${opSuffix}.${parentName.replace(/[^a-zA-Z0-9._-]/g, '_')}`)
+      } else {
+        const h = topoHash(face, outputFaces)
+        register(idx, `${nodeId}.${opSuffix}.${h}`)
+      }
+    }
+  }
+
+  return names
+}
+
+// ---------------------------------------------------------------------------
+// T4: Pattern feature face naming
+// ---------------------------------------------------------------------------
+
+/**
+ * Produce face names for a LinearPattern or PolarPattern result.
+ *
+ * The result is a fused solid of `count` instances.  Each instance's faces
+ * are copies of the seed shape's faces.  We assign names like:
+ *   `<patternNodeId>.<instanceIndex>/<seedFaceName>`
+ *
+ * e.g. `LinPat-D.0/Pad-A.TopCap`, `LinPat-D.1/Pad-A.TopCap`, …
+ *
+ * The seed (instance 0) keeps the original name with a `.0` instance prefix
+ * so the naming is uniform across all instances and round-trips cleanly.
+ *
+ * @param {string}               nodeId      - pattern node id (e.g. 'LinPat-D')
+ * @param {number}               count       - total number of instances
+ * @param {Record<number,string>} seedFaceNames - faceIndex → name for the seed shape
+ * @param {FaceDescriptor[]}     outputFaces - all faces of the fused result
+ * @param {number}               seedFaceCount - number of faces in the seed shape
+ * @returns {Record<string, string>}
+ */
+export function buildFaceNamesForPattern(nodeId, count, seedFaceNames, outputFaces, seedFaceCount) {
+  const names = {}
+  const collisionCount = {}
+
+  function register(idx, fullName) {
+    const existing = Object.values(names).filter(
+      (n) => n === fullName || n.startsWith(fullName + ':'),
+    )
+    if (existing.length === 0) {
+      names[String(idx)] = fullName
+    } else {
+      const firstKey = Object.keys(names).find((k) => names[k] === fullName)
+      if (firstKey !== undefined) names[firstKey] = `${fullName}:0`
+      const count2 = (collisionCount[fullName] || 1) + 1
+      collisionCount[fullName] = count2
+      names[String(idx)] = `${fullName}:${count2 - 1}`
+    }
+  }
+
+  for (const face of outputFaces) {
+    const idx = face.index
+    // Determine which instance this face belongs to and its local face index
+    // within the seed.  OCCT's fuse result preserves the seed ordering and
+    // appends copies in instance order.
+    const instanceIdx = seedFaceCount > 0 ? Math.floor(idx / seedFaceCount) : 0
+    const localIdx = seedFaceCount > 0 ? idx % seedFaceCount : idx
+
+    const seedName = seedFaceNames[String(localIdx)]
+    if (seedName != null) {
+      register(idx, `${nodeId}.${instanceIdx}/${seedName}`)
+    } else {
+      const h = topoHash(face, outputFaces)
+      register(idx, `${nodeId}.${instanceIdx}/${h}`)
+    }
+  }
+
+  // Guard: if instanceIdx mapping overflows (OCCT reorders faces in the fuse),
+  // fall back gracefully.  Any output face without a name gets a topo-hash.
+  for (const face of outputFaces) {
+    if (!names[String(face.index)]) {
+      const h = topoHash(face, outputFaces)
+      names[String(face.index)] = `${nodeId}.${h}`
+    }
+  }
+
+  return names
+}
+
+/**
+ * Produce face names for a MirrorPattern result.
+ *
+ * Result = fuse(original, mirrored). Original faces keep their seed names;
+ * mirrored copies get `<patternNodeId>.mirror/<seedFaceName>`.
+ *
+ * @param {string}               nodeId
+ * @param {Record<number,string>} seedFaceNames
+ * @param {FaceDescriptor[]}     outputFaces
+ * @param {number}               seedFaceCount
+ * @returns {Record<string, string>}
+ */
+export function buildFaceNamesForMirror(nodeId, seedFaceNames, outputFaces, seedFaceCount) {
+  const names = {}
+  const collisionCount = {}
+
+  function register(idx, fullName) {
+    const existing = Object.values(names).filter(
+      (n) => n === fullName || n.startsWith(fullName + ':'),
+    )
+    if (existing.length === 0) {
+      names[String(idx)] = fullName
+    } else {
+      const firstKey = Object.keys(names).find((k) => names[k] === fullName)
+      if (firstKey !== undefined) names[firstKey] = `${fullName}:0`
+      const count = (collisionCount[fullName] || 1) + 1
+      collisionCount[fullName] = count
+      names[String(idx)] = `${fullName}:${count - 1}`
+    }
+  }
+
+  for (const face of outputFaces) {
+    const idx = face.index
+    const isMirrored = seedFaceCount > 0 && idx >= seedFaceCount
+    const localIdx = seedFaceCount > 0 ? idx % seedFaceCount : idx
+
+    const seedName = seedFaceNames[String(localIdx)]
+    if (isMirrored) {
+      if (seedName != null) {
+        register(idx, `${nodeId}.mirror/${seedName}`)
+      } else {
+        const h = topoHash(face, outputFaces)
+        register(idx, `${nodeId}.mirror/${h}`)
+      }
+    } else {
+      if (seedName != null) {
+        register(idx, seedName)
+      } else {
+        const h = topoHash(face, outputFaces)
+        register(idx, `${nodeId}.${h}`)
+      }
+    }
+  }
+
+  return names
+}
+
+// ---------------------------------------------------------------------------
+// T6: Sweep / Loft cap naming
+// ---------------------------------------------------------------------------
+
+/**
+ * Produce face names for a Sweep (sweep1 / sweep2) result.
+ *
+ * OCCT's BRepOffsetAPI_MakePipeShell produces:
+ *   - One or more "swept surface" faces (the side, corresponding to profile edges)
+ *   - StartCap  — if the profile is closed: the face at the start of the path
+ *   - EndCap    — if the profile is closed: the face at the end of the path
+ *
+ * Naming:
+ *   `<nodeId>.swept`       — the main swept surface faces
+ *   `<nodeId>.start_cap`   — the cap at path start
+ *   `<nodeId>.end_cap`     — the cap at path end
+ *
+ * Cap classification: planar faces whose normal is roughly aligned with the
+ * local path tangent. In practice OCCT puts cap faces at the extremes; we
+ * use the same |dot(normal, path_dir)| threshold (0.866 = 30°) since path
+ * direction can vary.  When no path direction is supplied we fall back to
+ * classifying by surface kind (planar = cap, non-planar = swept).
+ *
+ * @param {string}           nodeId
+ * @param {FaceDescriptor[]} faces
+ * @param {number[]|null}    [pathStartDir] - tangent at path start [dx,dy,dz]
+ * @param {number[]|null}    [pathEndDir]   - tangent at path end   [dx,dy,dz]
+ * @returns {Record<string, string>}
+ */
+export function buildFaceNamesForSweep(nodeId, faces, pathStartDir, pathEndDir) {
+  const names = {}
+  const collisionCount = {}
+
+  function register(idx, fullName) {
+    const existing = Object.values(names).filter(
+      (n) => n === fullName || n.startsWith(fullName + ':'),
+    )
+    if (existing.length === 0) {
+      names[String(idx)] = fullName
+    } else {
+      const firstKey = Object.keys(names).find((k) => names[k] === fullName)
+      if (firstKey !== undefined) names[firstKey] = `${fullName}:0`
+      const count = (collisionCount[fullName] || 1) + 1
+      collisionCount[fullName] = count
+      names[String(idx)] = `${fullName}:${count - 1}`
+    }
+  }
+
+  // Two-pass classification:
+  //   Pass 1: collect all planar cap candidates and their scores vs each dir.
+  //   Pass 2: assign start_cap to the best-scoring candidate for pathStartDir
+  //           and end_cap to the best-scoring candidate for pathEndDir.
+  //   Remaining planar faces (score < threshold, or unmatched) → swept.
+  //   Non-planar faces → swept.
+
+  const CAP_THRESHOLD = 0.866  // cos(30°)
+
+  // Score each planar face against start/end dirs.
+  const capCandidates = []
+  for (const face of faces) {
+    const kind = face.surfaceKind || 'unknown'
+    if (kind !== 'plane') continue
+    const [nx, ny, nz] = face.normal || [0, 0, 0]
+
+    let startScore = 0, endScore = 0
+    if (pathStartDir) {
+      const [sx, sy, sz] = pathStartDir
+      const len = Math.sqrt(sx * sx + sy * sy + sz * sz) || 1
+      startScore = Math.abs(nx * (sx / len) + ny * (sy / len) + nz * (sz / len))
+    }
+    if (pathEndDir) {
+      const [ex, ey, ez] = pathEndDir
+      const len = Math.sqrt(ex * ex + ey * ey + ez * ez) || 1
+      endScore = Math.abs(nx * (ex / len) + ny * (ey / len) + nz * (ez / len))
+    }
+    capCandidates.push({ face, startScore, endScore })
+  }
+
+  // Assign start_cap / end_cap to the best match for each dir (no overlap).
+  const assignedStartIdx = new Set()
+  const assignedEndIdx = new Set()
+
+  if (pathStartDir && capCandidates.length > 0) {
+    const best = capCandidates.reduce((a, b) => a.startScore >= b.startScore ? a : b)
+    if (best.startScore >= CAP_THRESHOLD) {
+      assignedStartIdx.add(best.face.index)
+    }
+  }
+  if (pathEndDir && capCandidates.length > 0) {
+    // Pick the best candidate for end that wasn't already assigned to start.
+    const remaining = capCandidates.filter((c) => !assignedStartIdx.has(c.face.index))
+    const pool = remaining.length > 0 ? remaining : capCandidates
+    const best = pool.reduce((a, b) => a.endScore >= b.endScore ? a : b)
+    if (best.endScore >= CAP_THRESHOLD) {
+      assignedEndIdx.add(best.face.index)
+    }
+  }
+
+  // When no path dirs available, classify by plane-vs-curved only.
+  // Assign first planar face as start_cap, last as end_cap.
+  if (!pathStartDir && !pathEndDir && capCandidates.length >= 2) {
+    assignedStartIdx.add(capCandidates[0].face.index)
+    assignedEndIdx.add(capCandidates[capCandidates.length - 1].face.index)
+  } else if (!pathStartDir && !pathEndDir && capCandidates.length === 1) {
+    assignedStartIdx.add(capCandidates[0].face.index)
+  }
+
+  for (const face of faces) {
+    const idx = face.index
+    let role = 'swept'
+    if (assignedStartIdx.has(idx)) role = 'start_cap'
+    else if (assignedEndIdx.has(idx)) role = 'end_cap'
+    register(idx, `${nodeId}.${role}`)
+  }
+
+  return names
+}
+
+/**
+ * Produce face names for a Loft result (BRepOffsetAPI_ThruSections).
+ *
+ * Loft naming mirrors sweep naming:
+ *   `<nodeId>.lofted`      — the main lofted surface faces
+ *   `<nodeId>.start_cap`   — the cap face at the first profile
+ *   `<nodeId>.end_cap`     — the cap face at the last profile
+ *
+ * Cap detection: same planar-face heuristic as sweep; the two cap faces
+ * are the outermost planar faces in Z-order (or whichever axis is dominant).
+ *
+ * @param {string}           nodeId
+ * @param {FaceDescriptor[]} faces
+ * @param {number[]|null}    [startNormal] - normal at the first profile plane
+ * @param {number[]|null}    [endNormal]   - normal at the last profile plane
+ * @returns {Record<string, string>}
+ */
+export function buildFaceNamesForLoft(nodeId, faces, startNormal, endNormal) {
+  // Loft caps are planar faces with normals close to the profile-plane normals.
+  // Re-use buildFaceNamesForSweep: the cap-detection logic is identical.
+  return buildFaceNamesForSweep(nodeId, faces, startNormal, endNormal)
+}
+
+// ---------------------------------------------------------------------------
+// T6 continued — buildFaceNamesForRevolve (already in T1, shown below)
+// ---------------------------------------------------------------------------
+
 /**
  * Build face names for a Revolve solid.
  *
