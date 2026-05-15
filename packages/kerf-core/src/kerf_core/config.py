@@ -1,3 +1,4 @@
+import base64
 import os
 from functools import lru_cache
 from pathlib import Path
@@ -80,6 +81,22 @@ class Settings(BaseSettings):
     cloud_github_client_id: str = ""
     cloud_github_client_secret: str = ""
     cloud_github_redirect_url: str = "http://localhost:8080/auth/github/callback"
+    # GitHub App fields (repo-connect / installation token flow).
+    # Leave empty to disable; the app degrades gracefully when unset.
+    cloud_github_app_id: str = ""
+    cloud_github_app_slug: str = ""
+    cloud_github_private_key_b64: str = ""
+
+    @property
+    def github_private_key_pem(self) -> str:
+        """Decode the base64 private key. Returns '' if unset."""
+        raw = self.cloud_github_private_key_b64.strip()
+        if not raw:
+            return ""
+        try:
+            return base64.b64decode(raw).decode()
+        except Exception:
+            return ""
 
     # ---------------------------------------------------------------------------
     # Transactional email — provider selection + credentials.
