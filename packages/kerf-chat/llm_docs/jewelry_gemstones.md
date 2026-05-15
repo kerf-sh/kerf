@@ -2,13 +2,14 @@
 
 ## Overview
 
-Three LLM tools handle the jewelry gemstone workflow:
+Four LLM tools handle the jewelry gemstone workflow:
 
 | Tool | Write | Purpose |
 |------|-------|---------|
 | `jewelry_create_gemstone` | yes | Append a `gemstone` parametric solid node to a `.feature` file |
 | `jewelry_cut_gem_seat`    | yes | Append a `gem_seat` cutter node; optionally chain a `boolean` cut |
-| `jewelry_gem_report`      | no  | Read-only gemologist-style proportion report + grade |
+| `jewelry_gem_report`      | no  | Read-only gemologist-style proportion report + 4Cs estimates |
+| `jewelry_gem_catalog`     | no  | Read-only birthstone / gem property catalog (by name or month) |
 
 ---
 
@@ -57,6 +58,17 @@ These map to existing facet families — no OCCT worker change needed.
 | `shield` | Five-sided shield-shaped brilliant | trillion | 5 sides, wide top tapering to point |
 | `calf_head` | Wide pear variant (bouche) | pear | Broader than standard pear; aspect ≈ 0.78 |
 
+### Step / mixed cuts
+
+These also map to existing facet families — no OCCT worker change needed.
+
+| Key | Description | Facet family | Notes |
+|-----|-------------|--------------|-------|
+| `portuguese` | Round step + brilliant hybrid; many concentric step rows; high fire | round_brilliant | step_rows_crown=4, 73 facets typical |
+| `ceylon` | Barion hybrid: brilliant crown + step pavilion | emerald | Rectangular aspect ~0.75, step_rows=3, corner_cut=0.12 |
+| `flanders` | Square brilliant with softly cropped corners | princess | aspect=1.0, corner_cut_ratio=0.05 (lighter than princess), 65 facets |
+| `square_emerald` | Square step cut (equal L:W emerald; "Quadrillion") | emerald | aspect=1.0, step_rows=3, corner_cut=0.12 |
+
 ---
 
 ## Carat ↔ mm formula
@@ -104,6 +116,10 @@ Default material is `diamond` for backward compatibility.
 | lozenge | 6.5 | rhombus step cut |
 | shield | 6.8 | irregular pentagon; large face |
 | calf_head | 8.5 | wide low-set pear variant |
+| portuguese | 6.5 | round step+brilliant; same spread as round brilliant |
+| ceylon | 6.5 | barion hybrid; similar to radiant |
+| flanders | 5.5 | square brilliant; similar to princess |
+| square_emerald | 5.5 | square step cut; same footprint as asscher |
 
 ---
 
@@ -195,6 +211,15 @@ Society gem property tables.
 | shield | 55 | 35 | 41 | ~57 | 0.85 | trillion |
 | calf_head | 55 | 32 | 40 | ~57 | 0.78 | pear |
 
+### Step / mixed cut proportions
+
+| Cut | Table % | Crown° | Pav° | Depth % | Aspect | Family |
+|-----|---------|--------|------|---------|--------|--------|
+| portuguese | 55 | 35 | 40.75 | ~63 | 1.0 | round_brilliant |
+| ceylon | 58 | 33 | 41 | ~59 | 0.75 | emerald |
+| flanders | 67 | 30 | 42 | ~56 | 1.0 | princess |
+| square_emerald | 62 | 14 | 44 | ~54 | 1.0 | emerald |
+
 All cuts follow GIA/AGS published ranges. Override any parameter via
 the tool's optional kwargs (`table_pct`, `crown_angle_deg`, `pavilion_angle_deg`,
 `girdle_pct`, `aspect_ratio`).
@@ -237,7 +262,10 @@ density_g_cm3: number  (optional) — explicit density override
   "pavilion_angle_deg": 40.75,
   "aspect_ratio": 1.0,
   "lw_ratio": 1.0,
-  "proportion_grade": "Excellent"
+  "proportion_grade": "Excellent",
+  "colour_scale_hint": "estimate — not a lab grade: GIA D–Z scale ...",
+  "clarity_hint": "estimate — not a lab grade: GIA FL / IF / VVS1-2 ...",
+  "recommended_setting": "prong (4 or 6 claw) solitaire"
 }
 ```
 
@@ -258,16 +286,117 @@ Default proportions for round brilliant (`Tolkowsky ideal`) grade
 **Excellent**.  Historical cuts (old_european, rose_cut, etc.) use
 their own appropriate windows.
 
+### 4Cs estimate fields (new — additive, back-compat)
+
+These three fields are **clearly labelled as estimates — NOT lab grades**.
+They are heuristic placeholders derived from the material type and cut only.
+
+| Field | Description |
+|-------|-------------|
+| `colour_scale_hint` | Diamond: GIA D–Z scale explanation. Coloured stone: GIA hue/saturation/tone dimensions. Always includes "estimate — not a lab grade" label. |
+| `clarity_hint` | Diamond: GIA FL–I3 scale; eye-clean threshold per cut. Coloured stone: GIA clarity type (I/II/III). Step cuts include a note that inclusions are more visible. Always includes "estimate — not a lab grade" label. |
+| `recommended_setting` | Trade-standard setting suggestion for the cut and size bracket (melee < 3.5 mm, small 3.5–5 mm, medium 5–8 mm, large ≥ 8 mm). Source: RhinoGold / GIA setting design guidelines. |
+
 ### Example
 
 ```
 # Inspect a 1 ct round brilliant before creating it
 jewelry_gem_report(cut="round_brilliant", carat=1.0)
 # → spread_mm=6.5, depth_mm=4.02, proportion_grade="Excellent"
+# → colour_scale_hint="estimate — not a lab grade: GIA D–Z scale ..."
+# → recommended_setting="prong (4 or 6 claw) solitaire"
 
 # Check if an old European would fit a 5 mm seat
 jewelry_gem_report(cut="old_european", diameter_mm=5.0)
 # → spread_mm=5.0, table_pct=40.0, crown_angle_deg=40.0, proportion_grade="Very Good"
+
+# Emerald cut step-cut clarity note
+jewelry_gem_report(cut="emerald", diameter_mm=7.0)
+# → clarity_hint includes "step cuts show inclusions more readily"
+```
+
+---
+
+## Tool: `jewelry_gem_catalog` (read-only)
+
+Birthstone and gem property catalog lookup.  Returns gem properties
+for any gem by name or by birth month.  Does NOT write any file.
+
+### Input
+
+```
+query : string (required) — gem name (e.g. "ruby") or birth month name
+                            (e.g. "july", "April") or month number 1–12
+```
+
+### Output schema
+
+```json
+{
+  "count": 1,
+  "results": [
+    {
+      "gem": "ruby",
+      "birth_months": [7],
+      "mohs_hardness": 9.0,
+      "refractive_index": [1.762, 1.770],
+      "density_g_cm3": 3.99,
+      "common_cuts": ["oval", "cushion", "round_brilliant", "pear", "emerald"],
+      "colour_range": "Pinkish-red to deep red; finest are 'pigeon's blood' vivid red",
+      "supported_cuts": ["oval", "cushion", "round_brilliant", "pear", "emerald"]
+    }
+  ]
+}
+```
+
+`supported_cuts` = intersection of `common_cuts` with the current `GEMSTONE_CUTS`
+registry (i.e. cuts that can be passed directly to `jewelry_create_gemstone`).
+
+### Gem catalog at a glance
+
+| Gem | Month(s) | Mohs | RI | Density (g/cm³) |
+|-----|----------|------|----|-----------------|
+| diamond | April (4) | 10 | 2.417–2.419 | 3.51 |
+| ruby | July (7) | 9 | 1.762–1.770 | 3.99 |
+| sapphire | September (9) | 9 | 1.762–1.770 | 4.00 |
+| emerald | May (5) | 7.5–8 | 1.565–1.602 | 2.72 |
+| amethyst | February (2) | 7 | 1.544–1.553 | 2.65 |
+| aquamarine | March (3) | 7.5–8 | 1.567–1.590 | 2.72 |
+| topaz | November (11) | 8 | 1.609–1.643 | 3.53 |
+| garnet | January (1) | 6.5–7.5 | 1.714–1.888 | 3.78 |
+| peridot | August (8) | 6.5–7 | 1.650–1.703 | 3.32 |
+| citrine | November (11) | 7 | 1.544–1.553 | 2.65 |
+| tanzanite | December (12) | 6–7 | 1.691–1.700 | 3.35 |
+| opal | October (10) | 5.5–6.5 | 1.37–1.52 | 2.08 |
+| pearl | June (6) | 2.5–4.5 | 1.53–1.685 | 2.71 |
+| turquoise | December (12) | 5–6 | 1.610–1.650 | 2.75 |
+| tourmaline | October (10) | 7–7.5 | 1.624–1.644 | 3.10 |
+| spinel | August (8) | 8 | 1.712–1.762 | 3.60 |
+| morganite | — (none) | 7.5–8 | 1.572–1.600 | 2.71 |
+| alexandrite | June (6) | 8.5–9 | 1.746–1.755 | 3.73 |
+| moonstone | June (6) | 6–6.5 | 1.518–1.526 | 2.56 |
+| zircon | December (12) | 6–7.5 | 1.925–1.984 | 4.67 |
+
+**Sources:** GIA Gem Reference Guide (Liddicoat, 1995), GIA Gemology Reference
+(gia.edu/gems-gemology), GIA Gem Encyclopedia (2014 ed.),
+Jewelers of America birthstone list (2016 revision),
+American Gem Society (AGS) birthstone chart,
+International Gem Society (IGS) gem property tables.
+
+### Example
+
+```
+# All birthstones for July
+jewelry_gem_catalog(query="july")
+# → count=1, results=[{gem: "ruby", birth_months: [7], mohs: 9.0, ...}]
+
+# All December birthstones
+jewelry_gem_catalog(query="december")
+# → count=3, results=[tanzanite, turquoise, zircon]
+
+# Lookup by gem name
+jewelry_gem_catalog(query="morganite")
+# → density_g_cm3=2.71, mohs=7.5–8, common_cuts=[oval, cushion, ...]
 ```
 
 ---
@@ -443,10 +572,16 @@ constraint.
   error in the evaluator.  Pure-Python geometry math (proportions, seat
   clearances) is fully functional.
 - FeatureView dropdown does not yet list the 6 fancy cuts (radiant, asscher,
-  trillion, heart, baguette, briolette) nor the 13 new historical/specialty
-  cuts (old_european, old_mine, rose_cut, single_cut, french_cut, half_moon,
-  trapezoid, kite, bullet, tapered_baguette, lozenge, shield, calf_head).
-  The Python spec + facet-family routing are complete; a consolidated frontend
-  pass will add them to the UI dropdown enum.
+  trillion, heart, baguette, briolette), the 13 historical/specialty cuts
+  (old_european, old_mine, rose_cut, single_cut, french_cut, half_moon,
+  trapezoid, kite, bullet, tapered_baguette, lozenge, shield, calf_head),
+  nor the 4 new step/mixed cuts (portuguese, ceylon, flanders, square_emerald).
+  The Python spec + facet-family routing are complete for all 30 cuts; a
+  consolidated frontend pass will add them to the UI dropdown enum.
+  **Deferred: FeatureView UI — all 30 cuts need adding to the frontend cut-selector enum.**
 - Setting styles (prong, bezel, channel, pavé) are not yet modelled — only
-  the seat void is generated.
+  the seat void is generated. The `recommended_setting` field in `jewelry_gem_report`
+  is a text suggestion only; no geometry is generated for the setting style.
+- The `colour_scale_hint` and `clarity_hint` fields in `jewelry_gem_report`
+  are heuristic text placeholders — they are explicitly labelled "estimate —
+  not a lab grade" and no optical or inclusion analysis is performed.
