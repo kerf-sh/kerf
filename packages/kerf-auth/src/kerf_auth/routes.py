@@ -202,6 +202,30 @@ async def register(req: RegisterRequest, response: Response):
         access_token, refresh_token = await issue_tokens(conn, str(user["id"]))
         default_ws, _ = await get_default_workspace(conn, str(user["id"]))
 
+        # Fire-and-forget onboarding welcome email via kerf-cloud provider layer.
+        # Wrapped in try/except so a misconfigured mailer never blocks signup.
+        try:
+            from kerf_cloud.email.providers import send_email
+            from kerf_cloud.email.templates import renderer as _email_renderer
+
+            _msg = _email_renderer.render(
+                "welcome",
+                email,
+                {
+                    "Name": display_name,
+                    "AppURL": settings.cors_origin or "https://app.kerf.sh",
+                },
+            )
+            send_email(
+                to=email,
+                subject=_msg.Subject,
+                html=_msg.HTML,
+                text=_msg.Text,
+                settings=settings,
+            )
+        except Exception:
+            pass  # email failure must never fail registration
+
         response.status_code = status.HTTP_201_CREATED
         return AuthResponse(
             access_token=access_token,
