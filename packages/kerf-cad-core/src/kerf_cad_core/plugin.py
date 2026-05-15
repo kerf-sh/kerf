@@ -44,6 +44,7 @@ _TOOL_MODULES = [
     "kerf_cad_core.struct.tools",
     "kerf_cad_core.feature_thread",
     "kerf_cad_core.assembly.tools",
+    "kerf_cad_core.weldment",
 ]
 
 # ── kerf_core contract (built by kerf-core agent in parallel) ─────────────────
