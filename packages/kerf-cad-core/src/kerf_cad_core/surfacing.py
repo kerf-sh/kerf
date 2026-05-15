@@ -765,6 +765,171 @@ async def run_feature_surface_boolean(ctx: ProjectCtx, args: bytes) -> str:
     })
 
 
+# ── feature_trim_by_curve ─────────────────────────────────────────────────────
+#
+# NURBS Phase 4 Capability 2 (C2-T3).
+#
+# Split a face along the projection of a 3D curve onto its surface, and keep
+# one side.  The worker's opTrimByCurve calls projectCurveOntoSurface
+# (BRepProj_Projection primary, GeomAPI_ProjectPointOnSurf fallback) +
+# splitFaceAlongCurve (BRepFeat_SplitShape primary) from occtBridge.js.
+#
+# Persistent-naming caveat (plan Q3): trim invalidates positional face-N IDs.
+# Downstream ops referencing the trimmed face by id will break on re-evaluation
+# until persistent-face-naming ships.  Document this prominently in the LLM doc.
+#
+# Plan ref: docs/plans/nurbs-phase-4-full.md § Capability 2, C2-T3.
+
+feature_trim_by_curve_spec = ToolSpec(
+    name="feature_trim_by_curve",
+    description=(
+        "Append a `trim_by_curve` node to a `.feature` file. "
+        "Splits a NURBS face along the UV-space projection of a 3D curve, "
+        "keeping one side as the new current shape. "
+        "Use when you want to cut a window or remove a region from a NURBS face "
+        "without a solid round-trip — for example, cutting a stone-setting window "
+        "into a ring shoulder or removing a teardrop from a blend surface. "
+        "The cutter (`trim_curve_ref`) must be a sketch path or an already-evaluated "
+        "feature id. The face is identified by `target_face_name` (use the positional "
+        "face-N id from the inspector; persistent face naming is not yet shipped). "
+        "WARNING: trim invalidates positional face-N IDs — downstream ops referencing "
+        "the trimmed face by id will break on re-evaluation until persistent-face-naming "
+        "ships (see docs/plans/persistent-face-naming.md). "
+        "If the worker logs a TrimByCurveUnsupportedError, BRepFeat_SplitShape is absent "
+        "in this WASM build; escalate to C2-T12 (Section+prism fallback)."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "file_id": {
+                "type": "string",
+                "description": "Target .feature file id.",
+            },
+            "target_feature_ref": {
+                "type": "string",
+                "description": (
+                    "Feature node id whose output contains the face to trim. "
+                    "Must be an earlier node in the same .feature file."
+                ),
+            },
+            "target_face_name": {
+                "type": "string",
+                "description": (
+                    "Positional face identifier (e.g. 'face-1', 'face-3') from the "
+                    "inspector's face list.  Persistent face names are not yet supported."
+                ),
+            },
+            "trim_curve_ref": {
+                "type": "string",
+                "description": (
+                    "Absolute .sketch path OR id of an already-evaluated feature body "
+                    "whose shape acts as the 3D cutter curve/wire."
+                ),
+            },
+            "keep_side": {
+                "type": "string",
+                "enum": ["positive", "negative"],
+                "description": (
+                    "'positive' (default) keeps the BRepFeat_SplitShape Left() result; "
+                    "'negative' keeps the Right() result.  If the wrong side is kept, "
+                    "swap this value."
+                ),
+            },
+            "tolerance": {
+                "type": "number",
+                "description": (
+                    "Projection + split tolerance in model units (default 1e-3). "
+                    "Raise to 1e-2 if the projected wire has C1 discontinuities."
+                ),
+            },
+            "options": {
+                "type": "object",
+                "properties": {
+                    "id": {"type": "string"},
+                },
+            },
+        },
+        "required": ["file_id", "target_feature_ref", "target_face_name", "trim_curve_ref"],
+    },
+)
+
+
+@register(feature_trim_by_curve_spec, write=True)
+async def run_feature_trim_by_curve(ctx: ProjectCtx, args: bytes) -> str:
+    try:
+        a = json.loads(args)
+    except Exception as e:
+        return err_payload(f"invalid args: {e}", "BAD_ARGS")
+
+    file_id           = a.get("file_id", "").strip()
+    target_feature_ref = a.get("target_feature_ref", "").strip()
+    target_face_name   = a.get("target_face_name", "").strip()
+    trim_curve_ref    = a.get("trim_curve_ref", "").strip()
+    keep_side         = a.get("keep_side", "positive")
+    tolerance         = a.get("tolerance", None)
+    options           = a.get("options", {})
+
+    if not file_id or not target_feature_ref or not target_face_name or not trim_curve_ref:
+        return err_payload(
+            "file_id, target_feature_ref, target_face_name, and trim_curve_ref are required",
+            "BAD_ARGS",
+        )
+
+    keep_side = keep_side.strip() if keep_side else "positive"
+    if keep_side not in ("positive", "negative"):
+        return err_payload(
+            f"keep_side must be 'positive' or 'negative'; got '{keep_side}'",
+            "BAD_ARGS",
+        )
+
+    if tolerance is not None:
+        if not isinstance(tolerance, (int, float)) or tolerance <= 0:
+            return err_payload(
+                f"tolerance must be a positive number; got '{tolerance}'",
+                "BAD_ARGS",
+            )
+
+    try:
+        fid = uuid.UUID(file_id)
+    except Exception:
+        return err_payload("file_id must be a uuid", "BAD_ARGS")
+
+    content, err = read_feature_content(ctx, fid)
+    if err:
+        return err_payload(f"file not found: {err}", "NOT_FOUND")
+
+    node_id = ""
+    if isinstance(options, dict):
+        node_id = options.get("id", "").strip() or ""
+
+    if not node_id:
+        node_id = next_node_id(content, "trim_by_curve")
+
+    node: dict = {
+        "id": node_id,
+        "op": "trim_by_curve",
+        "target_feature_ref": target_feature_ref,
+        "target_face_name": target_face_name,
+        "trim_curve_ref": trim_curve_ref,
+        "keep_side": keep_side,
+    }
+
+    if tolerance is not None:
+        node["tolerance"] = float(tolerance)
+
+    name, nid, err = append_feature_node(ctx, fid, node)
+    if err:
+        return err_payload(err, "ERROR")
+
+    return ok_payload({
+        "file_id": file_id,
+        "name": name,
+        "id": nid,
+        "op": "trim_by_curve",
+        "keep_side": keep_side,
+    })
+
+
 def parse_sketch_curves(sketch_content: str) -> list:
     try:
         sketch = json.loads(sketch_content)
