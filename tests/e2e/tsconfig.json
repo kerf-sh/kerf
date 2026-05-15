@@ -1,0 +1,19 @@
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "esModuleInterop": true,
+    "allowImportingTsExtensions": true,
+    "noEmit": true,
+    "lib": ["ESNext", "DOM"],
+    "types": ["node"]
+  },
+  "include": [
+    "playwright.config.ts",
+    "global-setup.ts",
+    "pages/**/*.ts",
+    "specs/**/*.ts"
+  ]
+}
