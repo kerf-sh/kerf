@@ -53,6 +53,9 @@ from kerf_cad_core.jewelry.settings import (
     jewelry_pave_spec,
     jewelry_tension_spec,
     jewelry_flush_spec,
+    jewelry_halo_spec,
+    jewelry_three_stone_spec,
+    jewelry_cluster_spec,
     # Runners
     run_jewelry_create_prong_head,
     run_jewelry_create_bezel,
@@ -60,6 +63,9 @@ from kerf_cad_core.jewelry.settings import (
     run_jewelry_pave_array,
     run_jewelry_create_tension,
     run_jewelry_create_flush,
+    run_jewelry_create_halo,
+    run_jewelry_create_three_stone,
+    run_jewelry_create_cluster,
     # Pure-Python helpers
     build_prong_head_node,
     build_bezel_node,
@@ -67,8 +73,13 @@ from kerf_cad_core.jewelry.settings import (
     build_pave_array_node,
     build_tension_node,
     build_flush_node,
+    build_halo_node,
+    build_three_stone_node,
+    build_cluster_node,
     _compute_pave_grid,
+    _compute_cluster_positions,
 )
+
 
 # ---------------------------------------------------------------------------
 # Helpers — in-memory fake context (same as test_feature_boolean.py pattern)
@@ -1361,3 +1372,717 @@ class TestFlushRunner:
 # Halo setting — ToolSpec schema
 # ============================================================================
 
+class TestHaloSpec:
+    def test_name(self):
+        assert jewelry_halo_spec.name == "jewelry_create_halo"
+
+    def test_required_fields(self):
+        req = jewelry_halo_spec.input_schema["required"]
+        for f in ["file_id", "center_diameter", "halo_stone_size", "halo_stone_count", "halo_gap", "halo_metal_width"]:
+            assert f in req
+
+    def test_id_not_required(self):
+        assert "id" not in jewelry_halo_spec.input_schema["required"]
+
+
+# ============================================================================
+# Halo setting — geometry math
+# ============================================================================
+
+class TestHaloGeometry:
+    def test_halo_radius_formula(self):
+        center_d = 6.5
+        stone_size = 1.2
+        gap = 0.15
+        node = build_halo_node(
+            node_id="h-1",
+            center_diameter=center_d,
+            halo_stone_size=stone_size,
+            halo_stone_count=18,
+            halo_gap=gap,
+            halo_metal_width=0.4,
+        )
+        expected_radius = center_d / 2.0 + gap + stone_size / 2.0
+        assert math.isclose(node["_halo_radius"], expected_radius, rel_tol=1e-5)
+
+    def test_halo_outer_diameter_larger_than_center(self):
+        node = build_halo_node(
+            node_id="h-2",
+            center_diameter=6.5,
+            halo_stone_size=1.2,
+            halo_stone_count=18,
+            halo_gap=0.15,
+            halo_metal_width=0.4,
+        )
+        assert node["_halo_outer_diameter"] > node["center_diameter"]
+
+    def test_accent_pitch_deg(self):
+        node = build_halo_node(
+            node_id="h-3",
+            center_diameter=6.0,
+            halo_stone_size=1.0,
+            halo_stone_count=18,
+            halo_gap=0.2,
+            halo_metal_width=0.3,
+        )
+        assert math.isclose(node["_accent_pitch_deg"], 360.0 / 18, rel_tol=1e-5)
+
+    def test_op_field(self):
+        node = build_halo_node(
+            node_id="h-4",
+            center_diameter=5.0, halo_stone_size=1.0,
+            halo_stone_count=16, halo_gap=0.15, halo_metal_width=0.35,
+        )
+        assert node["op"] == "jewelry_halo"
+
+    def test_all_params_stored(self):
+        node = build_halo_node(
+            node_id="h-5",
+            center_diameter=7.0,
+            halo_stone_size=1.3,
+            halo_stone_count=22,
+            halo_gap=0.2,
+            halo_metal_width=0.45,
+        )
+        assert node["center_diameter"] == 7.0
+        assert node["halo_stone_size"] == 1.3
+        assert node["halo_stone_count"] == 22
+        assert node["halo_gap"] == 0.2
+        assert node["halo_metal_width"] == 0.45
+
+
+# ============================================================================
+# Halo setting — LLM tool runner
+# ============================================================================
+
+class TestHaloRunner:
+    def test_success(self):
+        ctx, store, fid = make_ctx()
+        result = call_tool(
+            run_jewelry_create_halo, ctx, fid,
+            center_diameter=6.5,
+            halo_stone_size=1.2,
+            halo_stone_count=18,
+            halo_gap=0.15,
+            halo_metal_width=0.4,
+        )
+        assert result.get("error") is None, result
+        assert result["op"] == "jewelry_halo"
+        assert result["halo_stone_count"] == 18
+
+    def test_node_stored(self):
+        ctx, store, fid = make_ctx()
+        call_tool(
+            run_jewelry_create_halo, ctx, fid,
+            center_diameter=6.5, halo_stone_size=1.2, halo_stone_count=18,
+            halo_gap=0.15, halo_metal_width=0.4,
+        )
+        node = get_last_node(store)
+        assert node["op"] == "jewelry_halo"
+        assert node["center_diameter"] == 6.5
+
+    def test_node_id_auto(self):
+        ctx, store, fid = make_ctx()
+        call_tool(
+            run_jewelry_create_halo, ctx, fid,
+            center_diameter=6.5, halo_stone_size=1.2, halo_stone_count=18,
+            halo_gap=0.15, halo_metal_width=0.4,
+        )
+        node = get_last_node(store)
+        assert node["id"].startswith("jewelry_halo-")
+
+    def test_halo_stone_count_lt_3_rejected(self):
+        ctx, _, fid = make_ctx()
+        result = call_tool(
+            run_jewelry_create_halo, ctx, fid,
+            center_diameter=6.5, halo_stone_size=1.2, halo_stone_count=2,
+            halo_gap=0.15, halo_metal_width=0.4,
+        )
+        assert result.get("code") == "BAD_ARGS"
+        assert "halo_stone_count" in result.get("error", "")
+
+    def test_zero_center_diameter_rejected(self):
+        ctx, _, fid = make_ctx()
+        result = call_tool(
+            run_jewelry_create_halo, ctx, fid,
+            center_diameter=0, halo_stone_size=1.2, halo_stone_count=18,
+            halo_gap=0.15, halo_metal_width=0.4,
+        )
+        assert result.get("code") == "BAD_ARGS"
+
+    def test_negative_halo_gap_rejected(self):
+        ctx, _, fid = make_ctx()
+        result = call_tool(
+            run_jewelry_create_halo, ctx, fid,
+            center_diameter=6.5, halo_stone_size=1.2, halo_stone_count=18,
+            halo_gap=-0.1, halo_metal_width=0.4,
+        )
+        assert result.get("code") == "BAD_ARGS"
+
+    def test_non_integer_count_rejected(self):
+        ctx, _, fid = make_ctx()
+        result = call_tool(
+            run_jewelry_create_halo, ctx, fid,
+            center_diameter=6.5, halo_stone_size=1.2, halo_stone_count="eighteen",
+            halo_gap=0.15, halo_metal_width=0.4,
+        )
+        assert result.get("code") == "BAD_ARGS"
+
+    def test_halo_outer_diameter_in_result(self):
+        ctx, store, fid = make_ctx()
+        result = call_tool(
+            run_jewelry_create_halo, ctx, fid,
+            center_diameter=6.5, halo_stone_size=1.2, halo_stone_count=18,
+            halo_gap=0.15, halo_metal_width=0.4,
+        )
+        assert "_halo_outer_diameter" in result
+        assert result["_halo_outer_diameter"] > result["center_diameter"]
+
+    def test_missing_file_not_found(self):
+        ctx, _, fid = make_ctx(kind="NOT_FOUND")
+        result = call_tool(
+            run_jewelry_create_halo, ctx, fid,
+            center_diameter=6.5, halo_stone_size=1.2, halo_stone_count=18,
+            halo_gap=0.15, halo_metal_width=0.4,
+        )
+        assert result.get("code") == "NOT_FOUND"
+
+    def test_invalid_json_rejected(self):
+        ctx, _, _ = make_ctx()
+        raw = run_sync(run_jewelry_create_halo(ctx, b"not json"))
+        result = json.loads(raw)
+        assert result.get("code") == "BAD_ARGS"
+
+    @pytest.mark.parametrize("count", [3, 10, 18, 24, 32])
+    def test_various_stone_counts_accepted(self, count):
+        ctx, store, fid = make_ctx()
+        result = call_tool(
+            run_jewelry_create_halo, ctx, fid,
+            center_diameter=6.0, halo_stone_size=1.0, halo_stone_count=count,
+            halo_gap=0.2, halo_metal_width=0.35,
+        )
+        assert result.get("error") is None, f"count={count}: {result}"
+
+
+# ============================================================================
+# Three-stone setting — ToolSpec schema
+# ============================================================================
+
+class TestThreeStoneSpec:
+    def test_name(self):
+        assert jewelry_three_stone_spec.name == "jewelry_create_three_stone"
+
+    def test_required_fields(self):
+        req = jewelry_three_stone_spec.input_schema["required"]
+        for f in ["file_id", "center_diameter", "side_diameter", "stone_spacing", "base_height"]:
+            assert f in req
+
+    def test_id_not_required(self):
+        assert "id" not in jewelry_three_stone_spec.input_schema["required"]
+
+
+# ============================================================================
+# Three-stone setting — geometry math
+# ============================================================================
+
+class TestThreeStoneGeometry:
+    def test_side_offset_x_formula(self):
+        cd = 6.5
+        sd = 4.0
+        sp = 0.2
+        node = build_three_stone_node(
+            node_id="ts-1",
+            center_diameter=cd,
+            side_diameter=sd,
+            stone_spacing=sp,
+            base_height=1.5,
+        )
+        expected_offset = cd / 2.0 + sp + sd / 2.0
+        assert math.isclose(node["_side_offset_x"], expected_offset, rel_tol=1e-5)
+
+    def test_total_width_formula(self):
+        cd = 6.5
+        sd = 4.0
+        sp = 0.2
+        node = build_three_stone_node(
+            node_id="ts-2",
+            center_diameter=cd,
+            side_diameter=sd,
+            stone_spacing=sp,
+            base_height=1.5,
+        )
+        expected_offset = cd / 2.0 + sp + sd / 2.0
+        expected_width = 2.0 * expected_offset + sd
+        assert math.isclose(node["_total_width"], expected_width, rel_tol=1e-5)
+
+    def test_total_width_greater_than_center(self):
+        node = build_three_stone_node(
+            node_id="ts-3",
+            center_diameter=7.0,
+            side_diameter=4.5,
+            stone_spacing=0.25,
+            base_height=2.0,
+        )
+        assert node["_total_width"] > node["center_diameter"]
+
+    def test_op_field(self):
+        node = build_three_stone_node(
+            node_id="ts-4",
+            center_diameter=6.0, side_diameter=4.0,
+            stone_spacing=0.2, base_height=1.5,
+        )
+        assert node["op"] == "jewelry_three_stone"
+
+    def test_all_params_stored(self):
+        node = build_three_stone_node(
+            node_id="ts-5",
+            center_diameter=6.5,
+            side_diameter=4.2,
+            stone_spacing=0.18,
+            base_height=1.8,
+        )
+        assert node["center_diameter"] == 6.5
+        assert node["side_diameter"] == 4.2
+        assert node["stone_spacing"] == 0.18
+        assert node["base_height"] == 1.8
+
+
+# ============================================================================
+# Three-stone setting — LLM tool runner
+# ============================================================================
+
+class TestThreeStoneRunner:
+    def test_success(self):
+        ctx, store, fid = make_ctx()
+        result = call_tool(
+            run_jewelry_create_three_stone, ctx, fid,
+            center_diameter=6.5,
+            side_diameter=4.0,
+            stone_spacing=0.2,
+            base_height=1.5,
+        )
+        assert result.get("error") is None, result
+        assert result["op"] == "jewelry_three_stone"
+        assert result["center_diameter"] == 6.5
+        assert result["side_diameter"] == 4.0
+
+    def test_node_stored(self):
+        ctx, store, fid = make_ctx()
+        call_tool(
+            run_jewelry_create_three_stone, ctx, fid,
+            center_diameter=6.5, side_diameter=4.0, stone_spacing=0.2, base_height=1.5,
+        )
+        node = get_last_node(store)
+        assert node["op"] == "jewelry_three_stone"
+        assert node["center_diameter"] == 6.5
+
+    def test_node_id_auto(self):
+        ctx, store, fid = make_ctx()
+        call_tool(
+            run_jewelry_create_three_stone, ctx, fid,
+            center_diameter=6.5, side_diameter=4.0, stone_spacing=0.2, base_height=1.5,
+        )
+        node = get_last_node(store)
+        assert node["id"].startswith("jewelry_three_stone-")
+
+    def test_zero_center_diameter_rejected(self):
+        ctx, _, fid = make_ctx()
+        result = call_tool(
+            run_jewelry_create_three_stone, ctx, fid,
+            center_diameter=0, side_diameter=4.0, stone_spacing=0.2, base_height=1.5,
+        )
+        assert result.get("code") == "BAD_ARGS"
+
+    def test_negative_side_diameter_rejected(self):
+        ctx, _, fid = make_ctx()
+        result = call_tool(
+            run_jewelry_create_three_stone, ctx, fid,
+            center_diameter=6.5, side_diameter=-1.0, stone_spacing=0.2, base_height=1.5,
+        )
+        assert result.get("code") == "BAD_ARGS"
+
+    def test_zero_spacing_rejected(self):
+        ctx, _, fid = make_ctx()
+        result = call_tool(
+            run_jewelry_create_three_stone, ctx, fid,
+            center_diameter=6.5, side_diameter=4.0, stone_spacing=0.0, base_height=1.5,
+        )
+        assert result.get("code") == "BAD_ARGS"
+
+    def test_zero_base_height_rejected(self):
+        ctx, _, fid = make_ctx()
+        result = call_tool(
+            run_jewelry_create_three_stone, ctx, fid,
+            center_diameter=6.5, side_diameter=4.0, stone_spacing=0.2, base_height=0.0,
+        )
+        assert result.get("code") == "BAD_ARGS"
+
+    def test_total_width_in_result(self):
+        ctx, store, fid = make_ctx()
+        result = call_tool(
+            run_jewelry_create_three_stone, ctx, fid,
+            center_diameter=6.5, side_diameter=4.0, stone_spacing=0.2, base_height=1.5,
+        )
+        assert "_total_width" in result
+        assert result["_total_width"] > result["center_diameter"]
+
+    def test_missing_file_not_found(self):
+        ctx, _, fid = make_ctx(kind="NOT_FOUND")
+        result = call_tool(
+            run_jewelry_create_three_stone, ctx, fid,
+            center_diameter=6.5, side_diameter=4.0, stone_spacing=0.2, base_height=1.5,
+        )
+        assert result.get("code") == "NOT_FOUND"
+
+    def test_invalid_json_rejected(self):
+        ctx, _, _ = make_ctx()
+        raw = run_sync(run_jewelry_create_three_stone(ctx, b"not json"))
+        result = json.loads(raw)
+        assert result.get("code") == "BAD_ARGS"
+
+
+# ============================================================================
+# Cluster setting — ToolSpec schema
+# ============================================================================
+
+class TestClusterSpec:
+    def test_name(self):
+        assert jewelry_cluster_spec.name == "jewelry_create_cluster"
+
+    def test_required_fields(self):
+        req = jewelry_cluster_spec.input_schema["required"]
+        for f in ["file_id", "cluster_diameter", "stone_size", "stone_count", "dome_height"]:
+            assert f in req
+
+    def test_id_not_required(self):
+        assert "id" not in jewelry_cluster_spec.input_schema["required"]
+
+
+# ============================================================================
+# Cluster setting — geometry math (_compute_cluster_positions)
+# ============================================================================
+
+class TestClusterPositions:
+    def test_single_stone_at_origin(self):
+        positions = _compute_cluster_positions(
+            cluster_diameter=8.0, stone_size=2.0, stone_count=1,
+        )
+        assert len(positions) == 1
+        assert math.isclose(positions[0]["x"], 0.0, abs_tol=1e-9)
+        assert math.isclose(positions[0]["y"], 0.0, abs_tol=1e-9)
+
+    def test_count_matches_requested(self):
+        for n in [3, 5, 7, 9, 12]:
+            positions = _compute_cluster_positions(
+                cluster_diameter=10.0, stone_size=1.5, stone_count=n,
+            )
+            assert len(positions) == n, f"n={n}"
+
+    def test_angle_spacing_uniform(self):
+        n = 6
+        positions = _compute_cluster_positions(
+            cluster_diameter=10.0, stone_size=1.5, stone_count=n,
+        )
+        angles = [p["angle_deg"] for p in positions]
+        for i in range(n):
+            assert math.isclose(angles[i], i * 360.0 / n, rel_tol=1e-5)
+
+    def test_all_on_same_radius(self):
+        n = 8
+        positions = _compute_cluster_positions(
+            cluster_diameter=12.0, stone_size=1.8, stone_count=n,
+        )
+        radii = [math.hypot(p["x"], p["y"]) for p in positions]
+        expected_r = 12.0 / 2.0 - 1.8 / 2.0
+        for r in radii:
+            assert math.isclose(r, expected_r, rel_tol=1e-4), f"radius={r}, expected={expected_r}"
+
+    def test_positions_have_required_keys(self):
+        positions = _compute_cluster_positions(
+            cluster_diameter=10.0, stone_size=1.5, stone_count=5,
+        )
+        for p in positions:
+            assert "x" in p and "y" in p and "angle_deg" in p
+
+
+# ============================================================================
+# Cluster setting — node builder
+# ============================================================================
+
+class TestClusterNodeBuilder:
+    def test_op_field(self):
+        node = build_cluster_node(
+            node_id="cl-1",
+            cluster_diameter=10.0, stone_size=1.5, stone_count=7, dome_height=1.2,
+        )
+        assert node["op"] == "jewelry_cluster"
+
+    def test_positions_count_matches(self):
+        node = build_cluster_node(
+            node_id="cl-2",
+            cluster_diameter=10.0, stone_size=1.5, stone_count=7, dome_height=1.2,
+        )
+        assert node["_actual_count"] == len(node["positions"]) == 7
+
+    def test_placement_radius_hint(self):
+        cd = 10.0
+        ss = 1.5
+        node = build_cluster_node(
+            node_id="cl-3",
+            cluster_diameter=cd, stone_size=ss, stone_count=7, dome_height=1.2,
+        )
+        expected = cd / 2.0 - ss / 2.0
+        assert math.isclose(node["_placement_radius"], expected, rel_tol=1e-5)
+
+    def test_flat_dome_zero_height(self):
+        node = build_cluster_node(
+            node_id="cl-4",
+            cluster_diameter=8.0, stone_size=1.2, stone_count=5, dome_height=0.0,
+        )
+        assert node["dome_height"] == 0.0
+
+    def test_all_params_stored(self):
+        node = build_cluster_node(
+            node_id="cl-5",
+            cluster_diameter=12.0,
+            stone_size=2.0,
+            stone_count=9,
+            dome_height=1.5,
+        )
+        assert node["cluster_diameter"] == 12.0
+        assert node["stone_size"] == 2.0
+        assert node["stone_count"] == 9
+        assert node["dome_height"] == 1.5
+
+
+# ============================================================================
+# Cluster setting — LLM tool runner
+# ============================================================================
+
+class TestClusterRunner:
+    def test_success(self):
+        ctx, store, fid = make_ctx()
+        result = call_tool(
+            run_jewelry_create_cluster, ctx, fid,
+            cluster_diameter=10.0,
+            stone_size=1.5,
+            stone_count=7,
+            dome_height=1.0,
+        )
+        assert result.get("error") is None, result
+        assert result["op"] == "jewelry_cluster"
+        assert result["stone_count"] == 7
+
+    def test_node_stored(self):
+        ctx, store, fid = make_ctx()
+        call_tool(
+            run_jewelry_create_cluster, ctx, fid,
+            cluster_diameter=10.0, stone_size=1.5, stone_count=7, dome_height=1.0,
+        )
+        node = get_last_node(store)
+        assert node["op"] == "jewelry_cluster"
+        assert node["stone_count"] == 7
+        assert isinstance(node["positions"], list)
+
+    def test_node_id_auto(self):
+        ctx, store, fid = make_ctx()
+        call_tool(
+            run_jewelry_create_cluster, ctx, fid,
+            cluster_diameter=10.0, stone_size=1.5, stone_count=7, dome_height=1.0,
+        )
+        node = get_last_node(store)
+        assert node["id"].startswith("jewelry_cluster-")
+
+    def test_flat_dome_accepted(self):
+        ctx, store, fid = make_ctx()
+        result = call_tool(
+            run_jewelry_create_cluster, ctx, fid,
+            cluster_diameter=8.0, stone_size=1.2, stone_count=5, dome_height=0.0,
+        )
+        assert result.get("error") is None, result
+
+    def test_zero_cluster_diameter_rejected(self):
+        ctx, _, fid = make_ctx()
+        result = call_tool(
+            run_jewelry_create_cluster, ctx, fid,
+            cluster_diameter=0, stone_size=1.5, stone_count=7, dome_height=1.0,
+        )
+        assert result.get("code") == "BAD_ARGS"
+
+    def test_negative_stone_size_rejected(self):
+        ctx, _, fid = make_ctx()
+        result = call_tool(
+            run_jewelry_create_cluster, ctx, fid,
+            cluster_diameter=10.0, stone_size=-0.5, stone_count=7, dome_height=1.0,
+        )
+        assert result.get("code") == "BAD_ARGS"
+
+    def test_zero_stone_count_rejected(self):
+        ctx, _, fid = make_ctx()
+        result = call_tool(
+            run_jewelry_create_cluster, ctx, fid,
+            cluster_diameter=10.0, stone_size=1.5, stone_count=0, dome_height=1.0,
+        )
+        assert result.get("code") == "BAD_ARGS"
+
+    def test_negative_stone_count_rejected(self):
+        ctx, _, fid = make_ctx()
+        result = call_tool(
+            run_jewelry_create_cluster, ctx, fid,
+            cluster_diameter=10.0, stone_size=1.5, stone_count=-2, dome_height=1.0,
+        )
+        assert result.get("code") == "BAD_ARGS"
+
+    def test_negative_dome_height_rejected(self):
+        ctx, _, fid = make_ctx()
+        result = call_tool(
+            run_jewelry_create_cluster, ctx, fid,
+            cluster_diameter=10.0, stone_size=1.5, stone_count=7, dome_height=-0.5,
+        )
+        assert result.get("code") == "BAD_ARGS"
+
+    def test_non_integer_stone_count_rejected(self):
+        ctx, _, fid = make_ctx()
+        result = call_tool(
+            run_jewelry_create_cluster, ctx, fid,
+            cluster_diameter=10.0, stone_size=1.5, stone_count="seven", dome_height=1.0,
+        )
+        assert result.get("code") == "BAD_ARGS"
+
+    def test_placement_radius_in_result(self):
+        ctx, store, fid = make_ctx()
+        result = call_tool(
+            run_jewelry_create_cluster, ctx, fid,
+            cluster_diameter=10.0, stone_size=1.5, stone_count=7, dome_height=1.0,
+        )
+        assert "_placement_radius" in result
+        assert result["_placement_radius"] >= 0
+
+    def test_missing_file_not_found(self):
+        ctx, _, fid = make_ctx(kind="NOT_FOUND")
+        result = call_tool(
+            run_jewelry_create_cluster, ctx, fid,
+            cluster_diameter=10.0, stone_size=1.5, stone_count=7, dome_height=1.0,
+        )
+        assert result.get("code") == "NOT_FOUND"
+
+    def test_invalid_json_rejected(self):
+        ctx, _, _ = make_ctx()
+        raw = run_sync(run_jewelry_create_cluster(ctx, b"bad json"))
+        result = json.loads(raw)
+        assert result.get("code") == "BAD_ARGS"
+
+    @pytest.mark.parametrize("count", [1, 3, 7, 12, 19])
+    def test_various_stone_counts_accepted(self, count):
+        ctx, store, fid = make_ctx()
+        result = call_tool(
+            run_jewelry_create_cluster, ctx, fid,
+            cluster_diameter=10.0, stone_size=1.5, stone_count=count, dome_height=1.0,
+        )
+        assert result.get("error") is None, f"count={count}: {result}"
+
+
+# ============================================================================
+# Cross-style node coexistence — new styles integrate with existing
+# ============================================================================
+
+class TestAllStylesCoexist:
+    def test_all_nine_styles_in_same_file(self):
+        ctx, store, fid = make_ctx()
+        call_tool(run_jewelry_create_prong_head, ctx, fid,
+                  stone_diameter=6.5, prong_count=6, prong_wire_diameter=1.0, prong_height=2.0)
+        call_tool(run_jewelry_create_bezel, ctx, fid,
+                  stone_diameter=6.5, wall_thickness=0.5, bezel_height=3.0, bearing_ledge_height=1.5)
+        call_tool(run_jewelry_create_channel, ctx, fid,
+                  stone_diameter=2.5, stone_count=5, stone_spacing=3.0,
+                  rail_height=1.5, rail_thickness=0.5, floor_thickness=0.4)
+        call_tool(run_jewelry_pave_array, ctx, fid,
+                  region_width=10.0, region_height=10.0,
+                  stone_diameter=1.5, stone_spacing=0.2, edge_margin=0.5)
+        call_tool(run_jewelry_create_tension, ctx, fid,
+                  stone_diameter=6.5, band_thickness=3.0, gap=5.8,
+                  rail_width=0.5, rail_depth=0.3)
+        call_tool(run_jewelry_create_flush, ctx, fid,
+                  stone_diameter=3.5, seat_depth=1.8, bevel_width=0.2, bevel_angle_deg=45.0)
+        call_tool(run_jewelry_create_halo, ctx, fid,
+                  center_diameter=6.5, halo_stone_size=1.2, halo_stone_count=18,
+                  halo_gap=0.15, halo_metal_width=0.4)
+        call_tool(run_jewelry_create_three_stone, ctx, fid,
+                  center_diameter=6.5, side_diameter=4.0, stone_spacing=0.2, base_height=1.5)
+        call_tool(run_jewelry_create_cluster, ctx, fid,
+                  cluster_diameter=10.0, stone_size=1.5, stone_count=7, dome_height=1.0)
+
+        doc = json.loads(store["content"])
+        ops = [n["op"] for n in doc["features"]]
+        expected_ops = [
+            "jewelry_prong_head",
+            "jewelry_bezel",
+            "jewelry_channel",
+            "jewelry_pave",
+            "jewelry_tension",
+            "jewelry_flush",
+            "jewelry_halo",
+            "jewelry_three_stone",
+            "jewelry_cluster",
+        ]
+        assert ops == expected_ops, f"ops mismatch: {ops}"
+
+
+# ============================================================================
+# OCC-gated: new styles
+# ============================================================================
+
+@skip_no_occ
+class TestOccNewStyles:
+    """OCC-gated: smoke-test node specs for new setting types via BRepPrimAPI."""
+
+    def test_occ_tension_band_cylinder(self):
+        from OCC.Core.BRepPrimAPI import BRepPrimAPI_MakeCylinder  # type: ignore
+        from OCC.Core.gp import gp_Pnt, gp_Ax2, gp_Dir  # type: ignore
+
+        node = build_tension_node(
+            node_id="occ-t-1",
+            stone_diameter=6.5, band_thickness=3.0, gap=5.5,
+            rail_width=0.5, rail_depth=0.3,
+        )
+        # Build a cylinder representing the band cross-section.
+        ax = gp_Ax2(gp_Pnt(0, 0, 0), gp_Dir(0, 0, 1))
+        cyl = BRepPrimAPI_MakeCylinder(ax, node["_seat_radius"], node["band_thickness"])
+        assert not cyl.Shape().IsNull()
+
+    def test_occ_flush_seat_cylinder(self):
+        from OCC.Core.BRepPrimAPI import BRepPrimAPI_MakeCylinder  # type: ignore
+        from OCC.Core.gp import gp_Pnt, gp_Ax2, gp_Dir  # type: ignore
+
+        node = build_flush_node(
+            node_id="occ-f-1",
+            stone_diameter=3.5, seat_depth=1.8, bevel_width=0.2, bevel_angle_deg=45.0,
+        )
+        ax = gp_Ax2(gp_Pnt(0, 0, 0), gp_Dir(0, 0, 1))
+        cyl = BRepPrimAPI_MakeCylinder(ax, node["stone_diameter"] / 2.0, node["seat_depth"])
+        assert not cyl.Shape().IsNull()
+
+    def test_occ_halo_outer_cylinder(self):
+        from OCC.Core.BRepPrimAPI import BRepPrimAPI_MakeCylinder  # type: ignore
+        from OCC.Core.gp import gp_Pnt, gp_Ax2, gp_Dir  # type: ignore
+
+        node = build_halo_node(
+            node_id="occ-h-1",
+            center_diameter=6.5, halo_stone_size=1.2, halo_stone_count=18,
+            halo_gap=0.15, halo_metal_width=0.4,
+        )
+        ax = gp_Ax2(gp_Pnt(0, 0, 0), gp_Dir(0, 0, 1))
+        cyl = BRepPrimAPI_MakeCylinder(ax, node["_halo_outer_diameter"] / 2.0, 2.0)
+        assert not cyl.Shape().IsNull()
+
+    def test_occ_cluster_dome_cylinder(self):
+        from OCC.Core.BRepPrimAPI import BRepPrimAPI_MakeCylinder  # type: ignore
+        from OCC.Core.gp import gp_Pnt, gp_Ax2, gp_Dir  # type: ignore
+
+        node = build_cluster_node(
+            node_id="occ-cl-1",
+            cluster_diameter=10.0, stone_size=1.5, stone_count=7, dome_height=1.2,
+        )
+        ax = gp_Ax2(gp_Pnt(0, 0, 0), gp_Dir(0, 0, 1))
+        cyl = BRepPrimAPI_MakeCylinder(ax, node["cluster_diameter"] / 2.0, node["dome_height"])
+        assert not cyl.Shape().IsNull()
