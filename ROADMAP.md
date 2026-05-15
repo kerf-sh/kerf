@@ -78,15 +78,21 @@ LLM must be able to check its own work and hand off to the real world.
 Brutally honest. For each persona: the end deliverable they must ship, and
 whether Kerf can produce it **text-natively today**.
 
+Prioritization rationale = **AI-fit × societal importance × workforce size ×
+Kerf-readiness** — this is why the P0 spine is electronics / mechanical /
+drafting (high on all four today) and why civil, despite its high societal
+importance, sits at P3: it is engine-gated, not low-value.
+
 | Persona | End deliverable they must ship | Status | One-line gap |
 |---|---|---|---|
 | **Mechanical engineer** | Parametric solid part / assembly + a dimensioned, GD&T-toleranced drawing + STEP | 🚧 partial | Strong core (OCCT features, sketcher, assemblies+mates, tolerance stack-up, linear/modal/thermal FEM, 3/5-axis CAM, TechDraw-flavored drawings *with* GD&T frames). Missing: **sheet metal**, weldments, GD&T-*from-model* callouts. |
 | **Electronic engineer** | A *manufacturable* PCB: schematic → routed board → **fab package** | 🔴 cannot | KiCad-class design (ERC, hier-schematic, net classes, shove router, autoroute/freerouting DSN, length tuning, via stitching, SPICE, RF, copper pour, imports KiCad libs) — but **no Gerber/Excellon/IPC-2581/pick-place**, so a board cannot be manufactured. |
 | **Architect** | Coordinated building model → IFC + construction-doc drawings | 🚧 partial | `.bim` text-DSL → IFC4 (walls/slabs/spaces/levels/site, MEP, stairs/railings, curtain wall, schedules/views/sheets) + IFC import Tier 1. Missing: **DWG/DXF**, parametric family editor, IFC import Tier 2, construction-doc detailing. |
-| **Civil engineer** | Survey/terrain → alignment/corridor → grading + plan-and-profile sheets | 🔴 cannot | Essentially **nothing** civil-specific. Needs *distinct engines* (geospatial CRS, TIN/terrain, alignment/corridor solver, hydraulics, earthwork, LandXML/IFC-4.3-infra) — not feature-adds on the B-rep kernel. In the roadmap at **P3** with each engine named honestly. |
+| **Civil engineer** | Survey/terrain → alignment/corridor → grading + plan-and-profile sheets | 🔴 cannot | Essentially **nothing** civil-specific. Needs *distinct engines* (geospatial CRS, TIN/terrain, alignment/corridor solver, hydraulics, earthwork, LandXML/IFC-4.3-infra) — not feature-adds on the B-rep kernel. In the roadmap at **P3** with each engine named honestly — highest raw societal importance (water/sanitation/roads, esp. developing world); engine-gated, hence P3 not low-value. |
 | **Drafter** | Multi-sheet 2D production drawing, exchanged as DWG/DXF | 🚧 partial | TechDraw-flavored drawings shipped (multi-sheet, dimensions, GD&T frames, section hatching, leaders/balloons, centerlines). **DWG/DXF** is the linchpin (shared with architect). One narrow `.draft`→DXF-R12 *write* exists but is not general drawing/model exchange. |
 | **Jewelry CAD designer** | Rendered/printable ring or setting with stones placed and metal-weight/cost | 🚧 partial | Toolkit shipped (`kerf_cad_core.jewelry.{gemstones,gem_seat,settings,ring,metal_cost}` — 7 cuts, prong/bezel/channel/pavé, US/UK/EU/JP sizer + 7 shank profiles, casting-cost, FeatureView inspectors, `.gem` kind migration 060). Gap: the OCCT JS worker `op*` handlers are **not yet wired**, so geometry does not render. |
 | **Automotive engineer** | Class-A bodyside / component + DMU + supplier exchange | 🔴 cannot | Transfers: NURBS surfacing, FEM, 5-axis CAM. Gaps: Class-A (C2/G2 max, no G3; curvature combs are viz-only; **no zebra/reflection**), BIW stamping (= sheet metal), 3D harness (2D WireViz only), crash/NVH/CFD/durability (FEM is linear-static/modal/thermal only), full-vehicle DMU. See [docs/plans/automotive.md](./docs/plans/automotive.md). |
+| **Education / maker / hobbyist** | A printable / CNC-able functional part, enclosure, or furniture piece + cut list | 🚧 partial | Largest reach + strongest mission (democratizing design); 3D-print slicing (`packages/kerf-slicing`, CuraEngine) + 3/5-axis CAM (`packages/kerf-cam`) shipped. Needs the simple-parametric + cut-list / flat-pack path polished and a clear on-ramp. |
 
 ---
 
@@ -189,6 +195,38 @@ metal is P0-3; lattice/DfAM is P2; 3-print slicing + 3/5-axis CAM shipped.)
 new line here plus one or more sized tasks in [`tasks.md`](./tasks.md). The
 default home for a new sector is P3 unless it is a credibility blocker for an
 existing persona (then P0/P1).
+
+---
+
+## §3.5 — Advanced cross-cutting capabilities (strategic AI-leverage)
+
+These are not P3 filler. They are the **AI-native moat**: capabilities that
+have no real equivalent in legacy CAD and that an LLM makes *more* powerful,
+not less, because their substrate is **math, rules, or text** — exactly what a
+chat-driven engine manipulates best. Each spans *every* sector simultaneously
+(a simulation engine serves mechanical, automotive, civil, and aerospace at
+once), so they compound leverage instead of adding it linearly. They are
+**roadmap-level / strategic** and intentionally **not** yet decomposed into
+[`tasks.md`](./tasks.md) tasks — they earn tasks only when a specific slice is
+promoted to near-term P0/P1.
+
+| Capability | Reference tools | Why it's AI-native / why it matters | Status |
+|---|---|---|---|
+| **Implicit / function-rep (F-rep / SDF) modeling** | nTopology, ImplicitCAD | Field-driven lattices / TPMS / gradient materials. Geometry expressed as a math function is the *ideal* LLM substrate — no topology bookkeeping, infinitely composable, verifiable by sampling the field. Verified absent (no SDF/implicit/TPMS module). | 🔴 not started |
+| **Generative / topology / multi-objective optimization (production-grade)** | Fusion Generative, nTop, OptiStruct | Manufacturing-constrained, multi-load-case, multi-objective, lattice-infill optimization. The LLM frames the objective + constraints in text and reads back a verified result. Verified: basic single-objective SIMP topo-opt shipped (`packages/kerf-topo`, FEniCSx); manufacturing constraints / multi-load / multi-objective / lattice-infill **not** — the deep, production-grade version is unbuilt. | 🚧 in flight |
+| **Simulation pillar** *(user priority — emphasized)* | Abaqus, LS-DYNA, nCode, OpenFOAM / Ansys, Adams | Nonlinear FEA, explicit dynamics / crash, fatigue & durability, CFD, low/high-frequency EM, acoustics, multibody dynamics, coupled multiphysics. Physics is governing equations + boundary conditions = text; the LLM sets up the study and self-checks results. **Verified split:** `packages/kerf-fem` analysis enum is *exactly* `linear_static \| modal \| thermal` (+ bonded contact) → that slice ✅ shipped; **everything else — nonlinear, explicit/crash, fatigue, CFD, EM, acoustics, multibody, coupled multiphysics — is 🔴 not started.** | 🚧 in flight |
+| **1D system simulation** | Modelica, Amesim, Simulink | Lumped-parameter thermal / hydraulic / electrical / control networks. Modelica is *text* — a declarative equation-based language — making this exceptionally AI-native. Verified absent. | 🔴 not started |
+| **Manufacturing process simulation** | Moldflow, MAGMASOFT, AutoForm, Vericut | Mold-flow, casting solidification, stamping / forming, AM residual stress, machining (toolpath) verification, weld distortion. Closes the loop between design intent and a producible part the LLM can reason about. Verified absent. | 🔴 not started |
+| **Automatic Feature Recognition (AFR)** | (re-parameterize imported "dumb" STEP into editable features) | Critical AI enabler: turns any imported boundary-rep solid into an editable parametric feature tree, so the LLM can edit *any* model — not just ones authored in Kerf. Verified absent (no feature-recognition module). | 🔴 not started |
+| **Knowledge-based engineering / design automation / code-compliance** | KBE, DriveWorks | Engineering rules + standards checks (Eurocode / AISC / ACI / ASME / ISO) driven directly by the model. Rules and standards are *text* — extremely AI-native and a large differentiator. Verified absent as a general capability (only narrow PCB-DRC + railing checks exist). | 🔴 not started |
+| **3D tolerance / variation analysis** | 3DCS, CETOL | Statistical stack-up + contributor analysis in 3D. Verified: 1D worst-case / RSS / Monte-Carlo stack-up shipped (`packages/kerf-mates` `tolerance.py`); **3D variation analysis 🔴 not started.** | 🚧 in flight |
+| **PLM depth** | (product configurator, 150% / effectivity BOM, where-used, ECR / ECO, digital thread, MBSE / SysML traceability) | The digital thread is structured data + relationships = ideal for an LLM to traverse and keep coherent. Verified: file revisions + cloud git + configurations / variants + BOM rollup shipped (partial PLM); deep PLM (configurator, 150% / effectivity BOM, where-used, ECR/ECO, MBSE/SysML trace) **🔴 not started.** | 🚧 in flight |
+| **Multi-CAD interop & geometry healing** | STEP AP242 / JT / Parasolid / QIF + automatic repair | Robust import/heal is what lets the LLM operate on the real-world ecosystem, not a walled garden. Verified: STEP I/O shipped; **AP242 / JT / Parasolid / QIF + automatic geometry healing 🔴 not started** (only internal ShapeFix passes inside surface booleans, not a general heal tool). | 🚧 in flight |
+| **Reverse-engineering pipeline** | Geomagic, PolyWorks | Point cloud → segmentation → feature fit → parametric solid. Verified absent as a pipeline; quad-remesh (`packages/kerf-cad-core` `quad_remesh.py`) is an adjacent, reusable building block. | 🔴 not started |
+| **Mechanism synthesis & motion** | MotionGen, Adams | Linkage / cam / gear-train *synthesis* + kinematics. Synthesis is an inverse problem stated in text (motion spec → mechanism) — very AI-native. Verified: mates constraint solver shipped (`packages/kerf-mates` `solver.py`); **mechanism synthesis 🔴 not started.** | 🚧 in flight |
+| **Sustainability / LCA** | One Click LCA | Embodied-carbon / circularity computed straight from the model + a materials database. Data-native, increasingly *mandated* by regulation. Verified absent. | 🔴 not started |
+| **Robotics / offline programming** | RoboDK, Process Simulate | Robot-cell simulation + path generation. Toolpaths and robot programs are text — naturally AI-native. Verified absent; 5-axis CAM (`packages/kerf-cam` `five_axis/`) is an adjacent, reusable path-gen base. | 🔴 not started |
+| **Nesting / cut & material optimization** | (sheet / textile / wood / stone nesting) | Cross-cutting, high-leverage packing/optimization shared by laser/waterjet/plasma, woodworking, apparel, and stone — one solver serves many sectors. Verified absent. | 🔴 not started |
 
 ---
 
@@ -318,6 +356,31 @@ authoring/UX mechanisms. It **never** applies to (a) sectors/domains — all in,
 see §2/§3 — or (b) correctness / output / standards features (GD&T,
 Gerber/fab output, DWG handoff, verification/self-check), which are *more*
 important under an LLM, not less.
+
+---
+
+## §6 — Long-term horizon (sectors — directional, NO tasks)
+
+**Directional only.** Every sector here is fully **committed** ("we do
+everything"), but it is deliberately **not** broken into [`tasks.md`](./tasks.md)
+tasks until it is promoted to near-term P0/P1. This is the explicit parking
+lot for sectors with **low near-term fit but high long-term value** —
+distinct from P3, which already enumerates near-term-reachable long-tail
+verticals. A sector graduates from §6 when an existing-persona credibility
+need or a strategic bet pulls it forward; at that point it gets a P-tier line
+in §3 and sized tasks in `tasks.md`.
+
+| Sector | Reference tools | Long-term fit rationale | Status |
+|---|---|---|---|
+| **Textiles / apparel & technical-textile pattern-making** | CLO3D, Optitex, Gerber | One of the largest design workforces on earth. Needs a distinct 2D-pattern + cloth-drape engine; pattern-making is parametric (good eventual AI-fit), cloth drape simulation is the genuinely hard part. | 🔴 not started |
+| **Composites engineering** | Fibersim, CATIA Composites | Ply-book / laminate / draping / fiber-steering. Spans aerospace, automotive, wind, and marine — high value, but a specialized layup engine. | 🔴 not started |
+| **Medical / patient-specific** | Materialise Mimics / 3-matic | DICOM → surgical guides / orthotics / implants. High societal value and fast-growing; needs a medical-imaging-to-geometry pipeline. | 🔴 not started |
+| **Process plant & pressure vessels** | AVEVA E3D, PV Elite, ISOGEN | Spec-driven piping / isometrics + ASME BPVC / PD5500 vessels. Huge industrial footprint; rule-native (good long-term AI-fit). | 🔴 not started |
+| **Optical / photonics** | Zemax, PIC tools | Lens design + integrated optics. Math / parametric substrate → very AI-native long-term once the physics solvers exist. | 🔴 not started |
+
+*Cross-reference (not duplicated here): civil sub-engines and marine /
+naval-architecture hull fairing are already seeded at **P3 (§3)** because they
+are nearer-term reachable; they are tracked there, not in this horizon table.*
 
 ---
 
