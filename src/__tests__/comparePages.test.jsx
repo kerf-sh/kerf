@@ -197,12 +197,15 @@ describe('fairness affordance', () => {
 describe('compare hub CARDS', () => {
   it('index.jsx links to all 5 comparison slugs', async () => {
     // Read the source to verify the slug list without needing a DOM renderer.
-    const src = await import('../routes/compare/index.jsx?raw').catch(() => null)
-    // If ?raw import isn't supported in this env, fall back to a content check
-    // via the PAGES registry — both approaches confirm the slugs exist.
+    const src = await import('../routes/compare/index.jsx?raw')
+      .then((m) => m.default)
+      .catch(() => null)
     const slugs = ['freecad', 'kicad', 'rhino', 'revit', 'fusion']
     slugs.forEach((slug) => {
+      // The PAGES registry must know every slug...
       expect(PAGES).toHaveProperty(slug)
+      // ...and the hub must actually link to it (when ?raw is supported).
+      if (src != null) expect(src).toContain(`'${slug}'`)
     })
   })
 })
