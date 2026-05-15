@@ -21,7 +21,10 @@
 FROM node:22-alpine AS frontend
 WORKDIR /app
 COPY package.json package-lock.json* ./
-RUN npm ci --no-audit --no-fund
+# npm install (not ci): sharp/libvips pull platform-specific optional deps
+# (@emnapi/*) that a darwin-generated lockfile can't fully pin for the
+# linux/amd64 build image; install heals them while still honouring the lock.
+RUN npm install --no-audit --no-fund
 COPY vite.config.js index.html ./
 COPY src/ ./src/
 COPY public/ ./public/
