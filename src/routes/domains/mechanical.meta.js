@@ -13,7 +13,7 @@ export const META_DESCRIPTION =
 
 export const META_OG_IMAGE = 'https://kerf.sh/og/mechanical.png'
 
-export const META_URL = 'https://kerf.sh/mechanical'
+export const META_URL = 'https://kerf.sh/domains/mechanical'
 
 // Feature list — one entry per capability card. Used by JSON-LD ItemList and
 // the capability grid section. Add new capabilities here; the grid renders

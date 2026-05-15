@@ -69,7 +69,7 @@ describe('mechanical.meta — META_OG_IMAGE', () => {
 
 describe('mechanical.meta — META_URL', () => {
   it('is the canonical page URL', () => {
-    expect(META_URL).toBe('https://kerf.sh/mechanical')
+    expect(META_URL).toBe('https://kerf.sh/domains/mechanical')
   })
 })
 

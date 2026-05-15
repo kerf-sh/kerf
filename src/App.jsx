@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import Landing from './routes/Landing.jsx'
 import JewelryDomainPage from './routes/domains/Jewelry.jsx'
+import Architecture from './routes/domains/Architecture.jsx'
 import Pricing from './routes/Pricing.jsx'
 import Roadmap from './routes/Roadmap.jsx'
 import DocsHome from './routes/Docs/index.jsx'
@@ -120,13 +121,14 @@ export default function App() {
       <Route path="/roadmap" element={<Roadmap />} />
       <Route path="/docs" element={<DocsHome />} />
       <Route path="/docs/:slug" element={<DocsArticle />} />
-      <Route path="/electronics" element={<Electronics />} />
-      <Route path="/mechanical" element={<Mechanical />} />
+      <Route path="/domains/electronics" element={<Electronics />} />
+      <Route path="/domains/mechanical" element={<Mechanical />} />
       {cloudEnabled && <Route path="/workshop" element={<Workshop />} />}
       {cloudEnabled && (
         <Route path="/workshop/:slug" element={<WorkshopListing />} />
       )}
-      <Route path="/jewelry" element={<JewelryDomainPage />} />
+      <Route path="/domains/jewelry" element={<JewelryDomainPage />} />
+      <Route path="/domains/architecture" element={<Architecture />} />
 
       <Route element={<ProtectedRoute />}>
         <Route path="/profile" element={<Profile />} />

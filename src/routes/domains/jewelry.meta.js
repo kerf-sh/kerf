@@ -12,7 +12,7 @@ export const JEWELRY_META = {
   description:
     'Parametric rings, settings, gem seats, chains and findings — designed in conversation. 30 cuts, prong/bezel/pavé/halo, casting tables. MIT open-core.',
   ogImage: 'https://kerf.sh/og/jewelry.png',
-  canonicalUrl: 'https://kerf.sh/jewelry',
+  canonicalUrl: 'https://kerf.sh/domains/jewelry',
 }
 
 /**

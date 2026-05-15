@@ -16,7 +16,7 @@ export const meta = {
     description:
       'ERC · buses · diff pairs · autoroute · pour · SPICE sim · Gerbers — full KiCad-comprehensive electronics in one chat-native workspace.',
     image: 'https://kerf.sh/og/electronics.png',
-    url: 'https://kerf.sh/electronics',
+    url: 'https://kerf.sh/domains/electronics',
     type: 'website',
   },
 }
