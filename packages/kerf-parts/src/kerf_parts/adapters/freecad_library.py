@@ -27,6 +27,8 @@ returns ``[]`` immediately with a log message. Check :func:`source_present`.
 """
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
 from pathlib import Path
 
@@ -43,6 +45,7 @@ _PART_SUFFIXES = frozenset((".fcstd", ".step", ".stp", ".brep"))
 _FOLDER_CATEGORY: dict[str, str] = {
     "mechanical": "mechanical",
     "fastener": "fastener",
+    "fasteners": "fastener",
     "bolt": "fastener/bolt",
     "bolts": "fastener/bolt",
     "screw": "fastener/screw",
@@ -110,6 +113,7 @@ def _name_from_path(p: Path, src: Path) -> str:
     replaced by spaces and the result title-cased. If the immediate parent
     folder provides extra context (and differs from the stem), it is
     prepended.
+    replaced by spaces for readability.
 
     Examples::
         Mechanical/FlangeM12.step  -> "FlangeM12"
@@ -150,6 +154,11 @@ def _rel_path_for(source: Source, file_path: Path, src: Path) -> str:
     return "/".join([source.name] + parts)
 
 
+def _stable_hash(fields: dict) -> str:
+    """SHA-256 of deterministic JSON-serialized *fields*."""
+    return hashlib.sha256(json.dumps(fields, sort_keys=True).encode()).hexdigest()
+
+
 # ---------------------------------------------------------------------------
 # Public emit_part — attribution is wired here, never bypassed
 # ---------------------------------------------------------------------------
@@ -169,10 +178,23 @@ def emit_part(
     the clone root so per-file git authorship is scoped correctly. Attribution
     is stamped here — a FreeCAD-library part cannot be emitted without
     provenance.
+
+    The content hash is derived from stable structural fields (name, category,
+    source, part_file) so it is deterministic across runs regardless of the
+    ``retrieved_at`` timestamp embedded in the attribution block.
     """
     part = KerfPart(name=name, category=category, **fields)
+    # Pre-compute a deterministic hash from stable identity fields BEFORE the
+    # time-varying attribution block is attached.  ensure_hash() will return
+    # this cached value without re-computing from the timestamped metadata.
+    part.content_hash = _stable_hash({
+        "name": name,
+        "category": category,
+        "source": source.name,
+        "source_ref": source.ref,
+        "part_file": part_file,
+    })
     attach_attribution(source, Path(src_dir), part, part_file)
-    part.ensure_hash()
     return part
 
 
@@ -222,6 +244,7 @@ def adapt(source: Source, src_dir) -> list[KerfPart]:
         )
         part.rel_path = _rel_path_for(source, file_path, src)
         # Merge the flat legacy keys alongside the attribution the helper set.
+        # Ensure flat legacy keys are present alongside the attribution block.
         part.metadata.setdefault("source", source.name)
         part.metadata.setdefault("upstream_url", source.git_url)
         part.metadata.setdefault("upstream_ref", source.ref)

@@ -23,6 +23,7 @@ a non-empty attribution block. No part can be emitted without provenance.
 MISSING SOURCE: if ``src_dir`` does not exist or is empty,
 :func:`adapt` returns an ``{ok: False, reason: ...}``-style result — in
 practice it returns an empty list and the caller can detect absence via
+:func:`adapt` returns an empty list and the caller can detect absence via
 :func:`source_present`.
 
 WHAT IS NOT HERE: OpenSCAD / FreeCAD parametric geometry evaluation.
@@ -32,6 +33,8 @@ is a future extension that calls into the OCCT / scad workers.
 """
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
 from pathlib import Path
 from typing import Any, Optional
@@ -218,6 +221,11 @@ def _rel_path_for(source: Source, class_id: str, row_key: str) -> str:
     return f"{source.name}/{safe_id}/{safe_key}.part"
 
 
+def _stable_hash(fields: dict) -> str:
+    """SHA-256 of deterministic JSON-serialized *fields*."""
+    return hashlib.sha256(json.dumps(fields, sort_keys=True).encode()).hexdigest()
+
+
 # ---------------------------------------------------------------------------
 # Public emit_part — attribution is wired here, never bypassed
 # ---------------------------------------------------------------------------
@@ -237,10 +245,24 @@ def emit_part(
     to the clone root so per-file git authorship is scoped correctly. The
     attribution block is stamped here — it is impossible to emit a BOLTS
     part without provenance.
+
+    The content hash is derived from stable structural fields (name, category,
+    mpn, source, collection_file) so it is deterministic across runs regardless
+    of the ``retrieved_at`` timestamp embedded in the attribution block.
     """
     part = KerfPart(name=name, category=category, **fields)
+    # Pre-compute a deterministic hash from stable identity fields BEFORE the
+    # time-varying attribution block is attached.  ensure_hash() will return
+    # this value without re-computing from the full (timestamped) metadata.
+    part.content_hash = _stable_hash({
+        "name": name,
+        "category": category,
+        "mpn": fields.get("mpn", ""),
+        "source": source.name,
+        "source_ref": source.ref,
+        "collection_file": collection_file,
+    })
     attach_attribution(source, Path(src_dir), part, collection_file)
-    part.ensure_hash()
     return part
 
 
