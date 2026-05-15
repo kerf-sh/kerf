@@ -18,8 +18,7 @@
  *   8. Local vs hosted — same product, two ways to run it.
  *   9. Pricing teaser — three plan cards linking to /pricing.
  *  10. CTA strip — try / GitHub.
- *  11. Made in South Africa — small pride block.
- *  12. Footer (own component).
+ *  11. Footer (own component).
  *
  * Palette is locked to ink-* / kerf-* / cyan-edge / magenta-edge from
  * src/index.css. No raster assets — everything inline SVG.
@@ -38,7 +37,6 @@ import {
   FileText,
   Boxes,
   Sparkles,
-  Wallet,
   Server,
   Zap,
   Check,
@@ -1319,56 +1317,6 @@ function TeaserPlan({ label, price, note, bullets, ctaTo, ctaText, highlighted }
   )
 }
 
-/* -------------------------------------------------------------------------- */
-/* Section: Made in South Africa                                               */
-/* -------------------------------------------------------------------------- */
-
-function MadeInSA({ cloudEnabled = false }) {
-  return (
-    <section className="relative border-t border-ink-900">
-      <div className="mx-auto max-w-5xl px-6 py-12">
-        <div className="rounded-2xl border border-ink-800 bg-ink-900/30 backdrop-blur p-6 sm:p-8 flex flex-col sm:flex-row sm:items-center gap-5 justify-between">
-          <div className="flex items-center gap-5">
-            <span
-              className="text-4xl leading-none shrink-0"
-              aria-hidden
-            >
-              ZA
-            </span>
-            <div>
-              <p className="font-display text-lg font-semibold tracking-tight text-ink-100">
-                Built by a small team in Durban.
-              </p>
-              <p className="text-sm text-ink-400 leading-relaxed mt-1">
-                Engineered for engineers everywhere.
-              </p>
-            </div>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <a
-              href={GITHUB_URL}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex items-center gap-2 rounded-md border border-ink-800 bg-ink-900/60 px-3 py-1.5 text-xs text-ink-300 hover:border-ink-700 hover:text-ink-100 transition-colors"
-            >
-              <Github size={13} />
-              <span className="font-mono">kerf-sh/kerf</span>
-            </a>
-            {cloudEnabled && (
-              <Link
-                to="/pricing"
-                className="inline-flex items-center gap-2 rounded-md border border-ink-800 bg-ink-900/60 px-3 py-1.5 text-xs text-ink-300 hover:border-ink-700 hover:text-ink-100 transition-colors"
-              >
-                <Wallet size={13} />
-                See pricing
-              </Link>
-            )}
-          </div>
-        </div>
-      </div>
-    </section>
-  )
-}
 
 /* -------------------------------------------------------------------------- */
 /* CTA strip (between sections)                                                */
@@ -1403,7 +1351,7 @@ function CTAStrip() {
               </Button>
               <Button as="a" href={GITHUB_URL} target="_blank" rel="noreferrer" variant="outline" size="lg">
                 <Github size={16} />
-                GitHub
+                Contribute on GitHub
               </Button>
             </div>
           </div>
@@ -1434,7 +1382,6 @@ export default function Landing() {
       <LocalVsHosted />
       {cloudEnabled && <PricingTeaser />}
       <CTAStrip />
-      <MadeInSA cloudEnabled={cloudEnabled} />
       <Footer />
     </div>
   )
