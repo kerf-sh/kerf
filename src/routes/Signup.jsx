@@ -35,7 +35,7 @@ function GoogleIcon() {
 export default function Signup() {
   const navigate = useNavigate()
   const setSession = useAuth((s) => s.setSession)
-  const { googleClientId } = useCloudConfig()
+  const { googleEnabled } = useCloudConfig()
 
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
@@ -167,7 +167,7 @@ export default function Signup() {
               </Button>
             </form>
 
-            {googleClientId && (
+            {googleEnabled && (
               <>
                 <div className="my-6 flex items-center gap-3">
                   <div className="h-px flex-1 bg-ink-800" />
@@ -176,6 +176,7 @@ export default function Signup() {
                   </span>
                   <div className="h-px flex-1 bg-ink-800" />
                 </div>
+
                 <a
                   href={api.googleAuthUrl()}
                   className="w-full inline-flex items-center justify-center gap-2 h-11 rounded-lg border border-ink-700 bg-ink-800/60 hover:bg-ink-800 transition-colors text-sm text-ink-100 font-medium"

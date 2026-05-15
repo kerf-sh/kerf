@@ -3,31 +3,29 @@
 // either the OSS frontend (will just see cloudEnabled=false defaults) or
 // the cloud bundle.
 //
-// Shape returned by /api/config (per docs/architecture.md):
+// Shape returned by /api/config (per CONTRACT.md):
 //   {
 //     cloud_enabled: bool,
-//     cloud_beta?: bool,        // billing disabled during beta (everyone Free)
 //     google_client_id?: string,
+//     google_enabled?: bool,
+//     github_enabled?: bool,
+//     github_client_id?: string,
 //     paystack_public_key?: string,
 //   }
 //
-// cloudBeta is true when VITE_CLOUD_BETA is set at build time OR when the
-// backend reports cloud_beta: true. Either signal is sufficient. When
-// cloudBeta is true and cloudEnabled is true, billing/tier-change controls
-// are visibly disabled — all product features remain accessible.
+// OAuth availability (googleEnabled / githubEnabled) is derived at runtime
+// from the server's kerf.toml so the same Docker image works across
+// environments without a rebuild. VITE_GOOGLE_CLIENT_ID is kept as a
+// build-time fallback for local dev that skips the /api/config fetch.
 
 import { useEffect } from 'react'
 import { create } from 'zustand'
 
 const API_URL = import.meta.env.VITE_API_URL || ''
 
-// Read the build-time env flag once. Truthy string values ("1", "true",
-// "yes") activate beta mode even before /api/config responds.
-const VITE_CLOUD_BETA = (() => {
-  const v = import.meta.env.VITE_CLOUD_BETA
-  if (!v) return false
-  return ['1', 'true', 'yes'].includes(String(v).toLowerCase())
-})()
+// Build-time fallback: if VITE_GOOGLE_CLIENT_ID was baked in (local dev
+// workflow), treat Google as enabled without needing the runtime flag.
+const BUILD_GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || ''
 
 const DEFAULTS = {
   ready: false,
@@ -37,10 +35,10 @@ const DEFAULTS = {
   // server-side defaults. The cloud build always overrides via the
   // /api/config response.
   localMode: true,
-  // cloudBeta: billing-disabled mode. Defaults to the build-time flag so
-  // the UI reflects it immediately (before the first /api/config response).
-  cloudBeta: VITE_CLOUD_BETA,
-  googleClientId: '',
+  googleClientId: BUILD_GOOGLE_CLIENT_ID,
+  googleEnabled: !!BUILD_GOOGLE_CLIENT_ID,
+  githubEnabled: false,
+  githubClientId: '',
   paystackPublicKey: '',
 }
 
@@ -57,6 +55,15 @@ const useStore = create((set, get) => ({
         return r.json()
       })
       .then((data) => {
+        // Runtime client ID takes precedence over build-time env.
+        const googleClientId = data.google_client_id || BUILD_GOOGLE_CLIENT_ID
+        // google_enabled from server takes precedence; fall back to whether
+        // any client ID is present (handles older server binaries).
+        const googleEnabled = data.google_enabled != null
+          ? !!data.google_enabled
+          : !!googleClientId
+        const githubEnabled = !!data.github_enabled
+        const githubClientId = data.github_client_id || ''
         set({
           ready: true,
           cloudEnabled: !!data.cloud_enabled,
@@ -64,11 +71,10 @@ const useStore = create((set, get) => ({
           // login screen". Fall back to !cloud_enabled when the
           // backend hasn't surfaced the flag yet (older binary).
           localMode: data.local_mode != null ? !!data.local_mode : !data.cloud_enabled,
-          // cloudBeta: either the build-time env flag OR the backend flag
-          // (whichever is truthy wins — beta can't be disabled by the backend
-          // once the build-time flag is set).
-          cloudBeta: VITE_CLOUD_BETA || !!data.cloud_beta,
-          googleClientId: data.google_client_id || '',
+          googleClientId,
+          googleEnabled,
+          githubEnabled,
+          githubClientId,
           paystackPublicKey: data.paystack_public_key || '',
           _inflight: null,
         })
@@ -94,8 +100,10 @@ export function useCloudConfig() {
     ready: state.ready,
     cloudEnabled: state.cloudEnabled,
     localMode: state.localMode,
-    cloudBeta: state.cloudBeta,
     googleClientId: state.googleClientId,
+    googleEnabled: state.googleEnabled,
+    githubEnabled: state.githubEnabled,
+    githubClientId: state.githubClientId,
     paystackPublicKey: state.paystackPublicKey,
   }
 }

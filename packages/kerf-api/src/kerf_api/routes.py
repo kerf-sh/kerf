@@ -237,8 +237,15 @@ async def get_config():
         # cloud_beta: billing-disabled mode. Mirrored from KERF_CLOUD_BETA env.
         if settings.cloud_beta:
             payload["cloud_beta"] = True
+        # OAuth availability — public client IDs + bool flags only, no
+        # secrets. The frontend renders the Google/GitHub buttons from
+        # these runtime values (Vite can't inline per-env build-time vars).
+        payload["google_enabled"] = bool(settings.google_client_id)
+        payload["github_enabled"] = bool(settings.cloud_github_client_id)
         if settings.google_client_id:
             payload["google_client_id"] = settings.google_client_id
+        if settings.cloud_github_client_id:
+            payload["github_client_id"] = settings.cloud_github_client_id
         if settings.cloud_paystack_public_key:
             payload["paystack_public_key"] = settings.cloud_paystack_public_key
     return payload
