@@ -10,6 +10,12 @@ emerald          Rectangular step cut.
 marquise         Boat-shaped modified brilliant.
 pear             Teardrop modified brilliant.
 cushion          Square/rectangular cushion modified brilliant.
+radiant          Cropped-corner rectangular modified brilliant.
+asscher          Square step cut with cropped corners (high crown).
+trillion         Triangular modified brilliant (Trillion™ / triangular brilliant).
+heart            Heart-shaped modified brilliant.
+baguette         Rectangular step cut (long narrow bar).
+briolette        Elongated teardrop with all-facet surface; no table.
 
 Each cut is described by a *proportions dict* whose keys follow GIA/AGS
 conventions (all linear dimensions as mm, angles in degrees).
@@ -45,6 +51,30 @@ Emerald:
     table_pct: 60 %, crown_angle_deg: 15°, step_rows: 3,
     total_depth_pct: 60 %, corner_cut_ratio: 0.15
 
+Radiant:
+    table_pct: 62 %, crown_angle_deg: 32°, pavilion_angle_deg: 41°,
+    aspect_ratio: 0.75, corner_cut_ratio: 0.10
+
+Asscher:
+    table_pct: 60 %, crown_angle_deg: 25°, step_rows: 3,
+    aspect_ratio: 1.0, corner_cut_ratio: 0.20 (deeper corner cuts than emerald)
+
+Trillion:
+    table_pct: 55 %, crown_angle_deg: 34°, pavilion_angle_deg: 41°,
+    sides: 3, aspect_ratio: 1.0 (equilateral)
+
+Heart:
+    table_pct: 56 %, crown_angle_deg: 34.5°, pavilion_angle_deg: 40.75°,
+    aspect_ratio: 0.98 (length ≈ width), cleft_depth_pct: 10
+
+Baguette:
+    table_pct: 70 %, crown_angle_deg: 8°, step_rows: 2,
+    aspect_ratio: 0.40 (3:1 to 4:1 L:W typical)
+
+Briolette:
+    No table; full-facet elongated teardrop; crown_angle_deg = 30° (upper facets),
+    pavilion_angle_deg = 45° (lower point), aspect_ratio: 0.50 (height ≈ 2× width)
+
 LLM-facing tools
 ----------------
   jewelry_create_gemstone  — appends a gemstone node to a .feature file
@@ -77,6 +107,13 @@ GEMSTONE_CUTS = {
     "marquise",
     "pear",
     "cushion",
+    # Fancy cuts:
+    "radiant",
+    "asscher",
+    "trillion",
+    "heart",
+    "baguette",
+    "briolette",
 }
 
 
@@ -96,6 +133,13 @@ _CARAT_REF: dict[str, tuple[float, float]] = {
     "marquise":        (10.0, 3.0),  # long axis
     "pear":            (8.0, 3.0),   # long axis
     "cushion":         (5.5, 3.0),   # side length
+    # Fancy cuts (ref_mm derived from equivalent-volume comparison to round brilliant):
+    "radiant":         (6.0, 3.0),   # similar footprint to princess; ~10% larger
+    "asscher":         (5.5, 3.0),   # square step; similar depth to emerald
+    "trillion":        (7.0, 3.0),   # equilateral triangle; large face, shallow
+    "heart":           (6.5, 3.0),   # same ref as round brilliant (≈same volume)
+    "baguette":        (5.0, 3.0),   # 3:1 narrow bar; shallow step cut
+    "briolette":       (5.5, 3.0),   # elongated teardrop; half-round cross-section
 }
 
 
@@ -106,7 +150,7 @@ def carat_from_mm(cut: str, dim_mm: float) -> float:
     For all other cuts, dim_mm is the long-axis length.
 
     Formula: carat = (dim_mm / ref_mm) ** exponent
-    where ref_mm is the ~1-carat dimension for that cut.
+    where ref_mm is the ~1-carat dimension for that cut (diamond density).
     """
     if cut not in _CARAT_REF:
         raise ValueError(f"Unknown cut: {cut!r}")
@@ -197,16 +241,20 @@ def gemstone_proportions(
     gi_pct    = girdle_pct        if girdle_pct         is not None else _defaults["girdle_pct"]
     ar        = aspect_ratio      if aspect_ratio        is not None else _defaults.get("aspect_ratio", 1.0)
 
-    # Compute derived heights (fraction of diameter)
+    # Compute derived heights (fraction of diameter).
+    # When a cut has explicit crown_height_pct / pavilion_depth_pct in its
+    # defaults those values take precedence; otherwise derive from angles.
+    # Note: briolette has table_pct=0 (no table) — handled naturally.
     import math
-    # crown_height = (diameter/2 * (1 - table_fraction)) * tan(crown_angle)
-    # simplified to the standard parameterisation
-    table_fraction = ta_pct / 100.0
-    crown_h_pct = _defaults.get("crown_height_pct") or (
-        (1 - table_fraction) / 2 * math.tan(math.radians(ca_deg)) * 100
+    stored_ch = _defaults.get("crown_height_pct")
+    crown_h_pct = (
+        stored_ch if stored_ch is not None and stored_ch != 0
+        else (1 - ta_pct / 100.0) / 2 * math.tan(math.radians(ca_deg)) * 100
     )
-    pav_d_pct = _defaults.get("pavilion_depth_pct") or (
-        0.5 * math.tan(math.radians(pa_deg)) * 100
+    stored_pd = _defaults.get("pavilion_depth_pct")
+    pav_d_pct = (
+        stored_pd if stored_pd is not None and stored_pd != 0
+        else 0.5 * math.tan(math.radians(pa_deg)) * 100
     )
     gi_mm_pct = gi_pct
     total = crown_h_pct + gi_mm_pct + pav_d_pct
@@ -298,6 +346,99 @@ _CUT_DEFAULTS: dict[str, dict] = {
         "aspect_ratio": 1.0,
         "extras": {"corner_radius_pct": 15},  # corner radius as % of side
     },
+    # -----------------------------------------------------------------------
+    # Fancy cuts (GIA/AGS industry standards; see module docstring for refs)
+    # -----------------------------------------------------------------------
+    "radiant": {
+        # Cropped-corner rectangular modified brilliant.
+        # GIA reference: table 62–70%, depth 61–67%, typical 1.0–1.5 L:W.
+        "table_pct": 62.0,
+        "crown_angle_deg": 32.0,
+        "crown_height_pct": 13.0,
+        "pavilion_angle_deg": 41.0,
+        "pavilion_depth_pct": 43.0,
+        "girdle_pct": 2.5,
+        "aspect_ratio": 0.75,       # width = 0.75 × length (~1.33:1 L:W)
+        "extras": {
+            "corner_cut_ratio": 0.10,  # fraction of corner removed
+            "facet_count": 70,         # typical radiant facet count
+        },
+    },
+    "asscher": {
+        # Square step cut with heavily cropped corners (deep high crown).
+        # GIA reference: table 60–68%, depth 60–66%, 1:1 L:W.
+        "table_pct": 60.0,
+        "crown_angle_deg": 25.0,
+        "crown_height_pct": 15.0,
+        "pavilion_angle_deg": 43.0,
+        "pavilion_depth_pct": 43.0,
+        "girdle_pct": 2.0,
+        "aspect_ratio": 1.0,
+        "extras": {
+            "step_rows": 3,
+            "corner_cut_ratio": 0.20,   # deeper corner cuts than emerald
+        },
+    },
+    "trillion": {
+        # Equilateral triangular modified brilliant (also called triangular brilliant).
+        # GIA reference: table 50–60%, depth 32–48%, equilateral (L:W ≈ 1:1).
+        "table_pct": 55.0,
+        "crown_angle_deg": 34.0,
+        "crown_height_pct": 11.0,
+        "pavilion_angle_deg": 41.0,
+        "pavilion_depth_pct": 37.0,
+        "girdle_pct": 2.5,
+        "aspect_ratio": 1.0,    # equilateral triangle; "width" = same as "length"
+        "extras": {
+            "sides": 3,
+            "facet_count": 43,  # standard trillion facet count
+        },
+    },
+    "heart": {
+        # Heart-shaped modified brilliant.
+        # GIA reference: table 53–63%, depth 58–62%, L:W ratio 0.90–1.10.
+        "table_pct": 56.0,
+        "crown_angle_deg": 34.5,
+        "crown_height_pct": 15.0,
+        "pavilion_angle_deg": 40.75,
+        "pavilion_depth_pct": 43.0,
+        "girdle_pct": 2.5,
+        "aspect_ratio": 0.98,   # slight width/length imbalance typical for heart
+        "extras": {
+            "cleft_depth_pct": 10,  # depth of the V-cleft as % of width
+            "facet_count": 59,
+        },
+    },
+    "baguette": {
+        # Rectangular step cut (narrow bar); common in channel-set side stones.
+        # GIA reference: table 60–75%, depth 42–50%, L:W typically 2.5:1 to 4:1.
+        "table_pct": 70.0,
+        "crown_angle_deg": 8.0,
+        "crown_height_pct": 4.0,
+        "pavilion_angle_deg": 43.0,
+        "pavilion_depth_pct": 40.0,
+        "girdle_pct": 1.5,
+        "aspect_ratio": 0.33,   # width = 0.33 × length (3:1 L:W)
+        "extras": {
+            "step_rows": 2,
+            "corner_cut_ratio": 0.0,    # straight (no corner cut)
+        },
+    },
+    "briolette": {
+        # Elongated double-cone (teardrop) with all-facet surface; no table or girdle.
+        # Dimensions: height (long axis) × width; typical aspect ~0.50 (2:1 H:W).
+        # "crown" facets are the upper hemisphere; "pavilion" the lower point.
+        "table_pct": 0.0,           # no table on a briolette
+        "crown_angle_deg": 30.0,
+        "crown_height_pct": 50.0,   # upper half
+        "pavilion_angle_deg": 45.0,
+        "pavilion_depth_pct": 50.0, # lower half / pointed end
+        "girdle_pct": 2.0,          # thin equatorial band
+        "aspect_ratio": 0.50,       # width = 0.50 × height (~2:1 H:W)
+        "extras": {
+            "facet_rows": 8,    # horizontal rows of triangular facets
+        },
+    },
 }
 
 
@@ -348,10 +489,12 @@ jewelry_create_gemstone_spec = ToolSpec(
     description=(
         "Append a `gemstone` node to a `.feature` file. "
         "Generates a parametric gemstone solid with industry-standard proportions. "
-        "Supported cuts: round_brilliant, princess, oval, emerald, marquise, pear, cushion. "
+        "Supported cuts: round_brilliant, princess, oval, emerald, marquise, pear, cushion, "
+        "radiant, asscher, trillion, heart, baguette, briolette. "
         "Size the stone by carat OR by diameter_mm (long axis for non-round cuts). "
         "Carat formula: carat = (diameter_mm / ref_mm)^3 where ref_mm is ~6.5 for "
-        "round brilliant at 1 ct. The gemstone node stores proportions used by the OCCT "
+        "round brilliant at 1 ct (diamond density). "
+        "The gemstone node stores proportions used by the OCCT "
         "worker to build a closed solid (pavilion cone + girdle cylinder + crown prism). "
         "Use jewelry_cut_gem_seat to cut the matching seat from a ring shank or bezel."
     ),
@@ -367,8 +510,11 @@ jewelry_create_gemstone_spec = ToolSpec(
                 "enum": sorted(GEMSTONE_CUTS),
                 "description": (
                     "Gemstone cut style. "
-                    "round_brilliant=57 facets, princess=square, oval=elliptical, "
-                    "emerald=step cut, marquise=boat, pear=teardrop, cushion=soft square."
+                    "round_brilliant=57 facets, princess=square brilliant, oval=elliptical brilliant, "
+                    "emerald=rectangular step cut, marquise=boat, pear=teardrop, cushion=soft square, "
+                    "radiant=cropped-corner rectangular brilliant, asscher=square step cut, "
+                    "trillion=triangular brilliant, heart=heart-shaped brilliant, "
+                    "baguette=narrow rectangular step cut, briolette=all-facet elongated teardrop."
                 ),
             },
             "carat": {

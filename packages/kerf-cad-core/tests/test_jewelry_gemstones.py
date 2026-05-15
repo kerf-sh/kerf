@@ -88,13 +88,19 @@ def run_tool(ctx, file_id, **kwargs):
 # ---------------------------------------------------------------------------
 
 class TestGemstoneCutsRegistry:
-    EXPECTED = {
+    EXPECTED_ORIGINAL = {
         "round_brilliant", "princess", "oval", "emerald",
         "marquise", "pear", "cushion",
     }
+    EXPECTED_FANCY = {
+        "radiant", "asscher", "trillion", "heart", "baguette", "briolette",
+    }
 
     def test_all_expected_cuts_present(self):
-        assert self.EXPECTED <= GEMSTONE_CUTS
+        assert self.EXPECTED_ORIGINAL <= GEMSTONE_CUTS
+
+    def test_all_fancy_cuts_present(self):
+        assert self.EXPECTED_FANCY <= GEMSTONE_CUTS
 
     def test_no_unknown_cuts(self):
         # All values in registry must be strings
@@ -102,7 +108,7 @@ class TestGemstoneCutsRegistry:
             assert isinstance(cut, str)
 
     def test_count(self):
-        assert len(GEMSTONE_CUTS) >= 7
+        assert len(GEMSTONE_CUTS) >= 13
 
 
 # ---------------------------------------------------------------------------
@@ -198,7 +204,8 @@ class TestGemstoneProportions:
     def test_all_cuts_produce_valid_proportions(self, cut):
         props = gemstone_proportions(cut, diameter_mm=5.0)
         assert props.diameter_mm > 0
-        assert 0 < props.table_pct < 100
+        # briolette has no table facet (table_pct == 0); all other cuts have a table
+        assert 0 <= props.table_pct < 100
         assert 0 < props.crown_angle_deg < 90
         assert 0 < props.pavilion_angle_deg < 90
         assert props.girdle_pct > 0
@@ -422,3 +429,83 @@ class TestRunJewelryCreateGemstoneErrors:
         result = run_tool(ctx, fid, cut="round_brilliant",
                           diameter_mm=6.5, table_pct=-5.0)
         assert result.get("code") == "BAD_ARGS"
+
+
+# ---------------------------------------------------------------------------
+# Fancy cuts
+# ---------------------------------------------------------------------------
+
+FANCY_CUTS = ["radiant", "asscher", "trillion", "heart", "baguette", "briolette"]
+
+
+class TestFancyCuts:
+    """Each new fancy cut produces valid proportions and round-trips."""
+
+    @pytest.mark.parametrize("cut", FANCY_CUTS)
+    def test_fancy_cut_produces_valid_proportions(self, cut):
+        props = gemstone_proportions(cut, diameter_mm=5.0)
+        assert props.diameter_mm == pytest.approx(5.0)
+        # table_pct: briolette may be 0 (no table); all others > 0
+        assert 0 <= props.table_pct < 100
+        assert 0 < props.crown_angle_deg < 90
+        assert 0 < props.pavilion_angle_deg < 90
+        assert props.girdle_pct > 0
+        assert props.total_depth_pct > 0
+        assert 0 < props.aspect_ratio <= 1.0
+
+    @pytest.mark.parametrize("cut", FANCY_CUTS)
+    def test_fancy_cut_round_trip(self, cut):
+        """mm_from_carat(carat_from_mm(d)) == d for all fancy cuts."""
+        for dim in [3.0, 5.0, 8.0]:
+            ct = carat_from_mm(cut, dim)
+            back = mm_from_carat(cut, ct)
+            assert back == pytest.approx(dim, rel=1e-9), (
+                f"{cut}: round-trip failed for dim={dim}"
+            )
+
+    @pytest.mark.parametrize("cut", FANCY_CUTS)
+    def test_fancy_cut_total_depth_is_sum(self, cut):
+        props = gemstone_proportions(cut, diameter_mm=5.0)
+        expected = props.crown_height_pct + props.girdle_pct + props.pavilion_depth_pct
+        assert props.total_depth_pct == pytest.approx(expected, rel=1e-6)
+
+    def test_radiant_has_corner_cut(self):
+        props = gemstone_proportions("radiant", diameter_mm=6.0)
+        assert "corner_cut_ratio" in props.extras
+        assert props.extras["corner_cut_ratio"] > 0
+
+    def test_asscher_is_square(self):
+        props = gemstone_proportions("asscher", diameter_mm=5.5)
+        assert props.aspect_ratio == pytest.approx(1.0)
+        assert props.extras.get("step_rows") == 3
+        assert props.extras.get("corner_cut_ratio", 0) > 0
+
+    def test_trillion_has_three_sides(self):
+        props = gemstone_proportions("trillion", diameter_mm=7.0)
+        assert props.extras.get("sides") == 3
+        assert props.aspect_ratio == pytest.approx(1.0)
+
+    def test_heart_has_cleft(self):
+        props = gemstone_proportions("heart", diameter_mm=6.5)
+        assert "cleft_depth_pct" in props.extras
+        assert props.extras["cleft_depth_pct"] > 0
+
+    def test_baguette_is_narrow(self):
+        props = gemstone_proportions("baguette", diameter_mm=5.0)
+        # Baguette is 3:1 L:W, so aspect_ratio ≈ 0.33
+        assert props.aspect_ratio < 0.5
+        assert props.extras.get("step_rows") == 2
+
+    def test_briolette_no_table(self):
+        props = gemstone_proportions("briolette", diameter_mm=5.0)
+        assert props.table_pct == pytest.approx(0.0)
+        assert "facet_rows" in props.extras
+
+    @pytest.mark.parametrize("cut", FANCY_CUTS)
+    def test_fancy_cut_tool_succeeds(self, cut):
+        ctx, store, fid = make_ctx()
+        result = run_tool(ctx, fid, cut=cut, diameter_mm=5.0)
+        assert result.get("error") is None, f"{cut}: {result}"
+        assert result["op"] == "gemstone"
+        assert result["cut"] == cut
+

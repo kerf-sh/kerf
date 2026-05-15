@@ -13,6 +13,8 @@ Two LLM tools handle the jewelry gemstone workflow:
 
 ## Supported cuts
 
+### Classic cuts
+
 | Key | Description | Industry name |
 |-----|-------------|---------------|
 | `round_brilliant` | 57/58 facets — the GIA standard | RBC |
@@ -23,34 +25,51 @@ Two LLM tools handle the jewelry gemstone workflow:
 | `pear` | Teardrop modified brilliant | — |
 | `cushion` | Soft-square modified brilliant | — |
 
+### Fancy cuts
+
+| Key | Description | Notes |
+|-----|-------------|-------|
+| `radiant` | Cropped-corner rectangular modified brilliant | 70 facets, L:W ≈ 1.33:1 |
+| `asscher` | Square step cut with heavy corner crops | High crown, step_rows=3 |
+| `trillion` | Equilateral triangular modified brilliant | 43 facets, equilateral |
+| `heart` | Heart-shaped modified brilliant | 59 facets, V-cleft |
+| `baguette` | Narrow rectangular step cut | 3:1 L:W, step_rows=2 |
+| `briolette` | All-facet elongated teardrop, no table | 8 facet rows, no table |
+
 ---
 
 ## Carat ↔ mm formula
 
-All cuts use a cubic approximation:
+All cuts use a cubic approximation calibrated to the stone's material density:
 
 ```
-carat = (dim_mm / ref_mm) ^ 3
-dim_mm = ref_mm × carat ^ (1/3)
+ref_mm_material = ref_mm_diamond × (rho_diamond / rho_material) ^ (1/3)
+carat = (dim_mm / ref_mm_material) ^ 3
+dim_mm = ref_mm_material × carat ^ (1/3)
 ```
 
 `dim_mm` is the **girdle diameter** for `round_brilliant`, the **long axis**
 for all other cuts.
 
+Default material is `diamond` for backward compatibility.
+
+### Reference dimensions at 1 ct (diamond, 3.51 g/cm³)
+
 | Cut | `ref_mm` at 1 ct | Notes |
 |-----|-----------------|-------|
-| round_brilliant | 6.5 | GIA table; ~3.51 g/cm³ diamond density |
+| round_brilliant | 6.5 | GIA table |
 | princess | 5.5 | square face; depth ~68% |
 | oval | 7.7 | 1.35:1 L:W ratio |
 | emerald | 7.0 | 1.4:1, step cut shallower |
 | marquise | 10.0 | 2:1 L:W |
 | pear | 8.0 | 1.6:1 |
 | cushion | 5.5 | similar to princess |
-
-These are widely-published industry averages for natural diamond. Coloured
-stones differ due to density (ruby: 4.0 g/cm³, emerald: 2.72 g/cm³). The
-formula is correct for diamond; for other materials treat it as an
-approximation and let the user confirm carat from a lab certificate.
+| radiant | 6.0 | cropped rectangular brilliant |
+| asscher | 5.5 | square step, deep crown |
+| trillion | 7.0 | equilateral triangle, wide face |
+| heart | 6.5 | same volume class as round brilliant |
+| baguette | 5.0 | narrow bar, shallow |
+| briolette | 5.5 | elongated teardrop |
 
 ---
 
@@ -68,6 +87,17 @@ approximation and let the user confirm carat from a lab certificate.
 | Girdle | 2.5 % |
 | Total depth | ~62 % |
 | Facets | 57 |
+
+### Fancy cut highlights
+
+| Cut | Table % | Crown° | Pav° | Depth % | Aspect | Extras |
+|-----|---------|--------|------|---------|--------|--------|
+| radiant | 62 | 32 | 41 | ~58 | 0.75 | corner_cut_ratio=0.10 |
+| asscher | 60 | 25 | 43 | ~60 | 1.0 | step_rows=3, corner_cut_ratio=0.20 |
+| trillion | 55 | 34 | 41 | ~51 | 1.0 | sides=3 |
+| heart | 56 | 34.5 | 40.75 | ~60 | 0.98 | cleft_depth_pct=10 |
+| baguette | 70 | 8 | 43 | ~46 | 0.33 | step_rows=2 |
+| briolette | 0 | 30 | 45 | ~102 | 0.50 | facet_rows=8 (no table) |
 
 All other cuts follow GIA/AGS published ranges. Override any parameter via
 the tool's optional kwargs (`table_pct`, `crown_angle_deg`, `pavilion_angle_deg`,
@@ -220,7 +250,8 @@ constraint.
   are stored in the feature tree but will show a "worker op not implemented"
   error in the evaluator.  Pure-Python geometry math (proportions, seat
   clearances) is fully functional.
-- Fancy cuts (radiant, asscher, trillion, heart) are not in this slice.
-- Coloured stone density correction for the carat formula is not implemented.
+- FeatureView dropdown does not yet list the 6 new fancy cuts (radiant, asscher,
+  trillion, heart, baguette, briolette).  The Python spec + generic worker op
+  are complete; a consolidated frontend pass will add them to the UI enum.
 - Setting styles (prong, bezel, channel, pavé) are not yet modelled — only
   the seat void is generated.
