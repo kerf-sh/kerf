@@ -42,7 +42,9 @@
 import { useEffect, useImperativeHandle, useRef, useState, forwardRef } from 'react'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js'
 import { cullByFrustum, frustumCullEnabled } from '../lib/frustumCull.js'
+import { materialFor } from '../lib/jewelryMaterials.js'
 
 const BG_COLOR = 0x0f1115
 const HOVER_FACE = 0xffd633
@@ -65,6 +67,10 @@ const FeatureRenderer = forwardRef(function FeatureRenderer({
   onFacePick,               // ({id:number, name:string, partId:string}) => void
   onPushPullCommit,         // ({partId, faceId, faceName, distance}) => void
   onPushPullPreview,        // ({partId, faceId, faceName, distance}) => void
+  // Optional: map of meshId → feature-node spec ({ op, material, metal, cut, … }).
+  // When provided, jewelry nodes receive photoreal PBR materials.
+  // Omitting this prop is safe — existing behaviour is fully preserved.
+  nodeMap = null,
   className = '',
 }, ref) {
   const mountRef = useRef(null)
@@ -77,6 +83,7 @@ const FeatureRenderer = forwardRef(function FeatureRenderer({
   const onFacePickRef = useRef(onFacePick)
   const onPushPullCommitRef = useRef(onPushPullCommit)
   const onPushPullPreviewRef = useRef(onPushPullPreview)
+  const nodeMapRef = useRef(nodeMap)
 
   useEffect(() => { pickModeRef.current = pickMode }, [pickMode])
   useEffect(() => { selectionRef.current = selection }, [selection])
@@ -85,6 +92,7 @@ const FeatureRenderer = forwardRef(function FeatureRenderer({
   useEffect(() => { onFacePickRef.current = onFacePick }, [onFacePick])
   useEffect(() => { onPushPullCommitRef.current = onPushPullCommit }, [onPushPullCommit])
   useEffect(() => { onPushPullPreviewRef.current = onPushPullPreview }, [onPushPullPreview])
+  useEffect(() => { nodeMapRef.current = nodeMap }, [nodeMap])
 
   // ----- Mount: set up Three.js scene once -----
   useEffect(() => {
@@ -111,6 +119,16 @@ const FeatureRenderer = forwardRef(function FeatureRenderer({
     const fill = new THREE.DirectionalLight(0x99ccff, 0.3)
     fill.position.set(-50, 30, -60)
     scene.add(ambient, key, fill)
+
+    // Studio environment map for PBR metal/gem reflections.
+    // Built from a simple neutral-grey CubeRenderTarget (no external assets).
+    // All existing MeshStandardMaterial meshes ignore envMap by default since
+    // their envMapIntensity stays 0; only the PBR jewelry overrides set it > 0.
+    const pmrem = new THREE.PMREMGenerator(renderer)
+    pmrem.compileEquirectangularShader()
+    const studioEnv = pmrem.fromScene(new RoomEnvironment(0.5)).texture
+    scene.environment = studioEnv
+    pmrem.dispose()
 
     const grid = new THREE.GridHelper(400, 40, 0x232730, 0x14171c)
     grid.rotation.x = Math.PI / 2
@@ -335,6 +353,7 @@ const FeatureRenderer = forwardRef(function FeatureRenderer({
       window.removeEventListener('mouseup', onUp)
       renderer.domElement.removeEventListener('click', onClick)
       controls.dispose()
+      studioEnv.dispose()
       renderer.dispose()
       // Dispose all per-part resources.
       const s = stateRef.current
@@ -439,16 +458,51 @@ const FeatureRenderer = forwardRef(function FeatureRenderer({
       geom.computeBoundingBox()
       geom.computeBoundingSphere()
 
-      const mat = new THREE.MeshStandardMaterial({
-        vertexColors: true,
-        metalness: 0.1,
-        roughness: 0.6,
-        flatShading: true,
-        emissive: 0x000000,
-      })
+      // Resolve PBR material override for jewelry nodes.
+      // When a nodeMap entry is present for this part id and materialFor
+      // returns a non-null result, we create a MeshPhysicalMaterial with
+      // correct metalness/roughness/transmission for the alloy or gem.
+      // Fallback: existing MeshStandardMaterial with vertex colors.
+      const nodeSpec = nodeMapRef.current?.[part.id] ?? null
+      const jewelryParams = nodeSpec ? materialFor(nodeSpec) : null
+      let mat
+      if (jewelryParams && jewelryParams.kind === 'metal') {
+        mat = new THREE.MeshPhysicalMaterial({
+          color: jewelryParams.color,
+          metalness: jewelryParams.metalness,
+          roughness: jewelryParams.roughness,
+          envMapIntensity: jewelryParams.envMapIntensity,
+          flatShading: false,
+        })
+      } else if (jewelryParams && jewelryParams.kind === 'gem') {
+        mat = new THREE.MeshPhysicalMaterial({
+          color: jewelryParams.color,
+          transmission: jewelryParams.transmission,
+          ior: jewelryParams.ior,
+          dispersion: jewelryParams.dispersion ?? 0,
+          roughness: jewelryParams.roughness,
+          thickness: jewelryParams.thickness,
+          attenuationColor: new THREE.Color(jewelryParams.attenuationColor),
+          attenuationDistance: jewelryParams.attenuationDistance,
+          transparent: true,
+          side: THREE.DoubleSide,
+          envMapIntensity: 1.5,
+          flatShading: false,
+        })
+      } else {
+        mat = new THREE.MeshStandardMaterial({
+          vertexColors: true,
+          metalness: 0.1,
+          roughness: 0.6,
+          flatShading: true,
+          emissive: 0x000000,
+        })
+      }
       const mesh = new THREE.Mesh(geom, mat)
       mesh.userData.partId = part.id
       mesh.userData.kind = 'feature-face'
+      // Store whether this mesh uses jewelry PBR so repaint helpers skip it.
+      mesh.userData.jewelryPBR = jewelryParams !== null
       meshGroup.add(mesh)
 
       // Edge line. We use LineSegments (one segment per pair of consecutive
@@ -518,7 +572,8 @@ const FeatureRenderer = forwardRef(function FeatureRenderer({
     // Apply selection tint immediately (so a selection that survived the
     // rebuild — e.g. parameter tweak with same topology — stays visible).
     repaintSelection(s, selectionRef.current)
-  }, [meshes])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [meshes, nodeMap])
 
   // ----- Repaint selection on selection change -----
   useEffect(() => {
@@ -627,6 +682,8 @@ function paintHover(s, hit, selection, mode) {
   if (!s) return
   // Reset face vertex colors to base + selection tint.
   for (const [partId, part] of s.perPart) {
+    // Jewelry PBR meshes use solid-color materials; skip vertex-color repainting.
+    if (part.mesh?.userData?.jewelryPBR) continue
     const geo = part.mesh?.geometry
     if (!geo) continue
     const colorAttr = geo.getAttribute('color')
