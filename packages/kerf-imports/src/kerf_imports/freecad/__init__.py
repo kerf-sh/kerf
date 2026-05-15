@@ -20,6 +20,12 @@ Public API::
         BRepLiftError,
     )
 
+    # Tier 3: PartDesign datums
+    from kerf_imports.freecad.datums import build_datum_map, translate_datum
+
+    # Tier 3: Draft Workbench
+    from kerf_imports.freecad.draft_workbench import translate_draft_object
+
 The FastAPI router for the legacy /import-freecad stub is re-exported so
 plugin.py's ``from kerf_imports.freecad import router`` still works.
 """

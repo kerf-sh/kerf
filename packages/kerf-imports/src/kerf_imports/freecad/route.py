@@ -2,7 +2,8 @@
 route.py — FastAPI routes for FreeCAD import.
 
 POST /import-freecad-project
-    Full T1+T3+T4+T5 pipeline + Tier 2 (Spreadsheet, TechDraw, Materials).
+    Full T1+T3+T4+T5 pipeline + Tier 2 (Spreadsheet, TechDraw, Materials)
+    + Tier 3 (PartDesign datums, Draft Workbench objects).
     Accepts a .FCStd binary upload.  Returns::
 
         {
@@ -26,7 +27,9 @@ POST /import-freecad-project
             "constraints_dropped": N,
             "spreadsheets": N,
             "drawings": N,
-            "materials": N
+            "materials": N,
+            "datums": N,
+            "draft_objects": N
           },
           "warnings": [ "...", ... ],
           "import_folder": "/freecad_import"
@@ -52,6 +55,8 @@ from kerf_imports.freecad.assembly import build_assembly
 from kerf_imports.freecad.spreadsheet import translate_spreadsheet
 from kerf_imports.freecad.techdraw import translate_drawpage
 from kerf_imports.freecad.materials import translate_material
+from kerf_imports.freecad.datums import build_datum_map, sketch_attachment_from_datum
+from kerf_imports.freecad.draft_workbench import translate_draft_object, ALL_DRAFT_TYPES
 
 logger = logging.getLogger(__name__)
 
@@ -104,6 +109,13 @@ async def import_freecad_project(
 
     created_files: list[dict[str, Any]] = []
 
+    # ── Tier 3 pre-pass: build datum map (used to enrich sketch planes) ───────
+    try:
+        datum_map = build_datum_map(doc)
+    except Exception as exc:
+        logger.warning("Tier 3 datum map build failed: %s", exc)
+        datum_map = {}
+
     # ── T3: Translate Sketcher objects → .sketch ─────────────────────────────
     sketch_objects = doc.objects_by_type("Sketcher::SketchObject")
     sketch_name_to_label: dict[str, str] = {}
@@ -124,6 +136,12 @@ async def import_freecad_project(
         raw_constraints = sketch_obj.properties.get("Constraints") or []
         dropped = len(raw_constraints) - len(sketch_payload.get("constraints") or [])
         constraints_dropped += max(0, dropped)
+
+        # Tier 3: enrich sketch plane with datum attachment, if any
+        if datum_map:
+            datum_attach = sketch_attachment_from_datum(sketch_obj, datum_map)
+            if datum_attach is not None:
+                sketch_payload["plane"]["datum_attachment"] = datum_attach
 
         sketch_label = sketch_obj.label or sketch_obj.name
         sketch_name_to_label[sketch_obj.name] = sketch_label
@@ -267,6 +285,41 @@ async def import_freecad_project(
             "payload": mat_payload,
         })
 
+    # ── Tier 3: PartDesign datums → .sketch plane refs ───────────────────────
+    # Datums themselves are not emitted as standalone files; they enrich sketches
+    # above.  Count them for stats.
+    datums_translated = len(datum_map)
+
+    # ── Tier 3: Draft Workbench objects → .sketch / .feature ─────────────────
+    # Collect ALL Draft:: objects — known types produce files, unknown types
+    # call translate_draft_object which emits a skip-with-warning result.
+    draft_translated = 0
+    draft_objects = [o for o in doc.objects if o.type.startswith("Draft::")]
+
+    for draft_obj in draft_objects:
+        try:
+            draft_result = translate_draft_object(draft_obj)
+        except Exception as exc:
+            warnings.append(
+                f"Draft object '{draft_obj.name}' ({draft_obj.type}): "
+                f"translation failed — {exc}"
+            )
+            continue
+
+        warnings.extend(draft_result.get("warnings") or [])
+
+        if draft_result.get("kind") == "skipped":
+            continue
+
+        created_files.append({
+            "kind": draft_result["kind"],
+            "name": draft_result.get("name", f"{draft_obj.label}.{draft_result['kind']}"),
+            "freecad_name": draft_result.get("freecad_name", draft_obj.name),
+            "placeholder_id": None,
+            "payload": draft_result.get("payload", {}),
+        })
+        draft_translated += 1
+
     # ── Stats ─────────────────────────────────────────────────────────────────
     bodies = doc.objects_by_type("PartDesign::Body")
     features_lifted = sum(
@@ -289,6 +342,8 @@ async def import_freecad_project(
         "spreadsheets": spreadsheets_translated,
         "drawings": drawings_translated,
         "materials": materials_translated,
+        "datums": datums_translated,
+        "draft_objects": draft_translated,
     }
 
     return {
