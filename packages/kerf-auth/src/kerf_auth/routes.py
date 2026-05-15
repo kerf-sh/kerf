@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import hashlib
 import hmac
@@ -12,7 +13,7 @@ import httpx
 import jwt
 from fastapi import APIRouter, Depends, HTTPException, status, Response, Request, Cookie
 from pydantic import BaseModel
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlparse
 
 from kerf_core.config import get_settings
 from kerf_core.db.connection import get_pool_required
@@ -305,6 +306,223 @@ async def logout(req: RefreshRequest, response: Response):
             token_hash = hash_token(req.refresh_token)
             await rt_queries.revoke_refresh_token(conn, token_hash)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get("/github/login/start")
+async def github_login_start(request: Request):
+    """Sign in with GitHub — login/signup entry point.
+
+    Separate from the kerf-cloud /auth/github/start repo-connect flow
+    (scope=repo, requires an already-authenticated user). This route uses
+    scope=read:user user:email and finds-or-creates the Kerf account.
+    """
+    if not settings.cloud_github_client_id or not settings.cloud_github_client_secret:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="github oauth not configured",
+        )
+
+    redirect = request.query_params.get("redirect", "")
+    state = json.dumps({"n": random_nonce(), "r": redirect})
+    encoded_state = base64.urlsafe_b64encode(state.encode()).decode().rstrip("=")
+
+    # Derive the callback URL from cloud_github_redirect_url's scheme+host,
+    # but always point at the login callback path (not the repo-connect one).
+    parsed = urlparse(settings.cloud_github_redirect_url)
+    login_callback_url = f"{parsed.scheme}://{parsed.netloc}/auth/github/login/callback"
+
+    params = {
+        "client_id": settings.cloud_github_client_id,
+        "redirect_uri": login_callback_url,
+        "scope": "read:user user:email",
+        "state": encoded_state,
+    }
+    url = f"https://github.com/login/oauth/authorize?{urlencode(params)}"
+
+    response = Response(status_code=status.HTTP_302_FOUND)
+    response.headers["Location"] = url
+    response.set_cookie(
+        key="kerf_github_login_state",
+        value=encoded_state,
+        path="/",
+        httponly=True,
+        samesite="lax",
+        max_age=600,
+    )
+    return response
+
+
+@router.get("/github/login/callback")
+async def github_login_callback(request: Request):
+    """GitHub OAuth callback for login/signup (mirrors google_callback)."""
+    if not settings.cloud_github_client_id or not settings.cloud_github_client_secret:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="github oauth not configured",
+        )
+
+    state_cookie = request.cookies.get("kerf_github_login_state")
+    state_param = request.query_params.get("state", "")
+
+    frontend = settings.cors_origin
+    if frontend == "*":
+        frontend = "http://localhost:5173"
+
+    # GitHub sends ?error=access_denied when user clicks "Cancel".
+    error_param = request.query_params.get("error", "")
+    if error_param:
+        return Response(
+            status_code=status.HTTP_302_FOUND,
+            headers={"Location": f"{frontend}/auth/callback?error=github_denied"},
+        )
+
+    if not state_param or state_param != state_cookie:
+        return Response(
+            status_code=status.HTTP_302_FOUND,
+            headers={"Location": f"{frontend}/auth/callback?error=github_state"},
+        )
+
+    code = request.query_params.get("code")
+    if not code:
+        return Response(
+            status_code=status.HTTP_302_FOUND,
+            headers={"Location": f"{frontend}/auth/callback?error=github_state"},
+        )
+
+    parsed = urlparse(settings.cloud_github_redirect_url)
+    login_callback_url = f"{parsed.scheme}://{parsed.netloc}/auth/github/login/callback"
+
+    async with httpx.AsyncClient() as client:
+        token_resp = await client.post(
+            "https://github.com/login/oauth/access_token",
+            headers={"Accept": "application/json"},
+            data={
+                "code": code,
+                "client_id": settings.cloud_github_client_id,
+                "client_secret": settings.cloud_github_client_secret,
+                "redirect_uri": login_callback_url,
+            },
+        )
+
+    if token_resp.status_code >= 400:
+        return Response(
+            status_code=status.HTTP_302_FOUND,
+            headers={"Location": f"{frontend}/auth/callback?error=github_state"},
+        )
+
+    token_data = token_resp.json()
+    gh_access_token = token_data.get("access_token")
+    if not gh_access_token:
+        return Response(
+            status_code=status.HTTP_302_FOUND,
+            headers={"Location": f"{frontend}/auth/callback?error=missing_tokens"},
+        )
+
+    async with httpx.AsyncClient() as client:
+        user_resp, emails_resp = await asyncio.gather(
+            client.get(
+                "https://api.github.com/user",
+                headers={
+                    "Authorization": f"Bearer {gh_access_token}",
+                    "Accept": "application/vnd.github+json",
+                },
+            ),
+            client.get(
+                "https://api.github.com/user/emails",
+                headers={
+                    "Authorization": f"Bearer {gh_access_token}",
+                    "Accept": "application/vnd.github+json",
+                },
+            ),
+        )
+
+    if user_resp.status_code >= 400 or emails_resp.status_code >= 400:
+        return Response(
+            status_code=status.HTTP_302_FOUND,
+            headers={"Location": f"{frontend}/auth/callback?error=github_state"},
+        )
+
+    gh_user = user_resp.json()
+    github_id = str(gh_user.get("id", ""))
+    name = gh_user.get("name") or gh_user.get("login") or ""
+    avatar_url = gh_user.get("avatar_url") or ""
+
+    # Pick primary verified email; fall back to first verified, then any.
+    emails_list = emails_resp.json() if isinstance(emails_resp.json(), list) else []
+    email = ""
+    for entry in emails_list:
+        if entry.get("primary") and entry.get("verified"):
+            email = entry["email"].strip().lower()
+            break
+    if not email:
+        for entry in emails_list:
+            if entry.get("verified"):
+                email = entry["email"].strip().lower()
+                break
+    if not email and emails_list:
+        email = emails_list[0].get("email", "").strip().lower()
+
+    if not email:
+        return Response(
+            status_code=status.HTTP_302_FOUND,
+            headers={"Location": f"{frontend}/auth/callback?error=github_state"},
+        )
+
+    pool = await get_pool_required()
+    async with pool.acquire() as conn:
+        # Try to find by github_id first, then by email; create if new.
+        row = await conn.fetchrow(
+            """
+            UPDATE users SET
+                name = COALESCE(NULLIF($2, ''), name),
+                avatar_url = COALESCE(NULLIF($3, ''), avatar_url)
+            WHERE github_id = $1
+            RETURNING id, email, name, avatar_url, account_role, is_system, created_at
+            """,
+            github_id, name, avatar_url,
+        )
+        if row:
+            user = dict(row)
+        else:
+            row = await conn.fetchrow(
+                """
+                UPDATE users SET
+                    github_id = $1,
+                    name = COALESCE(NULLIF($3, ''), name),
+                    avatar_url = COALESCE(NULLIF($4, ''), avatar_url)
+                WHERE email = $2
+                RETURNING id, email, name, avatar_url, account_role, is_system, created_at
+                """,
+                github_id, email, name, avatar_url,
+            )
+            if row:
+                user = dict(row)
+            else:
+                row = await conn.fetchrow(
+                    """
+                    INSERT INTO users (email, github_id, name, avatar_url)
+                    VALUES ($1, $2, $3, $4)
+                    RETURNING id, email, name, avatar_url, account_role, is_system, created_at
+                    """,
+                    email, github_id, name, avatar_url,
+                )
+                user = dict(row)
+                display = name
+                if not display:
+                    at_idx = email.find("@")
+                    if at_idx > 0:
+                        display = email[:at_idx]
+                    else:
+                        display = "My"
+                await create_personal_workspace(conn, str(user["id"]), display)
+
+        access_token_jwt, refresh_token = await issue_tokens(conn, str(user["id"]))
+
+        dest = f"{frontend}/auth/callback?access_token={access_token_jwt}&refresh_token={refresh_token}"
+
+        response = Response(status_code=status.HTTP_302_FOUND)
+        response.headers["Location"] = dest
+        return response
 
 
 @router.get("/google/start")

@@ -81,6 +81,7 @@ export const api = {
   login: (email, password) =>
     request('/auth/login', { method: 'POST', body: { email, password }, auth: false }),
   googleAuthUrl: () => `${API_URL}/auth/google/start`,
+  githubAuthUrl: () => `${API_URL}/auth/github/login/start`,
   refresh: () => refreshAccessToken(),
   me: () => request('/api/me'),
   updateMe: (patch) => request('/api/me', { method: 'PATCH', body: patch }),
