@@ -79,6 +79,7 @@ _TOOL_MODULES = [
     "kerf_cad_core.pneumatics.tools",
     "kerf_cad_core.heatxfer.tools",
     "kerf_cad_core.beam.tools",
+    "kerf_cad_core.casting.tools",
 ]
 
 # ── kerf_core contract (built by kerf-core agent in parallel) ─────────────────
