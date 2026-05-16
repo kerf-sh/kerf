@@ -1,0 +1,41 @@
+# kerf-electronics schematic capture sub-package.
+# Public API re-exported from capture.py.
+from kerf_electronics.schematic.capture import (
+    Symbol,
+    Wire,
+    Junction,
+    Label,
+    Sheet,
+    Bus,
+    Schematic,
+    place_symbol,
+    connect_wires,
+    auto_connect,
+    add_junction,
+    add_label,
+    hierarchical_port,
+    build_netlist,
+    validate_erc,
+    load_kicad_sch,
+    save_kicad_sch,
+)
+
+__all__ = [
+    "Symbol",
+    "Wire",
+    "Junction",
+    "Label",
+    "Sheet",
+    "Bus",
+    "Schematic",
+    "place_symbol",
+    "connect_wires",
+    "auto_connect",
+    "add_junction",
+    "add_label",
+    "hierarchical_port",
+    "build_netlist",
+    "validate_erc",
+    "load_kicad_sch",
+    "save_kicad_sch",
+]
