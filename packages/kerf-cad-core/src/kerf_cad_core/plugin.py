@@ -190,6 +190,7 @@ _TOOL_MODULES = [
     "kerf_cad_core.sysml1d.network",
     "kerf_cad_core.frep.sdf",
     "kerf_cad_core.sheet_metal_bend_table",
+    "kerf_cad_core.procsim.solidification",
 ]
 
 # ── kerf_core contract (built by kerf-core agent in parallel) ─────────────────
