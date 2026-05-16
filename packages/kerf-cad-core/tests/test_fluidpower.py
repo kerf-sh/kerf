@@ -775,3 +775,88 @@ class TestToolWrappers:
         ctx = _ctx()
         raw = _run(run_fp_thermal_balance(ctx, _args(input_power_W=50000.0)))
         _err_tool(raw)
+
+
+# ===========================================================================
+# 11. CITABLE EXTERNAL-REFERENCE CASES — known numeric answers
+# ===========================================================================
+#
+# Cross-checked against published fluid-power texts / NFPA conventions with
+# hand-computable answers.  These pin the load-bearing constants and exponents.
+#
+# Sources
+# -------
+# [Vickers] Vickers/Eaton "Industrial Hydraulics Manual", 5th ed. (2008).
+# [Parker]  Parker Hannifin "Industrial Hydraulics Design Guide" (rev 2022).
+# [ISA]     ISA-75.01.01 / IEC 60534-2-1 — valve flow-coefficient definition.
+# [White]   White, F.M., "Fluid Mechanics", 8th ed. — Hagen–Poiseuille.
+# [Boyle]   Boyle's law (isothermal accumulator, Parker/Bosch-Rexroth form).
+# ===========================================================================
+
+class TestCitableReferenceCases:
+
+    def test_ref_cylinder_force_vickers_2in_1000psi(self):
+        """[Vickers] 2 in bore (0.0508 m) at 1000 psi (6.895 MPa):
+        A_bore = π/4·0.0508² = 2.02683e-3 m²,
+        F = 6.895e6 · 2.02683e-3 = 13974.99 N  (≈ 3142 lbf).
+        """
+        res = cylinder(0.0508, 0.0254, 6.895e6, 1e-3)
+        assert res["ok"] is True
+        A = math.pi / 4.0 * 0.0508 ** 2
+        assert res["A_bore_m2"] == pytest.approx(A, rel=1e-12)
+        assert res["F_extend_N"] == pytest.approx(6.895e6 * A, rel=1e-9)
+        assert res["F_extend_N"] == pytest.approx(13974.99, rel=1e-5)
+
+    def test_ref_pump_flow_displacement_law(self):
+        """[Vickers] Pump theoretical delivery Q = D·n.
+        D=100 cm³/rev = 1e-4 m³/rev, n=1500 rpm (25 rev/s), η_v=1.0
+        → Q = 1e-4·25 = 2.5e-3 m³/s = 150 L/min.
+        """
+        res = pump(1e-4, 1500.0, 1.0, 1.0, 1e7)
+        assert res["ok"] is True
+        assert res["Q_actual_m3s"] == pytest.approx(2.5e-3, rel=1e-12)
+        assert res["Q_actual_m3s"] * 60000.0 == pytest.approx(150.0, rel=1e-9)
+        assert res["P_hydraulic_W"] == pytest.approx(1e7 * 2.5e-3, rel=1e-12)
+
+    def test_ref_motor_torque_displacement_law(self):
+        """[Parker] Ideal motor torque T = D·ΔP/(2π).
+        D=200 cm³/rev = 2e-4 m³/rev, ΔP=20 MPa
+        → T = 2e-4·2e7/(2π) = 636.6198 N·m.
+        """
+        res = motor(2e-4, 2e7, 1000.0, mech_eff=1.0)
+        assert res["ok"] is True
+        assert res["T_theoretical_Nm"] == pytest.approx(636.6198, abs=1e-4)
+
+    def test_ref_valve_cv_isa_defining_case(self):
+        """[ISA] Defining Cv: 1 US gpm water (SG=1) at 1 psi ΔP gives Cv=1.
+        100 gpm water at 100 psi, SG=1 → Cv = 100/√(100/1) = 10.0 exactly.
+        """
+        Q = 100.0 * 6.30902e-5      # 100 gpm → m³/s
+        dP = 100.0 * 6894.757       # 100 psi → Pa
+        res = valve_cv(Q, dP, 1.0)
+        assert res["ok"] is True
+        assert res["Cv"] == pytest.approx(10.0, rel=1e-6)
+
+    def test_ref_accumulator_boyle_isothermal(self):
+        """[Boyle] Isothermal usable volume ΔV = V·P1·(1/P2 − 1/P3).
+        V=0.010 m³, P1=70 bar, P2=100 bar, P3=160 bar
+        → ΔV = 0.01·70e5·(1/100e5 − 1/160e5) = 2.625e-3 m³.
+        """
+        res = accumulator(0.010, 70e5, 100e5, 160e5, process="isothermal")
+        assert res["ok"] is True
+        hand = 0.010 * 70e5 * (1.0 / 100e5 - 1.0 / 160e5)
+        assert res["delta_V_m3"] == pytest.approx(hand, rel=1e-12)
+        assert res["delta_V_m3"] == pytest.approx(2.625e-3, rel=1e-9)
+
+    def test_ref_line_pressure_drop_hagen_poiseuille(self):
+        """[White §6.4] Laminar pipe ΔP = 128·μ·L·Q/(π·D⁴).
+        Q=1e-5 m³/s, μ=0.046 Pa·s, L=2 m, D=0.010 m (Re≈24, laminar)
+        → ΔP = 128·0.046·2·1e-5/(π·0.010⁴) = 3748.4172 Pa.
+        """
+        res = line_pressure_drop(1e-5, 870.0, 0.046, 0.010, 2.0)
+        assert res["ok"] is True
+        assert res["regime"] == "laminar"
+        hand = 128.0 * 0.046 * 2.0 * 1e-5 / (math.pi * 0.010 ** 4)
+        assert res["delta_P_Pa"] == pytest.approx(hand, rel=1e-12)
+        assert res["delta_P_Pa"] == pytest.approx(3748.4172, abs=1e-3)
+        assert res["f_darcy"] == pytest.approx(64.0 / res["Re"], rel=1e-12)
