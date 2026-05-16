@@ -257,13 +257,14 @@ def test_shaft_g6_25mm():
 
 def test_shaft_k6_25mm():
     """
-    Shaft k6 for Ø25 mm: transition shaft, es > 0.
-    ei_k = 0 for IT ≤ IT7; es = IT6 = 13.
+    Shaft k6 for Ø25 mm: transition shaft, ei > 0.
+    ISO 286-2:2010 Table: k6 for 18 < D ≤ 30 mm → es = +15 µm, ei = +2 µm.
+    ISO 286-1 §5.6: shaft k fundamental deviation ei = +0.6·∛D (IT4..IT7).
     """
     r = shaft_limits(25.0, "k6")
     assert r["ok"] is True
-    assert r["ei_um"] == 0.0
-    assert r["es_um"] == 13.0  # IT6 = 13 µm
+    assert r["ei_um"] == 2.0   # ISO 286-2: k6 Ø25 lower deviation +2 µm
+    assert r["es_um"] == 15.0  # ei + IT6 (13 µm) = +15 µm
     assert r["upper_limit_mm"] > 25.0
 
 
@@ -757,3 +758,96 @@ def test_tool_press_fit_invalid_geometry():
     )))
     d = json.loads(raw)
     assert d.get("ok") is False or ("error" in d)
+
+
+# ===========================================================================
+# Externally-citable reference cases (production-confidence validation)
+# Cross-checked vs ISO 286-1:2010, ISO 286-2:2010 limit-deviation tables,
+# and Shigley 10th ed. §2-13 (Lamé interference fit).
+# ===========================================================================
+
+from kerf_cad_core.tolfits.fits import (  # noqa: E402
+    it_tolerance as _ref_it,
+    shaft_limits as _ref_sl,
+    hole_limits as _ref_hl,
+    fit_analysis as _ref_fa,
+    press_fit as _ref_pf,
+)
+
+
+class TestTolfitsExternalReferences:
+    """Validated against ISO 286-1/286-2 tables and Shigley Lamé eq (2-67)."""
+
+    def test_it7_band_18_30_iso286(self):
+        # ISO 286-2:2010 Table: IT7 for 18 < D ≤ 30 mm = 21 µm.
+        r = _ref_it(25.0, "IT7")
+        assert r["IT_um"] == 21
+
+    def test_it6_band_18_30_iso286(self):
+        # ISO 286-2: IT6 for 18 < D ≤ 30 mm = 13 µm.
+        r = _ref_it(25.0, "IT6")
+        assert r["IT_um"] == 13
+
+    def test_it8_band_18_30_iso286(self):
+        # ISO 286-2: IT8 for 18 < D ≤ 30 mm = 33 µm.
+        r = _ref_it(25.0, "IT8")
+        assert r["IT_um"] == 33
+
+    def test_shaft_h6_reference(self):
+        # ISO 286-2: h6 Ø25 → es=0, ei=−13 µm (reference shaft).
+        r = _ref_sl(25.0, "h6")
+        assert r["es_um"] == 0
+        assert r["ei_um"] == -13
+
+    def test_shaft_g6_iso286_2(self):
+        # ISO 286-2: g6 Ø25 → es=−7, ei=−20 µm.
+        r = _ref_sl(25.0, "g6")
+        assert r["es_um"] == -7
+        assert r["ei_um"] == -20
+
+    def test_shaft_p6_iso286_2(self):
+        # ISO 286-2: p6 Ø50 → es=+42, ei=+26 µm (FD ei=+26 per ISO 286-1).
+        r = _ref_sl(50.0, "p6")
+        assert r["ei_um"] == 26.0
+        assert r["es_um"] == 42.0
+
+    def test_shaft_s6_iso286_2(self):
+        # ISO 286-2: s6 Ø50 → es=+59, ei=+43 µm.
+        r = _ref_sl(50.0, "s6")
+        assert r["ei_um"] == 43.0
+        assert r["es_um"] == 59.0
+
+    def test_shaft_u6_iso286_2(self):
+        # ISO 286-2: u6 Ø50 → es=+86, ei=+70 µm.
+        r = _ref_sl(50.0, "u6")
+        assert r["ei_um"] == 70.0
+        assert r["es_um"] == 86.0
+
+    def test_hole_H7_reference(self):
+        # ISO 286-2: H7 Ø25 → EI=0, ES=+21 µm (basic hole).
+        r = _ref_hl(25.0, "H7")
+        assert r["EI_um"] == 0.0
+        assert r["ES_um"] == 21
+
+    def test_fit_H7_g6_clearance(self):
+        # ISO 286-2 preferred "sliding" fit H7/g6 Ø25 is a clearance fit:
+        # min clearance = hole_min − shaft_max = 0 − (−7) = +7 µm.
+        r = _ref_fa(25.0, "H7", "g6")
+        assert r["fit_type"] == "clearance"
+        assert r["min_clearance_mm"] == pytest.approx(0.007, abs=1e-6)
+
+    def test_fit_H7_p6_interference(self):
+        # ISO 286-2 "locational interference" H7/p6 Ø50:
+        # min interference = shaft_min(ei +26) − hole_max(ES +25) = +1 µm.
+        r = _ref_fa(50.0, "H7", "p6")
+        assert r["fit_type"] == "interference"
+        assert r["min_interference_mm"] == pytest.approx(0.001, abs=1e-6)
+
+    def test_press_fit_lame_shigley_2_67(self):
+        # Shigley Eq (2-67): solid shaft + same-E hub, contact pressure
+        # p = (E δ/d)·[(do²−d²)(d²)/(2 d²·do²)].
+        # d=50 mm, do=100 mm, δ=0.04 mm (diametral), E=200 GPa → 60.0 MPa.
+        r = _ref_pf(50.0, 0.04, 100.0, 0.0, 200e9, 200e9, 0.3, 0.3)
+        d, do = 0.05, 0.10
+        p = (200e9 * 0.04e-3 / d) * ((do ** 2 - d ** 2) * d ** 2 / (2 * d ** 2 * do ** 2))
+        assert r["contact_pressure_Pa"] == pytest.approx(p, rel=1e-6)

@@ -975,3 +975,92 @@ class TestToolsErrorPaths:
     def test_make_vs_buy_missing_buy_price(self):
         raw = _run(run_costing_make_vs_buy(_ctx(), _args(make_unit_cost=5.0)))
         _err_tool(raw)
+
+
+# ---------------------------------------------------------------------------
+# Externally-citable reference cases
+#   Wright, T.P. (1936) "Factors Affecting the Cost of Airplanes",
+#     J. Aeronautical Sciences 3(4), 122-128 (learning curve).
+#   Ostwald & Munoz "Manufacturing Processes and Systems" 9th ed.
+#     (cost build-up, batch economics, make-vs-buy break-even).
+#   Boothroyd, Dewhurst & Knight "Product Design for Manufacture and
+#     Assembly" 3rd ed.
+# ---------------------------------------------------------------------------
+
+class TestCostingExternalReferenceCases:
+    """Cross-checked against Wright (1936) learning curve and standard
+    manufacturing cost-estimation build-ups (Ostwald & Munoz, DFMA)."""
+
+    def test_wright_learning_curve_exponent(self):
+        # Wright (1936): b = ln(LR)/ln(2).  LR = 0.80 -> b = -0.32193.
+        r = learning_curve(10.0, 8, learning_rate=0.80)
+        assert math.isclose(r["b_exponent"], math.log(0.80) / math.log(2.0),
+                            rel_tol=1e-6)
+
+    def test_wright_learning_curve_value(self):
+        # Wright power law: cost at unit n = t1 * n^b.
+        # t1=10, n=8, LR=0.8 -> 10 * 8^(log2 0.8) = 5.12.
+        r = learning_curve(10.0, 8, learning_rate=0.80)
+        b = math.log(0.80) / math.log(2.0)
+        assert math.isclose(r["unit_cost"], 10.0 * 8.0 ** b, rel_tol=1e-6)
+
+    def test_learning_curve_doubling_rule(self):
+        # Wright doubling rule: every doubling of volume multiplies the
+        # cost by the learning rate (here 0.80).
+        a = learning_curve(10.0, 100, learning_rate=0.80)
+        b = learning_curve(10.0, 200, learning_rate=0.80)
+        assert math.isclose(b["unit_cost"], 0.80 * a["unit_cost"],
+                            rel_tol=1e-6)
+
+    def test_cnc_cost_machine_time_component(self):
+        # Standard cost build-up: machine cost = cycle_time * machine_rate.
+        r = cnc_cost(material_cost=5.0, cycle_time_hr=0.25,
+                     machine_rate_per_hr=80.0, setup_time_hr=0.5,
+                     batch_size=10, tooling_cost=200.0,
+                     tooling_life_parts=1000, overhead_rate=0.15)
+        assert math.isclose(r["unit_machine"], 0.25 * 80.0, rel_tol=1e-9)
+
+    def test_cnc_cost_setup_amortised_over_batch(self):
+        # Ostwald & Munoz: setup cost amortised = setup_time*rate / batch.
+        r = cnc_cost(material_cost=5.0, cycle_time_hr=0.25,
+                     machine_rate_per_hr=80.0, setup_time_hr=0.5,
+                     batch_size=10)
+        assert math.isclose(r["unit_setup"], 0.5 * 80.0 / 10.0, rel_tol=1e-9)
+
+    def test_cnc_cost_tooling_amortised_over_life(self):
+        # Tooling amortisation = tooling_cost / tooling_life_parts.
+        r = cnc_cost(material_cost=5.0, cycle_time_hr=0.25,
+                     machine_rate_per_hr=80.0, tooling_cost=200.0,
+                     tooling_life_parts=1000)
+        assert math.isclose(r["unit_tooling"], 200.0 / 1000.0, rel_tol=1e-9)
+
+    def test_batch_curve_unit_cost_formula(self):
+        # Batch economics: unit cost = fixed_per_run/batch + variable.
+        r = batch_curve(1000.0, 5.0, [10, 100, 1000])
+        bp = {b["batch_size"]: b["unit_cost"] for b in r["breakpoints"]}
+        assert math.isclose(bp[10], 1000.0 / 10 + 5.0, rel_tol=1e-9)
+        assert math.isclose(bp[100], 1000.0 / 100 + 5.0, rel_tol=1e-9)
+        assert math.isclose(bp[1000], 1000.0 / 1000 + 5.0, rel_tol=1e-9)
+
+    def test_batch_curve_monotone_decreasing(self):
+        # Fixed-cost dilution: larger batches -> lower unit cost.
+        r = batch_curve(1000.0, 5.0, [10, 100, 1000])
+        costs = [b["unit_cost"] for b in r["breakpoints"]]
+        assert costs == sorted(costs, reverse=True)
+
+    def test_make_vs_buy_breakeven(self):
+        # Ostwald & Munoz break-even: make total vs buy total over volume.
+        r = make_vs_buy(make_unit_cost=8.0, buy_unit_price=10.0,
+                        make_fixed_cost=2000.0, annual_volume=2000)
+        # Break-even volume = fixed / (buy - make) = 2000 / 2 = 1000 units.
+        assert math.isclose(r["breakeven_volume"], 2000.0 / (10.0 - 8.0),
+                            rel_tol=1e-6)
+
+    def test_rollup_margin_buildup(self):
+        # DFMA cost roll-up: price = full_cost / (1 - margin_rate).
+        r = rollup(direct_material=10.0, direct_labour=5.0,
+                   machine_cost=20.0, overhead_rate=0.2,
+                   sga_rate=0.1, margin_rate=0.2)
+        assert math.isclose(r["unit_price"],
+                            r["full_cost"] / (1.0 - 0.2), rel_tol=1e-6)
+        assert math.isclose(r["margin_rate_actual"], 0.2, rel_tol=1e-6)

@@ -868,3 +868,86 @@ class TestToolWrappers:
         ctx = _ctx()
         raw = _run(run_interpass_temperature_check(ctx, _args(T_preheat_C=100.0)))
         _err_tool(raw)
+
+
+# ---------------------------------------------------------------------------
+# Externally-citable reference cases (AWS D1.1 / Kou / IIW / Radaj-Rykalin)
+# ---------------------------------------------------------------------------
+
+class TestWeldingExternalReferenceCases:
+    """Cross-checked against AWS D1.1, Kou 'Welding Metallurgy' 2nd ed.,
+    IIW CE formula, and Radaj 'Heat Effects of Welding'."""
+
+    def test_heat_input_saw_kou(self):
+        # Kou, Welding Metallurgy 2nd ed. Eq. 2.1: HI = eta*V*I/(1000*v).
+        # SAW eta=0.99, 30 V, 500 A, v=5 mm/s -> 2.97 kJ/mm.
+        r = arc_heat_input(0.99, 30.0, 500.0, 5.0)
+        assert math.isclose(r["HI_kJ_mm"], 0.99 * 30.0 * 500.0 / (1000.0 * 5.0),
+                            rel_tol=1e-9)
+
+    def test_heat_input_smaw_typical(self):
+        # Lincoln Procedure Handbook: SMAW eta≈0.80; 24 V, 200 A, 3 mm/s.
+        r = arc_heat_input(0.80, 24.0, 200.0, 3.0)
+        assert math.isclose(r["HI_kJ_mm"], 0.80 * 24.0 * 200.0 / 3000.0,
+                            rel_tol=1e-9)
+
+    def test_ce_iiw_formula_full(self):
+        # IIW Doc. IXJ-123-85: CE = C + Mn/6 + (Cr+Mo+V)/5 + (Cu+Ni)/15.
+        r = carbon_equivalent_iiw(C=0.20, Mn=1.0, Cr=0.50, Mo=0.20,
+                                  V=0.0, Cu=0.30, Ni=0.50)
+        exp = 0.20 + 1.0 / 6 + (0.50 + 0.20 + 0.0) / 5 + (0.30 + 0.50) / 15
+        assert math.isclose(r["CE_IIW"], exp, rel_tol=1e-12)
+
+    def test_ce_iiw_carbon_manganese_only(self):
+        # IIW formula reduces to C + Mn/6 for plain C-Mn steel (AWS D1.1).
+        r = carbon_equivalent_iiw(C=0.18, Mn=1.20)
+        assert math.isclose(r["CE_IIW"], 0.18 + 1.20 / 6, rel_tol=1e-12)
+
+    def test_ce_iiw_preheat_threshold_warning(self):
+        # AWS D1.1: CE > 0.45 generally requires preheat -> a warning string.
+        r = carbon_equivalent_iiw(C=0.40, Mn=1.20, Cr=0.50, Mo=0.20)
+        assert r["CE_IIW"] > 0.45
+        assert any("0.45" in w for w in r["warnings"])
+
+    def test_fillet_weld_throat_aws(self):
+        # AWS D1.1: equal-leg fillet effective throat = leg / sqrt(2);
+        # cross-section area = leg^2 / 2.
+        r = fillet_weld_volume(8.0, 100.0)
+        assert math.isclose(r["throat_mm"], 8.0 / math.sqrt(2.0), rel_tol=1e-12)
+        assert math.isclose(r["area_mm2"], 0.5 * 8.0 ** 2, rel_tol=1e-12)
+
+    def test_groove_weld_trapezoid_area(self):
+        # AWS D1.1 prequalified V-groove (60 deg incl., 2 mm root face,
+        # 3 mm root gap): trapezoid area = (w_t + w_r)/2 * d_fill.
+        r = groove_weld_volume(12.0, 0.0, 0.0, 100.0,
+                               included_angle_deg=60.0,
+                               root_face_mm=2.0, root_gap_mm=3.0)
+        d_fill = 12.0 - 2.0
+        w_r = 3.0
+        w_t = 2.0 * d_fill * math.tan(math.radians(30.0)) + w_r
+        assert math.isclose(r["area_mm2"], (w_t + w_r) / 2.0 * d_fill,
+                            rel_tol=1e-9)
+
+    def test_deposition_time_mass_balance(self):
+        # Lincoln Procedure Handbook §: t = (V*rho)/DR.
+        # V=10000 mm^3, mild-steel rho=7.85e-6 kg/mm^3, DR=4 kg/h.
+        r = deposition_time(10000.0, 4.0)
+        assert math.isclose(r["time_s"], 10000.0 * 7.85e-6 / 4.0 * 3600.0,
+                            rel_tol=1e-9)
+
+    def test_electrode_consumption_efficiency(self):
+        # AWS / Lincoln: gross electrode = deposit / deposition_efficiency.
+        r = electrode_consumption(10000.0, deposition_efficiency=0.65)
+        assert math.isclose(r["electrode_mass_kg"],
+                            10000.0 * 7.85e-6 / 0.65, rel_tol=1e-9)
+
+    def test_number_of_passes_ceiling(self):
+        # AWS D1.1 multipass estimate: n = ceil(groove_area / pass_area).
+        r = number_of_passes(150.0, 40.0)
+        assert r["n_passes"] == math.ceil(150.0 / 40.0)
+
+    def test_rykalin_t85_scales_with_HI_squared(self):
+        # Radaj 'Heat Effects of Welding' (Rykalin): t8/5 ~ HI^2 (3-D form).
+        a = cooling_time_t85(1.0, 100.0, 25.0, joint_type="butt")
+        b = cooling_time_t85(2.0, 100.0, 25.0, joint_type="butt")
+        assert math.isclose(b["t85_s"], 4.0 * a["t85_s"], rel_tol=1e-9)

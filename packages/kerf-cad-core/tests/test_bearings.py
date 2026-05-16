@@ -704,3 +704,84 @@ class TestToolWrappers:
         ctx = _ctx()
         raw = _run(run_bearing_select(ctx, b"not-json"))
         _err_tool(raw)
+
+
+# ===========================================================================
+# Externally-citable reference cases (production-confidence validation)
+# Cross-checked vs ISO 281:2007, ISO 76:2006, SKF Bearing Catalogue 2018.
+# ===========================================================================
+
+from kerf_cad_core.bearings.select import (  # noqa: E402
+    bearing_equivalent_load as _ref_eq_load,
+    bearing_rating_life as _ref_rating_life,
+    bearing_adjusted_life as _ref_adj_life,
+    bearing_static_safety as _ref_static,
+    bearing_required_capacity as _ref_req_cap,
+    bearing_limiting_speed as _ref_lim_speed,
+)
+
+
+class TestBearingsExternalReferences:
+    """Validated against ISO 281, ISO 76 and SKF catalogue method."""
+
+    def test_rating_life_ball_iso281(self):
+        # ISO 281 §5: ball p=3. C=30.7 kN, P=3 kN → L10=1071.65 Mrev.
+        r = _ref_rating_life(30700.0, 3000.0, "ball")
+        assert r["L10_rev"] == pytest.approx((30700.0 / 3000.0) ** 3, rel=1e-12)
+
+    def test_rating_life_roller_iso281(self):
+        # ISO 281 §5: roller p=10/3.
+        r = _ref_rating_life(50000.0, 5000.0, "roller")
+        assert r["L10_rev"] == pytest.approx(10.0 ** (10.0 / 3.0), rel=1e-12)
+
+    def test_rating_life_hours(self):
+        # ISO 281: L10h = L10·1e6/(60 n). C/P=10 ball, n=1000 rpm.
+        r = _ref_rating_life(10000.0, 1000.0, "ball", n_rpm=1000.0)
+        assert r["L10_hours"] == pytest.approx(1000.0 * 1e6 / (60.0 * 1000.0), rel=1e-9)
+
+    def test_equivalent_load_radial_only(self):
+        # ISO 281 §5: pure radial, Fa=0 → P = Fr (X=1, Y=0).
+        r = _ref_eq_load(5000.0, 0.0, "ball", C0=10000.0)
+        assert r["P_N"] == pytest.approx(5000.0, rel=1e-12)
+
+    def test_equivalent_load_dgbb_table4(self):
+        # ISO 281 Table 4 deep-groove ball: Fa/C0=0.014 → e=0.19, X=0.56,
+        # Y=2.30. With Fa/Fr > e use P = 0.56 Fr + 2.30 Fa.
+        # Fr=1000, Fa=500, C0 such that Fa/C0=0.014 → C0=500/0.014.
+        C0 = 500.0 / 0.014
+        r = _ref_eq_load(1000.0, 500.0, "ball", C0=C0)
+        assert r["e"] == pytest.approx(0.19, rel=1e-6)
+        # Fa/Fr = 0.5 > e=0.19 → P = 0.56·1000 + 2.30·500
+        assert r["P_N"] == pytest.approx(0.56 * 1000.0 + 2.30 * 500.0, rel=1e-9)
+
+    def test_static_safety_iso76(self):
+        # ISO 76: s0 = C0/P0. C0=15 kN, P0=5 kN → s0=3.0.
+        r = _ref_static(15000.0, 5000.0)
+        assert r["s0"] == pytest.approx(3.0, rel=1e-12)
+
+    def test_static_safety_low_warns(self):
+        # ISO 76: s0=0.5 < 0.8 must warn (raceway brinelling risk).
+        r = _ref_static(5000.0, 10000.0)
+        assert r["s0"] == pytest.approx(0.5, rel=1e-12)
+        assert any("0.8" in w for w in r["warnings"])
+
+    def test_required_capacity_inverts_life(self):
+        # ISO 281 inverse: C = P (L10h·60·n/1e6)^(1/p). Round-trip check.
+        P, n, Lh = 4000.0, 1500.0, 20000.0
+        rc = _ref_req_cap(P, n, Lh, "ball")
+        C = rc["C_required_N"]
+        back = _ref_rating_life(C, P, "ball", n_rpm=n)
+        assert back["L10_hours"] == pytest.approx(Lh, rel=1e-6)
+
+    def test_adjusted_life_reliability_factor(self):
+        # ISO 281: Lna = a1·a23·L10. a1=0.21 (99% reliability) halves... 
+        base = _ref_adj_life(10000.0, 1000.0, 1000.0, "ball", a1=1.0, a23=1.0)
+        adj = _ref_adj_life(10000.0, 1000.0, 1000.0, "ball", a1=0.21, a23=1.0)
+        assert adj["Lna_rev"] == pytest.approx(0.21 * base["L10_rev"], rel=1e-12)
+
+    def test_limiting_speed_ndm(self):
+        # SKF catalogue: n·dm parameter. dm=50 mm, n=10000 rpm → 500000 mm·rpm,
+        # below grease limit 600000 for ball bearings.
+        r = _ref_lim_speed(50.0, 10000.0, "ball")
+        assert r["ndm"] == pytest.approx(500000.0, rel=1e-12)
+        assert r["ndm_limit"] == pytest.approx(600000.0, rel=1e-12)

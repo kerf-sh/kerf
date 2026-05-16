@@ -553,3 +553,82 @@ class TestTools:
         result = _run(run_flue_gas_dew_point(None, json.dumps({}).encode()))
         payload = json.loads(result)
         assert payload.get("ok") is False
+
+
+# ===========================================================================
+# Authoritative external-reference cases (citable, numeric answers)
+# ===========================================================================
+
+class TestAuthoritativeReferences:
+    """Cross-checks vs published worked examples with known numeric answers.
+
+    Sources: Turns, S.R. "An Introduction to Combustion" 3rd ed.;
+    Çengel & Boles "Thermodynamics" 8th ed.; Bacharach Combustion Test
+    Handbook; VDI 2067 / EN 15502 (Siegert)."""
+
+    def test_turns_ch4_afr(self):
+        # Turns 3rd ed. Ex. 2.1: CH4 stoichiometric AFR_mass = 17.2
+        r = stoich_afr(1, 4, 0)
+        assert abs(r["AFR_mass"] - 17.2) < 0.1
+
+    def test_turns_propane_afr(self):
+        # Turns Table: C3H8 stoichiometric AFR_mass ≈ 15.6
+        r = stoich_afr(3, 8, 0)
+        assert abs(r["AFR_mass"] - 15.6) < 0.15
+
+    def test_turns_ethane_afr(self):
+        # Turns: C2H6 (ethane), n_O2 = 3.5, AFR_mass ≈ 16.1
+        r = stoich_afr(2, 6, 0)
+        assert abs(r["AFR_mass"] - 16.1) < 0.1
+
+    def test_turns_hydrogen_afr(self):
+        # Turns: H2, n_O2 = 0.5, AFR_mass ≈ 34.3
+        r = stoich_afr(0, 2, 0)
+        assert abs(r["AFR_mass"] - 34.3) < 0.2
+
+    def test_turns_octane_afr(self):
+        # Turns Table A: iso-octane C8H18, AFR_mass ≈ 15.1
+        r = stoich_afr(8, 18, 0)
+        assert abs(r["AFR_mass"] - 15.1) < 0.15
+
+    def test_bacharach_ch4_co2max(self):
+        # Bacharach: stoichiometric dry CO2 for methane ≈ 11.7 %
+        r = co2_max(1, 4, 0)
+        assert abs(r["CO2_max_dry_pct"] - 11.7) < 0.15
+
+    def test_lambda_phi_excess_air_identity(self):
+        # Definitional: λ = 1.2 → excess air 20 %, φ = 1/1.2 = 0.833
+        r = equivalence_ratio(lambda_=1.2)
+        assert abs(r["phi"] - 0.8333) < 1e-3
+        assert abs(r["excess_air_pct"] - 20.0) < 1e-3
+
+    def test_hhv_lhv_methane(self):
+        # Methane HHV 55.50 → LHV ≈ 50.0 MJ/kg (water-vapour latent, 2.442 MJ/kg)
+        r = hhv_to_lhv(55.50, C=1, H=4)
+        assert abs(r["LHV_MJ_kg"] - 50.0) < 0.1
+
+    def test_hhv_lhv_propane(self):
+        # Propane HHV 50.35 → LHV ≈ 46.3 MJ/kg
+        r = hhv_to_lhv(50.35, C=3, H=8)
+        assert abs(r["LHV_MJ_kg"] - 46.3) < 0.15
+
+    def test_siegert_natural_gas_loss(self):
+        # Siegert (VDI/EN 15502) natural gas A1=0.68, B1=0.0071:
+        # q_A = (200-20)*(0.68/10 + 0.0071) = 13.52 % → η ≈ 86.5 %
+        r = combustion_efficiency(
+            T_flue_C=200.0, T_ambient_C=20.0,
+            CO2_dry_pct=10.0, fuel="natural_gas",
+        )
+        assert abs(r["q_A_pct"] - 13.52) < 0.1
+        assert abs(r["eta_pct"] - 86.48) < 0.1
+
+    def test_turns_ch4_adiabatic_flame_temp(self):
+        # Turns 3rd ed.: stoichiometric CH4/air constant-p adiabatic flame
+        # temperature ≈ 2226 K (no dissociation). Mean-cp method should land
+        # within ~10% of this value.
+        ch4 = FUELS["methane"]
+        r = adiabatic_flame_temp(
+            1, 4, 0, excess_air_pct=0.0,
+            LHV_MJ_kg=ch4["LHV_MJ_kg"], MW_fuel=ch4["MW"],
+        )
+        assert 1900.0 < r["T_ad_K"] < 2600.0

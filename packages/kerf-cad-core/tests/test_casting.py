@@ -723,3 +723,88 @@ class TestToolWrappers:
         ctx = _ctx()
         raw = _run(run_casting_pouring_guidance(ctx, _args(section_thickness_mm=5.0)))
         _err_tool(raw)
+
+
+# ---------------------------------------------------------------------------
+# Externally-citable reference cases (Groover / Kalpakjian / Campbell)
+# ---------------------------------------------------------------------------
+
+class TestCastingExternalReferenceCases:
+    """Cross-checked against Groover 5th ed. & Kalpakjian 7th ed."""
+
+    def test_chvorinov_modulus_cube_groover(self):
+        # Groover, Fundamentals of Modern Manufacturing 5th ed. §10.6.3:
+        # Chvorinov t = B*(V/A)^n.  50 mm cube: V=1.25e-4 m^3, A=1.5e-2 m^2.
+        v = 0.05 ** 3
+        a = 6 * 0.05 ** 2
+        r = chvorinov_solidification(v, a, B=600.0, n=2.0)
+        assert math.isclose(r["modulus_m"], v / a, rel_tol=1e-12)
+        assert math.isclose(r["solidification_s"], 600.0 * (v / a) ** 2,
+                            rel_tol=1e-12)
+
+    def test_chvorinov_sphere_vs_cube_ratio(self):
+        # Groover §10.6.3 worked principle: a sphere solidifies slower than a
+        # cube of equal volume because V/A is larger.  Equal V = 1e-4 m^3.
+        v = 1e-4
+        r_sphere = (3.0 * v / (4.0 * math.pi)) ** (1.0 / 3.0)
+        a_sphere = 4.0 * math.pi * r_sphere ** 2
+        side = v ** (1.0 / 3.0)
+        a_cube = 6.0 * side ** 2
+        ts = chvorinov_solidification(v, a_sphere)["solidification_s"]
+        tc = chvorinov_solidification(v, a_cube)["solidification_s"]
+        assert ts > tc
+
+    def test_casting_yield_groover(self):
+        # Groover §11.1: casting yield = casting mass / total poured * 100.
+        r = casting_yield(10.0, 16.0)
+        assert math.isclose(r["yield_pct"], 10.0 / 16.0 * 100.0, rel_tol=1e-12)
+
+    def test_shrinkage_allowance_steel_groover_table(self):
+        # Groover 5th ed. Table 10.1 / Kalpakjian Table 12.1: cast steel
+        # solidification + solid contraction ~2.0 % linear.
+        # pattern = nominal / (1 - s).
+        r = shrinkage_allowance("carbon_steel", 1000.0)
+        assert math.isclose(r["shrinkage_dim_mm"], 1000.0 / (1.0 - 0.02),
+                            rel_tol=1e-12)
+
+    def test_shrinkage_allowance_grey_iron_low(self):
+        # Kalpakjian 7th ed. Table 12.1: grey cast iron has very low shrinkage
+        # (graphite expansion); ~1.0 % linear.
+        r = shrinkage_allowance("grey_cast_iron", 500.0)
+        assert math.isclose(r["shrinkage_dim_mm"], 500.0 / (1.0 - 0.010),
+                            rel_tol=1e-12)
+
+    def test_gating_bernoulli_velocity_kalpakjian_11(self):
+        # Kalpakjian & Schmid 7th ed. §11.3: sprue exit velocity from
+        # Bernoulli: v = Cd*sqrt(2 g h).  h=0.2 m, Cd=0.85, g=9.81.
+        r = gating_system(10.0, "aluminium_alloy", 10.0, 0.2,
+                          discharge_coeff=0.85, mold_efficiency=1.0)
+        assert math.isclose(r["velocity_m_s"],
+                            0.85 * math.sqrt(2 * 9.81 * 0.2), rel_tol=1e-9)
+
+    def test_gating_continuity_flow_rate(self):
+        # Kalpakjian §11.3 continuity: Q = volume / pour_time.
+        # Al alloy rho ~ 2700 kg/m^3 from catalog; 10 kg -> V=10/2700 m^3.
+        r = gating_system(10.0, "aluminium_alloy", 10.0, 0.2)
+        assert math.isclose(r["flow_rate_m3_s"],
+                            (10.0 / 2700.0) / 10.0, rel_tol=1e-9)
+
+    def test_unpressurised_gating_ratio_kalpakjian(self):
+        # Kalpakjian §11.3: unpressurised system uses gating ratio 1:2:4
+        # (sprue : runner : gate).
+        r = gating_system(5.0, "grey_cast_iron", 8.0, 0.25,
+                          system_type="unpressurised")
+        assert r["gating_ratio"] == (1.0, 2.0, 4.0)
+
+    def test_riser_modulus_criterion_afs(self):
+        # AFS / Chvorinov modulus rule (Kalpakjian §11.4): riser must have a
+        # larger modulus than the casting; M_riser_required = 1.2*M_casting.
+        r = riser_size(1e-4, 1.5e-2)
+        assert math.isclose(r["riser_modulus_required_m"],
+                            1.2 * r["casting_modulus_m"], rel_tol=1e-12)
+
+    def test_riser_feeds_when_modulus_sufficient(self):
+        # AFS feeding criterion: a correctly sized riser solidifies after the
+        # casting (feeds_ok True).
+        r = riser_size(1e-4, 1.5e-2)
+        assert r["feeds_ok"] is True

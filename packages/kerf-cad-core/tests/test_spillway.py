@@ -670,3 +670,97 @@ class TestPluginRegistration:
         import importlib
         mod = importlib.import_module("kerf_cad_core.spillway.tools")
         assert mod is not None
+
+
+# ===========================================================================
+# Authoritative external-reference cases (citable, numeric answers)
+# ===========================================================================
+
+class TestAuthoritativeReferences:
+    """Cross-checks vs published worked results with known numeric answers.
+
+    Sources: USBR (1977) Design of Small Dams 3rd ed.; Chow (1959)
+    Open-Channel Hydraulics (Bélanger jump); Henderson (1966); Lacey
+    (1930); Bretschneider/SMB (Linsley & Franzini)."""
+
+    def test_usbr_ogee_design_head_discharge(self):
+        # USBR SI ogee at design head: Q = C0·L·He^1.5, C0 = 2.21,
+        # He = Hd = 2 m, L = 10 m → Q = 62.51 m³/s.
+        r = ogee_discharge(design_head_m=2.0, actual_head_m=2.0,
+                           crest_length_m=10.0)
+        assert r["ok"]
+        assert abs(r["discharge_m3s"] - 62.51) < 0.5
+
+    def test_belanger_sequent_depth_fr5(self):
+        # Chow (1959) Bélanger: Fr1=5, y1=0.4 m → y2 = 2.635 m.
+        r = stilling_basin(upstream_depth_m=0.4,
+                           flow_m3s=0.4 * 1.0 * (5.0 * math.sqrt(_G * 0.4)),
+                           chute_width_m=1.0, tailwater_depth_m=2.7)
+        assert r["ok"]
+        assert abs(r["froude1"] - 5.0) < 0.02
+        assert abs(r["depth2_m"] - 2.635) < 0.01
+
+    def test_jump_energy_loss_closed_form(self):
+        # Classic hydraulic-jump head loss: ΔE = (y2-y1)³/(4·y1·y2)
+        # (Chow 1959). Fr1=5, y1=0.4 → y2=2.635 → ΔE ≈ 2.649 m.
+        y1 = 0.4
+        Q = y1 * 1.0 * (5.0 * math.sqrt(_G * y1))
+        r = stilling_basin(upstream_depth_m=y1, flow_m3s=Q,
+                           chute_width_m=1.0, tailwater_depth_m=2.7)
+        y2 = r["depth2_m"]
+        dE_expected = (y2 - y1) ** 3 / (4.0 * y1 * y2)
+        assert abs(r["energy_loss_m"] - dE_expected) < 1e-2
+
+    def test_usbr_basin_type_high_froude(self):
+        # USBR (1977 p.213): Fr1 ≥ 4.5 → Type III stilling basin.
+        y1 = 0.3
+        Q = y1 * 2.0 * (6.0 * math.sqrt(_G * y1))
+        r = stilling_basin(upstream_depth_m=y1, flow_m3s=Q,
+                           chute_width_m=2.0, tailwater_depth_m=3.0)
+        assert r["ok"]
+        assert r["froude1"] >= 4.5
+        assert r["basin_type"] == "III"
+
+    def test_orifice_gate_free_flow(self):
+        # Sharp orifice gate Cd=0.61, a=1 m, W=3 m, Hu=5 m (free flow):
+        # Q = Cd·A·√(2g·(Hu−a/2)) = 0.61·3·√(2·9.81·4.5) ≈ 17.20 m³/s.
+        r = orifice_discharge(gate_opening_m=1.0, gate_width_m=3.0,
+                              head_upstream_m=5.0, Cd=0.61)
+        assert r["ok"]
+        assert abs(r["discharge_m3s"] - 17.20) < 0.1
+
+    def test_lacey_regime_scour(self):
+        # Lacey (1930): f = 1.76·√d50, d_scour = 0.47·(Q/f)^(1/3).
+        # d50 = 2 mm → f = 2.489, Q = 300 m³/s → 0.47·(300/2.489)^⅓ ≈ 2.32 m.
+        r = scour_depth(flow_m3s=300.0, channel_width_m=20.0,
+                        d50_mm=2.0, method="lacey")
+        assert r["ok"]
+        assert abs(r["scour_depth_m"] - 2.32) < 0.05
+        assert abs(r["lacey_silt_factor"] - 1.76 * math.sqrt(2.0)) < 1e-3
+
+    def test_gravity_dam_hydrostatic_force(self):
+        # Hydrostatic thrust per unit length Ph = ½·γ_w·Hw² (γ_w=9.81 kN/m³).
+        # Hw = 20 m → Ph = 0.5·9.81·400 = 1962 kN/m.
+        r = gravity_dam_stability(dam_height_m=25.0, dam_base_width_m=18.0,
+                                  upstream_water_depth_m=20.0)
+        assert r["ok"]
+        assert abs(r["horizontal_hydrostatic_kN"] - 1962.0) < 1.0
+
+    def test_bretschneider_significant_wave_height(self):
+        # Linsley & Franzini Bretschneider/SMB: H_s = 0.0248·U²·√F.
+        # U = 20 m/s, F = 2 km, deep water → H_s ≈ 14.0 m (depth-capped if
+        # reservoir shallow; use deep reservoir to test the SMB form).
+        r = dam_freeboard(reservoir_fetch_km=2.0, wind_speed_m_s=20.0,
+                          dam_height_m=40.0, reservoir_depth_m=30.0)
+        assert r["ok"]
+        assert abs(r["significant_wave_height_m"] - 14.03) < 0.2
+
+    def test_chute_manning_normal_depth(self):
+        # Manning rectangular chute: Q=20 m³/s, W=5 m, S=0.1, n=0.015
+        # → normal depth ≈ 0.391 m, V ≈ 10.23 m/s, Fr ≈ 5.22 (supercritical).
+        r = chute_velocity(flow_m3s=20.0, chute_width_m=5.0,
+                           chute_slope=0.1, manning_n=0.015)
+        assert r["ok"]
+        assert abs(r["normal_depth_m"] - 0.391) < 5e-3
+        assert abs(r["terminal_velocity_m_s"] - 10.23) < 0.1
+        assert r["froude_number"] > 1.0

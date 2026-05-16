@@ -982,3 +982,91 @@ class TestToolWrappers:
         ctx = _ctx()
         raw = _run(run_bearing_lambda_ratio(ctx, b"{ bad }"))
         _err_tool(raw)
+
+
+# ===========================================================================
+# Externally-citable reference cases (production-confidence validation)
+# Cross-checked vs Shigley 10th ed. Ch. 12, Hamrock "Fundamentals of Fluid
+# Film Lubrication" 2nd ed., Dowson-Higginson (1977), Hamrock-Dowson (1977).
+# ===========================================================================
+
+from kerf_cad_core.lubrication.film import (  # noqa: E402
+    sommerfeld_number as _ref_S,
+    petroff_friction as _ref_petroff,
+    temperature_rise as _ref_dT,
+    viscosity_barus as _ref_barus,
+    ehl_film_line as _ref_ehl_line,
+    ehl_film_point as _ref_ehl_point,
+    lambda_ratio as _ref_lambda,
+    specific_load as _ref_specload,
+)
+
+
+class TestLubricationExternalReferences:
+    """Validated against Shigley §12 / Hamrock closed-form relations."""
+
+    def test_sommerfeld_definition_shigley_12_7(self):
+        # Shigley Eq (12-7): S = (r/c)²·μN/P, P = W/(L·D).
+        r = _ref_S(2000.0, 0.05, 30.0, 0.025, 25e-6, L=0.05)
+        D = 0.05
+        P = 2000.0 / (0.05 * D)
+        assert r["P_Pa"] == pytest.approx(P, rel=1e-12)
+        assert r["S"] == pytest.approx((0.025 / 25e-6) ** 2 * (0.05 * 30.0) / P, rel=1e-9)
+
+    def test_petroff_friction_shigley_12_4(self):
+        # Shigley §12-4 Petroff: F = 4π²μN R²L/c; T = F·R.
+        r = _ref_petroff(0.01, 30.0, 0.02, 2e-5, 0.04)
+        F = 4.0 * math.pi ** 2 * 30.0 * 0.02 ** 2 * 0.04 * 0.01 / 2e-5
+        assert r["friction_force_N"] == pytest.approx(F, rel=1e-12)
+        assert r["torque_Nm"] == pytest.approx(F * 0.02, rel=1e-12)
+
+    def test_petroff_power_loss(self):
+        # P = 2πN·T (rotational power = torque × angular speed).
+        r = _ref_petroff(0.01, 30.0, 0.02, 2e-5, 0.04)
+        assert r["power_W"] == pytest.approx(2.0 * math.pi * 30.0 * r["torque_Nm"], rel=1e-12)
+
+    def test_temperature_rise_energy_balance(self):
+        # Shigley §12-8: ΔT = P_loss/(ρ·Q·Cp).
+        r = _ref_dT(500.0, 1e-5, rho=870.0, Cp=1900.0)
+        assert r["delta_T_K"] == pytest.approx(500.0 / (870.0 * 1e-5 * 1900.0), rel=1e-12)
+
+    def test_barus_viscosity_pressure(self):
+        # Hamrock §4: Barus μ(p) = μ0·exp(α p). μ0=0.04, α=2.2e-8, p=100 MPa.
+        r = _ref_barus(0.04, 2.2e-8, 100e6)
+        assert r["mu_Pa_s"] == pytest.approx(0.04 * math.exp(2.2e-8 * 100e6), rel=1e-12)
+
+    def test_ehl_line_dowson_higginson(self):
+        # Dowson-Higginson (1977): Hmin = 2.65 G^0.54 U^0.70 W^(-0.13).
+        r = _ref_ehl_line(0.02, 2.2e11, 2.0e-8, 5e5, 2.2e-8)
+        U = 2.0e-8 / (2.2e11 * 0.02)
+        W = 5e5 / (2.2e11 * 0.02)
+        G = 2.2e-8 * 2.2e11
+        Hexp = 2.65 * G ** 0.54 * U ** 0.70 * W ** -0.13
+        assert r["H_min"] == pytest.approx(Hexp, rel=1e-9)
+        assert r["h_min_m"] == pytest.approx(Hexp * 0.02, rel=1e-9)
+
+    def test_ehl_point_hamrock_dowson(self):
+        # Hamrock-Dowson (1977): Hmin = 3.63 U^0.68 G^0.49 W^(-0.073)·
+        # (1 − e^{−0.68 k}).  Circular contact Rx=Ry → k=1.
+        r = _ref_ehl_point(0.01, 0.01, 2.2e11, 2.0e-8, 100.0, 2.2e-8)
+        U = 2.0e-8 / (2.2e11 * 0.01)
+        W = 100.0 / (2.2e11 * 0.01 ** 2)
+        G = 2.2e-8 * 2.2e11
+        Hexp = 3.63 * U ** 0.68 * G ** 0.49 * W ** -0.073 * (1.0 - math.exp(-0.68))
+        assert r["H_min"] == pytest.approx(Hexp, rel=1e-9)
+
+    def test_lambda_ratio_stribeck(self):
+        # Hamrock/Stribeck: λ = h_min/√(Ra1²+Ra2²).
+        r = _ref_lambda(0.5e-6, 0.1e-6, 0.1e-6)
+        Rq = math.sqrt(0.1e-6 ** 2 + 0.1e-6 ** 2)
+        assert r["lambda"] == pytest.approx(0.5e-6 / Rq, rel=1e-12)
+
+    def test_lambda_regime_hydrodynamic(self):
+        # Shigley §12: λ ≥ 3 → full hydrodynamic.
+        r = _ref_lambda(1.0e-6, 0.1e-6, 0.1e-6)
+        assert r["regime"] == "hydrodynamic"
+
+    def test_specific_load_projected(self):
+        # Shigley §12-7: p = W/(L·D). W=5000 N, L=0.05, D=0.05.
+        r = _ref_specload(5000.0, 0.05, 0.05)
+        assert r["p_Pa"] == pytest.approx(5000.0 / (0.05 * 0.05), rel=1e-12)

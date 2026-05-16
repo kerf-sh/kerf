@@ -488,3 +488,90 @@ class TestLLMTools:
         payload = json.dumps({}).encode()
         raw = _run(run_gearbox_ratio(CTX, payload))
         _err_response(raw)
+
+
+# ===========================================================================
+# Externally-citable reference cases (production-confidence validation)
+# Cross-checked vs Shigley 10th ed. §13-4..13-7 and ISO 21771:2007.
+# ===========================================================================
+
+from kerf_cad_core.gearbox.train import (  # noqa: E402
+    design_gearbox as _ref_design_gearbox,
+    gearbox_ratio as _ref_gearbox_ratio,
+)
+
+
+class TestGearboxExternalReferences:
+    """Validated against Shigley §13-4 power-train relations & ISO 21771."""
+
+    def test_single_stage_ratio(self):
+        # ISO 21771 §3.12: i = z2/z1. z1=20, z2=60 → ratio 3.0.
+        r = _ref_gearbox_ratio([{"z1": 20, "z2": 60, "module": 2.0}])
+        assert r["total_ratio"] == pytest.approx(3.0, rel=1e-12)
+
+    def test_compound_train_ratio(self):
+        # Shigley §13-4: total ratio = product of stage ratios.
+        # (60/20)·(50/25) = 3·2 = 6.
+        r = _ref_gearbox_ratio([
+            {"z1": 20, "z2": 60, "module": 2.0},
+            {"z1": 25, "z2": 50, "module": 3.0},
+        ])
+        assert r["total_ratio"] == pytest.approx(6.0, rel=1e-12)
+
+    def test_idler_ratio_unity(self):
+        # Shigley §13-4: an idler contributes ratio 1 (direction reversal only).
+        r = _ref_gearbox_ratio([
+            {"z1": 20, "z2": 40, "module": 2.0},
+            {"z1": 30, "z2": 30, "module": 2.0, "is_idler": True},
+        ])
+        assert r["total_ratio"] == pytest.approx(2.0, rel=1e-12)
+
+    def test_output_speed_relation(self):
+        # Kinematic: n_out = n_in / ratio. 1500 rpm, ratio 3 → 500 rpm.
+        r = _ref_design_gearbox([{"z1": 20, "z2": 60, "module": 2.0}], 1500.0, 10.0)
+        assert r["output_rpm"] == pytest.approx(500.0, rel=1e-9)
+
+    def test_output_torque_relation(self):
+        # Shigley §13-4: T_out = T_in · ratio · η.  ratio=3, η=0.98.
+        r = _ref_design_gearbox([{"z1": 20, "z2": 60, "module": 2.0, "eta": 0.98}], 1500.0, 10.0)
+        assert r["output_torque_nm"] == pytest.approx(10.0 * 3.0 * 0.98, rel=1e-6)
+
+    def test_power_conservation(self):
+        # Power out = power in × η.  P = T·ω.
+        r = _ref_design_gearbox([{"z1": 20, "z2": 60, "module": 2.0, "eta": 0.98}], 1500.0, 10.0)
+        w_in = 1500.0 * 2 * math.pi / 60.0
+        w_out = r["output_rpm"] * 2 * math.pi / 60.0
+        p_in = 10.0 * w_in
+        p_out = r["output_torque_nm"] * w_out
+        assert p_out == pytest.approx(p_in * 0.98, rel=1e-6)
+
+    def test_centre_distance_iso21771(self):
+        # ISO 21771 §10.1: a = m(z1+z2)/2. m=2, z1=20, z2=60 → a=80 mm.
+        r = _ref_design_gearbox([{"z1": 20, "z2": 60, "module": 2.0}], 1000.0, 5.0)
+        assert r["stages"][0]["centre_distance_mm"] == pytest.approx(80.0, rel=1e-12)
+
+    def test_total_efficiency_product(self):
+        # Two stages η=0.98 each → η_total = 0.98² = 0.9604.
+        r = _ref_design_gearbox([
+            {"z1": 20, "z2": 40, "module": 2.0, "eta": 0.98},
+            {"z1": 20, "z2": 40, "module": 2.0, "eta": 0.98},
+        ], 1000.0, 5.0)
+        assert r["total_efficiency"] == pytest.approx(0.98 * 0.98, rel=1e-9)
+
+    def test_three_stage_ratio(self):
+        # Shigley §13-4: (3)(3)(3) = 27 compound reduction.
+        r = _ref_gearbox_ratio([
+            {"z1": 17, "z2": 51, "module": 2.0},
+            {"z1": 17, "z2": 51, "module": 2.0},
+            {"z1": 17, "z2": 51, "module": 2.0},
+        ])
+        assert r["total_ratio"] == pytest.approx(27.0, rel=1e-9)
+
+    def test_cumulative_centre_distance(self):
+        # Geometry: cumulative CD = Σ stage CD.
+        # Stage1: 2·(20+40)/2=60; Stage2: 3·(25+35)/2=90 → cumulative 150.
+        r = _ref_design_gearbox([
+            {"z1": 20, "z2": 40, "module": 2.0},
+            {"z1": 25, "z2": 35, "module": 3.0},
+        ], 1000.0, 5.0)
+        assert r["stages"][-1]["cumulative_centre_distance_mm"] == pytest.approx(150.0, rel=1e-9)

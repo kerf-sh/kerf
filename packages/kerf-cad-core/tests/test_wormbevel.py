@@ -678,3 +678,86 @@ class TestToolsErrorPaths:
         r = json.loads(raw)
         assert r["ok"] is False
         assert "J" in r["reason"]
+
+
+# ===========================================================================
+# Externally-citable reference cases (production-confidence validation)
+# Cross-checked vs Shigley 10th ed. §§13-7..13-17, AGMA 6022/2003.
+# ===========================================================================
+
+from kerf_cad_core.wormbevel.design import (  # noqa: E402
+    worm_geometry as _ref_worm_geo,
+    worm_efficiency as _ref_worm_eff,
+    worm_forces as _ref_worm_forces,
+    bevel_geometry as _ref_bevel_geo,
+    bevel_forces as _ref_bevel_forces,
+)
+
+
+class TestWormBevelExternalReferences:
+    """Validated against Shigley §§13-9,13-10,13-17 worm/bevel relations."""
+
+    def test_worm_lead_and_axial_pitch(self):
+        # Shigley §13-7: p_x = π·m_n; lead L = N_w·p_x. m_n=4, N_w=2.
+        r = _ref_worm_geo(4.0, 2, 40)
+        assert r["axial_pitch_mm"] == pytest.approx(math.pi * 4.0, rel=1e-12)
+        assert r["lead_mm"] == pytest.approx(2 * math.pi * 4.0, rel=1e-12)
+
+    def test_worm_lead_angle(self):
+        # Shigley §13-7: tan λ = L/(π d_w). Default d_w = q·m, q=10.
+        r = _ref_worm_geo(4.0, 2, 40)
+        lead = 2 * math.pi * 4.0
+        d_w = 10.0 * 4.0
+        assert math.tan(math.radians(r["lead_angle_deg"])) == pytest.approx(lead / (math.pi * d_w), rel=1e-9)
+
+    def test_worm_gear_ratio(self):
+        # Shigley §13-7: m_G = N_g/N_w. 40/2 = 20.
+        r = _ref_worm_geo(4.0, 2, 40)
+        assert r["m_G"] == pytest.approx(20.0, rel=1e-12)
+
+    def test_worm_efficiency_shigley_13_9(self):
+        # Shigley §13-9 Eq: η = tanλ(cosφ−μ tanλ)/(cosφ tanλ+μ).
+        # λ=20°, φ_n=20°, μ=0.05.
+        r = _ref_worm_eff(20.0, 20.0, 0.05)
+        lam = math.radians(20.0)
+        phi = math.radians(20.0)
+        exp = math.tan(lam) * (math.cos(phi) - 0.05 * math.tan(lam)) / (math.cos(phi) * math.tan(lam) + 0.05)
+        assert r["eta_forward"] == pytest.approx(exp, rel=1e-9)
+
+    def test_worm_self_locking(self):
+        # Shigley §13-9: self-locking when μ ≥ cosφ·tanλ. λ=2°, μ=0.15.
+        r = _ref_worm_eff(2.0, 20.0, 0.15)
+        assert r["self_locking"] is True
+
+    def test_worm_tangential_force(self):
+        # Shigley §13-10: W_t_w = 2 T_w / d_w. T=50000 N·mm, d_w=40 mm.
+        r = _ref_worm_forces(50000.0, 40.0, 10.0, 20.0, 0.05)
+        assert r["W_t_w_N"] == pytest.approx(2 * 50000.0 / 40.0, rel=1e-12)
+
+    def test_bevel_pitch_angle_shigley_13_17(self):
+        # Shigley §13-17: tan Γ_p = N_p/N_g (90° shaft). 20/40 → 26.565°.
+        r = _ref_bevel_geo(20, 40, 4.0)
+        assert r["Gamma_p_deg"] == pytest.approx(math.degrees(math.atan(20.0 / 40.0)), rel=1e-9)
+        assert r["Gamma_g_deg"] == pytest.approx(90.0 - math.degrees(math.atan(20.0 / 40.0)), rel=1e-9)
+
+    def test_bevel_cone_distance(self):
+        # Shigley §13-17: A_0 = d_p/(2 sin Γ_p), d_p = m·N_p.
+        r = _ref_bevel_geo(20, 40, 4.0)
+        Gp = math.atan(20.0 / 40.0)
+        assert r["A_0_mm"] == pytest.approx(4.0 * 20.0 / (2.0 * math.sin(Gp)), rel=1e-9)
+
+    def test_bevel_virtual_teeth(self):
+        # Shigley §13-17 (Tredgold): N_e = N/cos Γ.
+        r = _ref_bevel_geo(20, 40, 4.0)
+        Gp = math.atan(20.0 / 40.0)
+        assert r["N_e_p"] == pytest.approx(20.0 / math.cos(Gp), rel=1e-9)
+
+    def test_bevel_force_decomposition(self):
+        # Shigley §13-17: W_t=2T/d_m; W_r=W_t·tanφ·cosΓ; W_a=W_t·tanφ·sinΓ.
+        r = _ref_bevel_forces(100000.0, 76.0, 26.565, 20.0)
+        Wt = 2 * 100000.0 / 76.0
+        G = math.radians(26.565)
+        phi = math.radians(20.0)
+        assert r["W_t_N"] == pytest.approx(Wt, rel=1e-9)
+        assert r["W_r_N"] == pytest.approx(Wt * math.tan(phi) * math.cos(G), rel=1e-9)
+        assert r["W_a_N"] == pytest.approx(Wt * math.tan(phi) * math.sin(G), rel=1e-9)

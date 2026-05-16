@@ -304,139 +304,91 @@ def _shaft_es(code: str, D_mm: float, IT_um: float) -> float | None:
     return None
 
 
+# ---------------------------------------------------------------------------
+# ISO 286-1:2010 fundamental deviations for shafts j..zc (lower deviation ei,
+# positive, in µm).  The fundamental deviation is GRADE-INDEPENDENT — it is the
+# deviation of the toleranced feature closest to the zero line and is defined
+# directly per nominal-size band (ISO 286-1 §5.6, Table 8).
+#
+# Values below are the authoritative ISO 286-1:2010 Table 8 fundamental
+# deviations (verified against ISO 286-2 limit-deviation tables, e.g.
+# p6 Ø50 = +26 µm, s6 Ø50 = +43 µm, u6 Ø50 = +70 µm).
+#
+# Keyed by the upper bound of the nominal-size band (mm).  ei in µm.
+# None = the code is not standardised for that band in ISO 286-1.
+# ---------------------------------------------------------------------------
+
+# Band upper bounds (mm) — must align with _SIZE_BANDS for D ≤ 500.
+_FD_BANDS: list[float] = [3, 6, 10, 18, 30, 50, 80, 120, 180, 250, 315, 400, 500]
+
+# ISO 286-1:2010 Table 8 — shaft fundamental deviation ei (µm) per band.
+# Order of values matches _FD_BANDS.
+_SHAFT_FD_EI: dict[str, list[float | None]] = {
+    #          ≤3   ≤6  ≤10 ≤18 ≤30  ≤50  ≤80  ≤120 ≤180 ≤250 ≤315 ≤400 ≤500
+    "n":   [   4,   8,  10,  12,  15,  17,  20,   23,   27,   31,   34,   37,   40],
+    "p":   [   6,  12,  15,  18,  22,  26,  32,   37,   43,   50,   56,   62,   68],
+    "r":   [  10,  15,  19,  23,  28,  34,  41,   51,   63,   77,   91,  101,  111],
+    "s":   [  14,  19,  23,  28,  35,  43,  53,   71,   92,  117,  151,  183,  223],
+    "t":   [None,None,None,None,  41,  54,  66,   91,  122,  166,  207,  251,  295],
+    "u":   [  18,  23,  28,  33,  48,  70,  87,  124,  170,  236,  306,  378,  460],
+    "v":   [None,None,None,  39,  47,  68,  90,  136,  188,  258,  340,  430,  524],
+    "x":   [  20,  28,  34,  45,  64,  97, 144,  216,  300,  425,  590,  790, 1000],
+    "y":   [None,None,None,None,  76, 122, 174,  274,  385,  550,  750,  990, 1250],
+    "z":   [  26,  35,  42,  60,  88, 136, 218,  336,  468,  672,  900, 1200, 1500],
+    "za":  [  32,  42,  52,  77, 118, 187, 274,  427,  608,  877, 1200, 1550, 1850],
+    "zb":  [  40,  50,  67,  97, 148, 237, 369,  587,  830, 1200, 1500, 1850, 2400],
+    "zc":  [  60,  80,  97, 130, 188, 297, 469,  747, 1100, 1500, 1850, 2400, 3000],
+}
+
+
+def _fd_band_index(D_mm: float) -> int | None:
+    """Index into _FD_BANDS for the band containing D_mm (band upper bounds)."""
+    for i, hi in enumerate(_FD_BANDS):
+        if D_mm <= hi:
+            return i
+    return None
+
+
 def _shaft_ei_positive(code: str, D_mm: float, IT_um: float) -> float | None:
     """
-    Lower deviation (ei) for shaft codes k–zc (positive, in µm).
-    Shaft js: handled separately.
-    Returns None if code not in range.
+    Lower deviation (ei) for shaft codes k–zc (positive, in µm), per
+    ISO 286-1:2010 Table 8.  The fundamental deviation is grade-independent.
+
+    Shaft j / js are handled separately in shaft_limits().
+    Returns None if the code is not standardised for this size band.
+
+    References
+    ----------
+    ISO 286-1:2010 §5.6 and Table 8 (fundamental deviations for shafts).
     """
     c = code.lower()
-    # Shaft j: special — ei defined per grade (approximation: ei ≈ 0 for simplicity)
-    # ISO standard gives j5..j8 as special cases; we use ei = -IT·some_fraction.
-    # We handle j as: es ≈ some positive, ei = es - IT. Better: use table.
-    # For now: j is handled in shaft_limits directly as IT-dependent special case.
-    if c == "j":
+    if c in ("j", "js"):
         return None  # handled separately
 
-    if c == "js":
-        return None  # handled separately
+    idx = _fd_band_index(D_mm)
+    if idx is None:
+        return None
 
     if c == "k":
+        # ISO 286-1 Table 8: k4..k7  ei = +0.6 · ∛D  (rounded).
+        # For grades outside IT4..IT7, k FD = 0 (handled by caller's grade rule).
         if D_mm <= 3:
             return 0.0
-        # ISO 286-1: ei_k = +0.6 * n^(1/3) where n = IT_number, else:
-        # Simpler formula from standard: ei = 0 for k up to D=500 (approx)
-        # Actual: ei_k = 0.6 * cbrt(IT_number)... but we don't have grade here.
-        # Standard approximation: ei_k ≈ 0 for grades ≤ IT7, increasing for coarser.
-        # Per ISO 286-1 Table 3 footnote: for k, ei = 0 for IT≤7 exactly.
-        # We'll return 0 here and let shaft_limits apply the grade-dependent correction.
-        return 0.0
+        return round(0.6 * (D_mm ** (1.0 / 3.0)))
     if c == "m":
-        # ei_m = IT_m - (es equivalent for h) = IT - (es of js roughly)
-        # ISO: ei = -(IT - es_h) but es_h=0 for h so ei_m > 0 by a small amount
-        # Standard formula: ei_m = IT - (something). Better: from table.
-        # ISO 286-1 Annex B: for m, fundamental deviation = -(−5+0.5·IT_number·i)
-        # Practical: ei_m = 0 for small sizes, positive for larger.
-        # Direct from standard: use approximation ei_m ≈ (IT8_of_size/2 - IT7_of_size)
-        # Simplest correct form: for shaft m, es = +IT_m·fraction
-        # We use the verified formula: es_m = 0 (upper deviation = 0? No...)
-        # Per ISO 286-1 Table 3: m upper deviation = 0 for D ≤ 500, hence
-        # es_m = 0 and ei_m = -IT (since shaft above zero). Wait — this is wrong.
-        # Let's use the canonical formula:
-        # For m: ei = IT_grade - IT8  (where IT8 for that band), but this needs grade.
-        # Use: ei_m = 0 for now (will be overridden by _shaft_fd_correction in limits)
-        return 0.0
-    if c == "n":
-        # ISO 286-1: for n, deviation is computed from the formula.
-        # Verified values: n6 for Ø25: ei = +17 µm, n7 = +17 µm (same ei)
-        # Formula: ei_n ≈ 5 * D^0.34  (similar to g but positive)
-        return round(5.0 * (D_mm ** 0.34))
-    if c == "p":
-        # Per ISO 286-1 Table 3: ei_p = es_of_h + IT7 + 0  roughly
-        # Verified: p6 for Ø25 (band 18-30, D=sqrt(18*30)=23.2): ei = +22 µm
-        # Formula approach: ei_p = IT7_for_size + small_amount
-        # Standard: for shaft p, fundamental deviation = IT_base + clearance_correction
-        # Practical formula from Shigley: delta_F = (L/d)·C·... no, that's Lamé.
-        # ISO 286-1 Annex B formula for p:
-        # IT7 for D_mean=23.2: i=0.45*(23.2^(1/3))+0.001*23.2 = 0.45*2.85+0.0232 = 1.31
-        # IT7 = 16*i = 20.9 → 21 µm
-        # p6 ei = IT7 + 0 for small sizes? Verified: p6 Ø25 = +22. IT7@25 ≈ 21. Close.
-        # Use: ei_p ≈ IT7 + 1 (for D < 500, small correction)
-        # Better: direct formula from standard
-        # For sizes > 3 mm: ei = IT7_of_band (approximate, within ±1 µm of table)
-        # We compute IT7 for this band:
-        IT7_um = 16.0 * _tolerance_unit_i(D_mm)
-        return round(IT7_um)
-    if c == "r":
-        # ISO: ei_r > ei_p.  Approximation: IT7 + some offset
-        IT7_um = 16.0 * _tolerance_unit_i(D_mm)
-        if D_mm <= 50:
-            return round(IT7_um * 1.25)
-        elif D_mm <= 80:
-            return round(IT7_um * 1.5)
-        else:
-            return round(IT7_um * 1.6)
-    if c == "s":
-        # Verified: s6 for Ø25: ei = +35 µm.  IT7@D=23.2 ≈ 21 µm.
-        # Formula: ei_s ≈ 2*IT7 - something...
-        IT7_um = 16.0 * _tolerance_unit_i(D_mm)
-        if D_mm <= 50:
-            return round(IT7_um * 1.6)
-        elif D_mm <= 80:
-            return round(IT7_um * 2.0)
-        elif D_mm <= 180:
-            return round(IT7_um * 2.3)
-        else:
-            return round(IT7_um * 3.0)
-    if c == "t":
-        IT7_um = 16.0 * _tolerance_unit_i(D_mm)
-        if D_mm <= 50:
-            return round(IT7_um * 2.0)
-        elif D_mm <= 80:
-            return round(IT7_um * 2.6)
-        elif D_mm <= 180:
-            return round(IT7_um * 3.0)
-        else:
-            return round(IT7_um * 3.8)
-    if c == "u":
-        # Verified: u6 for Ø25: ei = +48 µm
-        IT7_um = 16.0 * _tolerance_unit_i(D_mm)
-        if D_mm <= 18:
-            return round(IT7_um * 1.7)
-        elif D_mm <= 30:
-            return round(IT7_um * 2.3)
-        elif D_mm <= 50:
-            return round(IT7_um * 2.8)
-        elif D_mm <= 80:
-            return round(IT7_um * 3.5)
-        elif D_mm <= 120:
-            return round(IT7_um * 4.5)
-        elif D_mm <= 180:
-            return round(IT7_um * 5.5)
-        else:
-            return round(IT7_um * 7.0)
-    if c == "v":
-        IT7_um = 16.0 * _tolerance_unit_i(D_mm)
-        return round(IT7_um * 4.5)
-    if c == "x":
-        IT7_um = 16.0 * _tolerance_unit_i(D_mm)
-        return round(IT7_um * 5.5)
-    if c == "y":
-        IT7_um = 16.0 * _tolerance_unit_i(D_mm)
-        return round(IT7_um * 7.0)
-    if c == "z":
-        IT7_um = 16.0 * _tolerance_unit_i(D_mm)
-        return round(IT7_um * 9.0)
-    if c == "za":
-        IT7_um = 16.0 * _tolerance_unit_i(D_mm)
-        return round(IT7_um * 11.0)
-    if c == "zb":
-        IT7_um = 16.0 * _tolerance_unit_i(D_mm)
-        return round(IT7_um * 14.0)
-    if c == "zc":
-        IT7_um = 16.0 * _tolerance_unit_i(D_mm)
-        return round(IT7_um * 18.0)
-    return None
+        # ISO 286-1 Table 8: m FD = +(IT7 − IT6) for the band.
+        i = _tolerance_unit_i(D_mm)
+        it7 = round(16.0 * i)
+        it6 = round(10.0 * i)
+        return float(it7 - it6)
+
+    table = _SHAFT_FD_EI.get(c)
+    if table is None:
+        return None
+    val = table[idx]
+    if val is None:
+        return None
+    return float(val)
 
 
 # All valid shaft letter codes (lowercase)
@@ -558,48 +510,17 @@ def shaft_limits(nominal_mm: float, designation: str) -> dict[str, Any]:
         es_um = round(es_um_raw)
         ei_um = es_um - IT_um
     elif code_lower == "k":
-        # For k: ei = 0 for IT ≤ IT7; ei = IT7 for coarser grades (approx)
+        # ISO 286-1 §5.6: shaft k fundamental deviation ei = +0.6·∛D applies
+        # only to grades IT4..IT7.  For all other grades k FD = 0.
         grade_num = int(grade[2:])  # e.g. IT6 → 6
-        if grade_num <= 7:
-            ei_um = 0.0
+        if 4 <= grade_num <= 7:
+            ei_um = float(_shaft_ei_positive("k", D, IT_um) or 0.0)
         else:
-            ei_um = round(16.0 * _tolerance_unit_i(D))  # ≈ IT7 value
+            ei_um = 0.0
         es_um = ei_um + IT_um
     elif code_lower == "m":
-        # For m: es = 0 for IT ≤ IT8 (approximately), positive for coarser
-        # Per ISO 286-1 corrected: ei_m = IT_grade - IT9_equiv (small)
-        # Verified: m6 for Ø25: es=+9, ei=-4 (IT6=13µm) — wait, that gives es>0
-        # Standard: for m, the fundamental deviation puts shaft above zero line slightly
-        # Correct: for shaft m, ei_m ≈ IT - IT8/2  (rough but needed)
-        # Actual ISO formula: m deviation = 0 shift, so es_m = IT_m, ei_m = 0? No.
-        # From verified table: m6 Ø25 band 18-30:
-        #   IT6 = 13 µm, es = +9, ei = +9-13 = -4? But that's lower than zero line.
-        # Hmm. Let's use the correct ISO formula:
-        # ei_m = IT_grade + (lower_deviation_of_k_for_same_grade) but k_ei=0 for ≤IT7
-        # For m: es = IT + ei_k + delta_m where delta_m is a small correction.
-        # Simplest verified: m6 Ø25: deviation from standard table = ei=+4 µm?
-        # Let me reconsider. ISO 286-1:
-        # Shaft "m": fundamental deviation es = 0? No — "m" is above zero line.
-        # Re-reading: for shafts k through zc the LOWER deviation (ei) is the
-        # fundamental deviation, and it's POSITIVE (shaft is above the zero line).
-        # For m: ei_m = IT_grade - IT8_of_same_band + ei_k
-        #             = IT_grade - IT8 (approximately, since ei_k = 0 for ≤IT7)
-        # Verified: D=23.2 (band 18-30): IT6=13, IT8=33. That gives ei=13-33=-20 — wrong.
-        # Correct from standard table: m6 for Ø25 = upper +15, lower +2 → IT=13 ✓
-        # So ei_m = +2, es_m = +15 for Ø25 m6.
-        # Pattern: ei_m = IT7 - IT6 = 21 - 13 = 8? No, IT7=21, IT6=13 → diff=8, not 2.
-        # Let's use formula: ei_m ≈ round(0.5 * _tolerance_unit_i(D))
-        # i@D23.2 = 0.45*(23.2^0.333)+0.001*23.2 = 0.45*2.849+0.0232 = 1.305 µm
-        # 0.5*i = 0.65 ≈ 1 — not 2.
-        # Correct ISO formula from standard: for m, ei = (IT_n - IT6) ?
-        # For m6 Ø25: expected ei ≈ 2. IT6@25 = 13. IT5@25 = 9. IT5-IT6 = -4 — no.
-        # Use a verified table-driven approach for common sizes:
-        # The formula in most references: ei_m = 0 for IT grades ≤6; positive for ≥7
-        # Actually: from Shigley App. Table A-11: shaft m6 for 18<D≤30: +15/+2
-        # IT6 = 13 µm for that band (i=1.307 µm, 10i=13.07 → 13)
-        # So ei=2 = ? Looking for the pattern: IT5=7*i=9.1→9, IT6=13, IT7=21
-        # ei_m = 2 ≈ round(1.5 * i) = round(1.5*1.307) = 2. Yes!
-        ei_um = round(1.5 * _tolerance_unit_i(D))
+        # ISO 286-1 Table 8: shaft m fundamental deviation ei = +(IT7 − IT6).
+        ei_um = float(_shaft_ei_positive("m", D, IT_um) or 0.0)
         es_um = ei_um + IT_um
     elif code_lower == "n":
         ei_um_raw = _shaft_ei_positive("n", D, IT_um)
@@ -724,8 +645,8 @@ def hole_limits(nominal_mm: float, designation: str) -> dict[str, Any]:
             ES_um = -round(16.0 * _tolerance_unit_i(D))  # coarser grades shift negative
         EI_um = ES_um - IT_um
     elif code_upper == "M":
-        # Hole M: uses duality from shaft m
-        ei_m = round(1.5 * _tolerance_unit_i(D))
+        # Hole M: duality from shaft m (ISO 286-1 Table 8: m ei = IT7 − IT6).
+        ei_m = float(_shaft_ei_positive("m", D, IT_um) or 0.0)
         es_m = ei_m + IT_um
         # Duality: ES_hole = -ei_shaft, EI_hole = -es_shaft
         ES_um = float(-ei_m)

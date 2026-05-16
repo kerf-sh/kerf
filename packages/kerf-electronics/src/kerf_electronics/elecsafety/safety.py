@@ -1077,14 +1077,23 @@ def arc_flash_incident_energy(
           where V_kV = system_voltage / 1000, I_bf = bolted fault [kA],
           t = duration [s], D = distance [mm].
 
-    2. IEEE 1584-2002 empirical equation (for 208 V–15 kV, 16–50 mm gap,
-       0.2–106 kA, open-air or in-box):
-          log(E) = K1 + K2 + 1.081×log(I_bf) + 0.0011×G − 0.0065×D^0.9 + log(t/0.2×(610^x/D^x))
-       Simplified as:
-          E_empirical [J/cm²] = 4.184 × Cf × En × (t/0.2) × (610^x / D^x)
-          En = 10^(K1 + K2 + 1.081×log(I_bf) + 0.0011×G)
-       Constants for open-air: K1=−0.792, K2=−0.555, x=1.473, Cf=1.0
-       Constants for in-box/enclosure: K1=−0.555, K2=0.0, x=1.641, Cf=1.5
+    2. IEEE 1584-2002 empirical equations (for 208 V–15 kV, 13–152 mm
+       gap, 0.7–106 kA, open-air or in-box).  This is the TWO-STEP
+       method mandated by IEEE 1584-2002 §9:
+
+       Step 1 — arcing current (IEEE 1584-2002 Eq. 1, V < 1 kV):
+          lg I_a = K + 0.662·lg I_bf + 0.0966·V + 0.000526·G
+                   + 0.5588·V·lg I_bf − 0.00304·G·lg I_bf
+          (K = −0.097 in-box, −0.153 open-air; V in kV, G in mm)
+          For V ≥ 1 kV (Eq. 2): lg I_a = 0.00402 + 0.983·lg I_bf
+
+       Step 2 — normalized incident energy (IEEE 1584-2002 Eq. 4) — note
+       this uses lg I_a (the ARCING current), NOT lg I_bf:
+          lg E_n = K1 + K2 + 1.081·lg I_a + 0.0011·G
+          E [J/cm²] = 4.184 · Cf · E_n · (t/0.2) · (610^x / D^x)
+       Constants — open-air: K1=−0.792, K2=0 (ungrounded), x=2.000, Cf=1.0
+                   in-box:   K1=−0.555, K2=0 (ungrounded), x=1.473, Cf=1.5
+       (K2 = −0.113 for grounded systems; conservatively 0 here.)
 
     Arc-flash boundary (AFB): distance at which E = 1.2 cal/cm² (onset of
     second-degree burn, NFPA 70E Table 130.7).
@@ -1138,13 +1147,30 @@ def arc_flash_incident_energy(
     # E_Lee [cal/cm²] = 793 × V_kV × I_bf × t / D²
     e_lee_cal = 793.0 * V_kV * I_bf * t / (D ** 2)
 
-    # ── IEEE 1584 empirical equation ──────────────────────────────────────
-    if stype == "open_air":
-        K1, K2, x, Cf = -0.792, -0.555, 1.473, 1.0
-    else:  # enclosure
-        K1, K2, x, Cf = -0.555,  0.0,   1.641, 1.5
+    # ── IEEE 1584-2002 empirical equations (two-step) ─────────────────────
+    # Step 1: arcing current I_a from bolted fault I_bf (Eq. 1 / Eq. 2).
+    lg_Ibf = math.log10(I_bf)
+    if V_kV < 1.0:
+        K_arc = -0.097 if stype == "enclosure" else -0.153
+        lg_Ia = (
+            K_arc
+            + 0.662 * lg_Ibf
+            + 0.0966 * V_kV
+            + 0.000526 * G
+            + 0.5588 * V_kV * lg_Ibf
+            - 0.00304 * G * lg_Ibf
+        )
+    else:  # V >= 1 kV (IEEE 1584-2002 Eq. 2)
+        lg_Ia = 0.00402 + 0.983 * lg_Ibf
+    I_a = 10.0 ** lg_Ia
 
-    log_En = K1 + K2 + 1.081 * math.log10(I_bf) + 0.0011 * G
+    # Step 2: normalized incident energy uses lg(I_a), NOT lg(I_bf).
+    if stype == "open_air":
+        K1, K2, x, Cf = -0.792, 0.0, 2.000, 1.0
+    else:  # enclosure / in-box
+        K1, K2, x, Cf = -0.555, 0.0, 1.473, 1.5
+
+    log_En = K1 + K2 + 1.081 * lg_Ia + 0.0011 * G
     En = 10.0 ** log_En
     e_empirical_j = 4.184 * Cf * En * (t / 0.2) * ((610 ** x) / (D ** x))
     e_empirical_cal = e_empirical_j / 4.184  # J/cm² → cal/cm²
@@ -1202,6 +1228,7 @@ def arc_flash_incident_energy(
         "working_distance_mm": D,
         "electrode_gap_mm": G,
         "system_type": stype,
+        "arcing_current_ka":                  round(I_a, 4),
         "incident_energy_cal_cm2_lee":       round(e_lee_cal,       4),
         "incident_energy_cal_cm2_empirical":  round(e_empirical_cal, 4),
         "incident_energy_cal_cm2":            round(e_incident,      4),

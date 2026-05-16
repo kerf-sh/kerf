@@ -136,7 +136,7 @@ _EXPOSURE_PARAMS: dict[str, dict] = {
     "D": {
         "alpha": 11.5,
         "zg_m": 213.36,  # 700 ft
-        "z_min_m": 4.57,  # 15 ft
+        "z_min_m": 2.1336,  # 7 ft (ASCE 7-16/22 Table 26.11-1 — NOT 15 ft)
         "alpha_bar": 1.0 / 9.0,
         "b_bar": 0.80,
         "c": 0.15,

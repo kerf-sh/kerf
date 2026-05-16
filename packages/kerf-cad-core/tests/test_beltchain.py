@@ -581,3 +581,80 @@ class TestChainTool:
         result = _run(run_chain_drive_design(_ctx(), b""))
         r = json.loads(result)
         assert _is_error_response(r)
+
+
+# ===========================================================================
+# Externally-citable reference cases (production-confidence validation)
+# Cross-checked vs Shigley 10th ed. §§17-1..17-12, Mott "Machine Elements
+# in Mechanical Design" 5th ed., ANSI B29.1.
+# ===========================================================================
+
+from kerf_cad_core.beltchain.drives import (  # noqa: E402
+    vbelt_design as _ref_vbelt,
+    timing_belt_design as _ref_timing,
+    chain_drive_design as _ref_chain,
+)
+
+
+class TestBeltChainExternalReferences:
+    """Validated against Shigley §17 belt/chain geometry relations."""
+
+    def test_vbelt_speed_ratio(self):
+        # Shigley §17-5: i = n1/n2. 1750/875 = 2.0.
+        r = _ref_vbelt(7.5, 1750.0, 875.0, d_small_mm=150.0)
+        assert r["ok"]
+        assert r["speed_ratio"] == pytest.approx(2.0, rel=1e-9)
+
+    def test_vbelt_large_pulley_dia(self):
+        # Shigley §17-5: D = i·d. d=150, i=2 → D=300 mm.
+        r = _ref_vbelt(7.5, 1750.0, 875.0, d_small_mm=150.0)
+        assert r["d_large_mm"] == pytest.approx(300.0, rel=1e-9)
+
+    def test_vbelt_belt_speed(self):
+        # Shigley §17-5: v = π d n1/60000 (mm,rpm → m/s).
+        r = _ref_vbelt(7.5, 1750.0, 875.0, d_small_mm=150.0)
+        assert r["belt_speed_m_s"] == pytest.approx(math.pi * 150.0 * 1750.0 / 60000.0, rel=1e-3)
+
+    def test_vbelt_length_open_drive(self):
+        # Shigley Eq (17-16): L = 2C + π(D+d)/2 + (D−d)²/(4C).
+        r = _ref_vbelt(5.0, 1450.0, 725.0, d_small_mm=125.0, center_distance_mm=600.0)
+        D, d = r["d_large_mm"], r["d_small_mm"]
+        L_exp = 2 * 600.0 + math.pi * (D + d) / 2.0 + (D - d) ** 2 / (4.0 * 600.0)
+        assert r["belt_length_mm"] == pytest.approx(L_exp, rel=1e-3)
+
+    def test_vbelt_wrap_angle(self):
+        # Shigley §17-5: θs = π − 2 asin((D−d)/2C).
+        r = _ref_vbelt(5.0, 1450.0, 725.0, d_small_mm=125.0, center_distance_mm=600.0)
+        D, d = r["d_large_mm"], r["d_small_mm"]
+        C = r["center_distance_mm"]
+        theta = math.degrees(math.pi - 2.0 * math.asin((D - d) / (2.0 * C)))
+        assert r["wrap_small_deg"] == pytest.approx(theta, rel=1e-2)
+
+    def test_vbelt_capstan_tension_split(self):
+        # Shigley §17-2: T1−T2 = F_net, T1/T2 = e^{μθ}.
+        r = _ref_vbelt(5.0, 1450.0, 725.0, d_small_mm=125.0, center_distance_mm=600.0)
+        ratio = r["tension_tight_N"] / max(r["tension_slack_N"], 1e-9)
+        mu_theta = 0.51 * math.radians(r["wrap_small_deg"])
+        assert ratio == pytest.approx(math.exp(mu_theta), rel=1e-2)
+
+    def test_timing_belt_pitch_diameter(self):
+        # Shigley §17-9: d = z·p/π. z=24, p=5 mm → d=38.197 mm.
+        # Output is reported rounded to 3 decimal places.
+        r = _ref_timing(2.0, 1500.0, pitch_mm=5.0, z_driver=24)
+        assert r["d_driver_mm"] == pytest.approx(24 * 5.0 / math.pi, abs=5e-4)
+
+    def test_chain_sprocket_pitch_diameter(self):
+        # Shigley §17-11: d = p/sin(π/z). ANSI 40 (p=12.70 mm), z=17.
+        # Output is reported rounded to 3 decimal places.
+        r = _ref_chain(5.0, 1000.0, 17, 51, chain_no="40")
+        assert r["d_small_mm"] == pytest.approx(12.70 / math.sin(math.pi / 17.0), abs=5e-4)
+
+    def test_chain_speed(self):
+        # Shigley §17-11: v = z·p·n/(60·1000). z=17, p=12.70, n=1000.
+        r = _ref_chain(5.0, 1000.0, 17, 51, chain_no="40")
+        assert r["chain_speed_m_s"] == pytest.approx(17 * 12.70 * 1000.0 / 60000.0, rel=1e-3)
+
+    def test_chain_length_even_pitches(self):
+        # Shigley §17-11: chain length rounded UP to an even pitch count.
+        r = _ref_chain(5.0, 1000.0, 17, 51, chain_no="40")
+        assert r["chain_length_pitches"] % 2 == 0

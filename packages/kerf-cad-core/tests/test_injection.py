@@ -770,3 +770,86 @@ class TestToolWrappers:
             # missing L_draw_m
         )))
         _err_tool(raw)
+
+
+# ---------------------------------------------------------------------------
+# Externally-citable reference cases (Rosato / Menges / Brydson)
+# ---------------------------------------------------------------------------
+
+class TestInjectionExternalReferenceCases:
+    """Cross-checked against Rosato Injection Moulding Handbook 3rd ed. &
+    Menges 'How to Make Injection Molds' 3rd ed."""
+
+    def test_clamp_force_projected_area_rule(self):
+        # Menges 3rd ed. §: F_clamp = n * A_proj * p_cavity * SF.
+        # A=0.05 m^2, p=40 MPa, n=1, SF=1.1 -> 2200 kN.
+        r = clamp_tonnage(0.05, 40e6, 1, safety_factor=1.1)
+        assert math.isclose(r["clamp_force_kN"], 0.05 * 40e6 * 1.1 / 1e3,
+                            rel_tol=1e-9)
+        assert math.isclose(r["separating_force_kN"], 0.05 * 40e6 / 1e3,
+                            rel_tol=1e-9)
+
+    def test_clamp_force_scales_with_cavities(self):
+        # Rosato 3rd ed.: separating force scales linearly with cavity count.
+        r1 = clamp_tonnage(0.01, 50e6, 1, safety_factor=1.0)
+        r4 = clamp_tonnage(0.01, 50e6, 4, safety_factor=1.0)
+        assert math.isclose(r4["separating_force_kN"],
+                            4.0 * r1["separating_force_kN"], rel_tol=1e-12)
+
+    def test_cooling_time_plate_equation_menges(self):
+        # Menges 'How to Make Injection Molds' 3rd ed., plate cooling eq.:
+        # tc = (s^2/(pi^2 alpha)) ln((8/pi^2)(Tm-Tw)/(Te-Tw)), s = wall/2.
+        # PP: alpha=1e-7 m^2/s, wall=2 mm, Tm=230, Tw=40, Te=90.
+        c = cooling_time(2e-3, 230.0, 40.0, 90.0, "PP")
+        s = 1e-3
+        alpha = 1e-7
+        exp = (s ** 2 / (math.pi ** 2 * alpha)) * math.log(
+            (8.0 / math.pi ** 2) * (230.0 - 40.0) / (90.0 - 40.0))
+        assert math.isclose(c["cooling_time_s"], exp, rel_tol=1e-9)
+
+    def test_cooling_time_scales_with_wall_squared(self):
+        # Menges/Rosato: cooling time ~ wall thickness^2 (governing relation).
+        c1 = cooling_time(1e-3, 230.0, 40.0, 90.0, "PP")
+        c2 = cooling_time(2e-3, 230.0, 40.0, 90.0, "PP")
+        assert math.isclose(c2["cooling_time_s"], 4.0 * c1["cooling_time_s"],
+                            rel_tol=1e-9)
+
+    def test_cavities_from_tonnage_menges(self):
+        # Menges 3rd ed.: n_max = floor(F_machine / (A * p * SF)).
+        # F=5000 kN, A=0.01 m^2, p=40 MPa, SF=1.0 -> 12.
+        r = cavities_from_tonnage(5000.0, 0.01, 40e6, 1.0)
+        assert r["max_cavities"] == int(5000e3 / (0.01 * 40e6 * 1.0))
+
+    def test_shrinkage_compensation_mould_dimension(self):
+        # Rosato 3rd ed. §: mould cavity dim = part dim / (1 - shrinkage).
+        # POM (acetal) shrinkage 2.0 % from the property table.
+        r = shrinkage_sink_estimate(0.1, 3e-3, "POM")
+        assert math.isclose(r["mould_dim_m"], 0.1 / (1.0 - 0.02),
+                            rel_tol=1e-9)
+
+    def test_shot_weight_density_relation(self):
+        # Rosato 3rd ed.: shot weight = total shot volume * polymer density.
+        r = shot_volume_weight(1e-5, 2e-6, 4, "ABS")
+        # ABS density 1050 kg/m^3 from the table.
+        exp_vol = 4 * 1e-5 + 2e-6
+        assert math.isclose(r["shot_weight_kg"], exp_vol * 1050.0,
+                            rel_tol=1e-9)
+
+    def test_flow_length_ratio_definition(self):
+        # Brydson 'Plastics Materials' 7th ed. flow-ratio concept:
+        # L/t ratio = flow length / wall thickness.
+        r = flow_length_feasibility(0.20, 0.0015, "PP")
+        assert math.isclose(r["flow_length_ratio"], 0.20 / 0.0015,
+                            rel_tol=1e-12)
+
+    def test_cycle_time_sum_and_rate(self):
+        # Rosato 3rd ed.: total cycle = fill+pack+cool+open/close+eject;
+        # shots per hour = 3600 / total.
+        r = cycle_time_breakdown(20.0, 1.0, 5.0, 3.0, 1.0)
+        assert math.isclose(r["total_cycle_s"], 30.0, rel_tol=1e-12)
+        assert math.isclose(r["shots_per_hour"], 3600.0 / 30.0, rel_tol=1e-12)
+
+    def test_clamp_force_unit_consistency_MN(self):
+        # Sanity per Menges: 100 cm^2 (0.01 m^2) at 30 MPa -> 300 kN.
+        r = clamp_tonnage(0.01, 30e6, 1, safety_factor=1.0)
+        assert math.isclose(r["clamp_force_kN"], 300.0, rel_tol=1e-9)

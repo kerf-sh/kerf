@@ -917,3 +917,103 @@ class TestToolWrappers:
         d = _ok_tool(raw)
         Rt_expected_um = (f ** 2 / (8.0 * r_n)) * 1000.0
         assert abs(d["Rt_um"] - Rt_expected_um) / Rt_expected_um < TREL
+
+
+# ---------------------------------------------------------------------------
+# Externally-citable reference cases (Boothroyd / Merchant / Taylor / Shaw)
+# ---------------------------------------------------------------------------
+
+class TestCuttingToolExternalReferenceCases:
+    """Cross-checked against Boothroyd & Knight 'Fundamentals of Machining'
+    3rd ed., Merchant (1945), and Taylor (1907)."""
+
+    def test_merchant_shear_angle_minimum_energy(self):
+        # Merchant (1945) / Boothroyd §2: phi = 45 + gamma_o/2 - beta/2,
+        # beta = arctan(mu).  gamma_o=10 deg, mu=0.5.
+        r = merchant_orthogonal(gamma_o=10.0, tau_s=400e6, mu=0.5,
+                                t1=0.25, vc=100.0, width_b=2.5)
+        beta = math.degrees(math.atan(0.5))
+        assert math.isclose(r["phi_deg"], 45.0 + 10.0 / 2.0 - beta / 2.0,
+                            rel_tol=1e-9)
+        assert math.isclose(r["beta_deg"], beta, rel_tol=1e-9)
+
+    def test_merchant_chip_thickness_ratio(self):
+        # Boothroyd Eq. 2.4: r_c = sin(phi)/cos(phi - gamma_o).
+        r = merchant_orthogonal(gamma_o=10.0, tau_s=400e6, mu=0.5,
+                                t1=0.25, vc=100.0)
+        phi = math.radians(r["phi_deg"])
+        g = math.radians(10.0)
+        assert math.isclose(r["r_c"], math.sin(phi) / math.cos(phi - g),
+                            rel_tol=1e-9)
+
+    def test_merchant_shear_force_relation(self):
+        # Boothroyd Eq. 2.x: Fs = tau_s * b * t1 / sin(phi)  (SI units).
+        r = merchant_orthogonal(gamma_o=10.0, tau_s=400e6, mu=0.5,
+                                t1=0.25, vc=100.0, width_b=2.5)
+        phi = math.radians(r["phi_deg"])
+        Fs_exp = 400e6 * (2.5e-3) * (0.25e-3) / math.sin(phi)
+        assert math.isclose(r["Fs_N"], Fs_exp, rel_tol=1e-9)
+
+    def test_taylor_tool_life_classic(self):
+        # Taylor (1907): V*T^n = C -> T = (C/V)^(1/n).
+        # V=100, C=300, n=0.25 -> T = 3^4 = 81 min.
+        r = taylor_tool_life(V=100.0, C=300.0, n=0.25)
+        assert math.isclose(r["T_min"], (300.0 / 100.0) ** (1.0 / 0.25),
+                            rel_tol=1e-9)
+
+    def test_taylor_tool_life_unit_speed_equals_C(self):
+        # Taylor: when V = C, T = 1 min by definition.
+        r = taylor_tool_life(V=250.0, C=250.0, n=0.30)
+        assert math.isclose(r["T_min"], 1.0, rel_tol=1e-9)
+
+    def test_taylor_extended_feed_depth(self):
+        # Boothroyd §9.2 extended Taylor: C_eff = C*(fr/f)^a_f*(dr/d)^a_d.
+        r = taylor_extended_tool_life(V=120.0, C=400.0, n=0.25,
+                                      f=0.3, a_f=0.5, d=2.0, a_d=0.2,
+                                      f_ref=1.0, d_ref=1.0)
+        C_eff = 400.0 * (1.0 / 0.3) ** 0.5 * (1.0 / 2.0) ** 0.2
+        assert math.isclose(r["C_eff"], C_eff, rel_tol=1e-9)
+        assert math.isclose(r["T_min"], (C_eff / 120.0) ** (1.0 / 0.25),
+                            rel_tol=1e-9)
+
+    def test_economic_tool_life_boothroyd_9_3(self):
+        # Boothroyd §9.3: T_e = (1/n - 1)*(t_ct + C_tool/C_m).
+        r = economic_cutting_speed(C_tool=2.0, t_ct=5.0, t_c=10.0,
+                                   C_m=0.5, n=0.25, C=400.0)
+        assert math.isclose(r["T_e_min"],
+                            (1.0 / 0.25 - 1.0) * (5.0 + 2.0 / 0.5),
+                            rel_tol=1e-9)
+
+    def test_max_production_rate_life_boothroyd(self):
+        # Boothroyd §9.3: T_mpr = (1/n - 1)*t_ct.
+        r = max_production_rate_speed(t_ct=5.0, t_c=10.0, n=0.25, C=400.0)
+        assert math.isclose(r["T_mpr_min"], (1.0 / 0.25 - 1.0) * 5.0,
+                            rel_tol=1e-9)
+
+    def test_mpr_speed_exceeds_economic_speed(self):
+        # Boothroyd §9.3: V_mpr >= V_e always (more speed, less tool life).
+        be = break_even_speed(C_tool=2.0, t_ct=5.0, t_c=10.0,
+                              C_m=0.5, n=0.25, C=400.0)
+        assert be["V_mpr_m_min"] >= be["V_e_m_min"]
+
+    def test_nose_radius_roughness_boothroyd_8_4(self):
+        # Boothroyd §8.4 ideal turning: Rt = f^2/(8*r_n), Ra ≈ Rt/4.
+        r = nose_radius_roughness(f=0.2, r_n=0.8)
+        rt_um = 0.2 ** 2 / (8.0 * 0.8) * 1000.0
+        assert math.isclose(r["Rt_um"], rt_um, rel_tol=1e-9)
+        assert math.isclose(r["Ra_um"], rt_um / 4.0, rel_tol=1e-9)
+
+    def test_specific_cutting_energy_units(self):
+        # Boothroyd §2: u = P/MRR.  With Fc in N, b & t1 in mm, vc in m/min:
+        # u [J/mm^3] = (Fc*vc/60) / (b*t1*vc*1000/60) = Fc/(b*t1*1000).
+        # The result is independent of cutting speed vc (it cancels out).
+        r = specific_cutting_energy(Fc=1000.0, b=2.0, t1=0.25, vc=150.0)
+        assert math.isclose(r["u_J_per_mm3"], 1000.0 / (2.0 * 0.25 * 1000.0),
+                            rel_tol=1e-9)
+        r2 = specific_cutting_energy(Fc=1000.0, b=2.0, t1=0.25, vc=300.0)
+        assert math.isclose(r["u_J_per_mm3"], r2["u_J_per_mm3"], rel_tol=1e-12)
+
+    def test_machinability_rating_definition(self):
+        # Standard machinability index: (V_material/V_ref)*100, AISI B1112=100%.
+        r = machinability_rating(V_material=70.0, V_reference=100.0)
+        assert math.isclose(r["rating_pct"], 70.0, rel_tol=1e-12)

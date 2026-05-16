@@ -850,3 +850,98 @@ class TestToolWrappers:
             sigma_a=200e6, Se=200e6, Sf_prime=900e6, b=-0.085
         )))
         _err_tool(raw)
+
+
+# ===========================================================================
+# Externally-citable reference cases (production-confidence validation)
+# Cross-checked vs Shigley 10th ed. §§6-7..6-16, Dowling "Mechanical
+# Behavior of Materials" 4th ed., ASTM E1049-85.
+# ===========================================================================
+
+from kerf_cad_core.fatigue.life import (  # noqa: E402
+    sn_cycles as _ref_sn,
+    endurance_limit as _ref_se,
+    mean_stress_correction as _ref_msc,
+    miner_damage as _ref_miner,
+    rainflow_count as _ref_rf,
+    fatigue_life as _ref_fl,
+)
+
+
+class TestFatigueExternalReferences:
+    """Validated against Shigley §6 / Dowling §9-12 / ASTM E1049."""
+
+    def test_basquin_sn_dowling(self):
+        # Dowling Eq (9.5)/Basquin: σa = Sf'(2N)^b → 2N=(σa/Sf')^(1/b).
+        # σa=400 MPa, Sf'=1200 MPa, b=-0.085.
+        r = _ref_sn(400e6, 1200e6, -0.085)
+        assert r["two_N"] == pytest.approx((400.0 / 1200.0) ** (1.0 / -0.085), rel=1e-12)
+        assert r["N_cycles"] == pytest.approx(r["two_N"] / 2.0, rel=1e-12)
+
+    def test_marin_endurance_shigley_6_18(self):
+        # Shigley Eq (6-18): Se = ka·kb·kc·kd·ke·kf·Se'.
+        # Se'=0.5·700e6=350 MPa, ka=0.9, kb=0.9, kc=1, kd=1, ke=0.814.
+        r = _ref_se(350e6, ka=0.9, kb=0.9, kc=1.0, kd=1.0, ke=0.814, kf=1.0)
+        assert r["Se_Pa"] == pytest.approx(0.9 * 0.9 * 0.814 * 350e6, rel=1e-12)
+
+    def test_goodman_shigley_6_46(self):
+        # Shigley Eq (6-46) modified Goodman: σar = σa/(1 − σm/Sut).
+        # σa=100 MPa, σm=200 MPa, Sut=400 MPa → σar=200 MPa.
+        r = _ref_msc(100e6, 200e6, 150e6, 400e6, 300e6, method="goodman")
+        assert r["sigma_ar_Pa"] == pytest.approx(100e6 / (1.0 - 200e6 / 400e6), rel=1e-12)
+
+    def test_gerber_shigley_6_47(self):
+        # Shigley Eq (6-47) Gerber: σar = σa/(1 − (σm/Sut)²).
+        r = _ref_msc(100e6, 200e6, 150e6, 400e6, 300e6, method="gerber")
+        assert r["sigma_ar_Pa"] == pytest.approx(100e6 / (1.0 - (200e6 / 400e6) ** 2), rel=1e-12)
+
+    def test_soderberg_shigley_6_45(self):
+        # Shigley Eq (6-45) Soderberg: σar = σa/(1 − σm/Sy).
+        r = _ref_msc(80e6, 150e6, 150e6, 400e6, 300e6, method="soderberg")
+        assert r["sigma_ar_Pa"] == pytest.approx(80e6 / (1.0 - 150e6 / 300e6), rel=1e-12)
+
+    def test_swt_dowling_9_42(self):
+        # Dowling Eq (9.42) SWT: σar = √(σmax·σa), σmax=σa+σm.
+        r = _ref_msc(100e6, 50e6, 150e6, 400e6, 300e6, method="swt")
+        assert r["sigma_ar_Pa"] == pytest.approx(math.sqrt(150e6 * 100e6), rel=1e-12)
+
+    def test_morrow_dowling(self):
+        # Dowling/Morrow: σar = σa/(1 − σm/Sf').
+        r = _ref_msc(100e6, 200e6, 150e6, 400e6, 300e6, method="morrow", Sf_prime=1000e6)
+        assert r["sigma_ar_Pa"] == pytest.approx(100e6 / (1.0 - 200e6 / 1000e6), rel=1e-12)
+
+    def test_miner_rule_shigley_6_8(self):
+        # Palmgren-Miner (Shigley Eq 6-58): D = Σ ni/Ni; failure at D≥1.
+        # Two equal blocks each at half their S-N life → D=1.0.
+        Sf, b = 1200e6, -0.085
+        sa = 400e6
+        twoN = (sa / Sf) ** (1.0 / b)
+        N = twoN / 2.0
+        r = _ref_miner([N / 2.0, N / 2.0], [sa, sa], Sf, b)
+        assert r["D"] == pytest.approx(1.0, rel=1e-9)
+        assert r["damage_exceeded"] is True
+
+    def test_rainflow_astm_e1049_textbook(self):
+        # ASTM E1049-85 §5.4.4 / Dowling §9.9 four-point counting.
+        # History [-2,1,-3,5,-1,3,-4,4,-2] reduces to 9 turning points.
+        # The largest extracted cycle range is 5−(−3)=8 (the 1→-3→5 swing
+        # consumed first), and a 4→-4 range-8 cycle is also present.
+        hist = [-2, 1, -3, 5, -1, 3, -4, 4, -2]
+        r = _ref_rf(hist)
+        assert r["ok"]
+        assert r["n_points"] == 9  # all points are turning points
+        # The full cycle (count=1.0) extracted is the inner -1→3 swing,
+        # range = 3−(−1) = 4 (ASTM E1049 stack rule).
+        full = [c for c in r["cycles"] if c["count"] == 1.0]
+        assert any(c["range"] == pytest.approx(4.0, rel=1e-9) for c in full)
+        # All extracted ranges must be ≤ overall signal range (5−(−4)=9).
+        assert r["peak_range"] <= 9.0 + 1e-9
+        # Total counted reversals are conserved within one residual half-cycle.
+        total_half = sum(2.0 * c["count"] for c in r["cycles"])
+        assert abs(total_half - (r["n_points"] - 1)) <= 1.0
+
+    def test_fatigue_life_infinite_below_Se(self):
+        # Shigley §6-8: σa ≤ Se → infinite life (run-out).
+        r = _ref_fl(150e6, 200e6, 900e6, -0.085, 600e6)
+        assert r["infinite_life"] is True
+        assert r["n_fatigue"] == pytest.approx(200e6 / 150e6, rel=1e-12)

@@ -654,3 +654,99 @@ class TestToolsErrorPaths:
         raw = _run(run_agma_service_life(_ctx(), _args(hardness_HB=200)))
         r = json.loads(raw)
         assert r["ok"] is False
+
+
+# ===========================================================================
+# Externally-citable reference cases (production-confidence validation)
+# Cross-checked vs AGMA 2001-D04, Shigley 10th ed. §§14-1..14-5,
+# Norton "Machine Design" 5th ed. Ch. 11.
+# ===========================================================================
+
+from kerf_cad_core.gearstrength.rating import (  # noqa: E402
+    agma_dynamic_factor as _ref_kv,
+    agma_bending_stress as _ref_sigma_b,
+    agma_contact_stress as _ref_sigma_c,
+    agma_geometry_factor_I as _ref_I,
+    agma_safety_factors as _ref_sf,
+    agma_service_life as _ref_life,
+)
+
+
+class TestGearStrengthExternalReferences:
+    """Validated against AGMA 2001-D04 equations & Shigley §14 examples."""
+
+    def test_kv_agma_eq_14_27_28(self):
+        # AGMA 2001-D04 Eqs (14-27),(14-28): Qv=6, Vt=1200 ft/min.
+        # B=0.25(12-6)^(2/3)=0.82548, A=50+56(1-B)=59.773,
+        # Kv=((A+√V)/A)^B = 1.45842.
+        r = _ref_kv(1200.0, 6)
+        B = 0.25 * (12 - 6) ** (2.0 / 3.0)
+        A = 50.0 + 56.0 * (1.0 - B)
+        assert r["B"] == pytest.approx(B, rel=1e-12)
+        assert r["A"] == pytest.approx(A, rel=1e-12)
+        assert r["Kv"] == pytest.approx(((A + math.sqrt(1200.0)) / A) ** B, rel=1e-12)
+
+    def test_kv_quality_11_ground(self):
+        # AGMA: Qv=11 ground gear, Vt=2000 ft/min — Kv near 1.1.
+        r = _ref_kv(2000.0, 11)
+        B = 0.25 * (12 - 11) ** (2.0 / 3.0)
+        A = 50.0 + 56.0 * (1.0 - B)
+        assert r["Kv"] == pytest.approx(((A + math.sqrt(2000.0)) / A) ** B, rel=1e-12)
+
+    def test_kv_validity_limit(self):
+        # Shigley Eq (14-29): Vt_max = [A+(Qv-3)]². Exceeding it warns.
+        r = _ref_kv(50000.0, 6)
+        assert "warnings" in r
+
+    def test_bending_stress_metric_canonical(self):
+        # AGMA/Shigley Eq (14-15) metric: σ = Wt·Ko·Kv·Ks·Km·KB/(b·m·J).
+        # Wt=3000 N, b=40 mm, m=4 mm, J=0.36, others=1, Km=1.3.
+        r = _ref_sigma_b(3000.0, 1, 1.2, 1, 1.3, 1, 40.0, 4.0, 0.36, metric=True)
+        exp = 3000.0 * 1 * 1.2 * 1 * 1.3 * 1 / (40.0 * 4.0 * 0.36)
+        assert r["sigma_t"] == pytest.approx(exp, rel=1e-12)
+        assert r["unit"] == "MPa"
+
+    def test_bending_stress_english(self):
+        # AGMA/Shigley Eq (14-15) English: σ = Wt·Ko·Kv·Ks·Pd·Km·KB/(b·J).
+        r = _ref_sigma_b(382.0, 1, 1.52, 1, 1.6, 1, 1.5, 8.0, 0.30, metric=False)
+        exp = 382.0 * 1 * 1.52 * 1 * 8.0 * 1.6 * 1 / (1.5 * 0.30)
+        assert r["sigma_t"] == pytest.approx(exp, rel=1e-12)
+        assert r["unit"] == "psi"
+
+    def test_contact_stress_eq_14_16(self):
+        # AGMA/Shigley Eq (14-16): σc = Cp√(Wt·Ko·Kv·Ks·Km/(dp·b·I)).
+        # Steel/steel Cp=191 √MPa metric.
+        r = _ref_sigma_c(3000.0, 1, 1.2, 1, 1.3, 191.0, 80.0, 40.0, 0.10, metric=True)
+        exp = 191.0 * math.sqrt(3000.0 * 1 * 1.2 * 1 * 1.3 / (80.0 * 40.0 * 0.10))
+        assert r["sigma_c"] == pytest.approx(exp, rel=1e-12)
+
+    def test_geometry_factor_I_norton_eq_12_22(self):
+        # Norton "Machine Design" Eq (12.22) / AGMA simplified external spur:
+        # I = (cosφ sinφ)/(2 mN) · mG/(mG+1), mN=1. φ=20°, 18/54T → mG=3.
+        r = _ref_I(18, 54, 0.0, pressure_angle_deg=20.0)
+        phi = math.radians(20.0)
+        mg = 54.0 / 18.0
+        exp = math.cos(phi) * math.sin(phi) / 2.0 * (mg / (mg + 1.0))
+        assert r["I"] == pytest.approx(exp, rel=1e-9)
+
+    def test_geometry_factor_I_helical_transverse(self):
+        # AGMA: helical transverse pressure angle tan φt = tan φn/cos ψ.
+        r = _ref_I(20, 40, 20.0, pressure_angle_deg=20.0)
+        phi_n = math.radians(20.0)
+        psi = math.radians(20.0)
+        phi_t = math.atan(math.tan(phi_n) / math.cos(psi))
+        assert r["phi_t_deg"] == pytest.approx(math.degrees(phi_t), rel=1e-9)
+
+    def test_safety_factors_agma_4_1(self):
+        # AGMA 2001-D04 §4.1: σ_all = St·YN/(KT·KR); SF = σ_all/σ.
+        # St=450 MPa, YN=1, KT=KR=1, σb=300 MPa → SF=1.5.
+        r = _ref_sf(300.0, 1000.0, 450.0, 1550.0, YN=1.0, ZN=1.0)
+        assert r["SF"] == pytest.approx(450.0 / 300.0, rel=1e-12)
+        assert r["SH"] == pytest.approx(1550.0 / 1000.0, rel=1e-12)
+
+    def test_service_life_YN_ZN_agma(self):
+        # AGMA 2001-D04 Figs 14-14/14-15 (Shigley §14-5):
+        # YN = 1.3558 N^-0.0178, ZN = 1.4488 N^-0.023 for 1e8 cycles.
+        r = _ref_life(1e8, hardness_HB=250.0)
+        assert r["YN"] == pytest.approx(1.3558 * (1e8 ** -0.0178), rel=1e-9)
+        assert r["ZN"] == pytest.approx(1.4488 * (1e8 ** -0.023), rel=1e-9)

@@ -970,3 +970,109 @@ class TestToolWrappers:
         ctx = _ctx()
         raw = _run(run_ht_hollomon_jaffe(ctx, _args(C_wt_pct=0.40, t_hours=2.0)))
         _err_tool(raw)
+
+
+# ---------------------------------------------------------------------------
+# Externally-citable reference cases
+#   Andrews K.W. (1965) JISI 203, 721-727
+#   Koistinen & Marburger (1959) Acta Metall. 7, 59-60
+#   Grossmann (1942) Trans. AIME 150, 227-259 / ASM HB Vol. 4
+#   Hollomon & Jaffe (1945) Trans. AIME 162, 223-249
+#   Harris (1943) Met. Prog. 44, 265
+# ---------------------------------------------------------------------------
+
+class TestHeatTreatExternalReferenceCases:
+    """Exact-reproduction checks against the cited primary metallurgy
+    literature (ASM Handbook Vol. 4 reproduces all of these formulas)."""
+
+    def test_andrews_Ac1_plain_carbon_base(self):
+        # Andrews (1965): Ac1 = 723 - 16.9 Ni + 29.1 Si - 10.7 Mn
+        #                       + 16.9 Cr + 6.38 W.  Plain C -> 723 C.
+        assert math.isclose(andrews_Ac1()["Ac1_C"], 723.0, rel_tol=1e-9)
+
+    def test_andrews_Ac1_alloyed(self):
+        # Andrews (1965) linear Ac1 for Si=0.3, Mn=0.8, Cr=1.0, Ni=0.5.
+        r = andrews_Ac1(Si=0.3, Mn=0.8, Cr=1.0, Ni=0.5)
+        exp = 723.0 - 16.9 * 0.5 + 29.1 * 0.3 - 10.7 * 0.8 + 16.9 * 1.0
+        assert math.isclose(r["Ac1_C"], round(exp, 1), rel_tol=1e-9)
+
+    def test_andrews_Ac3_carbon_term(self):
+        # Andrews (1965): Ac3 = 910 - 203 sqrt(C) (+ alloy terms).
+        r = andrews_Ac3(C=0.40)
+        assert math.isclose(r["Ac3_C"], round(910.0 - 203.0 * math.sqrt(0.40), 1),
+                            rel_tol=1e-9)
+
+    def test_andrews_Ms_carbon(self):
+        # Andrews (1965): Ms = 539 - 423 C - 30.4 Mn - 17.7 Ni - 12.1 Cr
+        #                      - 7.5 Mo (+10 Co - 7.5 Si).
+        r = martensite_start_Ms(C=0.40)
+        assert math.isclose(r["Ms_C"], round(539.0 - 423.0 * 0.40, 1),
+                            rel_tol=1e-9)
+
+    def test_andrews_Ms_4340_literature(self):
+        # AISI 4340 (C0.40 Mn0.70 Cr0.80 Ni1.80 Mo0.25): Andrews linear Ms.
+        r = martensite_start_Ms(C=0.40, Mn=0.70, Cr=0.80, Ni=1.80, Mo=0.25)
+        exp = (539.0 - 423.0 * 0.40 - 30.4 * 0.70 - 17.7 * 1.80
+               - 12.1 * 0.80 - 7.5 * 0.25)
+        assert math.isclose(r["Ms_C"], round(exp, 1), rel_tol=1e-9)
+        # 4340 Andrews-formula Ms is ~305 C (published dilatometric ~285-300 C;
+        # the Andrews linear fit is known to run slightly high).
+        assert 290.0 < r["Ms_C"] < 320.0
+
+    def test_koistinen_marburger_exact(self):
+        # Koistinen & Marburger (1959): f_M = 1 - exp(-0.011 (Ms - T)).
+        r = koistinen_marburger(T_C=20.0, Ms_C=300.0)
+        # Output is rounded to 3 decimals by the implementation.
+        assert math.isclose(r["martensite_frac"],
+                            1.0 - math.exp(-0.011 * (300.0 - 20.0)),
+                            abs_tol=5e-4)
+
+    def test_koistinen_marburger_zero_above_Ms(self):
+        # K-M: no martensite forms above Ms (f_M = 0 for T >= Ms).
+        r = koistinen_marburger(T_C=350.0, Ms_C=300.0)
+        assert math.isclose(r["martensite_frac"], 0.0, abs_tol=1e-12)
+
+    def test_grossmann_DI_base_diameter(self):
+        # Grossmann (1942) / ASM HB Vol. 4: DI0 = 0.54 sqrt(C) at ASTM GS 7.
+        r = grossmann_DI(C=0.40, grain_size_ASTM=7.0)
+        assert math.isclose(r["DI0_in"], 0.54 * math.sqrt(0.40), rel_tol=1e-9)
+
+    def test_grossmann_alloy_multiplier(self):
+        # Grossmann Mn factor (ASM HB Vol. 4 Table 2): f_Mn = 1 + 3.333 Mn.
+        r = grossmann_DI(C=0.40, Mn=0.80, grain_size_ASTM=7.0)
+        assert math.isclose(r["alloy_multiplier"], 1.0 + 3.3333 * 0.80,
+                            rel_tol=1e-5)
+
+    def test_hollomon_jaffe_parameter(self):
+        # Hollomon & Jaffe (1945): P = T_K (C_HJ + log10 t), C_HJ=20.
+        # T=500 C -> 773.15 K, t=1 h -> P = 773.15*20 = 15463.
+        r = hollomon_jaffe(C_wt_pct=0.40, T_C=500.0, t_hours=1.0,
+                           HRC_as_quenched=55.0)
+        assert math.isclose(r["P"],
+                            round((500.0 + 273.15) * (20.0 + math.log10(1.0)), 0),
+                            rel_tol=1e-9)
+
+    def test_carburizing_arrhenius_diffusivity(self):
+        # Harris (1943) + Arrhenius: D = D0 exp(-Q/RT), x = k sqrt(D t).
+        # D0=0.20 cm^2/s, Q=142 kJ/mol, R=8.314, T=925 C.
+        r = carburizing_case_depth(T_C=925.0, t_hours=8.0)
+        D_exp = 0.20 * math.exp(-142000.0 / (8.314 * (925.0 + 273.15)))
+        assert math.isclose(r["D_cm2_s"], D_exp, rel_tol=1e-9)
+        assert math.isclose(r["case_depth_harris_mm"],
+                            1.0 * math.sqrt(D_exp * 8.0 * 3600.0) * 10.0,
+                            rel_tol=1e-9)
+
+    def test_carburizing_case_depth_sqrt_time(self):
+        # Harris: case depth scales with sqrt(time) (parabolic kinetics).
+        a = carburizing_case_depth(T_C=925.0, t_hours=4.0)
+        b = carburizing_case_depth(T_C=925.0, t_hours=16.0)
+        assert math.isclose(b["case_depth_harris_mm"],
+                            2.0 * a["case_depth_harris_mm"], rel_tol=1e-9)
+
+    def test_induction_skin_depth_formula(self):
+        # ASM HB Vol. 4 / EM skin depth: delta = sqrt(rho/(pi f mu0 mu_r)).
+        r = induction_case_depth(freq_Hz=10000.0, t_s=5.0,
+                                 rho=1.1e-6, mu_r=1.0)
+        mu0 = 4.0 * math.pi * 1e-7
+        delta_mm = math.sqrt(1.1e-6 / (math.pi * 10000.0 * mu0 * 1.0)) * 1000.0
+        assert math.isclose(r["skin_depth_mm"], delta_mm, rel_tol=1e-9)

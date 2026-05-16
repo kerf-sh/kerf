@@ -681,3 +681,100 @@ def test_gyroscopic_moment_basic():
 def test_gyroscopic_moment_invalid():
     r = gyroscopic_moment(I_spin=-1.0, omega_spin=10.0, omega_precession=1.0)
     assert not r["ok"]
+
+
+# ===========================================================================
+# Externally-citable reference cases (production-confidence validation)
+# Cross-checked vs Hibbeler "Engineering Mechanics: Dynamics" 14th ed.,
+# Beer & Johnston "Vector Mechanics" 12th ed., ISO 1940-1:2003.
+# ===========================================================================
+
+from kerf_cad_core.dynamics.rigidbody import (  # noqa: E402
+    rectilinear_kinematics as _ref_rect,
+    projectile_motion as _ref_proj,
+    direct_impact as _ref_impact,
+    moi_solid_cylinder as _ref_moi_cyl,
+    moi_solid_sphere as _ref_moi_sph,
+    moi_thin_rod as _ref_moi_rod,
+    parallel_axis as _ref_pax,
+    flywheel_sizing as _ref_fly,
+    iso1940_grade as _ref_iso1940,
+    shaking_force_primary as _ref_shake1,
+    gyroscopic_moment as _ref_gyro,
+)
+
+
+class TestDynamicsExternalReferences:
+    """Validated against Hibbeler/Beer dynamics & ISO 1940-1 relations."""
+
+    def test_rectilinear_hibbeler_12_2(self):
+        # Hibbeler §12-2: s=s0+v0t+½at²; v=v0+at; v²=v0²+2a(s−s0).
+        r = _ref_rect(5.0, 2.0, 3.0, 10.0)
+        assert r["s"] == pytest.approx(10 + 5 * 3 + 0.5 * 2 * 9, rel=1e-12)
+        assert r["v"] == pytest.approx(5 + 2 * 3, rel=1e-12)
+        assert r["v_sq"] == pytest.approx(25 + 2 * 2 * (r["s"] - 10), rel=1e-12)
+
+    def test_projectile_range_hibbeler_12_6(self):
+        # Hibbeler §12-6: 45° gives max range = v0²/g.
+        r = _ref_proj(20.0, 45.0, 0.0, g=9.81)
+        assert r["range_m"] == pytest.approx(20.0 ** 2 / 9.81, rel=1e-9)
+
+    def test_direct_impact_beer_13_13(self):
+        # Beer §13.13: momentum + COR. m1=2,v1=10,m2=3,v2=0,e=0.8.
+        r = _ref_impact(2.0, 10.0, 3.0, 0.0, 0.8)
+        M = 5.0
+        v1p = (2 * 10 + 0 - 3 * 0.8 * 10) / M
+        v2p = (2 * 10 + 0 + 2 * 0.8 * 10) / M
+        assert r["v1_prime"] == pytest.approx(v1p, rel=1e-12)
+        assert r["v2_prime"] == pytest.approx(v2p, rel=1e-12)
+
+    def test_impact_perfectly_elastic_conserves_ke(self):
+        # Beer §13.13: e=1 → kinetic energy conserved (energy_loss≈0).
+        r = _ref_impact(2.0, 5.0, 3.0, -2.0, 1.0)
+        assert r["energy_loss"] == pytest.approx(0.0, abs=1e-9)
+
+    def test_moi_solid_cylinder_hibbeler_appB(self):
+        # Hibbeler App. B: I = ½ m r². m=10, r=0.2 → 0.2.
+        r = _ref_moi_cyl(10.0, 0.2)
+        assert r["I"] == pytest.approx(0.5 * 10.0 * 0.2 ** 2, rel=1e-12)
+
+    def test_moi_solid_sphere_hibbeler_appB(self):
+        # Hibbeler App. B: I = 2/5 m r².
+        r = _ref_moi_sph(5.0, 0.1)
+        assert r["I"] == pytest.approx(0.4 * 5.0 * 0.1 ** 2, rel=1e-12)
+
+    def test_moi_thin_rod_hibbeler_appB(self):
+        # Hibbeler App. B: centroid 1/12 mL²; end 1/3 mL².
+        rc = _ref_moi_rod(3.0, 2.0, axis="centroid")
+        re = _ref_moi_rod(3.0, 2.0, axis="end")
+        assert rc["I"] == pytest.approx(3.0 * 4.0 / 12.0, rel=1e-12)
+        assert re["I"] == pytest.approx(3.0 * 4.0 / 3.0, rel=1e-12)
+
+    def test_parallel_axis_steiner(self):
+        # Beer §9.11: I = I_cm + m d². Rod centroid + (L/2)² → end value.
+        Icm = 3.0 * 4.0 / 12.0
+        r = _ref_pax(Icm, 3.0, 1.0)
+        assert r["I"] == pytest.approx(Icm + 3.0 * 1.0 ** 2, rel=1e-12)
+        assert r["I"] == pytest.approx(3.0 * 4.0 / 3.0, rel=1e-12)  # = rod-about-end
+
+    def test_flywheel_sizing_shigley_16_6(self):
+        # Shigley Eq (16-61): I = ΔE/(ω²·Cs). ΔE=2000, ω=200, Cs=0.04.
+        r = _ref_fly(2000.0, 200.0, 0.04)
+        assert r["I_required"] == pytest.approx(2000.0 / (200.0 ** 2 * 0.04), rel=1e-12)
+
+    def test_iso1940_permissible_unbalance(self):
+        # ISO 1940-1 §4: e_per = G/ω; U_per = e_per·m_rotor.
+        # G6.3, ω=314.16 rad/s, m=10 kg → e_per = 6.3/314.16 mm.
+        r = _ref_iso1940(50.0, 10.0, 314.159265, grade="G6.3")
+        assert r["eper_permissible_mm"] == pytest.approx(6.3 / 314.159265, rel=1e-9)
+        assert r["U_permissible_g_mm"] == pytest.approx((6.3 / 314.159265) * 10000.0, rel=1e-9)
+
+    def test_primary_shaking_force(self):
+        # Norton §13.6: F_p = mₑ·r·ω²·cos θ. At θ=0 → max = mₑrω².
+        r = _ref_shake1(1.0, 0.05, 100.0, 0.0)
+        assert r["F_primary"] == pytest.approx(1.0 * 0.05 * 100.0 ** 2, rel=1e-12)
+
+    def test_gyroscopic_moment_hibbeler_21_5(self):
+        # Hibbeler §21-5: M = I·ωs·ωp (perpendicular axes).
+        r = _ref_gyro(0.5, 200.0, 2.0)
+        assert r["M_gyro"] == pytest.approx(0.5 * 200.0 * 2.0, rel=1e-12)

@@ -637,3 +637,85 @@ class TestTools:
         r = json.loads(raw)
         # err_payload returns {"error": ..., "code": ...} for parse errors
         assert "error" in r or r.get("ok") is False
+
+
+# ===========================================================================
+# Externally-citable reference cases (production-confidence validation)
+# Cross-checked vs Shigley 10th ed. §§16-1..16-12, Juvinall & Marshek
+# "Machine Component Design" 5th ed.
+# ===========================================================================
+
+from kerf_cad_core.clutchbrake.design import (  # noqa: E402
+    disc_clutch_torque as _ref_disc,
+    cone_clutch_torque as _ref_cone,
+    band_brake_torque as _ref_band,
+    disc_brake_torque as _ref_caliper,
+    engagement_energy as _ref_energy,
+)
+
+
+class TestClutchBrakeExternalReferences:
+    """Validated against Shigley §16 & Juvinall §18 friction relations."""
+
+    def test_disc_clutch_uniform_wear_shigley_16_2(self):
+        # Shigley §16-2 uniform-wear: T = μ F (ro+ri)/2 per surface.
+        r = _ref_disc(5000.0, 0.3, 0.10, 0.06, method="uniform-wear", n_plates=1)
+        r_mean = (0.10 + 0.06) / 2.0
+        assert r["r_mean_m"] == pytest.approx(r_mean, rel=1e-12)
+        assert r["T_per_surface"] == pytest.approx(0.3 * 5000.0 * r_mean, rel=1e-12)
+        assert r["n_surfaces"] == 2  # single plate → 2 friction faces
+
+    def test_disc_clutch_uniform_pressure_shigley_16_2(self):
+        # Shigley §16-2 uniform-pressure: r_mean = (2/3)(ro³-ri³)/(ro²-ri²).
+        r = _ref_disc(5000.0, 0.3, 0.10, 0.06, method="uniform-pressure")
+        rm = (2.0 / 3.0) * (0.10 ** 3 - 0.06 ** 3) / (0.10 ** 2 - 0.06 ** 2)
+        assert r["r_mean_m"] == pytest.approx(rm, rel=1e-12)
+
+    def test_multiplate_surface_count(self):
+        # Shigley §16-2: N friction discs → 2N friction surfaces.
+        r = _ref_disc(5000.0, 0.3, 0.10, 0.06, n_plates=4)
+        assert r["n_surfaces"] == 8
+        assert r["torque_Nm"] == pytest.approx(r["T_per_surface"] * 8, rel=1e-12)
+
+    def test_cone_clutch_shigley_16_3(self):
+        # Shigley §16-3: T = μ F r_mean / sin α (uniform wear).
+        r = _ref_cone(2000.0, 0.3, 0.08, 0.05, 12.0, method="uniform-wear")
+        rm = (0.08 + 0.05) / 2.0
+        assert r["torque_Nm"] == pytest.approx(0.3 * 2000.0 * rm / math.sin(math.radians(12.0)), rel=1e-9)
+
+    def test_cone_self_lock_condition(self):
+        # Shigley §16-3: self-locking when μ ≥ sin α. α=5°, μ=0.30.
+        r = _ref_cone(2000.0, 0.30, 0.08, 0.05, 5.0)
+        assert r["self_lock"] is True
+
+    def test_band_brake_capstan_shigley_16_6(self):
+        # Shigley §16-6: F1/F2 = exp(μθ); T = (F1−F2)·r.
+        r = _ref_band(0.15, 270.0, 0.25, 1000.0)
+        cap = math.exp(0.25 * math.radians(270.0))
+        F2 = 1000.0 / cap
+        assert r["capstan_ratio"] == pytest.approx(cap, rel=1e-12)
+        assert r["torque_Nm"] == pytest.approx((1000.0 - F2) * 0.15, rel=1e-9)
+
+    def test_caliper_disc_brake(self):
+        # Standard caliper: T = n_pads·μ·F_clamp·r_eff.
+        r = _ref_caliper(8000.0, 0.4, 0.12, n_pads=2)
+        assert r["torque_Nm"] == pytest.approx(2 * 0.4 * 8000.0 * 0.12, rel=1e-12)
+
+    def test_engagement_kinetic_energy(self):
+        # Juvinall §18: ΔKE = ½ I_eff Δω², I_eff = I1 I2/(I1+I2).
+        r = _ref_energy(100.0, 0.0, 2.0, 3.0)
+        I_eff = 2.0 * 3.0 / (2.0 + 3.0)
+        assert r["I_eff"] == pytest.approx(I_eff, rel=1e-12)
+        assert r["E_kinetic_J"] == pytest.approx(0.5 * I_eff * 100.0 ** 2, rel=1e-9)
+
+    def test_engagement_load_work(self):
+        # Slip energy + load work: W_load = T_load·ω_avg·t.
+        r = _ref_energy(100.0, 0.0, 2.0, 3.0, T_load_Nm=10.0, t_engage_s=0.5)
+        omega_avg = (0.0 + 100.0) / 2.0
+        assert r["E_load_J"] == pytest.approx(10.0 * omega_avg * 0.5, rel=1e-9)
+
+    def test_cone_uniform_pressure_radius(self):
+        # Shigley §16-3 uniform pressure cone: same r_mean formula as disc.
+        r = _ref_cone(2000.0, 0.3, 0.08, 0.05, 12.0, method="uniform-pressure")
+        rm = (2.0 / 3.0) * (0.08 ** 3 - 0.05 ** 3) / (0.08 ** 2 - 0.05 ** 2)
+        assert r["r_mean_m"] == pytest.approx(rm, rel=1e-12)

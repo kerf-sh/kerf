@@ -690,3 +690,94 @@ class TestToolsErrorPaths:
     def test_invalid_json_returns_error(self):
         raw = _run(run_box_compression_strength(_ctx(), b"not-json"))
         _err_tool(raw)
+
+
+# ---------------------------------------------------------------------------
+# Externally-citable reference cases
+#   McKee, R.C., Gander, J.W., Wachuta, J.R. (1963) "Compression Strength
+#     Formula for Corrugated Boxes", Paperboard Packaging 48(8).
+#   Harris/Crede shock & vibration; single-DOF transmissibility.
+#   NMFC Item 360 (density-based freight class); ISO 668 containers.
+# ---------------------------------------------------------------------------
+
+class TestPackagingExternalReferenceCases:
+    """Cross-checked against the McKee (1963) box-compression formula,
+    classical SDOF transmissibility (Harris & Crede), and NMFC/ISO 668."""
+
+    def test_mckee_formula_exact(self):
+        # McKee (1963) simplified: BCT = C_f * ECT * sqrt(perimeter * t),
+        # with C_f = 5.874 (SI).  ECT=6500 N/m, Z=1400 mm.
+        r = box_compression_strength(ECT=6500.0, C_f=5.874, Z=1400.0,
+                                     flute="C")
+        t_m = r["board_thickness_mm"] / 1000.0
+        exp = 5.874 * 6500.0 * math.sqrt(1.4 * t_m)
+        assert math.isclose(r["BCT_N"], exp, rel_tol=1e-9)
+
+    def test_mckee_scales_with_sqrt_perimeter(self):
+        # McKee: BCT ~ sqrt(perimeter).  Quadruple Z -> double BCT.
+        a = box_compression_strength(ECT=6500.0, C_f=5.874, Z=700.0, flute="C")
+        b = box_compression_strength(ECT=6500.0, C_f=5.874, Z=2800.0, flute="C")
+        assert math.isclose(b["BCT_N"], 2.0 * a["BCT_N"], rel_tol=1e-9)
+
+    def test_mckee_linear_in_ECT(self):
+        # McKee: BCT is linear in the edge-crush test value.
+        a = box_compression_strength(ECT=4000.0, C_f=5.874, Z=1400.0,
+                                     flute="C")
+        b = box_compression_strength(ECT=8000.0, C_f=5.874, Z=1400.0,
+                                     flute="C")
+        assert math.isclose(b["BCT_N"], 2.0 * a["BCT_N"], rel_tol=1e-9)
+
+    def test_mckee_safety_factor_division(self):
+        # Allowable load = BCT_derated / safety_factor (packaging practice).
+        r = box_compression_strength(ECT=6500.0, C_f=5.874, Z=1400.0,
+                                     flute="C", safety_factor=5.0)
+        assert math.isclose(r["allowable_N"], r["BCT_derated_N"] / 5.0,
+                            rel_tol=1e-9)
+
+    def test_sdof_transmissibility_resonance(self):
+        # Harris & Crede Shock & Vibration Handbook:
+        # T = sqrt((1+(2 z r)^2)/((1-r^2)^2+(2 z r)^2)).  At r=1, z=0.05.
+        r = shock_transmissibility(fn_Hz=10.0, damping_ratio=0.05,
+                                   input_freq_Hz=10.0)
+        exp = math.sqrt((1.0 + (2 * 0.05) ** 2) / ((2 * 0.05) ** 2))
+        assert math.isclose(r["transmissibility"], exp, rel_tol=1e-9)
+
+    def test_sdof_transmissibility_isolation_region(self):
+        # Classical result: for frequency ratio r > sqrt(2) the isolator
+        # attenuates (T < 1).  r = 2.
+        r = shock_transmissibility(fn_Hz=10.0, damping_ratio=0.05,
+                                   input_freq_Hz=20.0)
+        rr, z = 2.0, 0.05
+        exp = math.sqrt((1 + (2 * z * rr) ** 2) /
+                        ((1 - rr ** 2) ** 2 + (2 * z * rr) ** 2))
+        assert math.isclose(r["transmissibility"], exp, rel_tol=1e-9)
+        assert r["transmissibility"] < 1.0
+
+    def test_sdof_transmissibility_low_freq_unity(self):
+        # As input frequency -> 0 (r -> 0) transmissibility -> 1 (rigid).
+        r = shock_transmissibility(fn_Hz=10.0, damping_ratio=0.1,
+                                   input_freq_Hz=0.01)
+        assert math.isclose(r["transmissibility"], 1.0, abs_tol=1e-3)
+
+    def test_dim_weight_factor_domestic(self):
+        # Carrier dimensional-weight: DIM weight = L*W*H(cm) / 5000 (domestic).
+        # 300 x 200 x 100 mm = 30 x 20 x 10 cm -> 6000 cm^3 / 5000 = 1.2 kg.
+        r = shipping_weight(300.0, 200.0, 100.0, 0.5, carrier="domestic")
+        assert math.isclose(r["dim_weight_kg"], (30.0 * 20.0 * 10.0) / 5000.0,
+                            rel_tol=1e-6)
+
+    def test_chargeable_weight_is_max(self):
+        # Freight rule: chargeable = max(actual, dimensional).
+        r = shipping_weight(300.0, 200.0, 100.0, 0.5, carrier="domestic")
+        assert math.isclose(r["chargeable_weight_kg"],
+                            max(0.5, r["dim_weight_kg"]), rel_tol=1e-9)
+
+    def test_cushion_design_velocity_change(self):
+        # Free-fall drop: velocity change delta_V = sqrt(2 g h) (energy
+        # method, ASTM D1596 cushion-curve approach).  h = 0.75 m.
+        r = cushion_design(product_weight_kg=5.0, drop_height_m=0.75,
+                           fragility_G=50.0, foam_static_stress_kPa=20.0,
+                           foam_cushion_curve_G=40.0)
+        assert r["ok"] is True
+        assert math.isclose(r["delta_V_m_s"],
+                            math.sqrt(2 * 9.81 * 0.75), rel_tol=1e-6)

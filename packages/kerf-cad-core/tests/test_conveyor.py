@@ -642,3 +642,102 @@ class TestBucketElevatorTool:
         )))
         r = json.loads(result)
         assert r["ok"] is True
+
+
+# ---------------------------------------------------------------------------
+# Externally-citable reference cases
+#   CEMA "Belt Conveyors for Bulk Materials", 7th ed.
+#   CEMA "Screw Conveyors for Bulk Materials", 5th ed.
+#   Capstan (Euler-Eytelwein) belt-friction equation.
+# ---------------------------------------------------------------------------
+
+class TestConveyorExternalReferenceCases:
+    """Cross-checked against CEMA 7th ed. (belt) / 5th ed. (screw) and the
+    classical capstan equation."""
+
+    def test_belt_drive_power_is_Te_times_speed(self):
+        # CEMA: required drive power P = Te * belt_speed.
+        r = belt_conveyor(belt_width_m=1.0, belt_speed_m_s=2.5,
+                          length_m=100.0, lift_m=0.0,
+                          bulk_density_kg_m3=1600.0)
+        assert math.isclose(r["drive_power_W"], r["Te_N"] * 2.5, rel_tol=1e-9)
+
+    def test_belt_motor_power_efficiency(self):
+        # CEMA: motor power = drive power / drive efficiency.
+        r = belt_conveyor(belt_width_m=1.0, belt_speed_m_s=2.5,
+                          length_m=100.0, lift_m=0.0,
+                          bulk_density_kg_m3=1600.0, drive_efficiency=0.9)
+        assert math.isclose(r["motor_power_kW"],
+                            r["drive_power_kW"] / 0.9, rel_tol=1e-9)
+
+    def test_belt_capstan_no_slip_ratio(self):
+        # Capstan / Euler-Eytelwein: T1/T2 = exp(mu * wrap_angle).
+        mu = 0.35
+        wrap = math.radians(210.0)
+        r = belt_conveyor(belt_width_m=1.0, belt_speed_m_s=2.5,
+                          length_m=100.0, lift_m=0.0,
+                          bulk_density_kg_m3=1600.0,
+                          mu_belt_pulley=mu, wrap_angle_deg=210.0)
+        assert math.isclose(r["T1_N"] / r["T2_N"], math.exp(mu * wrap),
+                            rel_tol=1e-6)
+
+    def test_belt_effective_tension_T1_minus_T2(self):
+        # CEMA: effective tension Te = T1 - T2 (drive force at the pulley).
+        r = belt_conveyor(belt_width_m=1.0, belt_speed_m_s=2.5,
+                          length_m=100.0, lift_m=0.0,
+                          bulk_density_kg_m3=1600.0)
+        assert math.isclose(r["Te_N"], r["T1_N"] - r["T2_N"], rel_tol=1e-9)
+
+    def test_belt_lift_component_increases_tension(self):
+        # CEMA: a positive lift adds Wm*L*g*sin(theta) to effective tension.
+        flat = belt_conveyor(belt_width_m=1.0, belt_speed_m_s=2.0,
+                             length_m=100.0, lift_m=0.0,
+                             bulk_density_kg_m3=1600.0)
+        incl = belt_conveyor(belt_width_m=1.0, belt_speed_m_s=2.0,
+                             length_m=100.0, lift_m=10.0,
+                             bulk_density_kg_m3=1600.0)
+        assert incl["Te_N"] > flat["Te_N"]
+
+    def test_belt_capacity_mass_from_volume_density(self):
+        # CEMA: mass capacity (t/h) = volumetric capacity * bulk density.
+        r = belt_conveyor(belt_width_m=1.0, belt_speed_m_s=2.5,
+                          length_m=100.0, lift_m=0.0,
+                          bulk_density_kg_m3=1600.0)
+        assert math.isclose(r["capacity_t_h"],
+                            r["capacity_m3_h"] * 1600.0 / 1000.0,
+                            rel_tol=1e-6)
+
+    def test_screw_power_scales_with_length(self):
+        # CEMA screw conveyor: power increases with conveying length.
+        a = screw_conveyor(diameter_m=0.25, pitch_m=0.25, speed_rpm=60.0,
+                           length_m=5.0, bulk_density_kg_m3=800.0)
+        b = screw_conveyor(diameter_m=0.25, pitch_m=0.25, speed_rpm=60.0,
+                           length_m=15.0, bulk_density_kg_m3=800.0)
+        assert b["motor_power_kW"] > a["motor_power_kW"]
+
+    def test_screw_capacity_scales_with_speed(self):
+        # CEMA screw: volumetric capacity is proportional to screw rpm.
+        a = screw_conveyor(diameter_m=0.25, pitch_m=0.25, speed_rpm=30.0,
+                           length_m=10.0, bulk_density_kg_m3=800.0)
+        b = screw_conveyor(diameter_m=0.25, pitch_m=0.25, speed_rpm=60.0,
+                           length_m=10.0, bulk_density_kg_m3=800.0)
+        assert math.isclose(b["capacity_t_h"], 2.0 * a["capacity_t_h"],
+                            rel_tol=1e-6)
+
+    def test_bucket_elevator_lift_power(self):
+        # Bucket elevator lift power = mass-flow * g * lift height
+        # (work-energy; CEMA bucket-elevator basis).
+        r = bucket_elevator(bucket_volume_m3=0.005, bucket_spacing_m=0.4,
+                            belt_speed_m_s=1.5, lift_height_m=20.0,
+                            bulk_density_kg_m3=800.0, fill_factor=0.75)
+        mass_flow = (0.005 * 0.75 / 0.4) * 1.5 * 800.0  # kg/s
+        assert math.isclose(r["lift_power_W"],
+                            mass_flow * 9.81 * 20.0, rel_tol=1e-3)
+
+    def test_bucket_elevator_capacity(self):
+        # Capacity = (bucket_vol*fill/spacing) * speed * density * 3600.
+        r = bucket_elevator(bucket_volume_m3=0.005, bucket_spacing_m=0.4,
+                            belt_speed_m_s=1.5, lift_height_m=20.0,
+                            bulk_density_kg_m3=800.0, fill_factor=0.75)
+        cap_t_h = (0.005 * 0.75 / 0.4) * 1.5 * 3600.0 * 800.0 / 1000.0
+        assert math.isclose(r["capacity_t_h"], cap_t_h, rel_tol=1e-6)

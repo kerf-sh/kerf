@@ -887,3 +887,91 @@ class TestToolWrappers:
         ctx = _ctx()
         raw = _run(run_forming_passes_required(ctx, b"{{bad"))
         _err_tool(raw)
+
+
+# ---------------------------------------------------------------------------
+# Externally-citable reference cases
+#
+# Each case cites a worked example or tabulated datum from an authoritative
+# manufacturing-engineering reference with a known numeric answer.  These
+# replace author-only hand-calcs with literature-traceable validation.
+# ---------------------------------------------------------------------------
+
+class TestFormingExternalReferenceCases:
+    """Cross-checked against Kalpakjian / Hosford-Caddell / Groover."""
+
+    def test_hollomon_copper_at_unit_strain_equals_K(self):
+        # Kalpakjian & Schmid 7th ed., Table 2.3: annealed copper
+        # K = 315 MPa, n = 0.54.  At true strain eps = 1.0, sigma = K.
+        r = flow_stress(315e6, 1.0, 0.54)
+        assert math.isclose(r["sigma_f_Pa"], 315e6, rel_tol=1e-9)
+
+    def test_hollomon_1100O_aluminium(self):
+        # Kalpakjian & Schmid 7th ed., Table 2.3: 1100-O aluminium
+        # K = 180 MPa, n = 0.20.  sigma(eps=0.223) = 180*0.223^0.20 MPa.
+        r = flow_stress(180e6, 0.223, 0.20)
+        assert math.isclose(r["sigma_f_Pa"], 180e6 * 0.223 ** 0.20, rel_tol=1e-9)
+
+    def test_mean_flow_stress_integral_identity(self):
+        # Hosford & Caddell, Metal Forming 4th ed., Eq. 5.3:
+        # mean flow stress over 0->eps_f = K*eps_f^n/(n+1).
+        r = mean_flow_stress(180e6, 0.20, 0.223)
+        assert math.isclose(
+            r["mean_flow_stress_Pa"], 180e6 * 0.223 ** 0.20 / 1.20, rel_tol=1e-12
+        )
+
+    def test_flat_rolling_contact_length_kalpakjian_13_1(self):
+        # Kalpakjian & Schmid 7th ed. Ex. 13.1 geometry: contact length
+        # L = sqrt(R*dh).  R=150 mm, h0=9 mm, hf=6.3 mm -> dh=2.7 mm.
+        # L = sqrt(0.150 * 0.0027) = 0.0201246 m.
+        r = flat_rolling(sigma_f=275e6, mu=0.30, R=0.150,
+                         h0=0.009, hf=0.0063, w=0.300)
+        assert math.isclose(r["contact_length_m"],
+                            math.sqrt(0.150 * 0.0027), rel_tol=1e-9)
+
+    def test_flat_rolling_true_strain_kalpakjian(self):
+        # Kalpakjian: true strain in rolling eps = ln(h0/hf).
+        r = flat_rolling(sigma_f=275e6, mu=0.30, R=0.150,
+                         h0=0.009, hf=0.0063, w=0.300)
+        assert math.isclose(r["true_strain"], math.log(9.0 / 6.3), rel_tol=1e-9)
+
+    def test_flat_rolling_max_draft_bite_condition(self):
+        # Kalpakjian & Schmid 7th ed., Eq. 13.5: max draft = mu^2 * R.
+        r = flat_rolling(sigma_f=275e6, mu=0.20, R=0.150,
+                         h0=0.010, hf=0.009, w=0.300)
+        assert math.isclose(r["max_draft_m"], 0.20 ** 2 * 0.150, rel_tol=1e-9)
+
+    def test_forward_extrusion_ratio_and_strain_kalpakjian_15(self):
+        # Kalpakjian & Schmid 7th ed. §15.2: extrusion ratio R=A0/Af,
+        # ideal strain eps = ln(R).  A0=4e-3, Af=1e-3 -> R=4, eps=ln4.
+        r = forward_extrusion(sigma_f=200e6, A0=4e-3, Af=1e-3)
+        assert math.isclose(r["extrusion_ratio"], 4.0, rel_tol=1e-12)
+        assert math.isclose(r["true_strain"], math.log(4.0), rel_tol=1e-12)
+
+    def test_forward_extrusion_ideal_pressure_kalpakjian(self):
+        # Kalpakjian: ideal extrusion pressure p = sigma_bar * ln(R).
+        r = forward_extrusion(sigma_f=200e6, A0=4e-3, Af=1e-3)
+        assert math.isclose(r["p_ideal_Pa"], 200e6 * math.log(4.0), rel_tol=1e-9)
+
+    def test_wire_drawing_area_reduction_kalpakjian_15_5(self):
+        # Kalpakjian & Schmid 7th ed. §15.5: r = 1 - Af/A0.
+        # A0=10 mm^2, Af=7.5 mm^2 -> r = 25 %.
+        r = wire_drawing(sigma_f=600e6, A0=10e-6, Af=7.5e-6,
+                         mu=0.05, die_half_angle_deg=8.0)
+        assert math.isclose(r["reduction_pct"], 25.0, rel_tol=1e-9)
+
+    def test_wire_drawing_limiting_reduction_ideal(self):
+        # Hosford & Caddell §6.5: limiting frictionless reduction = 1-1/e
+        # = 63.21 % (the classic ideal-drawing limit).
+        r = wire_drawing(sigma_f=600e6, A0=10e-6, Af=8e-6,
+                         mu=0.05, die_half_angle_deg=8.0)
+        assert math.isclose(r["limiting_reduction_pct"],
+                            (1.0 - 1.0 / math.e) * 100.0, rel_tol=1e-9)
+
+    def test_passes_required_cumulative_reduction_formula(self):
+        # Groover, Fundamentals of Modern Manufacturing 5th ed. §19:
+        # cumulative reduction after N passes = 1-(1-r)^N.
+        r = passes_required(r_total=0.75, r_per_pass=0.20)
+        n = r["n_passes"]
+        assert math.isclose(r["cumulative_reduction_pct"],
+                            (1.0 - (1.0 - 0.20) ** n) * 100.0, rel_tol=1e-9)

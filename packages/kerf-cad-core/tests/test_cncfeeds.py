@@ -665,3 +665,82 @@ class TestIntegration:
         assert r1["ok"] and r2["ok"]
         # Ra ∝ fn² → r2.Ra ≈ r1.Ra / 4
         assert abs(r2["Ra_um"] - r1["Ra_um"] / 4.0) < 1e-9
+
+
+# ---------------------------------------------------------------------------
+# Externally-citable reference cases (Machinery's Handbook / Sandvik)
+# ---------------------------------------------------------------------------
+
+class TestCncFeedsExternalReferenceCases:
+    """Cross-checked against Machinery's Handbook 30th ed. and Sandvik
+    Coromant turning/milling/drilling handbooks."""
+
+    def test_spindle_rpm_machinerys_handbook(self):
+        # Machinery's Handbook 30th ed., Speeds & Feeds:
+        # n = 1000*vc/(pi*D).  vc=120 m/min, D=50 mm -> 763.94 rpm.
+        r = spindle_rpm(120.0, 50.0)
+        assert math.isclose(r["rpm"], 1000.0 * 120.0 / (math.pi * 50.0),
+                            rel_tol=1e-9)
+
+    def test_feed_rate_vf_definition(self):
+        # Machinery's Handbook: table feed Vf = fz * z * n.
+        r = feed_rate(0.10, 4, 764.0)
+        assert math.isclose(r["feed_mm_min"], 0.10 * 4 * 764.0, rel_tol=1e-12)
+
+    def test_mrr_turning_sandvik(self):
+        # Sandvik turning handbook: Q = ap * fn * vc * 1000 (mm^3/min).
+        r = mrr_turning(2.0, 0.30, 200.0)
+        assert math.isclose(r["mrr_mm3_min"], 2.0 * 0.30 * 200.0 * 1000.0,
+                            rel_tol=1e-9)
+
+    def test_mrr_milling_sandvik(self):
+        # Sandvik milling handbook: Q = ae * ap * Vf (mm^3/min).
+        r = mrr_milling(10.0, 3.0, 500.0)
+        assert math.isclose(r["mrr_mm3_min"], 10.0 * 3.0 * 500.0, rel_tol=1e-12)
+
+    def test_mrr_drilling_machinerys_handbook(self):
+        # Machinery's Handbook: Q = (pi/4) D^2 * f * n.
+        r = mrr_drilling(10.0, 0.2, 800.0)
+        assert math.isclose(r["mrr_mm3_min"],
+                            (math.pi / 4.0) * 100.0 * 0.2 * 800.0,
+                            rel_tol=1e-9)
+
+    def test_cutting_power_sandvik_formula(self):
+        # Sandvik: Pc [W] = kc [N/mm^2] * Q [mm^3/min] / 60000.
+        r = cutting_power(60000.0, 2000.0)
+        assert math.isclose(r["cutting_power_W"], 2000.0 * 60000.0 / 60000.0,
+                            rel_tol=1e-12)
+
+    def test_surface_finish_ra_machinerys_handbook(self):
+        # Machinery's Handbook: Rmax = f^2/(8*r_eps); Ra ≈ Rmax/4.
+        # fn=0.2 mm/rev, r_eps=0.8 mm -> Rmax=6.25 um, Ra=1.5625 um.
+        r = surface_finish_ra(0.2, 0.8)
+        rmax_um = 0.2 ** 2 / (8.0 * 0.8) * 1000.0
+        assert math.isclose(r["Rz_um"], rmax_um, rel_tol=1e-9)
+        assert math.isclose(r["Ra_um"], rmax_um / 4.0, rel_tol=1e-9)
+
+    def test_chip_thinning_factor_sandvik(self):
+        # Sandvik/Kennametal: CTF = D/(2*sqrt(ae*(D-ae))) for ae<D/2.
+        # ae=2 mm, D=10 mm -> CTF = 10/(2*sqrt(2*8)) = 1.25.
+        r = chip_thinning_factor(2.0, 10.0)
+        assert math.isclose(r["ctf"], 10.0 / (2.0 * math.sqrt(2.0 * 8.0)),
+                            rel_tol=1e-9)
+
+    def test_chip_thinning_unity_above_half_diameter(self):
+        # Sandvik: no chip thinning correction when ae >= D/2 (CTF = 1.0).
+        r = chip_thinning_factor(6.0, 10.0)
+        assert math.isclose(r["ctf"], 1.0, rel_tol=1e-12)
+
+    def test_tapping_feed_pitch_times_rpm(self):
+        # Machinery's Handbook rigid tapping: Vf = pitch * rpm.
+        r = tapping_speed(1.25, 500.0)
+        assert math.isclose(r["feed_mm_min"], 1.25 * 500.0, rel_tol=1e-12)
+
+    def test_tool_deflection_cantilever_beam(self):
+        # Roark / Machinery's Handbook cantilever: delta = F*L^3/(3*E*I),
+        # I = pi*D^4/64.  F=500 N, L=40 mm, D=12 mm, carbide E=600 GPa.
+        r = tool_deflection(500.0, 40.0, 12.0, E_GPa=600.0)
+        I = math.pi * 12.0 ** 4 / 64.0
+        EI = 600.0e3 * I
+        assert math.isclose(r["deflection_mm"], 500.0 * 40.0 ** 3 / (3.0 * EI),
+                            rel_tol=1e-9)

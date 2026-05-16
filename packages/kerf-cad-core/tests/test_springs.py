@@ -643,3 +643,90 @@ class TestToolWrappers:
         ctx = _ctx()
         raw = _run(run_spring_belleville(ctx, b"{bad"))
         _err_tool(raw)
+
+
+# ===========================================================================
+# Externally-citable reference cases (production-confidence validation)
+# Cross-checked vs Shigley 10th ed. Ch. 10, Wahl "Mechanical Springs".
+# ===========================================================================
+
+from kerf_cad_core.springs.design import (  # noqa: E402
+    helical_compression as _ref_hc,
+    helical_extension as _ref_he,
+    torsion_spring as _ref_ts,
+    belleville_washer as _ref_bw,
+)
+
+
+class TestSpringsExternalReferences:
+    """Validated against Shigley §§10-1..10-14 closed-form relations."""
+
+    def test_rate_shigley_eq_10_9(self):
+        # Shigley Eq (10-9): k = d⁴G/(8 D³ Na).
+        d, D, Na, G = 0.0025, 0.020, 8.0, 79.3e9
+        r = _ref_hc(d, D, Na, G)
+        assert r["rate_N_per_m"] == pytest.approx(G * d ** 4 / (8.0 * D ** 3 * Na), rel=1e-12)
+
+    def test_wahl_factor_shigley_eq_10_5(self):
+        # Shigley Eq (10-5): Kw = (4C-1)/(4C-4) + 0.615/C, C = D/d.
+        d, D = 0.002, 0.016  # C = 8
+        r = _ref_hc(d, D, 10.0, 79.3e9)
+        C = 8.0
+        assert r["Kw"] == pytest.approx((4 * C - 1) / (4 * C - 4) + 0.615 / C, rel=1e-12)
+
+    def test_shear_stress_shigley_eq_10_7(self):
+        # Shigley Eq (10-7): τ = Kw·8 F D/(π d³).
+        d, D = 0.003, 0.024
+        r = _ref_hc(d, D, 10.0, 79.3e9, Fm=200.0, Fa=0.0)
+        C = D / d
+        Kw = (4 * C - 1) / (4 * C - 4) + 0.615 / C
+        assert r["shear_stress_max_Pa"] == pytest.approx(Kw * 8.0 * 200.0 * D / (math.pi * d ** 3), rel=1e-9)
+
+    def test_solid_height_squared_ground(self):
+        # Shigley Table 10-1: squared-ground ends → Nt = Na+2; Ls = Nt·d.
+        d = 0.002
+        r = _ref_hc(d, 0.020, 10.0, 79.3e9, end_type="squared_ground")
+        assert r["N_total"] == pytest.approx(12.0, rel=1e-12)
+        assert r["solid_height_m"] == pytest.approx(12.0 * d, rel=1e-12)
+
+    def test_extension_rate_same_as_compression(self):
+        # Shigley §10-9: extension spring body rate identical to compression.
+        d, D, Na, G = 0.003, 0.024, 12.0, 79.3e9
+        r = _ref_he(d, D, Na, G)
+        assert r["rate_N_per_m"] == pytest.approx(G * d ** 4 / (8.0 * D ** 3 * Na), rel=1e-12)
+
+    def test_extension_hook_factor_shigley_eq_10_34(self):
+        # Shigley Eq (10-34) hook bending: KB = (4C²-C-1)/(4C(C-1)).
+        d, D = 0.003, 0.024  # C = 8
+        r = _ref_he(d, D, 12.0, 79.3e9)
+        C = 8.0
+        assert r["KB"] == pytest.approx((4 * C ** 2 - C - 1) / (4 * C * (C - 1)), rel=1e-12)
+
+    def test_torsion_rate_shigley_eq_10_51(self):
+        # Shigley Eq (10-51) torsion spring rate: k' = d⁴E/(64 D Na) per turn.
+        d, D, Na, E = 0.003, 0.030, 8.0, 200e9
+        r = _ref_ts(d, D, Na, E)
+        assert r["rate_Nm_per_rev"] == pytest.approx(E * d ** 4 / (64.0 * D * Na), rel=1e-12)
+
+    def test_torsion_bending_stress(self):
+        # Shigley §10-12: σ = Ki·32 T/(π d³); Ki=(4C²-C-1)/(4C(C-1)).
+        d, D = 0.003, 0.030  # C=10
+        r = _ref_ts(d, D, 8.0, 200e9, torque_Nm=5.0)
+        C = 10.0
+        Ki = (4 * C ** 2 - C - 1) / (4 * C * (C - 1))
+        assert r["bending_stress_Pa"] == pytest.approx(Ki * 32.0 * 5.0 / (math.pi * d ** 3), rel=1e-9)
+
+    def test_torsion_deflection_consistency(self):
+        # Torque from deflection: T = k'·θ_rev (linear angular rate).
+        d, D, Na, E = 0.003, 0.030, 8.0, 200e9
+        kp = E * d ** 4 / (64.0 * D * Na)
+        r = _ref_ts(d, D, Na, E, angular_deflection_deg=90.0)
+        assert r["torque_from_deflection_Nm"] == pytest.approx(kp * (90.0 / 360.0), rel=1e-9)
+
+    def test_belleville_almen_laszlo_load(self):
+        # Shigley §10-14 / Almen-László: P(δ) closed form, monotone for h0/t≤1.
+        # P_flat (δ=h0) must be positive and finite for valid geometry.
+        r = _ref_bw(0.050, 0.025, 0.002, 0.0015, 200e9, 0.3)
+        assert r["ok"]
+        assert r["P_flat_N"] > 0 and math.isfinite(r["P_flat_N"])
+        assert r["alpha_factor"] > 0

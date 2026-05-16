@@ -574,3 +574,86 @@ class TestToolWrappers:
             _ctx(), _args(h=10.0, beta_deg=90.0, theta_deg=45.0, rise=False)
         ))
         _ok_tool(raw)
+
+
+# ===========================================================================
+# Externally-citable reference cases (production-confidence validation)
+# Cross-checked vs Norton "Design of Machinery" 5th ed., Shigley & Uicker
+# "Theory of Machines & Mechanisms" 4th ed., Freudenstein (1955).
+# ===========================================================================
+
+from kerf_cad_core.kinematics.linkage import (  # noqa: E402
+    four_bar_grashof as _ref_grashof,
+    four_bar_position as _ref_fbpos,
+    four_bar_transmission_angle as _ref_tmu,
+    slider_crank as _ref_slider,
+    cam_follower_cycloidal as _ref_cyc,
+    cam_follower_harmonic as _ref_harm,
+)
+
+
+class TestKinematicsExternalReferences:
+    """Validated against Norton / Shigley-Uicker mechanism relations."""
+
+    def test_grashof_crank_rocker_norton_2_15(self):
+        # Norton §2.15: S+L ≤ P+Q with shortest = crank → crank-rocker.
+        # links r1=10(ground) r2=3(crank,shortest) r3=8 r4=7.
+        r = _ref_grashof(10.0, 3.0, 8.0, 7.0)
+        assert r["grashof"] is True
+        assert r["type"] == "crank-rocker"
+
+    def test_grashof_change_point(self):
+        # Norton §2.15: S+L = P+Q exactly → change-point (special Grashof).
+        r = _ref_grashof(5.0, 2.0, 4.0, 3.0)  # 2+5 == 3+4
+        assert r["special"] is True
+        assert r["type"] == "change-point"
+
+    def test_grashof_non_grashof(self):
+        # Norton §2.15: S+L > P+Q → non-Grashof (triple-rocker).
+        r = _ref_grashof(10.0, 5.0, 5.0, 5.0)  # 5+10 > 5+5
+        assert r["grashof"] is False
+        assert r["type"] == "non-Grashof"
+
+    def test_four_bar_position_closure(self):
+        # Freudenstein (1955): vector-loop must close to zero residual.
+        r = _ref_fbpos(10.0, 4.0, 12.0, 8.0, 60.0, branch=1)
+        assert r["ok"]
+        assert r["closure_residual"] == pytest.approx(0.0, abs=1e-9)
+
+    def test_four_bar_freudenstein_symmetric(self):
+        # Parallelogram linkage r1=r3, r2=r4: θ4 tracks θ2 (θ4=θ2 branch).
+        r = _ref_fbpos(10.0, 4.0, 10.0, 4.0, 90.0, branch=-1)
+        assert r["ok"]
+        assert r["theta4_deg"] == pytest.approx(90.0, abs=1e-6)
+
+    def test_transmission_angle_law_of_cosines(self):
+        # Norton §3.4: cos μ = (r3²+r4²−BD²)/(2 r3 r4),
+        # BD² = r1²+r2²−2 r1 r2 cos θ2.
+        r = _ref_tmu(10.0, 4.0, 12.0, 8.0, 90.0)
+        BD2 = 100.0 + 16.0 - 0.0
+        cmu = (144.0 + 64.0 - BD2) / (2.0 * 12.0 * 8.0)
+        assert r["mu_deg"] == pytest.approx(math.degrees(math.acos(cmu)), rel=1e-9)
+
+    def test_slider_crank_position_norton_13_4(self):
+        # Norton §13.4: x_B = r cos θ + √(l²−r²sin²θ).
+        r = _ref_slider(0.05, 0.20, 90.0)
+        x = 0.05 * math.cos(math.radians(90)) + math.sqrt(0.20 ** 2 - 0.05 ** 2)
+        assert r["x_B"] == pytest.approx(x, rel=1e-12)
+
+    def test_slider_crank_tdc(self):
+        # At θ=0 (TDC): x_B = r + l (slider fully extended).
+        r = _ref_slider(0.05, 0.20, 0.0)
+        assert r["x_B"] == pytest.approx(0.05 + 0.20, rel=1e-12)
+
+    def test_cam_cycloidal_boundary_norton_8_3(self):
+        # Norton §8.3 cycloidal: y(0)=0, y(β)=h, y'(0)=y'(β)=0.
+        rb = _ref_cyc(20.0, 90.0, 90.0, rise=True)
+        r0 = _ref_cyc(20.0, 90.0, 0.0, rise=True)
+        assert r0["displacement"] == pytest.approx(0.0, abs=1e-9)
+        assert rb["displacement"] == pytest.approx(20.0, rel=1e-9)
+        assert rb["velocity_per_omega"] == pytest.approx(0.0, abs=1e-9)
+
+    def test_cam_harmonic_midpoint_norton_8_2(self):
+        # Norton §8.2 SHM: y = (h/2)(1−cos(πθ/β)); at θ=β/2 → h/2.
+        r = _ref_harm(20.0, 90.0, 45.0, rise=True)
+        assert r["displacement"] == pytest.approx(20.0 / 2.0, rel=1e-9)

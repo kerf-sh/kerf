@@ -677,3 +677,88 @@ class TestNestingPacking:
             _args(build_volume_m3=0.027, part_volume_m3=1e-4),
         ))
         _err_tool(raw)
+
+
+# ---------------------------------------------------------------------------
+# Externally-citable reference cases
+#   Gibson, L.J. & Ashby, M.F. "Cellular Solids: Structure and Properties",
+#     2nd ed., Cambridge University Press (1997), Ch. 5.
+#   Gibson, Rosen & Stucker "Additive Manufacturing Technologies", 2nd ed.
+# ---------------------------------------------------------------------------
+
+class TestAdditiveExternalReferenceCases:
+    """Cross-checked against Gibson & Ashby 'Cellular Solids' 2nd ed. and
+    standard DfAM cost/build-time relations (Gibson/Rosen/Stucker)."""
+
+    def test_gibson_ashby_bending_dominated_exponent(self):
+        # Gibson & Ashby Eq. 5.6 (open-cell, bending-dominated foam):
+        # E*/Es = C (rho*/rhos)^2, C ≈ 0.3.  gyroid uses C1=0.3, n=2.
+        r = lattice_infill("FDM", "gyroid", 0.30, 200e9, 7900.0, 1e-4)
+        assert math.isclose(r["C1"], 0.3, rel_tol=1e-12)
+        assert math.isclose(r["n_exponent"], 2.0, rel_tol=1e-12)
+        assert math.isclose(r["effective_modulus_Pa"],
+                            0.3 * 0.30 ** 2 * 200e9, rel_tol=1e-9)
+
+    def test_gibson_ashby_stretch_dominated_linear(self):
+        # Gibson & Ashby: stretch-dominated lattices scale linearly,
+        # E*/Es ~ (rho*/rhos)^1.  cubic uses C1=1.0, n=1.
+        r = lattice_infill("FDM", "cubic", 0.30, 200e9, 7900.0, 1e-4)
+        assert math.isclose(r["n_exponent"], 1.0, rel_tol=1e-12)
+        assert math.isclose(r["effective_modulus_Pa"],
+                            1.0 * 0.30 ** 1 * 200e9, rel_tol=1e-9)
+
+    def test_gibson_ashby_density_rule_of_mixtures(self):
+        # Gibson & Ashby: relative density maps linearly to effective density
+        # rho* = rho_rel * rho_s.
+        r = lattice_infill("FDM", "gyroid", 0.30, 200e9, 7900.0, 1e-4)
+        assert math.isclose(r["effective_density_kg_m3"], 0.30 * 7900.0,
+                            rel_tol=1e-9)
+
+    def test_gibson_ashby_relative_stiffness(self):
+        # Relative stiffness E*/Es of a 30 %-dense gyroid = 0.3*0.3^2 = 0.027.
+        r = lattice_infill("FDM", "gyroid", 0.30, 200e9, 7900.0, 1e-4)
+        assert math.isclose(r["relative_stiffness"], 0.3 * 0.30 ** 2,
+                            rel_tol=1e-4)
+
+    def test_lattice_mass_density_volume(self):
+        # m = rho_eff * V (mass-volume identity).
+        r = lattice_infill("FDM", "gyroid", 0.30, 200e9, 7900.0, 1e-4)
+        assert math.isclose(r["mass_kg"], 0.30 * 7900.0 * 1e-4, rel_tol=1e-4)
+
+    def test_shrinkage_compensation_scale_factor(self):
+        # Standard AM shrinkage compensation (Gibson/Rosen/Stucker §):
+        # compensated dim = nominal / (1 - shrinkage).
+        r = shrinkage_compensation(0.1, "SLS")
+        s = r["shrinkage_fraction"]
+        assert math.isclose(r["compensated_dim_m"], 0.1 / (1.0 - s),
+                            rel_tol=1e-6)
+        assert math.isclose(r["scale_factor"], 1.0 / (1.0 - s), rel_tol=1e-5)
+
+    def test_cost_rollup_machine_time_linear(self):
+        # DfAM cost model: machine cost = build_time_h * machine_rate.
+        r = cost_rollup("SLS", "nylon", 3600.0, 1e-6, 1e-5,
+                        machine_rate_per_h=30.0, material_cost_per_kg=80.0)
+        assert math.isclose(r["build_time_h"], 1.0, rel_tol=1e-9)
+        assert math.isclose(r["machine_cost_usd"], 1.0 * 30.0, rel_tol=1e-9)
+
+    def test_cost_rollup_total_is_sum(self):
+        # Total cost = machine + material + post (additive cost rollup).
+        r = cost_rollup("SLS", "nylon", 3600.0, 1e-6, 1e-5,
+                        machine_rate_per_h=30.0, material_cost_per_kg=80.0,
+                        post_cost=5.0)
+        assert math.isclose(
+            r["total_cost_usd"],
+            r["machine_cost_usd"] + r["material_cost_usd"] + r["post_cost_usd"],
+            rel_tol=1e-9)
+
+    def test_build_time_scales_with_height(self):
+        # Layer-wise AM: build time grows with part height (layer count).
+        a = build_time_estimate("FDM", (0.05, 0.05, 0.05))
+        b = build_time_estimate("FDM", (0.05, 0.05, 0.10))
+        assert b["build_time_s"] > a["build_time_s"]
+
+    def test_support_volume_proportional_to_overhang(self):
+        # More overhang area -> more support material (DfAM heuristic).
+        a = support_volume(1e-4, 1e-2, overhang_fraction=0.1)
+        b = support_volume(1e-4, 1e-2, overhang_fraction=0.4)
+        assert b["support_volume_m3"] > a["support_volume_m3"]

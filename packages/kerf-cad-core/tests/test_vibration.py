@@ -806,3 +806,100 @@ class TestToolWrappers:
             ctx, _args(m=100.0, omega_exc=100.0, TR_target=1.5)
         ))
         _err_tool(raw)
+
+
+# ===========================================================================
+# Externally-citable reference cases (production-confidence validation)
+# Cross-checked vs Rao "Mechanical Vibrations" 5th ed., Thomson "Theory of
+# Vibration" 5th ed., Inman "Engineering Vibration" 4th ed.
+# ===========================================================================
+
+from kerf_cad_core.vibration.dynamics import (  # noqa: E402
+    sdof_natural_frequency as _ref_wn,
+    sdof_damped_frequency as _ref_wd,
+    sdof_damping_ratio_log_decrement as _ref_logdec,
+    sdof_harmonic_magnification as _ref_mag,
+    sdof_base_transmissibility as _ref_tr,
+    sdof_rotating_unbalance as _ref_unb,
+    dof2_eigen as _ref_2dof,
+    beam_natural_frequency as _ref_beam,
+    isolator_stiffness as _ref_iso,
+)
+
+
+class TestVibrationExternalReferences:
+    """Validated against Rao/Thomson/Inman closed-form vibration relations."""
+
+    def test_natural_frequency_rao_2_1(self):
+        # Rao §2-1: ωn = √(k/m). k=1000 N/m, m=10 kg → 10 rad/s.
+        r = _ref_wn(10.0, 1000.0)
+        assert r["omega_n"] == pytest.approx(10.0, rel=1e-12)
+        assert r["fn_hz"] == pytest.approx(10.0 / (2 * math.pi), rel=1e-12)
+
+    def test_damped_frequency_rao_2_3(self):
+        # Rao §2-3: c_cr=2√(km); ωd=ωn√(1−ζ²). k=1000, m=10, c=20.
+        r = _ref_wd(10.0, 1000.0, 20.0)
+        c_cr = 2.0 * math.sqrt(1000.0 * 10.0)
+        zeta = 20.0 / c_cr
+        assert r["zeta"] == pytest.approx(zeta, rel=1e-12)
+        assert r["omega_d"] == pytest.approx(10.0 * math.sqrt(1 - zeta ** 2), rel=1e-12)
+
+    def test_log_decrement_rao_2_7(self):
+        # Rao §2-7: δ=(1/n)ln(x1/xn); ζ=δ/√(4π²+δ²).
+        r = _ref_logdec(1.0, 0.25, 2)
+        delta = 0.5 * math.log(4.0)
+        assert r["delta"] == pytest.approx(delta, rel=1e-12)
+        assert r["zeta"] == pytest.approx(delta / math.sqrt(4 * math.pi ** 2 + delta ** 2), rel=1e-12)
+
+    def test_magnification_at_resonance_inman_2_1(self):
+        # Inman §2.1: at r=1, M = 1/(2ζ). ζ=0.1 → M=5.
+        r = _ref_mag(0.1, 1.0)
+        assert r["M"] == pytest.approx(5.0, rel=1e-12)
+
+    def test_magnification_general(self):
+        # Rao §3-4: M = 1/√[(1−r²)²+(2ζr)²]. r=2, ζ=0.25.
+        r = _ref_mag(0.25, 2.0)
+        exp = 1.0 / math.sqrt((1 - 4) ** 2 + (2 * 0.25 * 2) ** 2)
+        assert r["M"] == pytest.approx(exp, rel=1e-12)
+
+    def test_transmissibility_undamped_inman_2_4(self):
+        # Inman §2.4: ζ=0 → TR = 1/|r²−1|. r=2 → TR=1/3.
+        r = _ref_tr(0.0, 2.0)
+        assert r["TR"] == pytest.approx(1.0 / 3.0, rel=1e-12)
+        assert r["isolating"] is True
+
+    def test_transmissibility_general_rao_3_6(self):
+        # Rao Eq (3-68): TR = √[(1+(2ζr)²)/((1−r²)²+(2ζr)²)].
+        r = _ref_tr(0.1, 3.0)
+        num = 1 + (2 * 0.1 * 3) ** 2
+        den = (1 - 9) ** 2 + (2 * 0.1 * 3) ** 2
+        assert r["TR"] == pytest.approx(math.sqrt(num / den), rel=1e-12)
+
+    def test_rotating_unbalance_rao_3_7(self):
+        # Rao Eq (3-80): MX/(mₑe) = r²/√[(1−r²)²+(2ζr)²].
+        r = _ref_unb(50.0, 5000.0, 0.0, 0.5, 0.01, 12.0)
+        wn = math.sqrt(5000.0 / 50.0)
+        rr = 12.0 / wn
+        exp = rr ** 2 / math.sqrt((1 - rr ** 2) ** 2)
+        assert r["MX_over_mue"] == pytest.approx(exp, rel=1e-9)
+
+    def test_2dof_eigen_rao_5_3(self):
+        # Rao §5-3: symmetric 2-DOF m1=m2=m, k1=k2=k3=k → ω₁=√(k/m),
+        # ω₂=√(3k/m). m=1, k=100.
+        r = _ref_2dof(1.0, 1.0, 100.0, 100.0, 100.0)
+        assert r["omega_1"] == pytest.approx(math.sqrt(100.0), rel=1e-9)
+        assert r["omega_2"] == pytest.approx(math.sqrt(300.0), rel=1e-9)
+
+    def test_beam_cantilever_thomson_8_6(self):
+        # Thomson §8.6: cantilever mode 1 βL=1.875104; ωn=(βL)²√(EI/(μL⁴)).
+        r = _ref_beam(1, 1.0, 10.0, 200e9, 1e-6, bc="cantilever")
+        bl = 1.87510407
+        assert r["omega_n"] == pytest.approx(bl ** 2 * math.sqrt(200e9 * 1e-6 / (10.0 * 1.0 ** 4)), rel=1e-6)
+
+    def test_isolator_stiffness_inman_2_5(self):
+        # Inman §2.5: undamped isolator TR=1/(r²−1) → r=√(1+1/TR), k=mωn².
+        r = _ref_iso(100.0, 100.0, 0.1)
+        r_ratio = math.sqrt(1.0 + 1.0 / 0.1)
+        wn = 100.0 / r_ratio
+        assert r["k_N_per_m"] == pytest.approx(100.0 * wn ** 2, rel=1e-9)
+        assert r["TR_actual"] == pytest.approx(0.1, rel=1e-9)

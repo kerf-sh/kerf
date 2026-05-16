@@ -776,3 +776,88 @@ class TestToolWrappers:
         ctx = _ctx()
         raw = _run(run_turning_grooving(ctx, _args(z_center_mm=30.0)))
         _err_tool(raw)
+
+
+# ---------------------------------------------------------------------------
+# Externally-citable reference cases (ISO 6983 / ISO 68-1 / Machinery's HB)
+# ---------------------------------------------------------------------------
+
+class TestTurningExternalReferenceCases:
+    """Cross-checked against ISO 68-1 (thread depth), Machinery's Handbook
+    30th ed. (CSS rpm), and ISO 6983-1 G-code conventions."""
+
+    def test_css_rpm_machinerys_handbook(self):
+        # Machinery's Handbook 30th ed.: n = CSS*1000/(pi*D), D = 2*radius.
+        # CSS=180 m/min, radius=25 mm (D=50) -> 1145.9 rpm (within clamp).
+        rpm = _calc_rpm(25.0, 180.0, 50.0, 3500.0)
+        assert math.isclose(rpm, 180.0 * 1000.0 / (math.pi * 50.0),
+                            rel_tol=1e-9)
+
+    def test_css_rpm_clamped_to_max(self):
+        # Machinery's Handbook CSS practice: small diameters drive rpm up;
+        # machine rpm_max clamps it (here near-centre radius -> clamp).
+        rpm = _calc_rpm(0.5, 180.0, 50.0, 3500.0)
+        assert math.isclose(rpm, 3500.0, rel_tol=1e-12)
+
+    def test_iso_68_1_thread_depth_default(self):
+        # ISO 68-1 / Machinery's Handbook single-point external 60-deg thread
+        # cutting depth ≈ 0.6495 * pitch (0.75 H, truncated crest & root).
+        r = od_threading(0.0, -20.0, 10.0, pitch_mm=2.0)
+        assert r.ok
+        # Sum of cut-pass depths must reach the full thread depth 0.6495*P.
+        cut = [p for p in r.passes if not p["is_spring"]]
+        total = sum(p["step_depth_mm"] for p in cut)
+        assert math.isclose(total, 0.6495 * 2.0, rel_tol=1e-6)
+
+    def test_iso_68_1_thread_depth_override(self):
+        # A user-supplied thread_depth_mm must be honoured exactly.
+        r = od_threading(0.0, -15.0, 8.0, pitch_mm=1.5, thread_depth_mm=0.9)
+        cut = [p for p in r.passes if not p["is_spring"]]
+        total = sum(p["step_depth_mm"] for p in cut)
+        assert math.isclose(total, 0.9, rel_tol=1e-6)
+
+    def test_id_threading_cuts_outward(self):
+        # Boring-bar internal threading: tool advances outward (+X) from the
+        # minor radius by the thread depth.
+        r = id_threading(0.0, -15.0, 6.0, pitch_mm=1.5)
+        assert r.ok
+        last_cut = [p for p in r.passes if not p["is_spring"]][-1]
+        assert last_cut["x_radius_mm"] > 6.0
+
+    def test_gcode_preamble_iso6983_metric(self):
+        # ISO 6983-1: G21 metric, G18 ZX plane, G40 cutter-comp cancel.
+        r = finishing_pass([(0.0, 10.0), (-50.0, 10.0)])
+        assert r.gcode[0] == "G21"
+        assert "G18" in r.gcode[:3]
+        assert "G40" in r.gcode[:3]
+
+    def test_gcode_epilogue_spindle_stop_program_end(self):
+        # ISO 6983-1: M5 spindle stop, M30 program end.
+        r = facing_pass(25.0, 0.0)
+        assert r.gcode[-2:] == ["M5", "M30"]
+
+    def test_gcode_uses_diameter_programming(self):
+        # ISO turning convention: X word is diameter, not radius.
+        r = finishing_pass([(0.0, 12.0), (-30.0, 12.0)])
+        # A profile radius of 12 mm must appear as X24 in the G-code.
+        assert any("X24" in ln for ln in r.gcode)
+
+    def test_facing_pass_feeds_to_centre(self):
+        # Facing to spindle centreline: final X bore radius default = 0.
+        r = facing_pass(30.0, 0.0)
+        assert r.passes[0]["bore_radius_mm"] == 0.0
+
+    def test_roughing_doc_step_count(self):
+        # Stock removal: number of roughing passes ≈ (stock - target)/doc.
+        prof = [(0.0, 10.0), (-40.0, 10.0)]
+        r = roughing_passes(prof, stock_x_mm=20.0, doc_mm=2.0,
+                            finish_allowance_mm=0.0)
+        assert r.ok
+        # (20 - 10) / 2 = 5 passes.
+        assert len(r.passes) == 5
+
+    def test_spindle_speed_invariant_under_diameter(self):
+        # Machinery's Handbook CSS: rpm halves when diameter doubles.
+        r1 = _calc_rpm(10.0, 150.0, 1.0, 1e9)
+        r2 = _calc_rpm(20.0, 150.0, 1.0, 1e9)
+        assert math.isclose(r1, 2.0 * r2, rel_tol=1e-9)
