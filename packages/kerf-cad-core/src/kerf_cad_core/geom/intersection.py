@@ -59,7 +59,14 @@ from typing import List, Optional, Sequence, Tuple
 
 import numpy as np
 
-from kerf_cad_core.geom.nurbs import NurbsCurve, NurbsSurface, de_boor
+from kerf_cad_core.geom.nurbs import (
+    NurbsCurve,
+    NurbsSurface,
+    de_boor,
+    surface_derivatives,
+    surface_evaluate,
+    surface_normal,
+)
 
 # ---------------------------------------------------------------------------
 # Internal constants
@@ -172,13 +179,32 @@ def _curve_eval(c: NurbsCurve, t: float) -> np.ndarray:
 
 
 def _surf_eval(s: NurbsSurface, u: float, v: float) -> np.ndarray:
+    """Evaluate a NURBS surface (rational-correct).
+
+    Routes to the unified GK-01 evaluator ``nurbs.surface_evaluate`` which
+    correctly applies per-control-point weights (the legacy
+    ``_nurbs_surface_eval`` here silently ignored ``surf.weights`` — the
+    root cause of SSI being weak on exact rational primitives such as
+    spheres / cylinders).  Falls back to the local non-rational evaluator
+    only if the unified path is unavailable.
+    """
+    try:
+        p = surface_evaluate(s, float(u), float(v))
+        arr = np.asarray(p, dtype=float).ravel()
+        out = np.zeros(3)
+        n = min(3, arr.size)
+        out[:n] = arr[:n]
+        if np.all(np.isfinite(out)):
+            return out
+    except Exception:
+        pass
     return _nurbs_surface_eval(s, u, v)
 
 
-def _surf_partials(
+def _surf_partials_fd(
     s: NurbsSurface, u: float, v: float
 ) -> Tuple[np.ndarray, np.ndarray]:
-    """Central finite-difference partials dp/du and dp/dv."""
+    """Central finite-difference partials dp/du and dp/dv (fallback path)."""
     u_min, u_max, v_min, v_max = _surface_param_range(s)
     hu = max(1e-6, (u_max - u_min) * 1e-4)
     hv = max(1e-6, (v_max - v_min) * 1e-4)
@@ -191,7 +217,53 @@ def _surf_partials(
     return dp_du, dp_dv
 
 
+def _surf_partials(
+    s: NurbsSurface, u: float, v: float
+) -> Tuple[np.ndarray, np.ndarray]:
+    """First partials dp/du, dp/dv.
+
+    Uses the analytic Cox-de Boor / rational quotient-rule derivatives from
+    ``nurbs.surface_derivatives`` (GK-01/02) which are exact for rational
+    primitives.  Falls back to central finite differences only if the analytic
+    path is unavailable or returns a degenerate result.
+    """
+    try:
+        SKL = surface_derivatives(s, float(u), float(v), d=1)
+        du = np.asarray(SKL[1, 0][:3], dtype=float)
+        dv = np.asarray(SKL[0, 1][:3], dtype=float)
+        if np.all(np.isfinite(du)) and np.all(np.isfinite(dv)):
+            return du, dv
+    except Exception:
+        pass
+    return _surf_partials_fd(s, u, v)
+
+
+def _surf_second_partials(
+    s: NurbsSurface, u: float, v: float
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Analytic second partials (S_uu, S_uv, S_vv); zeros on failure."""
+    try:
+        SKL = surface_derivatives(s, float(u), float(v), d=2)
+        suu = np.asarray(SKL[2, 0][:3], dtype=float)
+        suv = np.asarray(SKL[1, 1][:3], dtype=float)
+        svv = np.asarray(SKL[0, 2][:3], dtype=float)
+        if (np.all(np.isfinite(suu)) and np.all(np.isfinite(suv))
+                and np.all(np.isfinite(svv))):
+            return suu, suv, svv
+    except Exception:
+        pass
+    return np.zeros(3), np.zeros(3), np.zeros(3)
+
+
 def _surf_normal(s: NurbsSurface, u: float, v: float) -> np.ndarray:
+    """Unit surface normal via analytic partials (FD fallback)."""
+    try:
+        n = surface_normal(s, float(u), float(v))
+        n = np.asarray(n[:3], dtype=float)
+        if np.all(np.isfinite(n)) and np.linalg.norm(n) > 1e-12:
+            return n / np.linalg.norm(n)
+    except Exception:
+        pass
     dp_du, dp_dv = _surf_partials(s, u, v)
     n = np.cross(dp_du, dp_dv)
     nrm = np.linalg.norm(n)
@@ -472,8 +544,440 @@ def _newton_surf_surf_point(
 
 
 # ---------------------------------------------------------------------------
-# Marching
+# GK-10 — Analytic primitive recognition + closed-form specialisations
 # ---------------------------------------------------------------------------
+#
+# When BOTH surfaces are recognisable analytic primitives (plane / sphere /
+# cylinder) we solve the intersection in closed form.  This gives exact seeds
+# AND exact oracles (line∩sphere, plane∩sphere, sphere∩sphere, cyl∩cyl, ...).
+# Recognition fits the surface's sampled point set to the primitive's implicit
+# equation and only accepts the fit when the algebraic residual is below
+# ``tol``.  Anything not recognised falls back to the hardened marcher.
+
+_PRIM_FIT_TOL: float = 1e-7
+
+
+def _sample_surface_grid(s: NurbsSurface, n: int = 11) -> np.ndarray:
+    """Interior sample grid for primitive fitting.
+
+    Samples strictly *inside* the parameter domain (a small margin from each
+    edge), then deduplicates near-coincident points.  This stops the collapsed
+    poles / seam of a surface of revolution from piling dozens of identical
+    points onto one location and biasing the algebraic least-squares fits.
+    """
+    u0, u1, v0, v1 = _surface_param_range(s)
+    mu = (u1 - u0) * 0.04
+    mv = (v1 - v0) * 0.04
+    us = np.linspace(u0 + mu, u1 - mu, n)
+    vs = np.linspace(v0 + mv, v1 - mv, n)
+    raw = np.array([_surf_eval(s, float(u), float(v)) for u in us for v in vs])
+    # Deduplicate (poles / seam collapse to a single point).
+    keep: List[np.ndarray] = []
+    for p in raw:
+        if not any(np.linalg.norm(p - q) < 1e-9 for q in keep):
+            keep.append(p)
+    return np.array(keep) if keep else raw
+
+
+def _fit_plane(pts: np.ndarray) -> Optional[Tuple[np.ndarray, np.ndarray, float]]:
+    """Best-fit plane.  Returns (point, unit_normal, max_abs_residual)."""
+    c = pts.mean(axis=0)
+    q = pts - c
+    # SVD: smallest right-singular vector is the plane normal.
+    try:
+        _, sv, vh = np.linalg.svd(q, full_matrices=False)
+    except np.linalg.LinAlgError:
+        return None
+    n = vh[-1]
+    nn = np.linalg.norm(n)
+    if nn < 1e-14:
+        return None
+    n = n / nn
+    resid = float(np.max(np.abs(q @ n)))
+    return c, n, resid
+
+
+def _fit_sphere(pts: np.ndarray) -> Optional[Tuple[np.ndarray, float, float]]:
+    """Algebraic sphere fit.  Returns (centre, radius, max_abs_residual)."""
+    if pts.shape[0] < 4:
+        return None
+    A = np.hstack([2.0 * pts, np.ones((pts.shape[0], 1))])
+    b = np.sum(pts * pts, axis=1)
+    try:
+        sol, *_ = np.linalg.lstsq(A, b, rcond=None)
+    except np.linalg.LinAlgError:
+        return None
+    centre = sol[:3]
+    r2 = sol[3] + float(centre @ centre)
+    if r2 <= 1e-18:
+        return None
+    radius = math.sqrt(r2)
+    resid = float(np.max(np.abs(np.linalg.norm(pts - centre, axis=1) - radius)))
+    return centre, radius, resid
+
+
+def _fit_cylinder(
+    pts: np.ndarray,
+) -> Optional[Tuple[np.ndarray, np.ndarray, float, float]]:
+    """Fit an (infinite) right circular cylinder.
+
+    Returns (axis_point, unit_axis_dir, radius, max_abs_residual).  The axis
+    direction is taken as the largest-variance principal direction of the point
+    set (works for a tubular patch) and the radius/centre as the circle fit of
+    the points projected onto the plane perpendicular to that axis.
+    """
+    if pts.shape[0] < 6:
+        return None
+    c = pts.mean(axis=0)
+    q = pts - c
+    try:
+        _, _, vh = np.linalg.svd(q, full_matrices=False)
+    except np.linalg.LinAlgError:
+        return None
+    axis = vh[0]
+    axis = axis / (np.linalg.norm(axis) + 1e-300)
+    # Project points onto the plane perpendicular to axis, then fit a circle.
+    proj = q - np.outer(q @ axis, axis)
+    # 2-D basis in that plane.
+    e1 = vh[1] - (vh[1] @ axis) * axis
+    e1 = e1 / (np.linalg.norm(e1) + 1e-300)
+    e2 = np.cross(axis, e1)
+    x = proj @ e1
+    y = proj @ e2
+    M = np.column_stack([2.0 * x, 2.0 * y, np.ones_like(x)])
+    rhs = x * x + y * y
+    try:
+        sol, *_ = np.linalg.lstsq(M, rhs, rcond=None)
+    except np.linalg.LinAlgError:
+        return None
+    cx, cy = sol[0], sol[1]
+    r2 = sol[2] + cx * cx + cy * cy
+    if r2 <= 1e-18:
+        return None
+    radius = math.sqrt(r2)
+    axis_pt = c + cx * e1 + cy * e2
+    # Residual = |perp distance to axis - radius| over all points.
+    d = pts - axis_pt
+    perp = d - np.outer(d @ axis, axis)
+    resid = float(np.max(np.abs(np.linalg.norm(perp, axis=1) - radius)))
+    return axis_pt, axis, radius, resid
+
+
+def _classify_primitive(s: NurbsSurface, tol: float) -> Optional[dict]:
+    """Return a primitive descriptor dict or None if not recognised.
+
+    Recognition is *strict*: we only take the closed-form path when the
+    algebraic residual is below ``abs_tol`` (scaled by the patch size).  An
+    exact rational primitive fits to ~1e-12; anything sculpted/freeform fits
+    far worse and is left to the hardened marcher.
+    """
+    pts = _sample_surface_grid(s)
+    if pts.shape[0] < 6:
+        return None
+    span = float(np.max(np.linalg.norm(pts - pts.mean(axis=0), axis=1))) + 1.0
+    abs_tol = max(tol, _PRIM_FIT_TOL) * span
+
+    pl = _fit_plane(pts)
+    if pl is not None and pl[2] <= abs_tol:
+        return {"kind": "plane", "point": pl[0], "normal": pl[1]}
+
+    sp = _fit_sphere(pts)
+    cy = _fit_cylinder(pts)
+    sp_ok = sp is not None and sp[2] <= abs_tol
+    cy_ok = cy is not None and cy[3] <= abs_tol
+    # Prefer the tighter fit when both look plausible (a sphere patch can
+    # masquerade as a fat cylinder over a small region).
+    if sp_ok and cy_ok:
+        if sp[2] <= cy[3]:
+            return {"kind": "sphere", "center": sp[0], "radius": sp[1]}
+        return {"kind": "cylinder", "axis_point": cy[0],
+                "axis_dir": cy[1], "radius": cy[2]}
+    if sp_ok:
+        return {"kind": "sphere", "center": sp[0], "radius": sp[1]}
+    if cy_ok:
+        return {"kind": "cylinder", "axis_point": cy[0],
+                "axis_dir": cy[1], "radius": cy[2]}
+    return None
+
+
+def _circle_polyline(
+    center: np.ndarray, radius: float, x_axis: np.ndarray, y_axis: np.ndarray,
+    n: int = 121,
+) -> List[List[float]]:
+    """Deterministic uniformly-sampled closed circle polyline (n>=2)."""
+    th = np.linspace(0.0, 2.0 * math.pi, n)
+    X = x_axis / (np.linalg.norm(x_axis) + 1e-300)
+    Y = y_axis / (np.linalg.norm(y_axis) + 1e-300)
+    return [
+        (center + radius * math.cos(t) * X + radius * math.sin(t) * Y).tolist()
+        for t in th
+    ]
+
+
+def _analytic_ssi(
+    prim_a: dict, prim_b: dict, tol: float,
+) -> Optional[List[dict]]:
+    """Closed-form surface∩surface for recognised primitive pairs.
+
+    Returns a list of branch dicts (points/params_a/params_b/closed) or None
+    when the pair has no closed-form handler (caller falls back to marching).
+    Empty list ⇒ recognised pair with no real intersection.
+    """
+    ka, kb = prim_a["kind"], prim_b["kind"]
+    pair = {ka, kb}
+
+    def _empty_params(n: int):
+        return [[0.0, 0.0]] * n
+
+    # ---- plane ∩ sphere → circle (or tangent point / none) ----
+    if pair == {"plane", "sphere"}:
+        pl = prim_a if ka == "plane" else prim_b
+        sp = prim_a if ka == "sphere" else prim_b
+        n = pl["normal"] / (np.linalg.norm(pl["normal"]) + 1e-300)
+        d = float((sp["center"] - pl["point"]) @ n)
+        rr = sp["radius"] ** 2 - d * d
+        if rr < -(max(tol, 1e-12)):
+            return []
+        foot = sp["center"] - d * n
+        if rr <= max(tol, 1e-12) ** 2:
+            # Tangent: single degenerate point, NOT a garbage loop.
+            return [{
+                "points": [foot.tolist()],
+                "params_a": _empty_params(1),
+                "params_b": _empty_params(1),
+                "closed": False,
+            }]
+        rc = math.sqrt(max(rr, 0.0))
+        # Build an in-plane orthonormal frame.
+        ref = np.array([1.0, 0.0, 0.0])
+        if abs(n @ ref) > 0.9:
+            ref = np.array([0.0, 1.0, 0.0])
+        ex = ref - (ref @ n) * n
+        ex = ex / (np.linalg.norm(ex) + 1e-300)
+        ey = np.cross(n, ex)
+        poly = _circle_polyline(foot, rc, ex, ey)
+        return [{
+            "points": poly,
+            "params_a": _empty_params(len(poly)),
+            "params_b": _empty_params(len(poly)),
+            "closed": True,
+        }]
+
+    # ---- sphere ∩ sphere → circle (or tangent point / none) ----
+    if ka == "sphere" and kb == "sphere":
+        cA, rA = prim_a["center"], prim_a["radius"]
+        cB, rB = prim_b["center"], prim_b["radius"]
+        dvec = cB - cA
+        dist = float(np.linalg.norm(dvec))
+        if dist < max(tol, 1e-12):
+            return None  # concentric / coincident: not a clean circle
+        if dist > rA + rB + max(tol, 1e-9):
+            return []
+        if dist < abs(rA - rB) - max(tol, 1e-9):
+            return []
+        axis = dvec / dist
+        # Standard two-sphere formula.
+        a = (dist * dist - rB * rB + rA * rA) / (2.0 * dist)
+        h2 = rA * rA - a * a
+        center = cA + a * axis
+        if h2 <= max(tol, 1e-12) ** 2:
+            return [{
+                "points": [center.tolist()],
+                "params_a": _empty_params(1),
+                "params_b": _empty_params(1),
+                "closed": False,
+            }]
+        rc = math.sqrt(max(h2, 0.0))
+        ref = np.array([1.0, 0.0, 0.0])
+        if abs(axis @ ref) > 0.9:
+            ref = np.array([0.0, 1.0, 0.0])
+        ex = ref - (ref @ axis) * axis
+        ex = ex / (np.linalg.norm(ex) + 1e-300)
+        ey = np.cross(axis, ex)
+        poly = _circle_polyline(center, rc, ex, ey)
+        return [{
+            "points": poly,
+            "params_a": _empty_params(len(poly)),
+            "params_b": _empty_params(len(poly)),
+            "closed": True,
+        }]
+
+    # ---- plane ∩ cylinder (axis ⟂ plane → circle) ----
+    if pair == {"plane", "cylinder"}:
+        pl = prim_a if ka == "plane" else prim_b
+        cy = prim_a if ka == "cylinder" else prim_b
+        n = pl["normal"] / (np.linalg.norm(pl["normal"]) + 1e-300)
+        ax = cy["axis_dir"] / (np.linalg.norm(cy["axis_dir"]) + 1e-300)
+        if abs(abs(float(n @ ax)) - 1.0) < 1e-6:
+            # Plane perpendicular to the cylinder axis → exact circle.
+            t = float(((pl["point"] - cy["axis_point"]) @ n) / (ax @ n))
+            center = cy["axis_point"] + t * ax
+            ref = np.array([1.0, 0.0, 0.0])
+            if abs(ax @ ref) > 0.9:
+                ref = np.array([0.0, 1.0, 0.0])
+            ex = ref - (ref @ ax) * ax
+            ex = ex / (np.linalg.norm(ex) + 1e-300)
+            ey = np.cross(ax, ex)
+            poly = _circle_polyline(center, cy["radius"], ex, ey)
+            return [{
+                "points": poly,
+                "params_a": _empty_params(len(poly)),
+                "params_b": _empty_params(len(poly)),
+                "closed": True,
+            }]
+        return None  # oblique plane∩cyl → ellipse: leave to marcher
+
+    # ---- cylinder ∩ cylinder, equal radius, crossing perpendicular axes ----
+    if ka == "cylinder" and kb == "cylinder":
+        rA, rB = prim_a["radius"], prim_b["radius"]
+        axA = prim_a["axis_dir"] / (np.linalg.norm(prim_a["axis_dir"]) + 1e-300)
+        axB = prim_b["axis_dir"] / (np.linalg.norm(prim_b["axis_dir"]) + 1e-300)
+        if abs(rA - rB) > max(tol, 1e-7) * (abs(rA) + 1.0):
+            return None
+        if abs(float(axA @ axB)) > 1e-6:
+            return None  # not perpendicular
+        # Closest points of the two axes; require them to (nearly) cross.
+        w0 = prim_a["axis_point"] - prim_b["axis_point"]
+        aa, bb, cc = 1.0, float(axA @ axB), 1.0
+        dd = float(axA @ w0)
+        ee = float(axB @ w0)
+        den = aa * cc - bb * bb
+        if abs(den) < 1e-12:
+            return None
+        sA = (bb * ee - cc * dd) / den
+        sB = (aa * ee - bb * dd) / den
+        pA_axis = prim_a["axis_point"] + sA * axA
+        pB_axis = prim_b["axis_point"] + sB * axB
+        if float(np.linalg.norm(pA_axis - pB_axis)) > max(tol, 1e-6) * (
+            float(np.linalg.norm(w0)) + 1.0
+        ):
+            return None  # axes do not cross
+        r = 0.5 * (rA + rB)
+        ctr = 0.5 * (pA_axis + pB_axis)
+        # Steinmetz: the two branch ellipses lie in the planes spanned by the
+        # bisectors of the two axes.  Parameterise on cylinder A:
+        #   x(φ)=r cosφ along eA1, y(φ)=r sinφ along eA2 (eA2 ⟂ axA),
+        #   the axA-coordinate is ± sqrt(r² - (r sinφ)²) ... but with equal
+        #   radius and perpendicular crossing axes the exact curves are the
+        #   two planar ellipses below.
+        eA = axA
+        eB = axB
+        e3 = np.cross(eA, eB)
+        e3 = e3 / (np.linalg.norm(e3) + 1e-300)
+        branches: List[dict] = []
+        for sgn in (+1.0, -1.0):
+            # Ellipse: point on cyl A at radial angle φ around axA in the
+            # (e3, eB) circle, with axial position chosen so it also lies on
+            # cyl B.  For equal r and perpendicular axes this reduces to:
+            #   P(φ) = ctr + r cosφ e3 + r sinφ eB + sgn * r sinφ * eA  (no),
+            # use the standard result: the intersection is two ellipses each
+            # the image of a circle of radius r under a 45° shear, lying in
+            # the planes n± = (eA ∓ eB)/√2.
+            npn = (eA - sgn * eB)
+            npn = npn / (np.linalg.norm(npn) + 1e-300)
+            u1 = e3
+            u2 = np.cross(npn, u1)
+            u2 = u2 / (np.linalg.norm(u2) + 1e-300)
+            th = np.linspace(0.0, 2.0 * math.pi, 121)
+            pts = []
+            for t in th:
+                # Semi-axes: r along u1 (shared), r*sqrt(2) along u2 (sheared).
+                p = ctr + r * math.cos(t) * u1 + r * math.sqrt(2.0) * math.sin(t) * u2
+                pts.append(p.tolist())
+            branches.append({
+                "points": pts,
+                "params_a": _empty_params(len(pts)),
+                "params_b": _empty_params(len(pts)),
+                "closed": True,
+            })
+        return branches
+
+    return None
+
+
+def _line_from_curve(c: NurbsCurve) -> Optional[Tuple[np.ndarray, np.ndarray]]:
+    """Return (P0, dir) if the curve is (numerically) a straight segment."""
+    try:
+        t0, t1 = _curve_param_range(c)
+    except Exception:
+        return None
+    ts = np.linspace(t0, t1, 9)
+    pts = np.array([_curve_eval(c, float(t)) for t in ts])
+    p0 = pts[0]
+    d = pts[-1] - pts[0]
+    dn = np.linalg.norm(d)
+    if dn < 1e-14:
+        return None
+    d = d / dn
+    # Max deviation of interior points from the chord line.
+    rel = pts - p0
+    perp = rel - np.outer(rel @ d, d)
+    if float(np.max(np.linalg.norm(perp, axis=1))) > 1e-9 * (dn + 1.0):
+        return None
+    return p0, d
+
+
+def line_sphere_roots(
+    p0: np.ndarray, d: np.ndarray, center: np.ndarray, radius: float,
+    *, tol: float = 1e-12,
+) -> List[float]:
+    """Closed-form line∩sphere ray parameters s (point = p0 + s d).
+
+    Returns 0, 1 (tangent) or 2 sorted roots, exact to machine precision.
+    """
+    p0 = np.asarray(p0, dtype=float)
+    d = np.asarray(d, dtype=float)
+    center = np.asarray(center, dtype=float)
+    oc = p0 - center
+    a = float(d @ d)
+    b = 2.0 * float(oc @ d)
+    c = float(oc @ oc) - float(radius) ** 2
+    if a < 1e-300:
+        return []
+    disc = b * b - 4.0 * a * c
+    if disc < -tol:
+        return []
+    if abs(disc) <= tol:
+        return [-b / (2.0 * a)]
+    sq = math.sqrt(disc)
+    r1 = (-b - sq) / (2.0 * a)
+    r2 = (-b + sq) / (2.0 * a)
+    return sorted([r1, r2])
+
+
+def line_plane_root(
+    p0: np.ndarray, d: np.ndarray, plane_pt: np.ndarray, plane_n: np.ndarray,
+    *, tol: float = 1e-12,
+) -> Optional[float]:
+    """Closed-form line∩plane ray parameter, or None if parallel."""
+    p0 = np.asarray(p0, dtype=float)
+    d = np.asarray(d, dtype=float)
+    n = np.asarray(plane_n, dtype=float)
+    denom = float(d @ n)
+    if abs(denom) < tol:
+        return None
+    return float(((np.asarray(plane_pt, dtype=float) - p0) @ n) / denom)
+
+
+# ---------------------------------------------------------------------------
+# Marching (hardened)
+# ---------------------------------------------------------------------------
+
+def _signed_distance(
+    surf_b: NurbsSurface, P: np.ndarray, uB: float, vB: float,
+) -> Tuple[float, np.ndarray]:
+    """Signed distance of P to surf_b near (uB,vB) and its 3-D gradient.
+
+    Gradient ≈ outward unit normal of surf_b (∇ of the SDF of a smooth
+    surface).  Used to recover a marching direction when the two surface
+    normals are parallel (tangential branch) and the cross-product tangent
+    degenerates.
+    """
+    PB = _surf_eval(surf_b, uB, vB)
+    nB = _surf_normal(surf_b, uB, vB)
+    sd = float((P - PB) @ nB)
+    return sd, nB
+
 
 def _march_branch(
     surf_a: NurbsSurface,
@@ -484,42 +988,112 @@ def _march_branch(
     tol: float,
     max_steps: int,
 ) -> dict:
-    """March in both directions from a seed to build one intersection branch."""
+    """March in both directions from a seed to build one intersection branch.
 
-    def _collect(uA0, vA0, uB0, vB0, sign):
+    Hardening (GK-09):
+      * Real loop detection — a branch is ``closed`` only when the march
+        actually returns to the *seed* in parameter space (and 3-D), not via
+        the old ``step*3`` endpoint heuristic.
+      * Tangential branches — when ``|nA × nB|`` is ~0 the marching direction
+        is rebuilt from the signed-distance-field gradient + surface curvature
+        (second partials) instead of bailing out.
+      * Boundary handling that records whether the branch terminated on a
+        trim boundary (so an open branch is not mistaken for a closed loop).
+    """
+    uA_min, uA_max, vA_min, vA_max = _surface_param_range(surf_a)
+    uB_min, uB_max, vB_min, vB_max = _surface_param_range(surf_b)
+    seed_pt = (
+        (_surf_eval(surf_a, uA_seed, vA_seed)
+         + _surf_eval(surf_b, uB_seed, vB_seed)) * 0.5
+    )
+
+    def _tangent(uA, vA, uB, vB):
+        """Marching tangent at the current point (curvature-aware fallback)."""
+        nA = _surf_normal(surf_a, uA, vA)
+        nB = _surf_normal(surf_b, uB, vB)
+        tang = np.cross(nA, nB)
+        t_nrm = np.linalg.norm(tang)
+        if t_nrm >= 1e-9:
+            return tang / t_nrm, False
+        # Tangential / near-tangential: normals (anti-)parallel.  March along
+        # the curve f=0 of the signed-distance field.  The branch direction is
+        # the eigenvector of the relative second-fundamental form with the
+        # smallest |curvature|; approximate it from the second partials of A.
+        dpA_du, dpA_dv = _surf_partials(surf_a, uA, vA)
+        suu, suv, svv = _surf_second_partials(surf_a, uA, vA)
+        # Difference of normal curvatures along the two surface param dirs;
+        # pick the in-tangent-plane direction minimising the SDF curvature so
+        # the step stays on f=0 to second order.
+        e_u = dpA_du / (np.linalg.norm(dpA_du) + 1e-300)
+        e_v = dpA_dv / (np.linalg.norm(dpA_dv) + 1e-300)
+        kuu = float(suu @ nA)
+        kvv = float(svv @ nA)
+        kuv = float(suv @ nA)
+        # 2x2 shape-difference form eigenvector for the smaller |eigval|.
+        m = np.array([[kuu, kuv], [kuv, kvv]])
+        try:
+            w, V = np.linalg.eigh(m)
+            idx = int(np.argmin(np.abs(w)))
+            vec = V[:, idx]
+        except np.linalg.LinAlgError:
+            vec = np.array([1.0, 0.0])
+        dirv = vec[0] * e_u + vec[1] * e_v
+        dn = np.linalg.norm(dirv)
+        if dn < 1e-12:
+            # last resort: any in-plane direction
+            dirv = e_u
+            dn = np.linalg.norm(dirv)
+        return dirv / (dn + 1e-300), True
+
+    def _on_boundary(uA, vA, uB, vB):
+        b = tol * 10.0
+        return (
+            abs(uA - uA_min) < b or abs(uA - uA_max) < b or
+            abs(vA - vA_min) < b or abs(vA - vA_max) < b or
+            abs(uB - uB_min) < b or abs(uB - uB_max) < b or
+            abs(vB - vB_min) < b or abs(vB - vB_max) < b
+        )
+
+    def _collect(sign):
         pts, pa, pb = [], [], []
-        uA, vA, uB, vB = uA0, vA0, uB0, vB0
-        uA_min, uA_max, vA_min, vA_max = _surface_param_range(surf_a)
-        uB_min, uB_max, vB_min, vB_max = _surface_param_range(surf_b)
-        for _ in range(max_steps // 2):
-            nA = _surf_normal(surf_a, uA, vA)
-            nB = _surf_normal(surf_b, uB, vB)
-            tang = np.cross(nA, nB)
-            t_nrm = np.linalg.norm(tang)
-            if t_nrm < 1e-12:
-                break
-            tang /= t_nrm
+        uA, vA, uB, vB = uA_seed, vA_seed, uB_seed, vB_seed
+        hit_boundary = False
+        returned_to_seed = False
+        prev_dir = None
+        n_iter = max(4, max_steps // 2)
+        for it in range(n_iter):
+            tang, tangential = _tangent(uA, vA, uB, vB)
+            if prev_dir is not None and float(tang @ prev_dir) < 0.0:
+                tang = -tang  # keep a consistent travel direction
+            prev_dir = tang
 
             PA = _surf_eval(surf_a, uA, vA)
             PB = _surf_eval(surf_b, uB, vB)
             P_curr = (PA + PB) * 0.5
             P_next = P_curr + sign * step * tang
 
-            # Project P_next onto each surface via tangent-plane approximation
+            # Tangential branch: pull the predictor back onto f=0 of surf_b's
+            # signed-distance field (one Newton step on the SDF) before the
+            # tangent-plane projection.  This keeps the march on the
+            # intersection when the cross-product tangent has degenerated.
+            if tangential:
+                sd, grad = _signed_distance(surf_b, P_next, uB, vB)
+                P_next = P_next - sd * grad
+
             dpA_du, dpA_dv = _surf_partials(surf_a, uA, vA)
             dpB_du, dpB_dv = _surf_partials(surf_b, uB, vB)
 
             delta = P_next - PA
-            norm_uA = np.dot(delta, dpA_du) / (np.dot(dpA_du, dpA_du) + 1e-15)
-            norm_vA = np.dot(delta, dpA_dv) / (np.dot(dpA_dv, dpA_dv) + 1e-15)
-            uA_g = float(np.clip(uA + norm_uA, uA_min, uA_max))
-            vA_g = float(np.clip(vA + norm_vA, vA_min, vA_max))
+            nuA = np.dot(delta, dpA_du) / (np.dot(dpA_du, dpA_du) + 1e-15)
+            nvA = np.dot(delta, dpA_dv) / (np.dot(dpA_dv, dpA_dv) + 1e-15)
+            uA_g = float(np.clip(uA + nuA, uA_min, uA_max))
+            vA_g = float(np.clip(vA + nvA, vA_min, vA_max))
 
             delta_b = P_next - PB
-            norm_uB = np.dot(delta_b, dpB_du) / (np.dot(dpB_du, dpB_du) + 1e-15)
-            norm_vB = np.dot(delta_b, dpB_dv) / (np.dot(dpB_dv, dpB_dv) + 1e-15)
-            uB_g = float(np.clip(uB + norm_uB, uB_min, uB_max))
-            vB_g = float(np.clip(vB + norm_vB, vB_min, vB_max))
+            nuB = np.dot(delta_b, dpB_du) / (np.dot(dpB_du, dpB_du) + 1e-15)
+            nvB = np.dot(delta_b, dpB_dv) / (np.dot(dpB_dv, dpB_dv) + 1e-15)
+            uB_g = float(np.clip(uB + nuB, uB_min, uB_max))
+            vB_g = float(np.clip(vB + nvB, vB_min, vB_max))
 
             refined = _newton_surf_surf_point(
                 surf_a, surf_b, uA_g, vA_g, uB_g, vB_g, tol=tol
@@ -529,43 +1103,53 @@ def _march_branch(
             uA_new, vA_new, uB_new, vB_new = refined
 
             PA_new = _surf_eval(surf_a, uA_new, vA_new)
-            if np.linalg.norm(PA_new - P_curr) < tol * 0.1:
+            PB_new = _surf_eval(surf_b, uB_new, vB_new)
+            P_new = (PA_new + PB_new) * 0.5
+            if np.linalg.norm(P_new - P_curr) < tol * 0.1:
                 break
 
-            pts.append(((PA_new + _surf_eval(surf_b, uB_new, vB_new)) * 0.5).tolist())
+            pts.append(P_new.tolist())
             pa.append([uA_new, vA_new])
             pb.append([uB_new, vB_new])
             uA, vA, uB, vB = uA_new, vA_new, uB_new, vB_new
 
-            # Stop at boundary
-            on_bnd = (
-                abs(uA_new - uA_min) < tol * 10 or abs(uA_new - uA_max) < tol * 10 or
-                abs(vA_new - vA_min) < tol * 10 or abs(vA_new - vA_max) < tol * 10 or
-                abs(uB_new - uB_min) < tol * 10 or abs(uB_new - uB_max) < tol * 10 or
-                abs(vB_new - vB_min) < tol * 10 or abs(vB_new - vB_max) < tol * 10
-            )
-            if on_bnd:
+            # Real loop detection: returned to the seed in 3-D after a few
+            # genuine steps ⇒ closed branch.
+            if it >= 3 and np.linalg.norm(P_new - seed_pt) < step * 0.75:
+                returned_to_seed = True
                 break
-        return pts, pa, pb
 
-    PA_s = _surf_eval(surf_a, uA_seed, vA_seed)
-    PB_s = _surf_eval(surf_b, uB_seed, vB_seed)
-    seed_pt = ((PA_s + PB_s) * 0.5).tolist()
+            if _on_boundary(uA_new, vA_new, uB_new, vB_new):
+                hit_boundary = True
+                break
+        return pts, pa, pb, hit_boundary, returned_to_seed
 
-    fwd_pts, fwd_pa, fwd_pb = _collect(uA_seed, vA_seed, uB_seed, vB_seed, +1.0)
-    bwd_pts, bwd_pa, bwd_pb = _collect(uA_seed, vA_seed, uB_seed, vB_seed, -1.0)
+    fwd_pts, fwd_pa, fwd_pb, fwd_bnd, fwd_loop = _collect(+1.0)
+    if fwd_loop:
+        # Forward march closed the loop on its own.
+        all_pts = [seed_pt.tolist()] + fwd_pts
+        all_pa = [[uA_seed, vA_seed]] + fwd_pa
+        all_pb = [[uB_seed, vB_seed]] + fwd_pb
+        return {"points": all_pts, "params_a": all_pa,
+                "params_b": all_pb, "closed": True}
 
-    all_pts = list(reversed(bwd_pts)) + [seed_pt] + fwd_pts
-    all_pa  = list(reversed(bwd_pa))  + [[uA_seed, vA_seed]] + fwd_pa
-    all_pb  = list(reversed(bwd_pb))  + [[uB_seed, vB_seed]] + fwd_pb
+    bwd_pts, bwd_pa, bwd_pb, bwd_bnd, bwd_loop = _collect(-1.0)
 
+    all_pts = list(reversed(bwd_pts)) + [seed_pt.tolist()] + fwd_pts
+    all_pa = list(reversed(bwd_pa)) + [[uA_seed, vA_seed]] + fwd_pa
+    all_pb = list(reversed(bwd_pb)) + [[uB_seed, vB_seed]] + fwd_pb
+
+    # Closed iff BOTH directions ran free (no trim boundary) and the two free
+    # ends meet — i.e. a genuine return-to-start loop, not a heuristic.
     closed = False
-    if len(all_pts) >= 4:
-        p0 = np.array(all_pts[0]); p1 = np.array(all_pts[-1])
-        if np.linalg.norm(p1 - p0) < step * 3:
+    if len(all_pts) >= 4 and not fwd_bnd and not bwd_bnd:
+        p0 = np.array(all_pts[0])
+        p1 = np.array(all_pts[-1])
+        if np.linalg.norm(p1 - p0) < step * 1.5:
             closed = True
 
-    return {"points": all_pts, "params_a": all_pa, "params_b": all_pb, "closed": closed}
+    return {"points": all_pts, "params_a": all_pa,
+            "params_b": all_pb, "closed": closed}
 
 
 # ---------------------------------------------------------------------------
@@ -628,12 +1212,29 @@ def _surface_surface_intersect_impl(
         return {"ok": False, "reason": "surf_b must be a NurbsSurface",
                 "branches": [], "branch_count": 0}
 
+    # ---- GK-10: closed-form specialisation when both are analytic ----
+    try:
+        prim_a = _classify_primitive(surf_a, tol)
+        prim_b = _classify_primitive(surf_b, tol)
+        if prim_a is not None and prim_b is not None:
+            analytic = _analytic_ssi(prim_a, prim_b, tol)
+            if analytic is not None:
+                return {
+                    "ok": True,
+                    "reason": "",
+                    "branches": analytic,
+                    "branch_count": len(analytic),
+                }
+    except Exception:
+        pass  # fall through to the hardened marcher
+
     su = max(4, int(samples_u))
     sv = max(4, int(samples_v))
 
     uA_min, uA_max, vA_min, vA_max = _surface_param_range(surf_a)
     uB_min, uB_max, vB_min, vB_max = _surface_param_range(surf_b)
 
+    # Deterministic grid (fixed, reproducible iteration order).
     uA_vals = np.linspace(uA_min, uA_max, su + 1)
     vA_vals = np.linspace(vA_min, vA_max, sv + 1)
     uB_vals = np.linspace(uB_min, uB_max, su + 1)
@@ -650,66 +1251,89 @@ def _surface_surface_intersect_impl(
     diag_avg = (np.linalg.norm(bboxA) + np.linalg.norm(bboxB)) * 0.5
     actual_step = step if diag_avg < 1e-10 else step * diag_avg
 
-    seed_tol = max(tol * 1e3, actual_step * 2)
-    raw_seeds: List[Tuple[float, float, float, float]] = []
+    def _collect_seeds(uAv, vAv, uBv, vBv) -> List[Tuple[float, float, float, float]]:
+        """Nearest-pair grid seeding with a deterministic ordered scan."""
+        pa_grid = np.array([[_surf_eval(surf_a, float(u), float(v))
+                             for v in vAv] for u in uAv])
+        pb_grid = np.array([[_surf_eval(surf_b, float(u), float(v))
+                             for v in vBv] for u in uBv])
+        nB_v = len(vBv)
+        seed_tol = max(tol * 1e3, actual_step * 2)
+        out: List[Tuple[float, float, float, float]] = []
+        for i in range(len(uAv)):
+            for j in range(len(vAv)):
+                d = np.linalg.norm(
+                    pb_grid.reshape(-1, 3) - pa_grid[i, j], axis=1
+                )
+                k = int(np.argmin(d))
+                if d[k] < seed_tol:
+                    out.append((
+                        float(uAv[i]), float(vAv[j]),
+                        float(uBv[k // nB_v]), float(vBv[k % nB_v]),
+                    ))
+        return out
 
-    for i in range(su + 1):
-        for j in range(sv + 1):
-            pA_ij = pA[i, j]
-            dists = np.linalg.norm(pB.reshape(-1, 3) - pA_ij, axis=1)
-            k_best = int(np.argmin(dists))
-            if dists[k_best] < seed_tol:
-                bi = k_best // (sv + 1)
-                bj = k_best % (sv + 1)
-                raw_seeds.append((
-                    float(uA_vals[i]), float(vA_vals[j]),
-                    float(uB_vals[bi]), float(vB_vals[bj]),
-                ))
+    raw_seeds = _collect_seeds(uA_vals, vA_vals, uB_vals, vB_vals)
 
-    # Refine seeds
-    refined_seeds: List[Tuple[float, float, float, float]] = []
-    for (uA, vA, uB, vB) in raw_seeds:
-        r = _newton_surf_surf_point(surf_a, surf_b, uA, vA, uB, vB, tol=tol)
-        if r is not None:
-            refined_seeds.append(r)
+    # Refine + merge (deterministic order preserved).
+    def _refine_and_merge(raws):
+        refined: List[Tuple[float, float, float, float]] = []
+        for (uA, vA, uB, vB) in raws:
+            r = _newton_surf_surf_point(surf_a, surf_b, uA, vA, uB, vB, tol=tol)
+            if r is not None:
+                refined.append(r)
+        merged: List[Tuple[float, float, float, float]] = []
+        for s in refined:
+            PA = _surf_eval(surf_a, s[0], s[1])
+            if not any(
+                np.linalg.norm(PA - _surf_eval(surf_a, m[0], m[1]))
+                < actual_step * 2
+                for m in merged
+            ):
+                merged.append(s)
+        return merged
 
-    # Merge close seeds
-    merged_seeds: List[Tuple[float, float, float, float]] = []
-    for s in refined_seeds:
-        PA = _surf_eval(surf_a, s[0], s[1])
-        close = any(
-            np.linalg.norm(PA - _surf_eval(surf_a, m[0], m[1])) < actual_step * 2
-            for m in merged_seeds
-        )
-        if not close:
-            merged_seeds.append(s)
-
-    if not merged_seeds:
-        return {"ok": True, "reason": "", "branches": [], "branch_count": 0}
+    merged_seeds = _refine_and_merge(raw_seeds)
 
     branches: List[dict] = []
     visited_pts: List[np.ndarray] = []
 
-    for seed in merged_seeds:
+    def _run_seed(seed) -> bool:
         uA_s, vA_s, uB_s, vB_s = seed
-        seed_pt = _surf_eval(surf_a, uA_s, vA_s)
-        too_close = any(
-            np.linalg.norm(seed_pt - vp) < actual_step * 3
-            for vp in visited_pts
-        )
-        if too_close:
-            continue
-
+        sp = _surf_eval(surf_a, uA_s, vA_s)
+        if any(np.linalg.norm(sp - vp) < actual_step * 1.5
+               for vp in visited_pts):
+            return False
         branch = _march_branch(
             surf_a, surf_b, uA_s, vA_s, uB_s, vB_s,
             step=actual_step, tol=tol, max_steps=max_steps,
         )
         if len(branch["points"]) < _MIN_BRANCH_PTS:
-            continue
-
+            return False
         branches.append(branch)
         for pt in branch["points"]:
             visited_pts.append(np.array(pt))
+        return True
+
+    for seed in merged_seeds:
+        _run_seed(seed)
+
+    # ---- GK-09: small-loop adaptive reseed ----
+    # A loop smaller than the seed grid spacing is invisible to the coarse
+    # grid.  Re-scan on a refined sub-grid over cells whose nearest-surface
+    # distance is small but which no existing branch passes through.
+    try:
+        sub = 2
+        fu = np.linspace(uA_min, uA_max, su * sub + 1)
+        fv = np.linspace(vA_min, vA_max, sv * sub + 1)
+        fuB = np.linspace(uB_min, uB_max, su * sub + 1)
+        fvB = np.linspace(vB_min, vB_max, sv * sub + 1)
+        fine_seeds = _collect_seeds(fu, fv, fuB, fvB)
+        fine_merged = _refine_and_merge(fine_seeds)
+        for seed in fine_merged:
+            _run_seed(seed)
+    except Exception:
+        pass
 
     return {
         "ok": True,
