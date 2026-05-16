@@ -804,3 +804,168 @@ class TestGeodesyAuthoritativeReferences:
         v84 = vincenty_inverse(-37.95, 144.42, -37.65, 143.93)
         vg = vincenty_inverse(-37.95, 144.42, -37.65, 143.93, ellipsoid="GRS80")
         assert abs(v84["distance_m"] - vg["distance_m"]) < 1e-3
+
+
+# ---------------------------------------------------------------------------
+# Externally-citable cross-checks against PUBLISHED numeric answers.
+# These are the high-rigor regression guards for the scale-factor defect
+# (Karney 2011 eq. 25) and the Vincenty 1975 canonical benchmark.
+# ---------------------------------------------------------------------------
+
+class TestGeodesyCitableReferenceCases:
+
+    @staticmethod
+    def _dms(d, m, s, sign=1):
+        return sign * (abs(d) + m / 60.0 + s / 3600.0)
+
+    def test_ref_vincenty_flinders_buninyong_full(self):
+        """Vincenty (1975) / Geoscience Australia canonical inverse benchmark.
+
+        Source: Vincenty, T. (1975) "Direct and inverse solutions of
+        geodesics on the ellipsoid", Survey Review XXIII(176); reproduced
+        by Geoscience Australia (GDA technical manual) on GRS80.
+            Flinders Peak  φ = -37°57′03.72030″, λ = 144°25′29.52440″
+            Buninyong      φ = -37°39′10.15610″, λ = 143°55′35.38390″
+            s12  = 54972.271 m
+            α12  = 306°52′05.37″  = 306.86815833°
+            α21  = 127°10′25.07″  = 127.17363056°
+        """
+        d = self._dms
+        v = vincenty_inverse(
+            d(-37, 57, 3.72030, -1), d(144, 25, 29.52440),
+            d(-37, 39, 10.15610, -1), d(143, 55, 35.38390),
+            ellipsoid="GRS80",
+        )
+        assert v["distance_m"] == pytest.approx(54972.271, abs=2e-3)
+        assert v["az12_deg"] == pytest.approx(306.86815833, abs=5e-6)
+        assert v["az21_deg"] == pytest.approx(127.17363056, abs=5e-6)
+        assert v["convergence_warning"] is False
+
+    def test_ref_vincenty_direct_recovers_buninyong(self):
+        """Vincenty (1975) DIRECT solution recovers Buninyong exactly.
+
+        Source: same Geoscience Australia benchmark (GRS80). Feeding the
+        published distance/azimuth into the direct solution must land on
+        Buninyong to sub-millimetre (here < 1e-6° ≈ 0.1 mm).
+        """
+        d = self._dms
+        bu_lat = d(-37, 39, 10.15610, -1)
+        bu_lon = d(143, 55, 35.38390)
+        out = vincenty_direct(
+            d(-37, 57, 3.72030, -1), d(144, 25, 29.52440),
+            306.86815833, 54972.271, ellipsoid="GRS80",
+        )
+        assert out["lat2_deg"] == pytest.approx(bu_lat, abs=1e-6)
+        assert out["lon2_deg"] == pytest.approx(bu_lon, abs=1e-6)
+
+    def test_ref_tm_snyder_clarke1866_worked_example(self):
+        """Transverse Mercator forward — Snyder USGS PP 1395 worked example.
+
+        Source: Snyder, J.P. (1987) "Map Projections — A Working Manual",
+        USGS Professional Paper 1395, Transverse Mercator numerical example
+        (Clarke 1866, φ = 40°30′ N, λ = 73°30′ W, λ0 = 75° W, k0 = 0.9996):
+            easting (x, from CM) = 127106.5 m
+            northing (y)         = 4484124.4 m
+            point scale factor k = 0.9997989
+        """
+        r = transverse_mercator_fwd(40.5, -73.5, -75.0,
+                                    k0=0.9996, ellipsoid="Clarke1866")
+        assert r["eta_m"] == pytest.approx(127_106.5, abs=0.2)
+        assert r["xi_m"] == pytest.approx(4_484_124.4, abs=0.2)
+        assert r["k"] == pytest.approx(0.9997989, abs=1e-6)
+
+    def test_ref_tm_scale_equals_k0_on_cm_at_latitude(self):
+        """REGRESSION GUARD: point scale on the central meridian == k0
+        at a NON-EQUATOR latitude.
+
+        Source: definition of the central-meridian scale factor (Snyder
+        PP 1395; Karney 2011 eq. 25). The previous implementation divided
+        by cos²φ·W² instead of multiplying — it only gave the right answer
+        at the equator (cos φ = W = 1), masking the defect. Here φ = 45°
+        on the CM must yield k = k0 = 0.9996 exactly.
+        """
+        r = transverse_mercator_fwd(45.0, 9.0, 9.0,
+                                    k0=0.9996, ellipsoid="WGS84")
+        assert r["k"] == pytest.approx(0.9996, abs=1e-12)
+        assert r["gamma_deg"] == pytest.approx(0.0, abs=1e-12)
+        # And UTM (k0=0.9996 by definition) at lat 60° on its CM:
+        u = utm_fwd(60.0, 3.0, zone=31, ellipsoid="WGS84")
+        assert u["k"] == pytest.approx(0.9996, abs=1e-9)
+
+    def test_ref_tm_fwd_inv_scale_convergence_consistency(self):
+        """REGRESSION GUARD: inverse k and γ must equal forward k and γ
+        for the same physical point (independent inverse β-series gave a
+        ~0.5–1 % convergence error before the fix).
+
+        Source: internal consistency required by Karney 2011 (the forward
+        result is itself validated against Snyder PP 1395 above).
+        """
+        for lat, lon, lon0 in [(40.5, -73.5, -75.0),
+                                (-33.9, 18.4, 15.0),
+                                (49.0, 2.0, 3.0)]:
+            f = transverse_mercator_fwd(lat, lon, lon0, k0=0.9996)
+            i = transverse_mercator_inv(f["xi_m"], f["eta_m"], lon0,
+                                        k0=0.9996)
+            assert i["lat_deg"] == pytest.approx(lat, abs=1e-9)
+            assert i["lon_deg"] == pytest.approx(lon, abs=1e-9)
+            assert i["k"] == pytest.approx(f["k"], abs=1e-10)
+            assert i["gamma_deg"] == pytest.approx(f["gamma_deg"], abs=1e-9)
+
+    def test_ref_utm_eiffel_epsg32631(self):
+        """UTM forward vs authoritative PROJ/EPSG:32631 for the Eiffel Tower.
+
+        Source: epsg.io / PROJ transform WGS84 → EPSG:32631 (UTM 31N).
+            φ = 48.8584° N, λ = 2.2945° E
+            E ≈ 448 252 m, N ≈ 5 411 955 m
+        Inverse must round-trip to < 1e-7°.
+        """
+        u = utm_fwd(48.8584, 2.2945, zone=31, ellipsoid="WGS84")
+        assert u["easting_m"] == pytest.approx(448_252.0, abs=2.0)
+        assert u["northing_m"] == pytest.approx(5_411_955.0, abs=3.0)
+        inv = utm_inv(u["easting_m"], u["northing_m"], 31, "N",
+                      ellipsoid="WGS84")
+        assert inv["lat_deg"] == pytest.approx(48.8584, abs=1e-7)
+        assert inv["lon_deg"] == pytest.approx(2.2945, abs=1e-7)
+
+    def test_ref_wgs84_meridian_quadrant_and_radii(self):
+        """WGS84 published constants & derived quantities.
+
+        Source: NIMA TR8350.2 / GeographicLib.
+            a = 6 378 137.0 m (exact)
+            b = a(1-f) = 6 356 752.3142 m
+            quarter meridian (φ 0→90°) = 10 001 965.729 m
+            radii at 45°: M = 6 367 381.815 m, N = 6 388 838.290 m
+        """
+        assert WGS84.a == pytest.approx(6_378_137.0, abs=1e-6)
+        assert WGS84.a * (1.0 - WGS84.f) == pytest.approx(
+            6_356_752.3142, abs=1e-3)
+        assert meridian_arc(90.0) == pytest.approx(
+            10_001_965.729, abs=0.01)
+        rc = radius_curvature(45.0)
+        assert rc["M_m"] == pytest.approx(6_367_381.815, abs=0.05)
+        assert rc["N_m"] == pytest.approx(6_388_838.290, abs=0.05)
+
+    def test_ref_ecef_axis_points_exact(self):
+        """Geodetic↔ECEF closed-form against exact axis points.
+
+        Source: definition of ECEF on the WGS84 ellipsoid.
+            (φ=0, λ=0, h=0)  → (a, 0, 0)
+            (φ=90, λ=0, h=0) → (0, 0, b)
+            (φ=0, λ=90, h=0) → (0, a, 0)
+        Inverse recovers the geodetic coordinates exactly.
+        """
+        a = WGS84.a
+        b = a * (1.0 - WGS84.f)
+        e = geodetic_to_ecef(0.0, 0.0, 0.0)
+        assert (e["X_m"], e["Y_m"], e["Z_m"]) == pytest.approx(
+            (a, 0.0, 0.0), abs=1e-6)
+        p = geodetic_to_ecef(90.0, 0.0, 0.0)
+        assert p["Z_m"] == pytest.approx(b, abs=1e-6)
+        assert math.hypot(p["X_m"], p["Y_m"]) == pytest.approx(0.0, abs=1e-6)
+        y = geodetic_to_ecef(0.0, 90.0, 0.0)
+        assert (y["X_m"], y["Y_m"], y["Z_m"]) == pytest.approx(
+            (0.0, a, 0.0), abs=1e-6)
+        g = ecef_to_geodetic(e["X_m"], e["Y_m"], e["Z_m"])
+        assert g["lat_deg"] == pytest.approx(0.0, abs=1e-9)
+        assert g["lon_deg"] == pytest.approx(0.0, abs=1e-9)
+        assert g["h_m"] == pytest.approx(0.0, abs=1e-6)

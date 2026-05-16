@@ -398,12 +398,14 @@ def transverse_mercator_fwd(
         p_prime += 2.0 * j * alpha[j] * math.cos(2.0 * j * xi0) * math.cosh(2.0 * j * eta0)
         q_prime += 2.0 * j * alpha[j] * math.sin(2.0 * j * xi0) * math.sinh(2.0 * j * eta0)
 
-    # Point scale factor (Karney 2011 eq 13): k = k0*(A/a)*|D|/(dn*cos(phi)*W)
-    # where dn = sqrt(tau'^2 + cos^2(lam)), W = sqrt(1-e2*sin^2(phi)), cos(phi)=1/sqrt(1+tau^2)
+    # Point scale factor (Karney 2011 eq. 25):
+    #   k = k0 * (A/a) * sqrt(p'^2 + q'^2)
+    #         * sqrt((1 + tan^2 phi) * (1 - e2 sin^2 phi)) / sqrt(tau'^2 + cos^2 lam)
+    # The sec(phi)=sqrt(1+tan^2 phi) and W=sqrt(1-e2 sin^2 phi) factors are in
+    # the NUMERATOR (k must equal k0 on the central meridian).
     dn = math.sqrt(tau_prime**2 + math.cos(lam)**2)
-    cos_phi = math.cos(phi)
-    W = math.sqrt(1.0 - e2 * math.sin(phi)**2)
-    k_scale = k0 * (A / a) * math.hypot(p_prime, q_prime) / (dn * cos_phi * W)
+    sec2_W = math.sqrt((1.0 + tau**2) * (1.0 - e2 * math.sin(phi)**2))
+    k_scale = k0 * (A / a) * math.hypot(p_prime, q_prime) * sec2_W / dn
 
     # convergence
     gamma = math.atan2(
@@ -481,35 +483,32 @@ def transverse_mercator_inv(
         if abs(phi - phi_prev) < 1e-13:
             break
 
-    # Derivatives of inverse series for scale & convergence
-    # d(xi_p)/d(xi) = 1 + sum(2j*beta[j]*cos(2j*xi)*cosh(2j*eta))
-    # beta[j] < 0, so these are subtractive corrections to 1.
-    p_prime = 1.0
-    q_prime = 0.0
-    for j in range(1, 7):
-        p_prime += 2.0 * j * beta[j] * math.cos(2.0 * j * xi) * math.cosh(2.0 * j * eta)
-        q_prime += 2.0 * j * beta[j] * math.sin(2.0 * j * xi) * math.sinh(2.0 * j * eta)
-
-    tau = math.tan(phi)
-    # Avoid division by zero at poles
-    denom_sq = tau_prime**2 + math.cos(lam)**2
+    # Point scale factor and meridian convergence are recovered by re-running
+    # the FORWARD α-series at the solved geodetic position. This guarantees
+    # exact round-trip consistency with transverse_mercator_fwd (whose k/γ
+    # are validated against Snyder USGS PP1395) and avoids the subtle β-series
+    # convergence error of an independent inverse derivation. The horizontal
+    # position (phi, lam) above is unchanged.
     cos_phi = math.cos(phi)
-    w = math.sqrt(1.0 - e2 * math.sin(phi)**2)
-    if denom_sq > 0 and cos_phi > 1e-14:
-        gamma = math.atan2(
-            q_prime * math.sqrt(denom_sq) + p_prime * tau_prime * math.tan(lam),
-            p_prime * math.sqrt(denom_sq) - q_prime * tau_prime * math.tan(lam),
+    if cos_phi > 1e-14:
+        fwd = transverse_mercator_fwd(
+            math.degrees(phi),
+            math.degrees(lam) + lon0_deg,
+            lon0_deg,
+            k0=k0,
+            ellipsoid=ellipsoid,
         )
-        k_scale = k0 * (A / a) * math.hypot(p_prime, q_prime) / (math.sqrt(denom_sq) * cos_phi * w)
+        k_scale = fwd["k"]
+        gamma_deg = fwd["gamma_deg"]
     else:
-        gamma = 0.0
         k_scale = k0
+        gamma_deg = 0.0
 
     return {
         "lat_deg":   math.degrees(phi),
         "lon_deg":   math.degrees(lam) + lon0_deg,
         "k":         k_scale,
-        "gamma_deg": math.degrees(gamma),
+        "gamma_deg": gamma_deg,
     }
 
 
