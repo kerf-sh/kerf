@@ -423,7 +423,7 @@ Template:
   (sub-task 10d) — production shops require per-material/thickness bend
   tables, not a single k-factor.
 - **Priority:** P0
-- **Status:** 🔴 not started
+- **Status:** ✅ shipped
 - **Scope:** Add a per-material/thickness bend-table (`.bendtable` data or
   rows in the material DB) so flange/unfold pick allowance from a table
   rather than a single k-factor. End-to-end integration test.
