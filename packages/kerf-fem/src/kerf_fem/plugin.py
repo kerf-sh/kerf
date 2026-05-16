@@ -55,6 +55,7 @@ async def register(app: FastAPI, ctx):
     ctx.tools.register("fem_nonlinear_bar", fem_nonlinear_bar_spec, run_fem_nonlinear_bar)
     ctx.tools.register("fem_truss_plastic", fem_truss_plastic_spec, run_fem_truss_plastic)
     from kerf_fem.nonlinear import _fem_nonlinear_spec, run_fem_nonlinear; ctx.tools.register("fem_nonlinear", _fem_nonlinear_spec, run_fem_nonlinear)
+    from kerf_fem.fatigue_fem import _fem_fatigue_spec, run_fem_fatigue; ctx.tools.register("fem_fatigue", _fem_fatigue_spec, run_fem_fatigue)  # kerf-fem: fatigue & durability
 
     # Register background worker
     from kerf_fem.worker import FEMWorker
