@@ -46,6 +46,7 @@ async def register(app: FastAPI, ctx):
     ctx.tools.register("list_mates", list_mates_spec, run_list_mates)
     ctx.tools.register("solve_assembly", solve_assembly_spec, run_solve_assembly)
     ctx.tools.register("tolerance_auto_chain", tolerance_auto_chain_spec, run_tolerance_auto_chain)
+    from kerf_mates.tolerance3d import tolerance3d_analysis_spec, run_tolerance3d_analysis; ctx.tools.register("tolerance3d_analysis", tolerance3d_analysis_spec, run_tolerance3d_analysis)
 
     # Pure-Python gradient-descent solver always available;
     # python-solvespace is the optional fast-path.
