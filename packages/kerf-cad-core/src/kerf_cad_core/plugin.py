@@ -156,6 +156,7 @@ _TOOL_MODULES = [
     "kerf_cad_core.geom.solid_features",
     "kerf_cad_core.geom.patch_srf",
     "kerf_cad_core.geom.revolve_srf",
+    "kerf_cad_core.jewelry.production",
 ]
 
 # ── kerf_core contract (built by kerf-core agent in parallel) ─────────────────
