@@ -811,6 +811,97 @@ class TestChannelTransition:
 
 
 # ===========================================================================
+# 16b. CITABLE Chow (1959) "Open-Channel Hydraulics" reference cases
+#
+# Each value below is taken from, or derived from, a worked example or
+# closed-form result in Chow, V.T. (1959) Open-Channel Hydraulics
+# (McGraw-Hill), cross-checked with Henderson (1966) Open Channel Flow.
+# These are externally citable, not self-consistency round-trips.
+# ===========================================================================
+
+class TestChowReferenceCases:
+
+    def test_chow_example_5_1_trapezoidal_normal_depth(self):
+        """Chow (1959) Example 5-1: trapezoidal channel, b = 20 ft,
+        side slope z = 2, n = 0.025, S₀ = 0.0016, Q = 400 cfs.
+        Chow's tabulated answer is the normal depth yₙ ≈ 3.36 ft.
+
+        Worked in SI here: b = 6.096 m, Q = 11.327 m³/s.
+        """
+        b = 20.0 * 0.3048
+        Q = 400.0 * 0.0283168
+        res = normal_depth("trapezoidal", Q, 0.0016, manning_n=0.025, b=b, z=2.0)
+        assert res["ok"], res.get("reason")
+        yn_ft = res["normal_depth_m"] / 0.3048
+        assert abs(yn_ft - 3.36) < 0.02
+
+    def test_rectangular_critical_depth_closed_form(self):
+        """Chow §3-7: for a rectangular channel the critical depth has the
+        closed form yc = (q²/g)^(1/3) with q = Q/b.  b = 3 m, Q = 10 m³/s
+        → yc = ((10/3)²/9.80665)^(1/3) ≈ 1.0425 m."""
+        b, Q = 3.0, 10.0
+        q = Q / b
+        yc_expected = (q * q / _G) ** (1.0 / 3.0)
+        res = critical_depth("rectangular", Q, b=b)
+        assert res["ok"]
+        assert abs(res["critical_depth_m"] - yc_expected) < 1e-3
+        assert abs(yc_expected - 1.0425) < 1e-3
+
+    def test_belanger_sequent_depth_henderson(self):
+        """Henderson (1966) §3 / Chow §15-2 Bélanger equation.
+        Rectangular, q = 4 m²/s, y₁ = 0.5 m (supercritical).
+        V₁ = 8 m/s, Fr₁ = 8/√(g·0.5) ≈ 3.613,
+        y₂ = (y₁/2)(√(1+8Fr₁²) − 1) ≈ 2.317 m."""
+        b, Q, y1 = 1.0, 4.0, 0.5
+        res = hydraulic_jump("rectangular", Q, y1, b=b)
+        assert res["ok"]
+        V1 = Q / (b * y1)
+        Fr1 = V1 / math.sqrt(_G * y1)
+        y2_expected = 0.5 * y1 * (math.sqrt(1.0 + 8.0 * Fr1 * Fr1) - 1.0)
+        assert abs(res["depth2_m"] - y2_expected) < 1e-4
+        assert abs(res["depth2_m"] - 2.3168) < 2e-3
+
+    def test_belanger_energy_loss_closed_form(self):
+        """Chow Eq. 15-4: hydraulic-jump energy loss
+        ΔE = (y₂ − y₁)³ / (4·y₁·y₂).  For q = 4 m²/s, y₁ = 0.5 m the
+        closed-form loss is ≈ 1.294 m."""
+        b, Q, y1 = 1.0, 4.0, 0.5
+        res = hydraulic_jump("rectangular", Q, y1, b=b)
+        assert res["ok"]
+        y2 = res["depth2_m"]
+        dE_expected = (y2 - y1) ** 3 / (4.0 * y1 * y2)
+        assert abs(res["energy_loss_m"] - dE_expected) < 1e-4
+        assert abs(res["energy_loss_m"] - 1.2943) < 2e-3
+
+    def test_broad_crested_weir_chow_ideal(self):
+        """Chow §14 / Henderson §6-2: the ideal broad-crested weir
+        (Cd = 1) discharge is Q = (2/3)·√(2g/3)·L·H^(3/2) ≈ 1.705·L·H^(3/2).
+        For L = 1 m, H = 1 m the textbook ideal result is Q ≈ 1.705 m³/s."""
+        res = weir_broad_crested(1.0, 1.0, 1.0)
+        assert res["ok"]
+        assert abs(res["discharge_m3s"] - 1.7046) < 5e-3
+
+    def test_best_hydraulic_rectangular_chow(self):
+        """Chow §7-6: the most efficient rectangular section satisfies
+        b = 2y and R = y/2 (half of a square / half-hexagon family)."""
+        res = best_hydraulic_section("rectangular", 2.0, 0.001, 0.013)
+        assert res["ok"]
+        b = res["optimal_bottom_width_m"]
+        y = res["optimal_depth_m"]
+        assert abs(b - 2.0 * y) < 1e-6 * (2.0 * y)
+        assert abs(res["hydraulic_radius_m"] - y / 2.0) < 1e-6 * y
+
+    def test_best_hydraulic_trapezoidal_chow_half_hexagon(self):
+        """Chow §7-6: the most efficient trapezoidal section is half of a
+        regular hexagon — side slope z = 1/√3 ≈ 0.5774 and R = y/2."""
+        res = best_hydraulic_section("trapezoidal", 3.0, 0.001, 0.025)
+        assert res["ok"]
+        assert abs(res["optimal_side_slope"] - 1.0 / math.sqrt(3.0)) < 1e-6
+        y = res["optimal_depth_m"]
+        assert abs(res["hydraulic_radius_m"] - y / 2.0) < 1e-6 * y
+
+
+# ===========================================================================
 # 17. Tool wrappers (async)
 # ===========================================================================
 

@@ -627,6 +627,91 @@ class TestEvaporativeCooling:
 
 
 # ===========================================================================
+# 14b. CITABLE ASHRAE Fundamentals (2021) Chapter 1 reference cases
+#
+# Saturation pressures cross-checked against ASHRAE Handbook — Fundamentals
+# (2021), Chapter 1, Table 2 ("Thermodynamic Properties of Moist Air") and
+# the Hyland & Wexler (1983) saturation-pressure equations (ASHRAE Trans.
+# 89(2A):500-519).  Humidity ratio, enthalpy, and specific volume checked
+# against the same Table 2 / the ASHRAE psychrometric chart.
+# ===========================================================================
+
+class TestASHRAEReferenceCases:
+
+    # ASHRAE Fundamentals 2021 Ch.1 Table 2 — pws over water/ice (Pa)
+    # Values from Hyland-Wexler; tolerance 0.05% covers table rounding.
+    @pytest.mark.parametrize("T_C,pws_ref", [
+        (-20.0, 103.24),
+        (-10.0, 259.90),
+        (0.0,   611.21),
+        (10.0,  1227.96),
+        (20.0,  2338.80),
+        (25.0,  3169.21),
+        (30.0,  4246.03),
+        (40.0,  7384.93),
+        (50.0,  12351.31),
+    ])
+    def test_hyland_wexler_saturation_pressure_table2(self, T_C, pws_ref):
+        r = sat_pressure(T_C)
+        assert r["ok"] is True
+        assert abs(r["pws_Pa"] - pws_ref) / pws_ref < 5e-4
+
+    def test_saturation_pressure_normal_boiling_point(self):
+        """Hyland-Wexler at 100 °C must give ≈ 101.4 kPa (water boils at
+        1 atm), within 0.1 % of the standard 101 325 Pa datum."""
+        r = sat_pressure(100.0)
+        assert r["ok"] is True
+        assert abs(r["pws_Pa"] - 101_325.0) / 101_325.0 < 1e-3
+
+    def test_humidity_ratio_25C_50pct_chart(self):
+        """ASHRAE psychrometric chart: 25 °C, 50 % RH, sea level →
+        W ≈ 0.00988 kg/kg dry air."""
+        r = humidity_ratio_from_rh(25.0, 0.50)
+        assert r["ok"] is True
+        assert abs(r["W"] - 0.00988) < 5e-5
+
+    def test_enthalpy_25C_W0099_chart(self):
+        """ASHRAE chart: 25 °C, W = 0.0099 kg/kg → h ≈ 50.4 kJ/kg dry air.
+        h = 1.006·T + W·(2501 + 1.86·T)."""
+        r = enthalpy(25.0, 0.0099)
+        assert r["ok"] is True
+        assert abs(r["h_kJkg"] - 50.4) < 0.2
+
+    def test_specific_volume_70F_dry_air_table2(self):
+        """ASHRAE Table 2: dry air at 70 °F (21.111 °C), 101.325 kPa has
+        specific volume v ≈ 0.8333 m³/kg (= 13.348 ft³/lb)."""
+        r = specific_volume(21.111, 0.0)
+        assert r["ok"] is True
+        assert abs(r["v_m3perkg"] - 0.8333) < 1e-3
+
+    def test_enthalpy_ip_ashrae_standard_air(self):
+        """ASHRAE IP enthalpy h = 0.240·T + W·(1061 + 0.444·T) [BTU/lb].
+        Dry air at 70 °F → h = 16.8 BTU/lb exactly."""
+        r = enthalpy_ip(70.0, 0.0)
+        assert r["ok"] is True
+        assert abs(r["h_BTUperlb"] - 16.8) < 1e-6
+
+    def test_sea_level_standard_pressure(self):
+        """ISA / ASHRAE standard sea-level pressure = 101 325 Pa."""
+        r = altitude_pressure(0.0)
+        assert r["ok"] is True
+        assert abs(r["P_Pa"] - 101_325.0) < 1.0
+
+    def test_denver_altitude_pressure_ashrae(self):
+        """ASHRAE Ch.1 / ISA troposphere: at 1610 m (Denver) the
+        barometric pressure is ≈ 83.4 kPa (ASHRAE climatic-design value)."""
+        r = altitude_pressure(1610.0)
+        assert r["ok"] is True
+        assert abs(r["P_Pa"] - 83_400.0) < 600.0
+
+    def test_dew_point_20C_60pct_chart(self):
+        """ASHRAE chart: 20 °C dry-bulb, 60 % RH → dew point ≈ 12.0 °C."""
+        r = dew_point(20.0, 0.60)
+        assert r["ok"] is True
+        assert abs(r["Tdp_C"] - 12.0) < 0.3
+
+
+# ===========================================================================
 # 15. LLM tool wrappers
 # ===========================================================================
 
