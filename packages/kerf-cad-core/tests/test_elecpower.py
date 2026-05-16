@@ -204,10 +204,16 @@ class TestConductorAmpacity:
         assert r["derated_ampacity_A"] == pytest.approx(50.0 * 0.80, rel=REL)
 
     def test_combined_ambient_and_bundling(self):
-        """Both correction factors applied: derated = base × amb × bundle."""
+        """Both correction factors applied: derated = base × amb × bundle.
+
+        NEC 310.15(C)(1): 4–6 CCC adjustment factor = 80% (0.80),
+        NOT 70%. NEC 310.15(B)(1) ambient correction for 36–40°C
+        on a 75°C conductor = 0.88. #6 Cu base 75°C = 65 A.
+        Derated = 65 × 0.88 × 0.80 = 45.76 A.
+        """
         r = conductor_ampacity("6", material="cu", ambient_c=40, num_ccc=6)
         assert r["ok"] is True
-        expected = 65.0 * 0.88 * 0.70
+        expected = 65.0 * 0.88 * 0.80
         assert r["derated_ampacity_A"] == pytest.approx(expected, rel=REL)
 
     def test_aluminum_conductor_lower_ampacity(self):
@@ -920,3 +926,238 @@ class TestToolWrappers:
         )))
         d = _ok_tool(raw)
         assert d["standard_gen_size_kva"] > 0
+
+
+# ===========================================================================
+# 15. Externally-citable NEC reference cases (worked-example cross-checks)
+#
+# Every assertion below has a known numeric answer traceable to a published
+# NEC table or a textbook hand-calculation. Sources are cited per test.
+# ===========================================================================
+
+class TestNECReferenceCases:
+    """Cross-checks against published NFPA 70 (NEC 2023) tables & worked examples."""
+
+    def test_ref_310_16_ampacity_table_75c_copper(self):
+        """NEC Table 310.16, 75°C copper column (verbatim table values).
+
+        Source: NFPA 70-2023 Table 310.16 (THWN/THHW 75°C, Cu).
+            #12 = 25 A, #10 = 35 A, #6 = 65 A, 1/0 = 150 A,
+            4/0 = 230 A, 250 kcmil = 255 A, 500 kcmil = 380 A.
+        """
+        for size, amps in (("12", 25.0), ("10", 35.0), ("6", 65.0),
+                           ("1/0", 150.0), ("4/0", 230.0),
+                           ("250", 255.0), ("500", 380.0)):
+            r = conductor_ampacity(size, material="cu", ambient_c=30, num_ccc=3)
+            assert r["ok"] is True
+            assert r["base_ampacity_A"] == amps, f"{size} expected {amps}"
+
+    def test_ref_310_15_ambient_correction_75c(self):
+        """NEC Table 310.15(B)(1) ambient-temperature correction, 75°C column.
+
+        Source: NFPA 70-2023 Table 310.15(B)(1)(1).
+            26–30°C → 1.00, 31–35°C → 0.94, 36–40°C → 0.88,
+            41–45°C → 0.82, 46–50°C → 0.75.
+        """
+        assert _ambient_correction(30) == pytest.approx(1.00)
+        assert _ambient_correction(35) == pytest.approx(0.94)
+        assert _ambient_correction(40) == pytest.approx(0.88)
+        assert _ambient_correction(45) == pytest.approx(0.82)
+        assert _ambient_correction(50) == pytest.approx(0.75)
+
+    def test_ref_310_15_c_1_bundling_adjustment(self):
+        """NEC 310.15(C)(1) adjustment factors for >3 CCC in a raceway.
+
+        Source: NFPA 70-2023 Table 310.15(C)(1).
+            4–6  → 80%   7–9  → 70%   10–20 → 50%
+            21–30 → 45%  31–40 → 40%  41+   → 35%
+        This is the regression guard for the 5/6-CCC defect (was wrongly 0.70).
+        """
+        assert _bundling_factor(3) == pytest.approx(1.00)
+        assert _bundling_factor(4) == pytest.approx(0.80)
+        assert _bundling_factor(5) == pytest.approx(0.80)
+        assert _bundling_factor(6) == pytest.approx(0.80)
+        assert _bundling_factor(7) == pytest.approx(0.70)
+        assert _bundling_factor(9) == pytest.approx(0.70)
+        assert _bundling_factor(10) == pytest.approx(0.50)
+        assert _bundling_factor(20) == pytest.approx(0.50)
+        assert _bundling_factor(25) == pytest.approx(0.45)
+        assert _bundling_factor(35) == pytest.approx(0.40)
+        assert _bundling_factor(50) == pytest.approx(0.35)
+
+    def test_ref_430_250_three_phase_motor_flc(self):
+        """NEC Table 430.250 three-phase 460 V FLC (verbatim).
+
+        Source: NFPA 70-2023 Table 430.250 (460 V column).
+            1 hp = 2.1 A, 5 hp = 7.6 A, 10 hp = 14 A,
+            50 hp = 65 A, 100 hp = 124 A.
+        """
+        for hp, flc in ((1.0, 2.1), (5.0, 7.6), (10.0, 14.0),
+                        (50.0, 65.0), (100.0, 124.0)):
+            r = motor_branch_circuit(hp, 460.0, phases=3)
+            assert r["ok"] is True
+            assert r["flc_A"] == pytest.approx(flc, rel=REL), f"{hp} hp"
+
+    def test_ref_430_248_single_phase_motor_flc(self):
+        """NEC Table 430.248 single-phase FLC (verbatim).
+
+        Source: NFPA 70-2023 Table 430.248.
+            1 hp @ 115 V = 16 A; 1 hp @ 230 V = 8 A; 5 hp @ 230 V = 28 A.
+        """
+        r1 = motor_branch_circuit(1.0, 115.0, phases=1)
+        assert r1["ok"] is True and r1["flc_A"] == pytest.approx(16.0, rel=REL)
+        r2 = motor_branch_circuit(1.0, 230.0, phases=1)
+        assert r2["ok"] is True and r2["flc_A"] == pytest.approx(8.0, rel=REL)
+        r3 = motor_branch_circuit(5.0, 230.0, phases=1)
+        assert r3["ok"] is True and r3["flc_A"] == pytest.approx(28.0, rel=REL)
+
+    def test_ref_motor_branch_5hp_460v_worked_example(self):
+        """Worked example: 5 hp, 3φ, 460 V motor on inverse-time breaker.
+
+        Source: Mike Holt / NEC Art. 430 worked example.
+            FLC (430.250)            = 7.6 A
+            Conductor 430.22  125%   = 9.5 A  → #14 Cu adequate
+            OCPD 430.52 ITB 250%     = 19.0 A → next std 240.6(A) = 20 A
+            Overload 430.32 SF≥1.15  = 7.6 × 1.25 = 9.5 A
+        """
+        r = motor_branch_circuit(5.0, 460.0, phases=3,
+                                 ocpd_type="inverse_time_breaker",
+                                 service_factor=1.15)
+        assert r["ok"] is True
+        assert r["flc_A"] == pytest.approx(7.6, rel=REL)
+        assert r["conductor_min_A"] == pytest.approx(9.5, rel=REL)
+        assert r["ocpd_max_A"] == pytest.approx(19.0, rel=REL)
+        assert r["ocpd_A"] == 20
+        assert r["overload_A"] == pytest.approx(9.5, rel=REL)
+
+    def test_ref_3ph_voltage_drop_worked_example(self):
+        """Worked example: 3φ voltage drop, NEC Ch.9 Table 9 resistance.
+
+        Source: IEEE 141 (Red Book) / standard VD hand-calc.
+            #2 Cu R = 0.194 Ω/1000 ft; I = 100 A; one-way L = 200 ft;
+            VD = √3 × I × R × L / 1000
+               = 1.7320508 × 100 × 0.194 × 200 / 1000
+               = 6.7204 V  (1.400 % of 480 V).
+        """
+        r = voltage_drop(100.0, 200.0, "2", 480.0, phases=3, material="cu")
+        assert r["ok"] is True
+        expected = math.sqrt(3.0) * 100.0 * 0.194 * 200.0 / 1000.0
+        # module rounds vd_V to 4 dp (documented contract)
+        assert r["vd_V"] == pytest.approx(expected, abs=5e-5)
+        assert r["vd_V"] == pytest.approx(6.7204, abs=1e-3)
+        assert r["vd_pct"] == pytest.approx(expected / 480.0 * 100.0, rel=1e-3)
+
+    def test_ref_1ph_voltage_drop_worked_example(self):
+        """Worked example: 1φ voltage drop.
+
+        Source: standard VD hand-calc, NEC Ch.9 Table 9.
+            #10 Cu R = 1.24 Ω/1000 ft; I = 20 A; L = 100 ft;
+            VD = 2 × 20 × 1.24 × 100 / 1000 = 4.96 V (4.133 % of 120 V).
+        """
+        r = voltage_drop(20.0, 100.0, "10", 120.0, phases=1, material="cu")
+        assert r["ok"] is True
+        assert r["vd_V"] == pytest.approx(4.96, abs=1e-6)
+        assert r["vd_pct"] == pytest.approx(4.96 / 120.0 * 100.0, rel=1e-4)
+        assert r["receiving_end_V"] == pytest.approx(115.04, abs=1e-3)
+
+    def test_ref_transformer_secondary_fla_and_sca(self):
+        """Worked example: 75 kVA 480→208/120 V 3φ transformer, %Z = 5.
+
+        Source: NEC Art. 450 / IEEE 141 infinite-bus method.
+            Sec FLA = 75000 / (√3 × 208) = 208.18 A
+            Max sec SCA (infinite bus) = FLA / (%Z/100)
+                = 208.18 / 0.05 = 4163.6 A
+        """
+        r = transformer_feeder_size(75.0, 480.0, 208.0, phases=3,
+                                    impedance_pct=5.0)
+        assert r["ok"] is True
+        sec_fla = 75000.0 / (math.sqrt(3.0) * 208.0)
+        assert r["secondary_fla_A"] == pytest.approx(sec_fla, rel=1e-4)
+        assert r["secondary_fla_A"] == pytest.approx(208.18, abs=0.05)
+        assert r["max_secondary_sca_A"] == pytest.approx(sec_fla / 0.05, rel=1e-4)
+
+    def test_ref_point_to_point_sca_500kva(self):
+        """Worked example: 500 kVA 480 V 3φ, %Z = 5, bolted fault at terminals.
+
+        Source: Bussmann/Cooper point-to-point method (infinite primary).
+            FLA = 500000 / (√3 × 480) = 601.41 A
+            I_sc = FLA / (%Z/100) = 601.41 / 0.05 = 12028.3 A
+        Equivalent via Z: Z = 480²/500000 × 0.05 = 0.023040 Ω;
+            I = 480 / (√3 × 0.023040) = 12028.3 A.
+        """
+        r = short_circuit_analysis(500.0, 13200.0, 480.0,
+                                   transformer_z_pct=5.0, phases=3,
+                                   cable_length_ft=0.0)
+        assert r["ok"] is True
+        fla = 500000.0 / (math.sqrt(3.0) * 480.0)
+        isc = fla / 0.05
+        assert r["isc_transformer_A"] == pytest.approx(isc, rel=1e-4)
+        assert r["isc_at_point_A"] == pytest.approx(12028.3, abs=1.0)
+        assert r["z_transformer_ohms"] == pytest.approx(
+            (480.0 ** 2) / 500000.0 * 0.05, rel=1e-4)
+
+    def test_ref_250_66_gec_table(self):
+        """NEC Table 250.66 grounding-electrode conductor (Cu).
+
+        Source: NFPA 70-2023 Table 250.66.
+            Service ≤ #2 Cu          → GEC #8 Cu
+            Service #1–1/0 Cu        → GEC #6 Cu
+            Service #2/0–3/0 Cu      → GEC #4 Cu
+            Service 250–350 kcmil    → GEC #2 Cu
+        """
+        cases = (("2", "8"), ("1/0", "6"), ("3/0", "4"), ("350", "2"))
+        for svc, gec in cases:
+            r = grounding_conductor_size(svc, conductor_type="gec",
+                                         material="cu")
+            assert r["ok"] is True
+            assert r["size"] == gec, f"service {svc} → GEC {gec}"
+            assert r["nec_reference"] == "250.66"
+
+    def test_ref_250_122_egc_table(self):
+        """NEC Table 250.122 equipment-grounding conductor (Cu).
+
+        Source: NFPA 70-2023 Table 250.122.
+            ≤15 A → #14, ≤20 A → #12, ≤60 A → #10,
+            ≤100 A → #8, ≤200 A → #6, ≤400 A → #3, ≤600 A → #1.
+        """
+        cases = ((15.0, "14"), (20.0, "12"), (60.0, "10"), (100.0, "8"),
+                 (200.0, "6"), (400.0, "3"), (600.0, "1"))
+        for ocpd, egc in cases:
+            r = grounding_conductor_size("4", ocpd_rating_A=ocpd,
+                                         conductor_type="egc", material="cu")
+            assert r["ok"] is True
+            assert r["size"] == egc, f"OCPD {ocpd} A → EGC {egc}"
+            assert r["nec_reference"] == "250.122"
+
+    def test_ref_pf_correction_worked_example(self):
+        """Worked example: PF correction 0.75 → 0.95 at 100 kW.
+
+        Source: standard reactive-power hand-calc.
+            θ₁ = acos 0.75 = 41.4096°, tanθ₁ = 0.881917
+            θ₂ = acos 0.95 = 18.1949°, tanθ₂ = 0.328684
+            Q  = 100 × (0.881917 − 0.328684) = 55.3233 kVAR
+        """
+        r = power_factor_correction(100.0, 0.75, 0.95, 480.0, phases=3)
+        assert r["ok"] is True
+        t1 = math.tan(math.acos(0.75))
+        t2 = math.tan(math.acos(0.95))
+        # module rounds kvar_required to 3 dp (documented contract)
+        assert r["kvar_required"] == pytest.approx(100.0 * (t1 - t2), abs=5e-4)
+        assert r["kvar_required"] == pytest.approx(55.3233, abs=1e-3)
+        assert r["current_kva"] == pytest.approx(100.0 / 0.75, rel=1e-4)
+
+    def test_ref_240_6_standard_ocpd_sizes(self):
+        """NEC 240.6(A) standard overcurrent device ampere ratings.
+
+        Source: NFPA 70-2023 240.6(A).
+            15,20,25,30,35,40,45,50,60,70,80,90,100,110,125,150,...
+            Next standard size at/above a value never undershoots.
+        """
+        assert _next_standard_ocpd(19.0) == 20
+        assert _next_standard_ocpd(20.0) == 20
+        assert _next_standard_ocpd(21.0) == 25
+        assert _next_standard_ocpd(95.0) == 100
+        assert _next_standard_ocpd(225.0) == 225
+        assert _next_standard_ocpd(226.0) == 250
+        for v in (15, 20, 60, 100, 200, 400, 600):
+            assert v in _STANDARD_OCPD

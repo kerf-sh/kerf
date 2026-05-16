@@ -122,12 +122,18 @@ _AMBIENT_CORRECTION_75C: list[tuple[float, float]] = [
     (75, 0.00),
 ]
 
-# NEC 310.15(B)(3)(a) bundling (conduit fill) adjustment factors
-# Key: number of current-carrying conductors; value: factor
+# NEC 310.15(C)(1) [2023] / 310.15(B)(3)(a) [pre-2017] adjustment factors for
+# more than three current-carrying conductors in a raceway or cable.
+# Key: max number of current-carrying conductors; value: adjustment factor.
+#   4–6   → 80%
+#   7–9   → 70%
+#   10–20 → 50%
+#   21–30 → 45%
+#   31–40 → 40%
+#   41+   → 35%
 _BUNDLING_FACTORS: list[tuple[int, float]] = [
     (3,  1.00),
-    (4,  0.80),
-    (6,  0.70),
+    (6,  0.80),
     (9,  0.70),
     (20, 0.50),
     (30, 0.45),
