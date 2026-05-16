@@ -456,12 +456,19 @@ class TestSurgeTankOscillation:
         assert abs(r["T_osc_s"] - expected_T) / expected_T < REL
 
     def test_amplitude_formula(self):
-        """z_max = V0 / omega = V0 · T / (2π)."""
+        """Frictionless mass-oscillation amplitude (Chaudhry, Applied
+        Hydraulic Transients §13-2):
+            z_max = V0 · sqrt(L · A_pipe / (g · A_tank))
+        which equals V0·(A_pipe/A_tank)/omega — NOT V0/omega (the previous
+        assertion inverted the area ratio and over-predicted the surge by
+        a factor A_tank/A_pipe = 10× for this case)."""
         L, A_p, A_t, V0 = 500.0, 0.5, 5.0, 2.0
         r = surge_tank_oscillation(L=L, A_pipe=A_p, A_tank=A_t, H0=200.0, V0=V0)
-        omega = math.sqrt(_G * A_p / (L * A_t))
-        expected_z = V0 / omega
+        expected_z = V0 * math.sqrt(L * A_p / (_G * A_t))
         assert abs(r["z_max_m"] - expected_z) / expected_z < REL
+        # Equivalent (A_pipe/A_tank)/omega form
+        omega = math.sqrt(_G * A_p / (L * A_t))
+        assert abs(r["z_max_m"] - V0 * (A_p / A_t) / omega) / expected_z < REL
 
     def test_omega_consistent_with_period(self):
         r = surge_tank_oscillation(L=500.0, A_pipe=0.5, A_tank=5.0, H0=100.0, V0=2.0)
@@ -536,7 +543,107 @@ class TestReliefValveFlow:
 
 
 # ===========================================================================
-# 9. plugin registration
+# 9. Authoritative external-reference cases (citable, numeric answers)
+# ===========================================================================
+
+class TestAuthoritativeReferences:
+    """Cross-checks vs published worked results with known numeric answers.
+
+    Sources:
+      Wylie, E.B. & Streeter, V.L. (1993) Fluid Transients in Systems
+        — Korteweg wave speed (§2.3), Joukowsky head rise (§3.1),
+          MOC reservoir-pipe-valve benchmark (§3.2).
+      Chaudhry, M.H. (2014) Applied Hydraulic Transients, 3rd ed.
+        — pipe period 2L/a (§3-2), surge-tank mass oscillation (§13-2),
+          rigid-column slow closure, column-separation vapor head.
+    """
+
+    def test_korteweg_wave_speed_anchored_steel(self):
+        # Wylie & Streeter §2.3 Korteweg formula, thin-walled steel pipe
+        # anchored both ends: K=2.19 GPa, ρ=999, D=0.5 m, e=5 mm,
+        # E=207 GPa, c1=1−ν²=0.91 → a ≈ 1056.8 m/s.
+        r = wave_speed(K_fluid=2.19e9, rho=999.0, D=0.5, e=0.005,
+                       E_pipe=207e9, restraint="anchored-both")
+        assert abs(r["c1"] - 0.91) < 1e-9
+        assert abs(r["a_m_s"] - 1056.8) < 0.5
+
+    def test_joukowsky_head_rise_classic(self):
+        # Wylie & Streeter §3.1: instantaneous closure ΔH = a·V0/g.
+        # a=1200 m/s, V0=2 m/s, g=9.80665 → ΔH = 244.73 m.
+        r = joukowsky_head_rise(V0=2.0, a=1200.0, L=1000.0, t_close=1e-6)
+        assert r["rapid_closure"] is True
+        assert abs(r["dH_m"] - 244.732) < 0.01
+
+    def test_pipe_period_two_L_over_a(self):
+        # Chaudhry §3-2: pipe period T_p = 2L/a. L=1200 m, a=1200 m/s → 2 s.
+        r = joukowsky_head_rise(V0=1.0, a=1200.0, L=1200.0, t_close=5.0)
+        assert abs(r["T_pipe_s"] - 2.0) < 1e-9
+
+    def test_rigid_column_slow_closure(self):
+        # Rigid-column / Michaud slow closure: ΔH = 2·L·V0/(g·t_close).
+        # L=1000 m, V0=2 m/s, t_close=10 s → ΔH = 40.79 m.
+        r = joukowsky_head_rise(V0=2.0, a=1200.0, L=1000.0, t_close=10.0)
+        assert r["rapid_closure"] is False
+        assert abs(r["dH_m"] - 40.789) < 0.01
+
+    def test_moc_reservoir_pipe_valve_joukowsky_benchmark(self):
+        # Wylie & Streeter §3.2 benchmark: frictionless reservoir-pipe-valve,
+        # instantaneous closure → peak head at valve = H_res + a·V0/g and
+        # trough = H_res − a·V0/g.  H_res=150 m, a=1000 m/s, V0=2 m/s
+        # → peak 353.94 m, trough −53.94 m (analytic Joukowsky).
+        r = moc_single_pipe(L=600.0, D=0.5, a=1000.0, V0=2.0, H_res=150.0,
+                            f=0.0, n_reaches=20, t_total=16 * 600.0 / 1000.0,
+                            t_close=1e-9)
+        peak = 150.0 + 1000.0 * 2.0 / _G
+        trough = 150.0 - 1000.0 * 2.0 / _G
+        assert abs(r["H_envelope_max"][-1] - peak) < 0.5
+        assert abs(r["H_envelope_min"][-1] - trough) < 0.5
+
+    def test_moc_slow_closure_below_joukowsky(self):
+        # A slow valve closure (t_close ≫ T_pipe) must keep the peak head
+        # far below the Joukowsky limit (surge-protection principle,
+        # Wylie & Streeter §3.1).
+        L, a, V0, H_res = 600.0, 1200.0, 2.0, 150.0
+        joukowsky_peak = H_res + a * V0 / _G  # ≈ 394.7 m
+        r = moc_single_pipe(L=L, D=0.5, a=a, V0=V0, H_res=H_res,
+                            f=0.0, n_reaches=20, t_total=40.0, t_close=20.0)
+        assert r["H_envelope_max"][-1] < joukowsky_peak
+        assert r["H_envelope_max"][-1] < H_res + 0.30 * (joukowsky_peak - H_res)
+
+    def test_surge_tank_period_chaudhry(self):
+        # Chaudhry §13-2 frictionless mass oscillation:
+        # T = 2π·sqrt(L·A_tank/(g·A_pipe)); L=1000, A_pipe=2, A_tank=20
+        # → T ≈ 200.64 s.
+        r = surge_tank_oscillation(L=1000.0, A_pipe=2.0, A_tank=20.0,
+                                   H0=50.0, V0=2.0)
+        assert abs(r["T_osc_s"] - 200.641) < 0.05
+
+    def test_surge_tank_amplitude_chaudhry(self):
+        # Chaudhry §13-2 frictionless surge amplitude:
+        # z_max = V0·sqrt(L·A_pipe/(g·A_tank)); V0=2 m/s, L=1000,
+        # A_pipe=2, A_tank=20 → z_max ≈ 6.387 m.
+        r = surge_tank_oscillation(L=1000.0, A_pipe=2.0, A_tank=20.0,
+                                   H0=50.0, V0=2.0)
+        assert abs(r["z_max_m"] - 6.3866) < 0.01
+
+    def test_vapor_pressure_head_column_separation(self):
+        # Column-separation threshold uses H_vapor = P_v/(ρ·g).
+        # P_v=2338 Pa (water 20 °C), ρ=998 → H_vapor ≈ 0.239 m.
+        # Low static head + large surge → trough below vapor head → flag.
+        r = joukowsky_head_rise(V0=2.0, a=1200.0, L=1000.0, t_close=1e-6,
+                                H0=10.0, P_vapor_Pa=2338.0, rho=998.0)
+        assert r["column_sep"] is True  # H0 − ΔH ≈ 10 − 244.7 ≪ 0.239 m
+
+    def test_safe_closure_time_rigid_column_inversion(self):
+        # t_close_min = 2·L·V0/(g·ΔH_allow); L=1000, V0=2, ΔH_allow=50
+        # → t_close_min ≈ 8.158 s (Wylie & Streeter §3.1 inversion).
+        r = safe_closure_time(V0=2.0, a=1200.0, L=1000.0, H0=100.0,
+                              dH_allowable=50.0)
+        assert abs(r["t_close_min_s"] - 8.1577) < 0.01
+
+
+# ===========================================================================
+# 10. plugin registration
 # ===========================================================================
 
 class TestPluginRegistration:

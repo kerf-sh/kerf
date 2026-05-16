@@ -390,7 +390,13 @@ def moc_single_pipe(
     # Steady-state initial conditions
     A_pipe = math.pi * D**2 / 4.0
     Q0 = V0 * A_pipe  # initial volumetric flow (m³/s)
-    R_pipe = f * dx / (2.0 * _G * D * A_pipe**2)  # friction head loss coeff per reach
+    # This solver works in *velocity* (V), not discharge (Q).  The MOC
+    # compatibility equations are H ± B·V with the velocity-form impedance
+    # B = a/g (Wylie & Streeter §3-2; the discharge form a/(g·A) must be
+    # used only with Q = V·A).  Likewise the velocity-form per-reach
+    # resistance is R = f·dx/(2·g·D) (the discharge form f·dx/(2·g·D·A²)
+    # would over-state losses by a factor A² when applied to V).
+    R_pipe = f * dx / (2.0 * _G * D)  # friction head-loss coeff per reach (V-form)
 
     # Initial head gradient: H decreases from upstream to downstream due to friction
     # dH/dx = -f * V² / (2 * g * D)
@@ -403,8 +409,11 @@ def moc_single_pipe(
     # Steady-state head at downstream valve
     H0_valve = H[n_nodes - 1]
 
-    # Pipeline hydraulic impedance B = a / (g * A)
-    B = a / (_G * A_pipe)
+    # Pipeline hydraulic impedance, velocity form: B = a / g
+    # (so that H ± B·V are the correct C+ / C- compatibility equations;
+    # the C+ characteristic at an instantaneously closed valve then yields
+    # the Joukowsky head rise ΔH = a·V0/g exactly.)
+    B = a / _G
 
     H_max = list(H)
     H_min = list(H)
@@ -831,9 +840,14 @@ def surge_tank_oscillation(
 
     Mass-oscillation equations (Wylie & Streeter §8.1 / Chaudhry §13.2):
 
-      Period:   T_osc = 2π · sqrt(L · A_tank / (g · A_pipe))
-      Amplitude: z_max = V0 · sqrt(L · A_tank / (g · A_pipe))
-                       = V0 · T_osc / (2π)
+      Period:    T_osc = 2π · sqrt(L · A_tank / (g · A_pipe))
+      Amplitude: z_max = V0 · sqrt(L · A_pipe / (g · A_tank))
+
+    (Jaeger; Chaudhry, Applied Hydraulic Transients §13-2.  The
+    frictionless surge amplitude follows from energy conservation
+    ½·(ρ L A_pipe) V0² = ½·(ρ g A_tank) z_max², giving
+    z_max = V0·sqrt(L·A_pipe / (g·A_tank)).  Note z_max = V0·(A_pipe/A_tank)/ω,
+    NOT V0/ω.)
 
     This is for an undamped, frictionless simple surge tank (conservative
     upper bound on oscillation amplitude).
@@ -866,7 +880,12 @@ def surge_tank_oscillation(
 
     omega = math.sqrt(_G * A_pipe / (L * A_tank))
     T_osc = 2.0 * math.pi / omega
-    z_max = V0 / omega
+    # Frictionless mass-oscillation amplitude (Chaudhry §13-2):
+    #   z_max = V0 · sqrt(L · A_pipe / (g · A_tank))
+    # Equivalently z_max = V0 · (A_pipe / A_tank) / omega.  The previous
+    # form V0/omega = V0·sqrt(L·A_tank/(g·A_pipe)) inverted the area ratio
+    # and over-predicted the surge by a factor A_tank/A_pipe.
+    z_max = V0 * math.sqrt(L * A_pipe / (_G * A_tank))
 
     if z_max > H0:
         _warn(result, (
