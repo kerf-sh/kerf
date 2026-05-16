@@ -18,16 +18,33 @@ surface_boolean_robust(srf_a, srf_b, kind, *, bbox_tol=None, occ_fn=None) -> dic
         result     : value returned by occ_fn on success, else None
         reason     : str  (human-readable failure description, set when ok==False)
         retried    : bool (True when the first attempt failed and retry succeeded)
+        attempts   : int  (number of occ_fn calls made; always <= _MAX_ATTEMPTS)
         tolerance  : float (the tolerance actually used)
+        health_a   : dict (surface_health_check result for srf_a)
+        health_b   : dict (surface_health_check result for srf_b)
 
 Guards applied (pure-Python, no OCC required):
   1. Input sanitation — surface_health_check on both surfaces; rejects
      degenerate or self-intersecting control nets immediately.
   2. Tolerance auto-scaling — default tolerance is scaled to
-     bbox_diagonal * 1e-4, clamped to [1e-7, 1e-2].
-  3. Retry-with-relaxed-tolerance — if occ_fn raises or returns a falsy
-     result, one retry is made with tolerance * 10, still within the clamp.
+     bbox_diagonal * 1e-4, clamped to [_TOL_MIN, _TOL_MAX].
+  3. Bounded retry ladder — on failure a single retry is made at
+     tolerance * _TOL_RELAX_FACTOR, provided the result stays within
+     [_TOL_MIN, _TOL_MAX].  The ladder is strictly two steps maximum
+     (_MAX_ATTEMPTS = 2); there is no open-ended escalation loop.
   4. Never raises — all exceptions are caught and surfaced in the return dict.
+  5. Dense-NURBS near-tangent warning — surfaces with high control-point
+     density relative to their bounding box are flagged before the OCC call
+     so callers can pre-emptively raise sewing tolerance.
+
+Escalation contract
+-------------------
+The single retry constitutes the *complete* escalation ladder:
+  attempt 1 : tol  (auto-scaled or caller-supplied, clamped to [_TOL_MIN, _TOL_MAX])
+  attempt 2 : tol * _TOL_RELAX_FACTOR  (only if relaxed < _TOL_MAX)
+  → if both fail: ok=False, reason=<structured message>, attempts=2
+There is **no** further escalation, no silent fallback, no open loop.
+The caller decides what to do with a structured ok=False result.
 
 OCC-dependent execution is isolated behind the ``occ_fn`` parameter so the
 pure-Python guards can be unit-tested without OCC installed.
@@ -51,8 +68,18 @@ _TOL_MAX: float = 1e-2
 _TOL_FRACTION: float = 1e-4   # fraction of bbox diagonal
 _TOL_RELAX_FACTOR: float = 10.0
 
+# Hard ceiling on the number of occ_fn invocations per surface_boolean_robust
+# call.  This is the single authoritative place that bounds the retry ladder.
+# Raising this value widens the ladder — keep it at 2 (initial + one retry).
+_MAX_ATTEMPTS: int = 2
+
 BooleanKind = Literal["cut", "fuse", "common"]
 _VALID_KINDS = frozenset({"cut", "fuse", "common"})
+
+# Dense-NURBS heuristic: if control-point density (num_pts / bbox_area) exceeds
+# this threshold, add a warning.  Organic jewelry surfaces (ring shanks, bezels)
+# typically exceed 0.5 pts/mm² when modelled at 20×20 control grids on a 5mm ring.
+_DENSE_NURBS_DENSITY_THRESHOLD: float = 0.5
 
 
 # ---------------------------------------------------------------------------
@@ -132,11 +159,11 @@ def surface_health_check(srf: Any) -> dict:
             "boolean may produce open edges near those patches"
         )
 
-    # ── Self-intersecting control net ───────────────────────────────────────
-    # Check for self-intersection in the control net by looking for
-    # sign changes in consecutive cross-products of the net spans.
-    # This is a cheap heuristic (not a rigorous test) but catches common
-    # cases such as folded/twisted control grids.
+    # ── Self-intersecting control net (U rows + V columns) ─────────────────
+    # Check for self-intersection in the control net by looking for sign
+    # changes in consecutive cross-products of the net spans.
+    # Both U-direction rows and V-direction columns are checked to catch
+    # folded organic profiles (e.g. ring shank cross-section reversals).
     if nu >= 3 and nv >= 2 and dim >= 2:
         self_intersect = _check_control_net_self_intersection(cp)
         if self_intersect:
@@ -171,36 +198,98 @@ def surface_health_check(srf: Any) -> dict:
             "unstable — consider degree reduction"
         )
 
+    # ── Dense-NURBS near-tangent warning ────────────────────────────────────
+    # Organic jewelry models (ring shanks, bezel walls, prong heads) often use
+    # high control-point counts over a small physical bbox.  This creates
+    # near-tangent patches whose normals vary by < 1° per span, which is benign
+    # for rendering but causes the OCCT boolean section-curve step to produce
+    # slivers.  Warn early so callers can raise sewing tolerance.
+    _dense_warning = _check_dense_nurbs(cp)
+    if _dense_warning:
+        warnings.append(_dense_warning)
+
     ok = len(errors) == 0
     return {"ok": ok, "errors": errors, "warnings": warnings}
 
 
 def _check_control_net_self_intersection(cp: np.ndarray) -> bool:
-    """Return True if the control-net rows show a sign-flip in orientation.
+    """Return True if the control-net rows *or* columns show a sign-flip in orientation.
 
-    We compute the cross-product of consecutive row-span vectors along the
-    U direction at each V column.  A sign change indicates a fold/twist.
-    Only the XY components are used (first 2 coords), which handles both
+    We compute the cross-product of consecutive span vectors along U (for each V
+    column) and along V (for each U row).  A sign change in either direction
+    indicates a fold/twist.  Only XY components are used, which handles both
     2-D and 3-D surfaces projected onto their dominant plane.
+
+    Both directions are checked — previously only U rows were tested, which
+    missed folded organic profiles that reverse along V (e.g. ring shank profiles
+    that curve back on themselves in the circumferential direction).
     """
     nu, nv, dim = cp.shape
     if dim < 2:
         return False
 
+    # Check U-direction rows (span along U for each V column)
     for v in range(nv):
         signs = []
         for u in range(nu - 2):
-            # Vector from cp[u,v] -> cp[u+1,v] and cp[u+1,v] -> cp[u+2,v]
             span1 = cp[u + 1, v, :2] - cp[u,     v, :2]
             span2 = cp[u + 2, v, :2] - cp[u + 1, v, :2]
             cross_z = span1[0] * span2[1] - span1[1] * span2[0]
             if abs(cross_z) > 1e-14:
                 signs.append(1 if cross_z > 0 else -1)
-        # If we have both positive and negative, the net folds on itself
+        if signs and min(signs) < 0 < max(signs):
+            return True
+
+    # Check V-direction columns (span along V for each U row)
+    # This catches folded circumferential profiles missed by the U-only check.
+    for u in range(nu):
+        signs = []
+        for v in range(nv - 2):
+            span1 = cp[u, v + 1, :2] - cp[u, v,     :2]
+            span2 = cp[u, v + 2, :2] - cp[u, v + 1, :2]
+            cross_z = span1[0] * span2[1] - span1[1] * span2[0]
+            if abs(cross_z) > 1e-14:
+                signs.append(1 if cross_z > 0 else -1)
         if signs and min(signs) < 0 < max(signs):
             return True
 
     return False
+
+
+def _check_dense_nurbs(cp: np.ndarray) -> Optional[str]:
+    """Return a warning string if the control net is dense relative to its bbox.
+
+    Dense organic surfaces (ring shanks, bezel walls) have high point counts
+    over small physical extents.  Density is measured as:
+        pts_per_unit_area = total_points / max(bbox_area_projection, epsilon)
+    where bbox_area_projection is the XY footprint area of the control polygon.
+
+    Returns None if density is below threshold.
+    """
+    nu, nv, dim = cp.shape
+    if dim < 2:
+        return None
+
+    flat = cp.reshape(-1, dim)
+    xy = flat[:, :2]
+    bbox_min = xy.min(axis=0)
+    bbox_max = xy.max(axis=0)
+    extents = bbox_max - bbox_min
+    bbox_area = float(extents[0] * extents[1])
+
+    if bbox_area < 1e-12:
+        # Degenerate projection — density check not applicable
+        return None
+
+    total_pts = nu * nv
+    density = total_pts / bbox_area
+    if density > _DENSE_NURBS_DENSITY_THRESHOLD:
+        return (
+            f"dense control net: {total_pts} points over "
+            f"{bbox_area:.4g} mm² ({density:.2f} pts/mm²); "
+            "consider raising sewing tolerance to ≥1e-4 for organic boolean"
+        )
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -226,11 +315,34 @@ def _auto_tolerance(srf_a: NurbsSurface, srf_b: NurbsSurface) -> float:
 
 
 def _relaxed_tolerance(tol: float) -> Optional[float]:
-    """Return a relaxed tolerance (tol * factor), or None if already at max."""
+    """Return a relaxed tolerance (tol * factor), or None if already at max.
+
+    The result is always clamped to [_TOL_MIN, _TOL_MAX].  If the relaxed
+    value would equal or exceed _TOL_MAX (i.e. there is no headroom), None
+    is returned to signal that the escalation ladder is exhausted.
+    """
     relaxed = tol * _TOL_RELAX_FACTOR
-    if relaxed > _TOL_MAX:
+    if relaxed >= _TOL_MAX:
         return None
-    return relaxed
+    return float(np.clip(relaxed, _TOL_MIN, _TOL_MAX))
+
+
+def _build_tolerance_ladder(base_tol: float) -> list[float]:
+    """Build the complete, bounded tolerance ladder from a base tolerance.
+
+    Returns a list of at most _MAX_ATTEMPTS tolerance values.  The ladder is:
+      [base_tol, relaxed_tol]
+    where relaxed_tol is omitted if it would exceed _TOL_MAX (ladder exhausted).
+
+    This is the single source of truth for the escalation sequence — nothing
+    outside this function should construct tolerance lists for surface_boolean_robust.
+    """
+    ladder: list[float] = [base_tol]
+    relaxed = _relaxed_tolerance(base_tol)
+    if relaxed is not None and len(ladder) < _MAX_ATTEMPTS:
+        ladder.append(relaxed)
+    # Hard-truncate to _MAX_ATTEMPTS regardless of future edits above
+    return ladder[:_MAX_ATTEMPTS]
 
 
 # ---------------------------------------------------------------------------
@@ -268,9 +380,17 @@ def surface_boolean_robust(
         result    : Any   (occ_fn return value on success, else None)
         reason    : str   (set when ok==False)
         retried   : bool  (True if first attempt failed and retry succeeded)
-        tolerance : float (tolerance actually used)
+        attempts  : int   (number of occ_fn calls made; always <= _MAX_ATTEMPTS)
+        tolerance : float (tolerance actually used for the final attempt)
         health_a  : dict  (surface_health_check result for srf_a)
         health_b  : dict  (surface_health_check result for srf_b)
+
+    Escalation contract
+    -------------------
+    The retry ladder is strictly bounded to _MAX_ATTEMPTS (currently 2).
+    Attempt 1 uses the base tolerance; attempt 2 uses base * _TOL_RELAX_FACTOR
+    (only if that stays below _TOL_MAX).  If both attempts fail, ok=False is
+    returned with a structured reason — no further escalation, no exception.
     """
     # ── Validate kind ────────────────────────────────────────────────────────
     if kind not in _VALID_KINDS:
@@ -279,6 +399,7 @@ def surface_boolean_robust(
             "result": None,
             "reason": f"invalid boolean kind '{kind}'; must be one of {sorted(_VALID_KINDS)}",
             "retried": False,
+            "attempts": 0,
             "tolerance": 0.0,
             "health_a": {},
             "health_b": {},
@@ -294,6 +415,7 @@ def surface_boolean_robust(
             "result": None,
             "reason": "surface A failed health check: " + "; ".join(health_a["errors"]),
             "retried": False,
+            "attempts": 0,
             "tolerance": 0.0,
             "health_a": health_a,
             "health_b": health_b,
@@ -305,6 +427,7 @@ def surface_boolean_robust(
             "result": None,
             "reason": "surface B failed health check: " + "; ".join(health_b["errors"]),
             "retried": False,
+            "attempts": 0,
             "tolerance": 0.0,
             "health_a": health_a,
             "health_b": health_b,
@@ -318,13 +441,14 @@ def surface_boolean_robust(
                 "result": None,
                 "reason": f"bbox_tol must be a positive number; got {bbox_tol!r}",
                 "retried": False,
+                "attempts": 0,
                 "tolerance": 0.0,
                 "health_a": health_a,
                 "health_b": health_b,
             }
-        tol = float(np.clip(bbox_tol, _TOL_MIN, _TOL_MAX))
+        base_tol = float(np.clip(bbox_tol, _TOL_MIN, _TOL_MAX))
     else:
-        tol = _auto_tolerance(srf_a, srf_b)
+        base_tol = _auto_tolerance(srf_a, srf_b)
 
     # ── No OCC back-end: guards-only mode ────────────────────────────────────
     if occ_fn is None:
@@ -333,58 +457,64 @@ def surface_boolean_robust(
             "result": None,
             "reason": "",
             "retried": False,
-            "tolerance": tol,
+            "attempts": 0,
+            "tolerance": base_tol,
             "health_a": health_a,
             "health_b": health_b,
         }
 
-    # ── First attempt ────────────────────────────────────────────────────────
-    try:
-        result = occ_fn(srf_a, srf_b, kind, tol)
-        if result is not None:
-            return {
-                "ok": True,
-                "result": result,
-                "reason": "",
-                "retried": False,
-                "tolerance": tol,
-                "health_a": health_a,
-                "health_b": health_b,
-            }
-        first_error = "occ_fn returned None (boolean produced no output)"
-    except Exception as exc:
-        first_error = str(exc)
+    # ── Bounded retry ladder ─────────────────────────────────────────────────
+    # Build the complete tolerance sequence once.  _build_tolerance_ladder
+    # is the single place that controls how many attempts are made and at
+    # what tolerances.  The loop below is strictly bounded: it iterates over
+    # a pre-built, finite list — there is no open-ended escalation.
+    ladder = _build_tolerance_ladder(base_tol)
+    attempt_errors: list[str] = []
 
-    # ── Retry with relaxed tolerance ─────────────────────────────────────────
-    relaxed = _relaxed_tolerance(tol)
-    if relaxed is not None:
+    for attempt_idx, tol in enumerate(ladder):
         try:
-            result = occ_fn(srf_a, srf_b, kind, relaxed)
+            result = occ_fn(srf_a, srf_b, kind, tol)
             if result is not None:
+                used_retry = attempt_idx > 0
                 return {
                     "ok": True,
                     "result": result,
                     "reason": "",
-                    "retried": True,
-                    "tolerance": relaxed,
+                    "retried": used_retry,
+                    "attempts": attempt_idx + 1,
+                    "tolerance": tol,
                     "health_a": health_a,
                     "health_b": health_b,
                 }
-            retry_error = "occ_fn returned None on retry"
+            attempt_errors.append(
+                f"attempt {attempt_idx + 1} (tol={tol:.2e}): "
+                "occ_fn returned None (boolean produced no output)"
+            )
         except Exception as exc:
-            retry_error = str(exc)
-    else:
-        retry_error = f"relaxed tolerance would exceed maximum ({_TOL_MAX})"
+            attempt_errors.append(
+                f"attempt {attempt_idx + 1} (tol={tol:.2e}): {exc}"
+            )
+
+    # All attempts exhausted — structured failure, no exception, no further
+    # escalation beyond what _build_tolerance_ladder defined.
+    total_attempts = len(ladder)
+    reason_parts = "; ".join(attempt_errors)
+    if len(ladder) < _MAX_ATTEMPTS:
+        reason_parts += (
+            f"; relaxed tolerance would exceed maximum ({_TOL_MAX:.2e}) "
+            "so retry ladder was shortened"
+        )
 
     return {
         "ok": False,
         "result": None,
         "reason": (
-            f"boolean failed at tolerance {tol:.2e}: {first_error}; "
-            f"retry also failed: {retry_error}"
+            f"boolean '{kind}' failed after {total_attempts} attempt(s): "
+            f"{reason_parts}"
         ),
-        "retried": relaxed is not None,
-        "tolerance": relaxed if relaxed is not None else tol,
+        "retried": total_attempts > 1,
+        "attempts": total_attempts,
+        "tolerance": ladder[-1],
         "health_a": health_a,
         "health_b": health_b,
     }

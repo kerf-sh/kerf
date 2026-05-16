@@ -31,6 +31,19 @@ should have its own activation gate.
   v1 path is small-scope: cap surfaces to solids via `feature_to_solid`,
   then use existing `BRepAlgoAPI_Cut_3` / `Fuse_3` / `Common_3` on
   `TopoDS_Solid`s.
+- **Capability 2 (Trim-by-curve) — pure-Python + worker wiring shipped.**
+  `packages/kerf-cad-core/src/kerf_cad_core/geom/trim_curve.py` implements
+  UV-space projection (`project_curve_to_uv`), face splitting (`split_face_uv`,
+  `trim_face`), `TrimCurve` dataclass, and `@register` LLM tools
+  `query_trim_curve_uv` / `validate_trim_curve`.  Worker side: `opTrimByCurve`
+  in `src/lib/occtWorker.js` + `projectCurveOntoSurface` / `splitFaceAlongCurve`
+  in `src/lib/occtBridge.js` (C2-T2/T3 complete).  LLM tool `feature_trim_by_curve`
+  in `surfacing.py` + `_TOOL_MODULES` registration.  49 hermetic pytest cases
+  in `packages/kerf-cad-core/tests/test_trim_curve.py` — all green.
+  **WASM-blocked remainder:** `BRepFeat_SplitShape` and `BRepProj_Projection`
+  binding presence is unconfirmed at runtime (C2-T1 probe not yet run on a live
+  WASM build). The worker's `TrimByCurveUnsupportedError` fires if those classes
+  are absent; escalate to C2-T12 (Section+prism fallback) if that occurs.
 
 ### What this plan covers
 
@@ -248,6 +261,11 @@ escalation triggers.**
 ---
 
 ## Capability 2: Trim-by-curve
+
+**Status (2026-05-16):** pure-Python geometry layer + worker wiring shipped.
+  Remaining: C2-T1 WASM binding probe, C2-T7 LLM doc page, C2-T8 inspector
+  entry, C2-T10 Vitest dispatch, C2-T11 WASM integration test, C2-T12 fallback
+  (if BRepFeat_SplitShape absent).
 
 ### What it is
 
