@@ -724,3 +724,70 @@ class TestReachEnvelope:
         """Invalid reach_type should return ok=False."""
         r = _err(reach_envelope(reach_type="superhuman"))
         assert "reach_type" in r["reason"]
+
+
+# ===========================================================================
+# AUTHORITATIVE EXTERNAL REFERENCE CASES
+# ---------------------------------------------------------------------------
+# Cross-checked against Waters et al. (1994) "Applications Manual for the
+# Revised NIOSH Lifting Equation", DHHS (NIOSH) Publication No. 94-110.
+# ===========================================================================
+
+class TestErgonomicsNIOSHReferences:
+    def test_niosh_load_constant(self):
+        # NIOSH 1994: load constant LC = 23 kg. Ideal multipliers (all 1.0)
+        # at H=25, V=75, D=25, A=0, infrequent, good coupling.
+        r = niosh_rwl(20.0, 25.0, 75.0, 25.0, 0.0, 0.2, "long", "good")
+        # FM(long,0.2) = 0.85 per NIOSH Table 5; RWL = 23*0.85 = 19.55
+        assert r["RWL_kg"] == pytest.approx(19.55, abs=0.05)
+
+    def test_niosh_hm_25_over_H(self):
+        # HM = 25/H. Doubling H from 25 to 50 halves HM contribution.
+        r1 = niosh_rwl(10.0, 25.0, 75.0, 25.0, 0.0, 0.2, "long", "good")
+        r2 = niosh_rwl(10.0, 50.0, 75.0, 25.0, 0.0, 0.2, "long", "good")
+        assert r2["RWL_kg"] == pytest.approx(0.5 * r1["RWL_kg"], rel=2e-3)
+
+    def test_niosh_vm_at_optimum(self):
+        # VM = 1 - 0.003|V-75|, =1.0 at V=75 (NIOSH 1994).
+        r75 = niosh_rwl(10.0, 25.0, 75.0, 25.0, 0.0, 0.2, "long", "good")
+        r0 = niosh_rwl(10.0, 25.0, 0.0, 25.0, 0.0, 0.2, "long", "good")
+        # VM(0) = 1-0.003*75 = 0.775 (RWL rounded to 3 dp internally)
+        assert r0["RWL_kg"] == pytest.approx(0.775 * r75["RWL_kg"], rel=2e-3)
+
+    def test_niosh_appendix_worked_example(self):
+        # NIOSH 1994 multi-multiplier example: L=13, H=50, V=60, D=40,
+        # A=30 deg, 1/min, long, good coupling.
+        # RWL = 23 * (25/50) * (1-0.003*15) * (0.82+4.5/40) *
+        #       (1-0.0032*30) * FM(long,1.0,V<75=0.75) * 1.0 = 6.944 kg.
+        r = niosh_rwl(13.0, 50.0, 60.0, 40.0, 30.0, 1.0, "long", "good")
+        assert r["RWL_kg"] == pytest.approx(6.944, abs=0.01)
+        assert r["LI"] == pytest.approx(13.0 / 6.944, abs=0.01)
+
+    def test_niosh_dm_formula(self):
+        # DM = 0.82 + 4.5/D. At D=25 -> 1.0 (optimum).
+        r25 = niosh_rwl(10.0, 25.0, 75.0, 25.0, 0.0, 0.2, "long", "good")
+        r175 = niosh_rwl(10.0, 25.0, 75.0, 175.0, 0.0, 0.2, "long", "good")
+        # DM(175)=0.82+4.5/175=0.8457
+        assert r175["RWL_kg"] == pytest.approx(0.84571 * r25["RWL_kg"], rel=1e-4)
+
+    def test_niosh_am_formula(self):
+        # AM = 1 - 0.0032*A. A=90 deg -> 0.712.
+        r0 = niosh_rwl(10.0, 25.0, 75.0, 25.0, 0.0, 0.2, "long", "good")
+        r90 = niosh_rwl(10.0, 25.0, 75.0, 25.0, 90.0, 0.2, "long", "good")
+        assert r90["RWL_kg"] == pytest.approx(0.712 * r0["RWL_kg"], rel=1e-4)
+
+    def test_niosh_coupling_multiplier(self):
+        # CM poor coupling with V<75 = 0.90 (NIOSH 1994 Table 7).
+        rg = niosh_rwl(10.0, 25.0, 50.0, 25.0, 0.0, 0.2, "long", "good")
+        rp = niosh_rwl(10.0, 25.0, 50.0, 25.0, 0.0, 0.2, "long", "poor")
+        assert rp["RWL_kg"] == pytest.approx(0.90 * rg["RWL_kg"], rel=2e-3)
+
+    def test_niosh_lifting_index_threshold(self):
+        # NIOSH: LI = Load/RWL; LI>1 indicates elevated risk.
+        r = niosh_rwl(25.0, 25.0, 75.0, 25.0, 0.0, 0.2, "long", "good")
+        assert r["LI"] > 1.0  # 25 kg > 19.55 kg RWL
+
+    def test_niosh_rwl_never_exceeds_lc(self):
+        # All multipliers <= 1, so RWL <= LC = 23 kg always.
+        r = niosh_rwl(10.0, 25.0, 75.0, 25.0, 0.0, 0.2, "short", "good")
+        assert r["RWL_kg"] <= 23.0 + 1e-9

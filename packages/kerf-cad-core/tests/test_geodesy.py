@@ -723,3 +723,84 @@ class TestGeodesyTools:
         from kerf_cad_core.geodesy.tools import run_utm_fwd
         r = json.loads(_run(run_utm_fwd(_ctx, b"not json")))
         assert r["ok"] is False
+
+
+# ===========================================================================
+# AUTHORITATIVE EXTERNAL REFERENCE CASES
+# ---------------------------------------------------------------------------
+# Cross-checked against GeographicLib (Karney) and Vincenty (1975) published
+# benchmarks. These are the canonical geodesy validation cases.
+# References:
+#   Vincenty, T. (1975) "Direct and inverse solutions of geodesics on the
+#     ellipsoid with application of nested equations", Survey Review 23(176).
+#   Karney, C.F.F. (2013) "Algorithms for geodesics", J. Geodesy 87(1):43-55,
+#     and the GeographicLib test set / online geodesic calculator.
+#   NIMA TR8350.2 (1997) WGS-84 ellipsoid parameters.
+# ===========================================================================
+
+class TestGeodesyAuthoritativeReferences:
+    def test_flinders_peak_buninyong_geographiclib(self):
+        # GeographicLib WGS84 geodesic: Flinders Peak (-37:57:03.72030,
+        # 144:25:29.52440) -> Buninyong (-37:39:10.15610, 143:55:35.38390).
+        # Authoritative distance s12 = 54972.271 m (Karney/GeographicLib).
+        def dms(d, m, s, sign=1):
+            return sign * (abs(d) + m / 60.0 + s / 3600.0)
+        v = vincenty_inverse(
+            dms(-37, 57, 3.72030, -1), dms(144, 25, 29.52440),
+            dms(-37, 39, 10.15610, -1), dms(143, 55, 35.38390),
+        )
+        assert v["distance_m"] == pytest.approx(54972.271, abs=0.01)
+
+    def test_wgs84_quarter_meridian_nima(self):
+        # NIMA TR8350.2 / GeographicLib: WGS84 quarter meridian (pole-equator)
+        # = 10001965.729 m.
+        assert meridian_arc(90.0) == pytest.approx(10_001_965.729, abs=0.01)
+
+    def test_wgs84_equatorial_radius(self):
+        # NIMA TR8350.2: a = 6378137.0 m exactly.
+        assert WGS84.a == pytest.approx(6_378_137.0, abs=1e-6)
+
+    def test_wgs84_polar_radius(self):
+        # NIMA TR8350.2: b = a(1-f) = 6356752.3142 m.
+        b = WGS84.a * (1.0 - WGS84.f)
+        assert b == pytest.approx(6_356_752.3142, abs=1e-3)
+
+    def test_radius_curvature_45deg_known(self):
+        # Standard WGS84 radii at 45 deg: M = 6367381.82 m, N = 6388838.29 m
+        # (e.g. Snyder, Map Projections - A Working Manual, USGS PP 1395).
+        rc = radius_curvature(45.0)
+        assert rc["M_m"] == pytest.approx(6_367_381.815, abs=0.05)
+        assert rc["N_m"] == pytest.approx(6_388_838.290, abs=0.05)
+
+    def test_vincenty_direct_inverse_consistency(self):
+        # Vincenty (1975) direct/inverse must be mutually consistent to mm.
+        inv = vincenty_inverse(-37.951033, 144.424868, -37.652872, 143.926496)
+        d = vincenty_direct(-37.951033, 144.424868,
+                             inv["az12_deg"], inv["distance_m"])
+        assert d["lat2_deg"] == pytest.approx(-37.652872, abs=1e-6)
+        assert d["lon2_deg"] == pytest.approx(143.926496, abs=1e-6)
+
+    def test_utm_zone31_eiffel_epsg(self):
+        # Eiffel Tower 48.8584N 2.2945E, UTM 31N. epsg.io / PROJ:
+        # E ~ 448252 m, N ~ 5411955 m on WGS84.
+        u = utm_fwd(48.8584, 2.2945, zone=31)
+        assert u["easting_m"] == pytest.approx(448_252.0, abs=2.0)
+        assert u["northing_m"] == pytest.approx(5_411_955.0, abs=3.0)
+
+    def test_utm_central_meridian_scale_exact(self):
+        # UTM definition: scale on central meridian = k0 = 0.9996 exactly.
+        u = utm_fwd(0.0, 3.0, zone=31)
+        assert u["k"] == pytest.approx(0.9996, abs=1e-9)
+
+    def test_haversine_mean_earth_1deg(self):
+        # 1 deg of equatorial arc on IUGG mean sphere R=6371008.8 m
+        # = R * pi/180 = 111195.08 m.
+        h = haversine(0.0, 0.0, 0.0, 1.0)
+        assert h["distance_m"] == pytest.approx(111_195.08, abs=0.5)
+
+    def test_grs80_vs_wgs84_negligible(self):
+        # GRS80 and WGS84 differ only in 1/f at the 1e-8 level; geodesic
+        # distance must agree to < 1 mm over ~55 km.
+        v84 = vincenty_inverse(-37.95, 144.42, -37.65, 143.93)
+        vg = vincenty_inverse(-37.95, 144.42, -37.65, 143.93, ellipsoid="GRS80")
+        assert abs(v84["distance_m"] - vg["distance_m"]) < 1e-3

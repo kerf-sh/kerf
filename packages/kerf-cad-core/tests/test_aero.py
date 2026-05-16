@@ -639,3 +639,76 @@ class TestISA11km:
     def test_speed_of_sound(self):
         a_expected = math.sqrt(1.4 * 287.05287 * 216.65)
         assert _rel_close(self.r["a_m_s"], a_expected, tol=1e-4)
+
+
+# ===========================================================================
+# AUTHORITATIVE EXTERNAL REFERENCE CASES
+# ---------------------------------------------------------------------------
+# Cross-checked against the ICAO Standard Atmosphere (ICAO Doc 7488, 3rd ed.)
+# and Anderson, "Introduction to Flight" 8th ed. / "Fundamentals of
+# Aerodynamics" 6th ed.
+# ===========================================================================
+
+class TestAeroAuthoritativeReferences:
+    def test_isa_sea_level_icao(self):
+        # ICAO Doc 7488: T0=288.15 K, p0=101325 Pa, rho0=1.225 kg/m3.
+        r = isa_atmosphere(0.0)
+        assert r["T_K"] == pytest.approx(288.15, abs=1e-6)
+        assert r["p_Pa"] == pytest.approx(101325.0, abs=1e-3)
+        assert r["rho_kg_m3"] == pytest.approx(1.225, abs=1e-4)
+
+    def test_isa_sea_level_sound_speed(self):
+        # ICAO ISA sea-level speed of sound = 340.294 m/s.
+        r = isa_atmosphere(0.0)
+        assert r["a_m_s"] == pytest.approx(340.294, abs=0.01)
+
+    def test_isa_11km_tropopause_icao(self):
+        # ICAO Doc 7488 at 11 000 m (tropopause): T=216.65 K, p=22632 Pa,
+        # rho=0.36392 kg/m3.
+        r = isa_atmosphere(11_000.0)
+        assert r["T_K"] == pytest.approx(216.65, abs=1e-2)
+        assert r["p_Pa"] == pytest.approx(22632.0, abs=1.0)
+        assert r["rho_kg_m3"] == pytest.approx(0.36392, abs=1e-4)
+
+    def test_isa_5km_icao(self):
+        # ICAO Doc 7488 at 5 000 m: T=255.65 K, p=54019.9 Pa, rho=0.73612.
+        r = isa_atmosphere(5000.0)
+        assert r["T_K"] == pytest.approx(255.65, abs=1e-2)
+        assert r["p_Pa"] == pytest.approx(54019.9, abs=2.0)
+        assert r["rho_kg_m3"] == pytest.approx(0.73612, abs=1e-3)
+
+    def test_thin_airfoil_lift_slope_2pi(self):
+        # Thin-airfoil theory (Anderson FoA 6e, Ch.4): dCl/dalpha = 2*pi per rad
+        # => Cl at 1 rad (alpha0=0) is 2*pi.
+        r = thin_airfoil_cl(1.0, 0.0)
+        assert r["Cl"] == pytest.approx(2.0 * math.pi, rel=1e-9)
+
+    def test_prandtl_glauert_known(self):
+        # Anderson FoA: beta = sqrt(1-M^2). At M=0.6 -> 0.8.
+        r = prandtl_glauert_factor(0.6)
+        assert r["beta"] == pytest.approx(0.8, abs=1e-9)
+
+    def test_finite_wing_slope_AR_infinite_limit(self):
+        # Prandtl lifting-line: as AR->inf, a -> a0 = 2*pi.
+        r = finite_wing_lift_slope(a0=2.0 * math.pi, AR=1e6, e_planform=1.0)
+        assert r["a_rad_inv"] == pytest.approx(2.0 * math.pi, rel=1e-4)
+
+    def test_induced_drag_elliptic(self):
+        # Anderson: CDi = CL^2/(pi*AR*e). CL=1, AR=8, e=1 -> 0.0398.
+        r = induced_drag_coefficient(1.0, 8.0, 1.0)
+        assert r["CDi"] == pytest.approx(1.0 / (math.pi * 8.0), rel=1e-9)
+
+    def test_best_glide_condition(self):
+        # Max L/D occurs when CDi = CD0 -> CL* = sqrt(pi*AR*e*CD0).
+        r = best_glide_cl(CD0=0.02, AR=10.0, e=0.85)
+        assert r["CL_best"] == pytest.approx(
+            math.sqrt(math.pi * 10.0 * 0.85 * 0.02), rel=1e-9)
+        # (L/D)max = CL*/(2*CD0)
+        assert r["LD_max"] == pytest.approx(r["CL_best"] / (2.0 * 0.02), rel=1e-9)
+
+    def test_breguet_range_textbook(self):
+        # Breguet propeller range R = (eta/c)(L/D)ln(Wi/Wf). Anderson Ch.6
+        # eta=0.85, c=8e-7 1/m, L/D=15, Wi/Wf=1.5 -> R = 0.85/8e-7*15*ln1.5
+        r = breguet_range(0.85, 8e-7, 15.0, 1.5e5, 1.0e5)
+        expected = (0.85 / 8e-7) * 15.0 * math.log(1.5)
+        assert r["range_m"] == pytest.approx(expected, rel=1e-9)

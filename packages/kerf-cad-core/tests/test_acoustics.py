@@ -831,3 +831,66 @@ class TestErrorPaths:
 
     def test_nr_rating_empty(self):
         assert nr_rating({})["ok"] is False
+
+
+# ===========================================================================
+# AUTHORITATIVE EXTERNAL REFERENCE CASES
+# ---------------------------------------------------------------------------
+# Cross-checked against Beranek "Acoustics", Kinsler & Frey "Fundamentals of
+# Acoustics", IEC 61672-1 (weighting), ISO 140-3 (mass law).
+# ===========================================================================
+
+class TestAcousticsAuthoritativeReferences:
+    def test_sabine_beranek(self):
+        # Sabine RT60 = 0.161 V/A (SI, c=343 m/s). Beranek: V=1000 m3,
+        # A=200 sabins -> 0.805 s.
+        r = sabine_rt60(1000.0, 200.0)
+        assert r["rt60_s"] == pytest.approx(0.805, abs=1e-3)
+
+    def test_sabine_constant_value(self):
+        # Sabine constant 24 ln(10)/c = 0.1611 (c=343). Check via V=A.
+        r = sabine_rt60(100.0, 100.0)
+        assert r["rt60_s"] == pytest.approx(0.161, abs=1e-3)
+
+    def test_eyring_approaches_sabine_low_alpha(self):
+        # Eyring -> Sabine for small alpha (Kinsler & Frey).
+        rs = sabine_rt60(500.0, 0.05 * 400.0)
+        re = eyring_rt60(500.0, 400.0, 0.05)
+        assert re["rt60_s"] == pytest.approx(rs["rt60_s"], rel=0.05)
+
+    def test_two_equal_sources_3db(self):
+        # Doubling acoustic energy adds 10 log10(2) = 3.0103 dB.
+        r = spl_sum([80.0, 80.0])
+        assert r["spl_db"] == pytest.approx(83.0103, abs=1e-3)
+
+    def test_ten_equal_sources_10db(self):
+        # 10 equal sources add 10 dB.
+        r = spl_sum([70.0] * 10)
+        assert r["spl_db"] == pytest.approx(80.0, abs=1e-6)
+
+    def test_mass_law_iso140(self):
+        # Field-incidence mass law TL = 20 log10(m f) - 47 (ISO 140-3).
+        # m=10 kg/m2, f=500 Hz -> 26.98 dB.
+        r = mass_law_tl(10.0, 500.0)
+        assert r["tl_db"] == pytest.approx(26.979, abs=1e-2)
+
+    def test_mass_law_doubling_mass_6db(self):
+        # Doubling mass (or freq) -> +6.02 dB (20 log10 2).
+        a = mass_law_tl(10.0, 500.0)["tl_db"]
+        b = mass_law_tl(20.0, 500.0)["tl_db"]
+        assert (b - a) == pytest.approx(6.0206, abs=1e-3)
+
+    def test_a_weighting_1khz_zero(self):
+        # IEC 61672-1: A-weighting is 0 dB at 1 kHz by definition.
+        r = a_weighting_offset(1000.0)
+        assert r["offset_db"] == pytest.approx(0.0, abs=0.05)
+
+    def test_a_weighting_table_values_iec(self):
+        # IEC 61672-1 Table: A(100 Hz) ~ -19.1 dB, A(10 kHz) ~ -2.5 dB.
+        assert a_weighting_offset(100.0)["offset_db"] == pytest.approx(-19.1, abs=0.2)
+        assert a_weighting_offset(10000.0)["offset_db"] == pytest.approx(-2.5, abs=0.2)
+
+    def test_inverse_square_6db_per_doubling(self):
+        # Point source free field: -6.02 dB per distance doubling.
+        r = inverse_square_delta(1.0, 2.0)
+        assert r["delta_db"] == pytest.approx(-6.0206, abs=1e-3)

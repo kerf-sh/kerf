@@ -743,3 +743,69 @@ def test_tool_bad_json():
 def test_tool_na_missing_arg():
     raw = _run(run_numerical_aperture(_ctx(), _args(n=1.5)))
     _err_tool(raw)
+
+
+# ===========================================================================
+# AUTHORITATIVE EXTERNAL REFERENCE CASES
+# ---------------------------------------------------------------------------
+# Cross-checked against Hecht "Optics" 5th ed. and Born & Wolf "Principles of
+# Optics" 7th ed.
+# ===========================================================================
+
+class TestOpticsAuthoritativeReferences:
+    def test_lensmaker_biconvex_hecht(self):
+        # Hecht 5e Eq.5.16: thin biconvex n=1.5, R1=+0.5, R2=-0.5 m ->
+        # 1/f = (n-1)(1/R1 - 1/R2) = 0.5*(2+2) = 2 -> f = 0.5 m.
+        r = lensmaker(0.5, -0.5, 1.5)
+        assert r["f_m"] == pytest.approx(0.5, rel=1e-9)
+
+    def test_lensmaker_planoconvex(self):
+        # Plano-convex n=1.5, R1=+0.1 m, R2=inf -> f = R1/(n-1) = 0.2 m.
+        r = lensmaker(0.1, math.inf, 1.5)
+        assert r["f_m"] == pytest.approx(0.2, rel=1e-9)
+
+    def test_thin_lens_object_at_2f(self):
+        # Gaussian lens (Hecht 5e): object at 2f -> image at 2f, m=-1.
+        r = thin_lens_imaging(0.1, 0.2)
+        assert r["s_i_m"] == pytest.approx(0.2, rel=1e-9)
+        assert r["magnification"] == pytest.approx(-1.0, rel=1e-9)
+
+    def test_airy_radius_rayleigh(self):
+        # Born & Wolf 8.5: Airy radius = 1.22 lambda N. 550 nm, f/8 ->
+        # 5.368 um.
+        r = airy_spot_radius(550e-9, 8.0)
+        assert r["r_airy_m"] == pytest.approx(1.22 * 550e-9 * 8.0, rel=1e-9)
+
+    def test_brewster_air_glass_hecht(self):
+        # Hecht 5e Eq.4.45: theta_B = atan(n2/n1). Air->BK7(1.5) = 56.31 deg.
+        r = brewster_angle(1.0, 1.5)
+        assert r["theta_B_deg"] == pytest.approx(56.3099, abs=1e-3)
+
+    def test_critical_angle_glass_air(self):
+        # Hecht 5e Eq.4.69: theta_c = asin(n2/n1). Glass(1.5)->air = 41.81 deg.
+        r = critical_angle(1.5, 1.0)
+        assert r["theta_c_deg"] == pytest.approx(41.8103, abs=1e-3)
+
+    def test_snell_classic(self):
+        # Snell: n1 sin t1 = n2 sin t2. 1*sin(30)=1.5 sin t2 -> t2=19.47 deg.
+        r = snell(1.0, math.radians(30.0), 1.5)
+        assert math.degrees(r["theta2_rad"]) == pytest.approx(19.4712, abs=1e-3)
+
+    def test_prism_minimum_deviation(self):
+        # Hecht 5e: equilateral prism (A=60 deg), n=1.5, symmetric ray.
+        # delta_min from n = sin((A+dm)/2)/sin(A/2) -> dm = 37.18 deg.
+        r = prism_deviation(1.5, math.radians(60.0), math.radians(48.59))
+        assert r["delta_deg"] == pytest.approx(37.18, abs=0.05)
+
+    def test_two_lens_effective_focal(self):
+        # Hecht 5e Eq.5.30: 1/f = 1/f1+1/f2-d/(f1 f2).
+        # f1=0.1, f2=0.1, d=0.05 -> 1/f = 10+10-0.05/0.01=15 -> f=0.0667 m.
+        r = two_lens_system(0.1, 0.1, 0.05)
+        assert r["f_eff_m"] == pytest.approx(1.0 / 15.0, rel=1e-9)
+
+    def test_achromat_doublet_condition(self):
+        # Hecht 6.3: phi1/V1 + phi2/V2 = 0 for achromat. Crown V1=64,
+        # flint V2=36, f=0.2 m.
+        r = achromat_powers(0.2, 64.0, 36.0)
+        assert (r["phi1_m"] / 64.0 + r["phi2_m"] / 36.0) == pytest.approx(0.0, abs=1e-9)
+        assert (r["phi1_m"] + r["phi2_m"]) == pytest.approx(1.0 / 0.2, rel=1e-9)
