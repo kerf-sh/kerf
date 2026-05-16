@@ -672,44 +672,37 @@ def slider_crank(
             v_B = -r * omega * sin_theta
             warnings.append("Near-singular position: velocity approximated (radical~0).")
 
-        # Acceleration
-        # a_B = d(v_B)/dt
-        # Using the exact expression (see Norton §13.4):
-        #   a_B = -r·α·sin(θ) - r·ω²·cos(θ)
-        #         - r²·[ω²·(cos²(θ) - sin²(θ))·radical - ω²·sin(θ)·cos(θ)·(-r²·ω·sin(θ)·cos(θ)/radical)] / radical²
-        # Simplified (standard textbook form, valid when radical > 0):
-        #   a_B = -r·α·sin(θ) - r·ω²·cos(θ)
-        #         - (r²/radical)·[ω²·cos(2θ) + (r²·ω²·sin²(2θ/2))/radical²]  ... etc.
+        # Acceleration — exact closed form.
         #
-        # Using the cleaner form (Shigley §2.4):
-        #   Let n = l/r
-        #   a_B ≈ -r·ω²·[cos(θ) + cos(2θ)/n]  (approximate, valid for n > ~3)
+        #   x_B = r·cosθ + R,            R = √(l² − r²·sin²θ)
+        #   v_B = ẋ_B = −r·ω·sinθ − r²·ω·sinθ·cosθ / R
         #
-        # For the exact expression:
-        #   a_B = d/dt(-r·ω·sin(θ)) + d/dt(-r²·ω·sin(θ)·cos(θ)/radical)
-        # First term:  -r·α·sin(θ) - r·ω²·cos(θ)
-        # Second term is messy; use exact form:
+        # Differentiating v_B w.r.t. time (θ̇ = ω, θ̈ = α):
+        #
+        #   a_B = −r·α·sinθ − r·ω²·cosθ
+        #         − r² · d/dt( g / R )
+        #
+        # with g(t) = ω·sinθ·cosθ = ½·ω·sin2θ, so by the quotient rule
+        #
+        #   d/dt(g/R) = (ġ·R − g·Ṙ) / R²
+        #   ġ  = α·sinθ·cosθ + ω²·cos2θ          (chain rule on ω·f, f=sinθcosθ)
+        #   Ṙ  = −r²·ω·sinθ·cosθ / R
+        #
+        # This reduces to the standard Shigley/Norton slider-crank
+        # acceleration; for large n = l/r it agrees with the classical
+        # approximation a_B ≈ −r·ω²·[cosθ + cos2θ/n].
+        # References: Norton "Design of Machinery" §13.4;
+        #             Shigley & Uicker "Theory of Machines & Mechanisms" §2.4.
         if radical > 1e-14:
-            # Numerator of d/dt(sin(θ)cos(θ)/radical):
-            # Let f = sin(θ)cos(θ), g = radical
-            # d/dt(f/g) = (f'·g - f·g') / g²
-            # f' = (cos²θ - sin²θ)·ω = cos(2θ)·ω
-            # g' = d(radical)/dt = -r²·sin(θ)·cos(θ)·ω / radical
             f = sin_theta * cos_theta
-            f_dot = math.cos(2.0 * theta) * omega
-            g_dot = -r * r * sin_theta * cos_theta * omega / radical
-            term2 = -r * r * (f_dot * radical - f * g_dot) / (radical * radical)
-            # Plus the alpha contribution to term2:
-            # d/dt(sin(θ)cos(θ)/radical) has an alpha term from f'= cos2θ·ω + dω/dt part
-            # Actually, for alpha != 0, re-derive:
-            # d²x_B/dt² = -r·α·sin(θ) - r·ω²·cos(θ) + d/dt(-r²·sin(θ)cos(θ)·ω/radical)
-            # The alpha part of the second term: -r²·sin(θ)cos(θ)·α / radical
-            term2_alpha = -r * r * sin_theta * cos_theta * alpha / radical
+            g = omega * f
+            g_dot = alpha * f + omega * math.cos(2.0 * theta) * omega
+            R_dot = -r * r * sin_theta * cos_theta * omega / radical
+            term2 = -r * r * (g_dot * radical - g * R_dot) / (radical * radical)
             a_B = (
                 -r * alpha * sin_theta
                 - r * omega * omega * cos_theta
                 + term2
-                + term2_alpha
             )
         else:
             a_B = -r * alpha * sin_theta - r * omega * omega * cos_theta
