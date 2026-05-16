@@ -720,3 +720,97 @@ class TestBoundaryConditions:
                 r = hoist_motor_class(dg, ls)
                 assert r["ok"] is True
                 assert r["m_class"].startswith("M")
+
+
+# ===========================================================================
+# Externally-citable reference cases (production-confidence validation)
+# Cross-checked against:
+#   - FEM 1.001 "Rules for the Design of Hoisting Appliances", 4th ed.
+#   - DIN 15018 (steel structures) / DIN 15020 (rope drives) / DIN 15400
+#     (lifting hooks)
+#   - Verschoof, "Cranes — Design, Practice and Maintenance", 2nd ed.
+#     (running-rope reeving efficiency, tipping stability hand-calcs)
+# Each case carries a hand-computed numeric answer in the comment.
+# ===========================================================================
+
+class TestCraneExternalReferences:
+    """Validated vs FEM 1.001 / DIN 15020 / DIN 15400 / crane handbooks."""
+
+    def test_reeving_efficiency_running_rope_FEM(self):
+        # Verschoof "Cranes" / FEM 1.001 running-rope block efficiency:
+        #   η_block = (1 − η^n) / (n·(1 − η)).  η=0.98, n=4 → 0.970398.
+        r = wire_rope_reeving(100.0, 4, rope_efficiency=0.98)
+        eta, n = 0.98, 4
+        eta_block = (1.0 - eta ** n) / (n * (1.0 - eta))
+        assert r["eta_block"] == pytest.approx(eta_block, rel=1e-12)
+        assert r["eta_block"] == pytest.approx(0.970398, rel=1e-5)
+        # Line pull = SWL / (n · η_block) = 100 / (4·0.970398) ≈ 25.7626 kN.
+        assert r["line_pull_kN"] == pytest.approx(25.762625, rel=1e-6)
+
+    def test_hook_shank_iso_thread_root_DIN15400(self):
+        # DIN 15400 hook-shank tensile check, ISO metric thread minor
+        # diameter d_3 = d − 0.9743·P (basic minor dia). M48×5, SWL 200 kN.
+        r = hook_shank_check(200.0, 48.0, 5.0, material="grade_P", design_factor=4.0)
+        d_minor = 48.0 - 0.9743 * 5.0           # 43.1285 mm
+        A_root = math.pi / 4.0 * d_minor ** 2    # 1460.8936 mm²
+        assert r["minor_dia_mm"] == pytest.approx(d_minor, rel=1e-9)
+        assert r["root_area_mm2"] == pytest.approx(A_root, rel=1e-9)
+        assert r["tension_stress_MPa"] == pytest.approx(200_000.0 / A_root, rel=1e-9)
+        assert r["tension_stress_MPa"] == pytest.approx(136.9025, rel=1e-4)
+        # grade_P Fy=355, design factor 4 → allowable 88.75 MPa → overstressed.
+        assert r["allowable_MPa"] == pytest.approx(355.0 / 4.0, rel=1e-12)
+        assert r["pass_shank"] is False
+
+    def test_jib_tipping_moment_balance(self):
+        # Crane-handbook tipping balance about the front edge:
+        #   allowable = (M_restore/SF − jib_self_moment) / (g·R).
+        # CW 12 t @ 4 m, jib 2 t @ L/2 of 15 m, SF 1.5, R 6 m.
+        r = jib_load_chart(6.0, 15.0, 2000.0, 12000.0, 4.0,
+                           safety_factor=1.5)
+        Mr = 12000.0 * _G * 4.0
+        jib_ot = 2000.0 * _G * (15.0 / 2.0)
+        net = Mr / 1.5 - jib_ot
+        assert r["restoring_moment_Nm"] == pytest.approx(Mr, rel=1e-9)
+        assert r["jib_overturning_Nm"] == pytest.approx(jib_ot, rel=1e-9)
+        assert r["allowable_load_kg"] == pytest.approx(net / 6.0 / _G, rel=1e-9)
+        assert r["allowable_load_kg"] == pytest.approx(2833.333, rel=1e-4)
+
+    def test_bridge_simply_supported_reactions(self):
+        # Simply-supported bridge girder (statics): crab+payload share by
+        # lever rule, bridge self-weight split equally. Reactions must sum
+        # to total weight (DIN 15018 / crane statics).
+        r = bridge_wheel_loads(20.0, 12000.0, 2000.0, 8000.0, 5.0,
+                               n_wheels_per_end=2, dynamic_factor=1.15)
+        Wb = 12000.0 * _G
+        Wcp = (2000.0 + 8000.0) * _G
+        RL = Wb / 2 + Wcp * (20.0 - 5.0) / 20.0
+        RR = Wb / 2 + Wcp * 5.0 / 20.0
+        assert r["left_reaction_N"] == pytest.approx(RL, rel=1e-9)
+        assert r["right_reaction_N"] == pytest.approx(RR, rel=1e-9)
+        assert r["left_reaction_N"] + r["right_reaction_N"] == pytest.approx(
+            Wb + Wcp, rel=1e-9
+        )
+        # Per-wheel load includes dynamic factor: R_L·1.15/2.
+        assert r["left_wheel_load_kN"] == pytest.approx(RL * 1.15 / 2 / 1000.0, rel=1e-9)
+
+    def test_hoist_motor_power_lift_formula(self):
+        # P = F·v / η (steady lift). SWL 50 kN, v 0.25 m/s, η 0.85.
+        r = hoist_motor_power(50.0, 0.25, mechanical_efficiency=0.85)
+        assert r["motor_power_kW"] == pytest.approx(
+            50_000.0 * 0.25 / 0.85 / 1000.0, rel=1e-12
+        )
+        assert r["motor_power_kW"] == pytest.approx(14.70588, rel=1e-5)
+
+    def test_travel_rolling_resistance_FEM(self):
+        # FEM rolling resistance F = m·g·f. m 30 t, f 0.015 → 4412.99 N.
+        r = travel_resistance(30000.0, 0.0, coeff_rolling=0.015)
+        assert r["rolling_force_N"] == pytest.approx(30000.0 * _G * 0.015, rel=1e-12)
+        assert r["rolling_force_N"] == pytest.approx(4412.9925, rel=1e-5)
+
+    def test_dd_ratio_FEM_15020_minimum(self):
+        # DIN 15020 / FEM 1.001: running sheaves require D/d ≥ class minimum;
+        # below the table value the DD_RATIO_LOW warning fires.
+        r = sheave_drum_geometry(13.0, sheave_dd_ratio=10.0, drum_dd_ratio=10.0,
+                                 fem_class="E")
+        assert r["ok"] is True
+        assert any("DD_RATIO_LOW" in w for w in r["warnings"])
