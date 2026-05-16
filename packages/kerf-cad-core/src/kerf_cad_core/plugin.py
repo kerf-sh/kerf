@@ -166,6 +166,8 @@ _TOOL_MODULES = [
     "kerf_cad_core.geom.mesh_to_nurbs",
     "kerf_cad_core.geom.section_contour",
     "kerf_cad_core.jewelry.eternity_auto",
+    "kerf_cad_core.geom.surface_fillet",
+    "kerf_cad_core.jewelry.bangle",
 ]
 
 # ── kerf_core contract (built by kerf-core agent in parallel) ─────────────────
