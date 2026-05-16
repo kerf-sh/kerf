@@ -198,6 +198,7 @@ _TOOL_MODULES = [
     "kerf_cad_core.jewelry.watch",
     "kerf_cad_core.procsim.toolpath_verify",
     "kerf_cad_core.procsim.forming_sim",
+    "kerf_cad_core.procsim.weld_distortion",
 ]
 
 # ── kerf_core contract (built by kerf-core agent in parallel) ─────────────────
