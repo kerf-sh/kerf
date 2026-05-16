@@ -949,3 +949,100 @@ class TestToolWrappers:
         ctx = _ctx()
         raw = _run(run_minimum_flow_check(ctx, _args(Q_op=0.02)))
         _err_tool(raw)
+
+
+# ===========================================================================
+# 15. CITABLE EXTERNAL-REFERENCE CASES — known numeric answers
+# ===========================================================================
+#
+# Each case below is cross-checked against an authoritative, citable source
+# with a hand-computable numeric answer.  These guard against silent formula
+# regressions (sign flips, constant drift, exponent errors).
+#
+# Sources
+# -------
+# [White]   White, F.M., "Fluid Mechanics", 8th ed., McGraw-Hill (2016).
+# [Cengel]  Cengel & Cimbala, "Fluid Mechanics: Fundamentals & Applications",
+#           4th ed., McGraw-Hill (2018), Ch.14 turbomachinery.
+# [HI]      Hydraulic Institute Standards 9.6.1 / 9.6.3 (NPSH, affinity).
+# [Kaplan]  Karassik et al., "Pump Handbook", 4th ed., McGraw-Hill (2008).
+# ===========================================================================
+
+class TestCitableReferenceCases:
+
+    def test_ref_hydraulic_power_white(self):
+        """[White §11.3] Useful pump (water) power P = ρ g Q H.
+
+        ρ=998 kg/m³, Q=0.05 m³/s, H=20 m → P = 998·9.81·0.05·20 = 9790.38 W.
+        """
+        res = hydraulic_power(Q=0.05, H=20.0, rho=998.0)
+        assert res["ok"] is True
+        assert res["P_hydraulic_W"] == pytest.approx(9790.38, rel=1e-9)
+
+    def test_ref_brake_power_white_eta(self):
+        """[White §11.3] Brake power = P_hyd/η. η=0.70 → 9790.38/0.70."""
+        res = hydraulic_power(Q=0.05, H=20.0, rho=998.0, eta=0.70)
+        assert res["ok"] is True
+        assert res["P_brake_W"] == pytest.approx(9790.38 / 0.70, rel=1e-9)
+
+    def test_ref_specific_speed_cengel_dimensionless(self):
+        """[Cengel Ch.14] Dimensionless N_s = ω√Q /(gH)^¾.
+
+        Water pump n=1170 rpm, Q=0.0537 m³/s, H=40 m.
+        ω = 1170·2π/60 = 122.522 rad/s
+        N_s = 122.522·√0.0537 /(9.81·40)^0.75 = 0.32204  (mixed/radial border).
+        """
+        res = specific_speed(Q=0.0537, H=40.0, n=1170.0)
+        assert res["ok"] is True
+        assert res["Ns"] == pytest.approx(0.32204, abs=1e-4)
+
+    def test_ref_specific_speed_us_customary(self):
+        """[Kaplan] US specific speed Nss = n·√(Q[gpm])/H[ft]^¾ for the same
+        Cengel point ≈ 880.36, and dimensionless↔US ratio ≈ 2733 (water)."""
+        res = specific_speed(Q=0.0537, H=40.0, n=1170.0)
+        assert res["ok"] is True
+        assert res["Nss_us_customary"] == pytest.approx(880.356, rel=1e-4)
+        assert res["Nss_us_customary"] / res["Ns"] == pytest.approx(2733.0, rel=2e-3)
+
+    def test_ref_specific_speed_white_radial_band(self):
+        """[White Fig.11.20] n=1750 rpm, Q=0.0283 m³/s, H=91 m → N_s≈0.189,
+        firmly inside the radial-impeller band (N_s ≲ 0.75)."""
+        res = specific_speed(Q=0.0283, H=91.0, n=1750.0)
+        assert res["ok"] is True
+        assert res["Ns"] == pytest.approx(0.18877, abs=1e-4)
+        assert "radial" in res["impeller_type"].lower()
+
+    def test_ref_affinity_speed_20pct_increase(self):
+        """[HI 9.6.3 affinity laws] +20 % speed (1450→1740 rpm):
+        Q₂=Q₁·1.2, H₂=H₁·1.2²=1.44, P₂=P₁·1.2³=1.728.
+        Q₁=0.05, H₁=20, P₁=10000 → Q₂=0.06, H₂=28.8, P₂=17280 W.
+        """
+        res = affinity_speed(Q1=0.05, H1=20.0, P1=10000.0, n1=1450.0, n2=1740.0)
+        assert res["ok"] is True
+        assert res["Q2"] == pytest.approx(0.06, rel=1e-9)
+        assert res["H2"] == pytest.approx(28.8, rel=1e-9)
+        assert res["P2"] == pytest.approx(17280.0, rel=1e-9)
+
+    def test_ref_npsh_available_white(self):
+        """[White §11.4] NPSHa = (P_atm−P_v)/(ρg) − z_s − h_f.
+
+        P_atm=101325 Pa, water at 25 °C P_v=3169 Pa, ρ=997 kg/m³,
+        suction lift z=2.0 m, h_f=0.8 m
+        → (101325−3169)/(997·9.81) − 2.0 − 0.8 = 7.23582 m.
+        """
+        res = npsh_available(P_atm_Pa=101325.0, P_vapor_Pa=3169.0,
+                             rho=997.0, z_suction_m=2.0, h_friction_m=0.8)
+        assert res["ok"] is True
+        assert res["NPSHa_m"] == pytest.approx(7.23582, abs=1e-4)
+
+    def test_ref_operating_point_analytic(self):
+        """Analytic duty point: pump H = 50 − 2000·Q²  (a=−2000,b=0,c=50),
+        system H = 10 + 3000·Q²  (H_static=10, K=3000).
+        50−2000Q² = 10+3000Q² → 40 = 5000Q² → Q = √0.008 = 0.0894427 m³/s,
+        H = 10 + 3000·0.008 = 34.0 m.
+        """
+        res = operating_point(a=-2000.0, b=0.0, c=50.0,
+                              H_static=10.0, K=3000.0)
+        assert res["ok"] is True
+        assert res["Q_op_m3s"] == pytest.approx(0.0894427191, abs=1e-7)
+        assert res["H_op_m"] == pytest.approx(34.0, rel=1e-7)
