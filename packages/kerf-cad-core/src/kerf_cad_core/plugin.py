@@ -187,6 +187,8 @@ _TOOL_MODULES = [
     "kerf_cad_core.drawings.auto_dimension",
     "kerf_cad_core.mbd.tools",
     "kerf_cad_core.afr.recognize",
+    "kerf_cad_core.sysml1d.network",
+    "kerf_cad_core.frep.sdf",
 ]
 
 # ── kerf_core contract (built by kerf-core agent in parallel) ─────────────────
