@@ -992,17 +992,23 @@ def pumps_in_parallel(
 # 12. specific_speed
 # ---------------------------------------------------------------------------
 
+# Dimensionless specific-speed bands per White, "Fluid Mechanics", 8th ed.,
+# §11.4 / Fig. 11.20 (Ns* = ω·√Q / (g·H)^(3/4), SI, dimensionless):
+#   Ns* ≲ 0.75   radial / centrifugal
+#   0.75–1.5     mixed-flow (Francis)
+#   ≳ 1.5        axial-flow / propeller (efficient axial pumps Ns* ≈ 2.2–5)
 _IMPELLER_GUIDANCE: list[tuple[tuple[float, float], str, str]] = [
     # (Ns_min, Ns_max), impeller_type, guidance
-    ((0.0,    0.4),   "radial (low-Ns)",
+    ((0.0,    0.20),  "radial (low-Ns)",
      "High head, low flow. Radial/centrifugal impeller. Risk of instability "
-     "at very low Ns (<0.2). Consider positive-displacement pump."),
-    ((0.4,    1.5),   "radial",
+     "and poor efficiency at very low Ns (<0.2). Consider positive-"
+     "displacement pump."),
+    ((0.20,   0.75),  "radial",
      "Standard centrifugal radial impeller. Best efficiency range for "
-     "most industrial applications."),
-    ((1.5,    3.5),   "mixed-flow",
+     "most industrial applications (White Fig. 11.20)."),
+    ((0.75,   1.5),   "mixed-flow",
      "Mixed-flow (Francis) impeller. Moderate head, moderate-to-high flow."),
-    ((3.5,  100.0),   "axial-flow",
+    ((1.5,  100.0),   "axial-flow",
      "Low head, very high flow. Axial or propeller impeller (fan-like). "
      "Use propeller pump / axial-flow pump."),
 ]
@@ -1016,22 +1022,29 @@ def specific_speed(
     """
     Compute the dimensionless specific speed Ns and recommend impeller type.
 
-    Dimensionless specific speed (shape factor):
+    True dimensionless specific speed (shape factor), White "Fluid
+    Mechanics", 8th ed., Eq. 11.30b:
 
-        Ns = n · √Q / H^(3/4)
+        Ns* = ω · √Q / (g · H)^(3/4)
 
-    where n (rad/s), Q (m³/s), H (m) — this is the SI dimensionless form.
+    where ω (rad/s), Q (m³/s), H (m), g = 9.81 m/s².  This quantity is
+    genuinely dimensionless (the (g·H)^(3/4) group has units of velocity
+    to the 3/2 power, cancelling ω·√Q).  An earlier implementation omitted
+    the g term, producing a *dimensional* number ~5.7× larger that did not
+    match White's standard impeller bands — that defect is corrected here.
 
-    Note: many references use n in rpm; this function accepts rpm and converts
-    internally.
+    Note: many references quote n in rpm; this function accepts rpm and
+    converts internally:  ω = n_rpm × 2π/60.
 
-        Ns_SI = (n_rpm × 2π/60) × √Q / H^(3/4)
+    Impeller-type guidance — White Fig. 11.20 dimensionless Ns* bands:
+      0.0  – 0.20  radial (low-Ns centrifugal; poor efficiency)
+      0.20 – 0.75  radial (standard centrifugal)
+      0.75 – 1.5   mixed-flow (Francis)
+      1.5+         axial-flow / propeller
 
-    Impeller-type guidance (approximate Ns ranges, SI):
-      0.0 – 0.4   radial (low-Ns centrifugal)
-      0.4 – 1.5   radial (standard centrifugal)
-      1.5 – 3.5   mixed-flow
-      3.5+        axial-flow
+    For convenience the dimensional form n_rpm·√Q / H^(3/4) (rad-based, no g)
+    is also returned as ``Ns_dimensional`` and the US customary form
+    (gpm, ft, rpm) as ``Nss_us_customary``.
 
     Parameters
     ----------
@@ -1064,7 +1077,17 @@ def specific_speed(
         return _err(e)
 
     omega = float(n) * 2.0 * math.pi / 60.0  # rad/s
-    Ns = omega * math.sqrt(float(Q)) / float(H) ** 0.75
+    Qf = float(Q)
+    Hf = float(H)
+
+    # True dimensionless specific speed (White Eq. 11.30b): Ns* = ω√Q/(gH)^¾
+    Ns = omega * math.sqrt(Qf) / (_G * Hf) ** 0.75
+    # Legacy dimensional form retained for transparency / back-compat.
+    Ns_dimensional = omega * math.sqrt(Qf) / Hf ** 0.75
+    # US customary specific speed Nss = n(rpm)·√(Q[gpm]) / H[ft]^¾
+    Q_gpm = Qf * 15850.323
+    H_ft = Hf / 0.3048
+    Nss_us = float(n) * math.sqrt(Q_gpm) / H_ft ** 0.75
 
     impeller_type = "unknown"
     guidance = ""
@@ -1075,14 +1098,16 @@ def specific_speed(
             break
 
     warnings: list[str] = []
-    if Ns < 0.1:
+    if Ns < 0.20:
         warnings.append(
-            f"Ns = {Ns:.4f} is very low; a positive-displacement pump may be "
-            "more appropriate than a centrifugal pump"
+            f"Ns* = {Ns:.4f} is very low; a positive-displacement pump may be "
+            "more appropriate than a centrifugal pump (White §11.4)"
         )
 
     res = _ok(
         Ns=Ns,
+        Ns_dimensional=Ns_dimensional,
+        Nss_us_customary=Nss_us,
         impeller_type=impeller_type,
         guidance=guidance,
         n_rpm=float(n),

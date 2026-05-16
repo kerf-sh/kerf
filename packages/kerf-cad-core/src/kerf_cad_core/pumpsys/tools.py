@@ -646,17 +646,20 @@ async def run_pumps_in_parallel(ctx: ProjectCtx, args: bytes) -> str:
 _specific_speed_spec = ToolSpec(
     name="pump_specific_speed",
     description=(
-        "Compute dimensionless specific speed Ns and recommend impeller type.\n"
+        "Compute true dimensionless specific speed Ns* and recommend "
+        "impeller type.\n"
         "\n"
-        "Ns = ω·√Q / H^(3/4)   (SI dimensionless, ω in rad/s)\n"
+        "Ns* = ω·√Q / (g·H)^(3/4)   (White Fluid Mech. 8th ed. Eq. 11.30b;\n"
+        "  ω in rad/s, g = 9.81 m/s² — genuinely unit-free)\n"
         "\n"
-        "Impeller guidance (approximate Ns ranges):\n"
-        "  Ns < 0.4   — radial (low-Ns); consider PD pump if Ns < 0.2\n"
-        "  0.4–1.5    — radial centrifugal (best efficiency range)\n"
-        "  1.5–3.5    — mixed-flow (Francis)\n"
-        "  Ns > 3.5   — axial-flow / propeller\n"
+        "Impeller guidance (White Fig. 11.20 dimensionless bands):\n"
+        "  Ns* < 0.20  — radial (low-Ns); consider PD pump\n"
+        "  0.20–0.75   — radial centrifugal (best efficiency range)\n"
+        "  0.75–1.5    — mixed-flow (Francis)\n"
+        "  Ns* > 1.5   — axial-flow / propeller\n"
         "\n"
-        "Returns Ns, impeller_type, and guidance text. Never raises."
+        "Returns Ns (dimensionless), Ns_dimensional, Nss_us_customary,\n"
+        "impeller_type, and guidance text. Never raises."
     ),
     input_schema={
         "type": "object",

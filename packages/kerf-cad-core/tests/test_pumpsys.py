@@ -673,42 +673,77 @@ class TestPumpsInParallel:
 
 class TestSpecificSpeed:
 
-    def test_ns_formula_algebraic(self):
-        """Ns = ω·√Q / H^(3/4), ω = n_rpm × 2π/60."""
+    def test_ns_true_dimensionless_form_with_g(self):
+        """Ns* = ω·√Q / (g·H)^(3/4) — White Fluid Mech. 8th ed. Eq. 11.30b.
+
+        Authoritative: the dimensionless specific speed MUST include g so the
+        result is unit-free. (Earlier code omitted g — a real defect now fixed.)
+        """
         Q, H, n = 0.05, 25.0, 1450.0
         omega = n * 2.0 * math.pi / 60.0
-        Ns_expected = omega * math.sqrt(Q) / H ** 0.75
+        g = 9.81
+        Ns_expected = omega * math.sqrt(Q) / (g * H) ** 0.75
         res = specific_speed(Q, H, n)
         assert res["ok"] is True
-        assert abs(res["Ns"] - Ns_expected) / Ns_expected < REL
+        assert abs(res["Ns"] - Ns_expected) / Ns_expected < 1e-6
+
+    def test_white_radial_pump_example(self):
+        """White, Fluid Mechanics 8th ed.: a 1750-rpm centrifugal pump,
+        Q = 0.0283 m³/s (≈ 449 gpm), H = 91 m → Ns* ≈ 0.19, well inside
+        White's radial band (Ns* ≲ 0.75)."""
+        res = specific_speed(Q=0.0283, H=91.0, n=1750.0)
+        assert res["ok"] is True
+        assert abs(res["Ns"] - 0.1888) < 0.01
+        assert "radial" in res["impeller_type"].lower()
+
+    def test_white_example_11_8_borderline(self):
+        """White Ex. 11.8-type point: n = 1170 rpm, Q = 0.0631 m³/s,
+        H = 14.5 m → Ns* ≈ 0.747 (upper edge of the radial band,
+        White Fig. 11.20)."""
+        res = specific_speed(Q=0.0631, H=14.5, n=1170.0)
+        assert res["ok"] is True
+        assert abs(res["Ns"] - 0.747) < 0.01
+        assert "radial" in res["impeller_type"].lower()
 
     def test_low_Ns_classified_as_radial(self):
-        """Low Ns → radial impeller."""
-        # High head, low flow → low Ns
+        """Low Ns* (high head, low flow) → radial impeller (White §11.4)."""
         res = specific_speed(Q=0.001, H=100.0, n=2900.0)
         assert res["ok"] is True
         assert "radial" in res["impeller_type"].lower()
 
     def test_high_Ns_classified_as_axial(self):
-        """High Ns → axial impeller."""
-        # Low head, high flow → high Ns
-        res = specific_speed(Q=1.0, H=5.0, n=750.0)
+        """High Ns* (low head, high flow) → axial impeller.
+        White: efficient axial-flow pumps have Ns* ≈ 2.2–5 (dimensionless)."""
+        res = specific_speed(Q=1.0, H=2.0, n=900.0)
         assert res["ok"] is True
+        assert res["Ns"] > 1.5
         assert "axial" in res["impeller_type"].lower()
 
     def test_medium_Ns_classified_as_mixed_flow(self):
-        """Ns in 1.5–3.5 range → mixed-flow."""
-        # Choose Q, H, n such that Ns ≈ 2.0
-        # Ns = ω·√Q / H^(3/4); ω at 1450 rpm = 151.8 rad/s
-        # Ns=2 → H^(3/4) = ω·√Q / 2; pick Q=0.1 → √Q=0.316
-        # H^(3/4) = 151.8 × 0.316 / 2 = 23.98 → H ≈ 23.98^(4/3) ≈ 44 m
+        """Ns* in White's 0.75–1.5 band → mixed-flow (Francis) impeller."""
         omega = 1450.0 * 2.0 * math.pi / 60.0
+        g = 9.81
         Q = 0.1
-        Ns_target = 2.0
-        H = (omega * math.sqrt(Q) / Ns_target) ** (4.0 / 3.0)
+        Ns_target = 1.1  # mid mixed-flow band
+        H = (omega * math.sqrt(Q) / Ns_target) ** (4.0 / 3.0) / g
         res = specific_speed(Q=Q, H=H, n=1450.0)
         assert res["ok"] is True
+        assert 0.75 < res["Ns"] < 1.5
         assert "mixed" in res["impeller_type"].lower()
+
+    def test_dimensional_and_us_customary_fields(self):
+        """Legacy dimensional Ns and US customary Nss are also returned."""
+        Q, H, n = 0.05, 25.0, 1450.0
+        omega = n * 2.0 * math.pi / 60.0
+        res = specific_speed(Q, H, n)
+        assert res["ok"] is True
+        assert abs(res["Ns_dimensional"]
+                   - omega * math.sqrt(Q) / H ** 0.75) / res["Ns_dimensional"] < 1e-6
+        # US customary: n[rpm]·√Q[gpm] / H[ft]^¾
+        Q_gpm = Q * 15850.323
+        H_ft = H / 0.3048
+        assert abs(res["Nss_us_customary"]
+                   - n * math.sqrt(Q_gpm) / H_ft ** 0.75) / res["Nss_us_customary"] < 1e-6
 
     def test_n_rad_s_field(self):
         """n_rad_s == n_rpm × 2π/60."""
