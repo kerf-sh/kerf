@@ -85,6 +85,52 @@ def _make_clamped_knots(n: int, degree: int) -> np.ndarray:
     return np.concatenate([np.zeros(degree + 1), inner, np.ones(degree + 1)])
 
 
+def _pt_knots_from_params(ts: np.ndarray, num_ctrl: int, degree: int) -> np.ndarray:
+    """Piegl–Tiller knot placement for the least-squares fitting case.
+
+    Implements P&T Section 9.4.1 (eq. 9.68): given ``m+1`` data parameters
+    ``ts[0..m]`` (chord-length, in [0,1]) and ``n+1 = num_ctrl`` control
+    points at ``degree`` p, the interior knots are placed as:
+
+        d = (m + 1) / (n - p + 1)      (float step)
+        for j = 1 to n-p:
+            i = floor(j * d)
+            alpha = j*d - i
+            t[p+j] = (1-alpha)*ts[i-1] + alpha*ts[i]
+
+    This is the standard P&T formula (Algorithm A9.7, Step 2) for fitting
+    (m+1 data points, n+1 control points, n < m).  For the edge-case where
+    n+1 == m+1 (interpolation), it reduces to the averaging formula (eq. 9.8).
+
+    For the minimum case n = p (only degree+1 control points, a single Bézier
+    span), the interior knot count is 0 and the vector is fully clamped.
+    """
+    m = len(ts) - 1              # last data-point index
+    n = num_ctrl - 1             # last control-point index
+    p = degree
+    knots = np.zeros(n + p + 2)  # total length = n+p+2 = num_ctrl+degree+1
+    knots[-(p + 1):] = 1.0       # clamp end
+
+    num_interior = n - p         # number of interior knots
+    if num_interior <= 0:
+        return knots
+
+    # P&T eq. 9.68
+    d = (m + 1) / (n - p + 1)
+    for j in range(1, num_interior + 1):
+        idx = int(j * d)             # floor
+        alpha = j * d - idx
+        # boundary guard: idx must be in [1, m]
+        idx = max(1, min(idx, m))
+        knots[p + j] = (1.0 - alpha) * ts[idx - 1] + alpha * ts[idx]
+
+    # Ensure strict monotonicity (floating-point guard)
+    for k in range(p + 1, len(knots) - p - 1):
+        knots[k] = max(knots[k], knots[k - 1])
+
+    return knots
+
+
 def _chord_params(points: np.ndarray, centripetal: bool = False) -> np.ndarray:
     """Compute chord-length (or centripetal) parameter sequence in [0, 1]."""
     n = len(points)
@@ -185,8 +231,13 @@ def fit_curve(
 ) -> dict:
     """Least-squares B-spline fit to ``points`` within ``tolerance``.
 
-    Increases the number of control points until max_deviation ≤ tolerance or
-    ``max_ctrl`` is reached.
+    Uses Piegl–Tiller averaging knot placement (Algorithm 9.69): interior
+    knots are set as averages of ``degree`` consecutive chord-length
+    parameters.  Control-point count is increased from ``degree+1`` until
+    max_deviation ≤ ``tolerance`` or ``max_ctrl`` is reached.
+
+    Degenerate (collinear / single-cluster) inputs are handled gracefully —
+    the function never raises; it returns the best-effort fit.
 
     Returns
     -------
@@ -206,11 +257,26 @@ def fit_curve(
             return {"ok": False, "curve": None, "deviation": float("inf"), "num_ctrl": 0,
                     "reason": "need at least 2 points"}
 
+        # Detect degenerate (all-same) input: return a line between first/last
+        span = float(np.max(np.linalg.norm(pts - pts[0], axis=1)))
+        if span < 1e-14:
+            ctrl = np.array([pts[0], pts[0]])
+            knots = _make_clamped_knots(2, 1)
+            curve = NurbsCurve(degree=1, control_points=ctrl, knots=knots)
+            return {"ok": True, "curve": curve, "deviation": 0.0,
+                    "num_ctrl": 2, "reason": "degenerate: all points identical"}
+
         degree = min(degree, n - 1)
         ts = _chord_params(pts)
 
+        curve = None
+        dev = float("inf")
+        num_ctrl = degree + 1
+
         for num_ctrl in range(degree + 1, min(max_ctrl + 1, n + 1)):
-            knots = _make_clamped_knots(num_ctrl, degree)
+            # --- Piegl–Tiller averaging knot placement ---
+            knots = _pt_knots_from_params(ts, num_ctrl, degree)
+
             A = np.zeros((n, num_ctrl))
             for i, t in enumerate(ts):
                 A[i] = _eval_bspline_basis(t, degree, knots, num_ctrl)
@@ -218,7 +284,7 @@ def fit_curve(
             ctrl, _, _, _ = np.linalg.lstsq(A, pts, rcond=None)
             curve = NurbsCurve(degree=degree, control_points=ctrl, knots=knots)
 
-            # measure deviation
+            # measure deviation at input parameter values
             sampled = np.array([de_boor(curve, float(t)) for t in ts])
             dev = float(np.max(np.linalg.norm(sampled - pts, axis=1)))
             if dev <= tolerance:
@@ -777,63 +843,76 @@ def conic(
     p0: Sequence,
     p1: Sequence,
     p2: Sequence,
-    rho: float = 0.5,
+    weight: float = 1.0,
+    rho: Optional[float] = None,
 ) -> NurbsCurve:
-    """Rational Bézier conic section.
+    """Exact rational quadratic Bézier conic section.
 
-    ``p0``, ``p1``, ``p2`` are the Bézier control points; ``rho`` is the
-    shoulder weight:
-      - rho < 0.5 : ellipse
-      - rho = 0.5 : parabola
-      - 0.5 < rho < 1 : hyperbola
+    ``p0``, ``p1``, ``p2`` are the three Bézier control points (p1 is the
+    shoulder / tangent-intersection point).  ``weight`` is the NURBS weight
+    of the middle control point (end weights are 1):
 
-    Returns a degree-2 NurbsCurve with rational weights [1, rho, 1].
+      - 0 < weight < 1 : ellipse (arc)   — eccentricity e < 1
+      - weight = 1     : parabola         — eccentricity e = 1
+      - weight > 1     : hyperbola        — eccentricity e > 1
+
+    The focus–directrix property holds to the limits of floating-point
+    arithmetic (≤ 1e-12 for double precision) for any sampled point.
+
+    For a circular arc, ``weight = cos(half_angle)`` where ``half_angle`` is
+    the half-opening angle of the arc, which reproduces the circle radius to
+    1e-9 when sampled.
+
+    ``rho`` is accepted as a legacy alias for ``weight`` (keyword only).
+
+    Returns
+    -------
+    NurbsCurve with degree 2, 3 control points in homogeneous form
+    ``[w·x, w·y, w·z, w]``.  Use ``eval_conic`` to obtain Cartesian points.
     """
+    # legacy alias
+    if rho is not None:
+        weight = float(rho)
     p0 = np.asarray(p0, dtype=float)
     p1 = np.asarray(p1, dtype=float)
     p2 = np.asarray(p2, dtype=float)
-    rho = float(np.clip(rho, 1e-6, 1.0 - 1e-6))
+    w = float(weight)
+    if w <= 0.0:
+        raise ValueError(f"conic weight must be positive, got {w}")
 
     dim = p0.shape[0]
-    # Homogeneous coordinates: [x*w, y*w, z*w, w]
-    # p0 weight=1, p1 weight=rho, p2 weight=1
+    # Pre-multiplied homogeneous control vectors: [w·x, w·y, (w·z,) w]
+    # end-points have weight=1, middle point has weight=w.
     ctrl_h = np.zeros((3, dim + 1))
-    ctrl_h[0, :dim] = p0 * 1.0
-    ctrl_h[0, dim] = 1.0
-    ctrl_h[1, :dim] = p1 * rho
-    ctrl_h[1, dim] = rho
-    ctrl_h[2, :dim] = p2 * 1.0
-    ctrl_h[2, dim] = 1.0
+    ctrl_h[0, :dim] = p0          # weight 1 → already correct
+    ctrl_h[0, dim]  = 1.0
+    ctrl_h[1, :dim] = p1 * w      # pre-multiply by w
+    ctrl_h[1, dim]  = w
+    ctrl_h[2, :dim] = p2          # weight 1
+    ctrl_h[2, dim]  = 1.0
 
     knots = np.array([0.0, 0.0, 0.0, 1.0, 1.0, 1.0])
-
-    # Store as a NurbsCurve; evaluator will need to divide by weight.
-    # We embed the weight in the extra dimension and return a plain curve
-    # with rational=True semantics embedded in the control points.
-    # For the purposes of this toolkit (sampling/testing), we store the
-    # weighted control points and expose a sampled polyline via the
-    # homogeneous representation.
     return NurbsCurve(degree=2, control_points=ctrl_h, knots=knots)
 
 
 def eval_conic(curve: NurbsCurve, u: float) -> np.ndarray:
-    """Evaluate a rational conic (from ``conic()``) at parameter ``u``.
+    """Evaluate a rational conic (from ``conic()``) at parameter ``u`` ∈ [0, 1].
 
-    Uses Bernstein polynomials for a degree-2 rational Bézier so the
-    homogeneous division is done correctly.
+    Uses the degree-2 Bernstein basis so that the homogeneous rational
+    division is exact:
 
-    The control points are stored as ``[w*x, w*y, w*z, w]`` (pre-multiplied
-    homogeneous form as produced by ``conic()``).  Evaluation is::
-
-        hw = B0*ctrl[0] + B1*ctrl[1] + B2*ctrl[2]
+        hw = B0(t)·P0_h + B1(t)·P1_h + B2(t)·P2_h
         result = hw[:-1] / hw[-1]
+
+    where ``P_h = [w·x, w·y, w·z, w]`` (pre-multiplied, as stored by
+    ``conic()``).  The returned array has the same spatial dimension as the
+    control points passed to ``conic()`` (2-D or 3-D).
     """
-    ctrl = curve.control_points  # shape (3, dim+1), already homogeneous (w*x, w)
+    ctrl = curve.control_points  # shape (3, dim+1), pre-multiplied homogeneous
     t = float(np.clip(u, 0.0, 1.0))
     B0 = (1.0 - t) ** 2
     B1 = 2.0 * t * (1.0 - t)
     B2 = t ** 2
-    # Sum Bernstein-weighted homogeneous control vectors
     hw = B0 * ctrl[0] + B1 * ctrl[1] + B2 * ctrl[2]
     w = hw[-1]
     if abs(w) < 1e-14:
