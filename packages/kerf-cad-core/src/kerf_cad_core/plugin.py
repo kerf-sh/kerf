@@ -110,6 +110,7 @@ _TOOL_MODULES = [
     "kerf_cad_core.additive.tools",
     "kerf_cad_core.wormbevel.tools",
     "kerf_cad_core.psychro.tools",
+    "kerf_cad_core.rigging.tools",
 ]
 
 # ── kerf_core contract (built by kerf-core agent in parallel) ─────────────────
