@@ -23,6 +23,7 @@ import WorkspaceMembers from './routes/WorkspaceMembers.jsx'
 import AdminDistributors from './routes/AdminDistributors.jsx'
 import AdminPublishers from './routes/AdminPublishers.jsx'
 import Mechanical from './routes/domains/Mechanical.jsx'
+import JewelryConfigurator from './routes/JewelryConfigurator.jsx'
 import ProtectedRoute from './routes/ProtectedRoute.jsx'
 import Electronics from './routes/domains/Electronics.jsx'
 import CompareHub from './routes/compare/index.jsx'
@@ -144,6 +145,7 @@ export default function App() {
         <Route path="/workshop/:slug" element={<WorkshopListing />} />
       )}
       <Route path="/domains/jewelry" element={<JewelryDomainPage />} />
+      <Route path="/jewelry-configurator" element={<JewelryConfigurator />} />
       <Route path="/domains/architecture" element={<Architecture />} />
 
       <Route element={<ProtectedRoute />}>
