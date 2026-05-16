@@ -446,12 +446,19 @@ def test_steam_trap_capacity_basic():
 # ───────────────────────────────────────────────────────────────
 
 def test_safety_valve_napier_saturated():
-    """Set 10 barg, area=500 mm².
-    P_abs = 10+1+1 = 12 bar; W = 0.0635*12*500 = 381 kg/h."""
+    """Set 10 barg, area=500 mm². P_abs = 10+1+1 = 12 bar.
+
+    NOTE (validation fix): the previous expected value used the WRONG
+    coefficient 0.0635, which was ~8.3x too small (it matched a code bug,
+    not a citable source).  Correct K_Napier = 0.52515 kg/h per bar·mm²,
+    derived from ASME Section I PG-69 / Napier W[lb/h]=51.5*P[psia]*A[in²]:
+      51.5*0.45359237 / (0.0689476*645.16) = 0.52515.
+    W = 0.52515 * 12 * 500 = 3150.9 kg/h.
+    """
     r = safety_valve_napier(10.0, 500.0)
     assert "W_kgh" in r
     P_abs_expected = 10 + 1 + 0.1 * 10
-    W_expected = 0.0635 * P_abs_expected * 500.0
+    W_expected = 0.52515 * P_abs_expected * 500.0
     assert abs(r["W_kgh"] - W_expected) < 0.1
 
 
@@ -496,3 +503,79 @@ def test_steam_properties_t_vs_p_consistent():
     r_P = steam_properties(P_Pa=P)
     assert abs(r_P["T_sat_C"] - 150.0) < 0.5
     assert abs(r_P["hfg_kJkg"] - r_T["hfg_kJkg"]) / r_T["hfg_kJkg"] < 0.01
+
+
+# ═══════════════════════════════════════════════════════════════
+# REFERENCE CASES — asserted against citable, known numeric answers
+# Sources:
+#   ASME Section I PG-69 / Napier  (relief capacity)
+#   IAPWS-IF97 saturation tables   (steam properties)
+#   Spirax Sarco Steam Engineering Tutorials (worked examples)
+# ═══════════════════════════════════════════════════════════════
+
+def test_ref_napier_asme_pg69_imperial_anchor():
+    """ASME I PG-69 / Napier: W[lb/h] = 51.5*P[psia]*A[in²].
+    A = 0.1225 in² (=79.03 mm²), P_abs = 159.5 psia (=11.0 bar a):
+      W = 51.5 * 159.5 * 0.1225 = 1006.2 lb/h = 456.4 kg/h.
+    set_pressure so P_abs = 11.0 bar a → 11.0 = Pg + 1 + 0.1*Pg → Pg = 9.0909 barg.
+    """
+    Pg = (11.0 - 1.0) / 1.1
+    r = safety_valve_napier(Pg, 79.03)
+    assert abs(r["P_abs_bar"] - 11.0) < 1e-3
+    assert abs(r["W_kgh"] - 456.4) < 5.0, f"W={r['W_kgh']} (expect ≈456 kg/h)"
+
+
+def test_ref_napier_coefficient_value():
+    """K_Napier must equal the citable SI conversion 0.52515 kg/h per bar·mm²
+    (ASME I PG-69: 51.5*0.45359237/(0.0689476*645.16))."""
+    r = safety_valve_napier(5.0, 100.0)
+    assert abs(r["K_Napier"] - 0.52515) < 1e-4, f"K={r['K_Napier']}"
+    # W = K * P_abs * A ; P_abs = 5 + 1 + 0.5 = 6.5 bar a
+    assert abs(r["W_kgh"] - 0.52515 * 6.5 * 100.0) < 0.1
+
+
+def test_ref_tsat_at_4MPa_iapws():
+    """IAPWS-IF97: T_sat at 4.0 MPa = 250.36 °C.  Fitted ±2 °C."""
+    r = tsat_from_p(4.0e6)
+    assert abs(r["T_sat_C"] - 250.36) < 2.5, f"T_sat={r['T_sat_C']}"
+
+
+def test_ref_psat_at_200C_iapws():
+    """IAPWS-IF97: P_sat at 200 °C = 1.5547 MPa.  Antoine fit ±3%."""
+    r = psat_from_t(200.0)
+    assert abs(r["P_sat_MPa"] - 1.5547) / 1.5547 < 0.03, f"Psat={r['P_sat_MPa']} MPa"
+
+
+def test_ref_steam_hfg_at_10bar_iapws():
+    """IAPWS-IF97 at 1.0 MPa (T_sat≈179.9 °C): hfg = 2014.6 kJ/kg.
+    Fitted correlation tolerance ±1.5%."""
+    r = steam_properties(P_Pa=1.0e6)
+    assert abs(r["hfg_kJkg"] - 2014.6) / 2014.6 < 0.015, f"hfg={r['hfg_kJkg']}"
+
+
+def test_ref_hf_at_100C_steam_table():
+    """Steam tables: hf of saturated water at 100 °C = 419.06 kJ/kg.
+    Spirax Sarco / IAPWS-IF97.  Fitted ±1%."""
+    r = steam_properties(T_sat_C=100.0)
+    assert abs(r["hf_kJkg"] - 419.06) / 419.06 < 0.01, f"hf={r['hf_kJkg']}"
+
+
+def test_ref_boiler_horsepower_definition():
+    """1 BHP ≡ 33,475 BTU/h ≈ 9.81 kW (evaporation 15.65 kg/h from&at 100°C).
+    Citable: ABMA boiler-horsepower definition.
+    100 kg/h (=0.02778 kg/s) steam at hg=2676, hf=419.06 →
+      Q = 0.02778*(2676-419.06)=62.69 kW ; BHP = 62.69/9.81 = 6.39."""
+    m = 100.0 / 3600.0
+    r = boiler_horsepower(m, 2676.0)
+    Q_exp = m * (2676.0 - 419.06)
+    assert abs(r["Q_kW"] - Q_exp) < 0.05
+    assert abs(r["BHP"] - Q_exp / 9.81) < 0.02
+
+
+def test_ref_equivalent_evaporation_basis():
+    """'From & at 100 °C' basis uses hfg=2256.9 kJ/kg (citable: steam tables,
+    latent heat of water at 1 atm / 100 °C)."""
+    r = equivalent_evaporation(1.0, 2676.0, 419.06, 0.1)
+    assert r["hfg_100C_kJkg"] == 2256.9
+    FE_exp = (2676.0 - 419.06) / 2256.9
+    assert abs(r["factor_of_evaporation"] - FE_exp) < 1e-3

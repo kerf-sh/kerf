@@ -1199,7 +1199,15 @@ def safety_valve_napier(
 
     Napier formula (imperial origin, metric conversion applied):
       W [kg/h] = P_abs [bar abs] * A [mm²] * K_Napier
-    where K_Napier ≈ 0.0635 for saturated steam (empirical, API 520 equivalent).
+    where K_Napier ≈ 0.5251 for saturated steam.
+
+    Derivation of K_Napier from the citable ASME Section I PG-69 / Napier
+    imperial relation  W [lb/h] = 51.5 * P [psia] * A [in²]:
+        51.5 * 0.45359237 (lb→kg) / (0.0689476 (psi→bar) * 645.16 (in²→mm²))
+        = 0.52515  kg/h per (bar·mm²)
+    Cross-check (Spirax Sarco / ASME I worked example): A = 79 mm²,
+    P_abs = 11 bar a → W = 0.5251 * 11 * 79 ≈ 456 kg/h
+    (= 51.5 * 159.5 psia * 0.1225 in² = 1006 lb/h = 456 kg/h). ✓
 
     For superheated steam, a correction factor Ksh is applied:
       Ksh = 1 / sqrt(1 + 0.00065 * superheat_C)
@@ -1229,7 +1237,9 @@ def safety_valve_napier(
         return result
     # Standard overpressure = 10% above set pressure per ASME PTC/EN ISO 4126
     P_abs = set_pressure_barg + 1.0 + 0.1 * set_pressure_barg  # bar abs with 10% accumulation
-    K_Napier = 0.0635  # kg/h per bar·mm²
+    # ASME Section I PG-69 / Napier: W[lb/h] = 51.5*P[psia]*A[in²]
+    # → SI: 51.5*0.45359237 / (0.0689476*645.16) = 0.52515 kg/h per (bar·mm²)
+    K_Napier = 0.52515  # kg/h per bar·mm²
 
     if steam_type == "superheated" and superheat_C > 0:
         Ksh = 1.0 / math.sqrt(1 + 0.00065 * superheat_C)
