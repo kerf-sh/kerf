@@ -152,6 +152,7 @@ def _register_tools(ctx, provides: list) -> None:
         "kerf_electronics.tools.fab_bundle",
         "kerf_electronics.autoplace.tools",
         "kerf_electronics.schematic.capture",
+        "kerf_electronics.emc_wizard",
     ]
 
     for module_path in tool_modules:
