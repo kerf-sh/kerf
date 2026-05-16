@@ -38,6 +38,7 @@ _TOOL_MODULES = [
     "kerf_cad_core.jewelry.pieces",
     "kerf_cad_core.jewelry.casting_export",
     "kerf_cad_core.jewelry.templates",
+    "kerf_cad_core.jewelry.pave_wizard",
     "kerf_cad_core.sheet_metal",
     "kerf_cad_core.gdt.tools",
     "kerf_cad_core.arch.tools",
@@ -159,6 +160,7 @@ _TOOL_MODULES = [
     "kerf_cad_core.jewelry.production",
     "kerf_cad_core.jewelry.gem_studio",
     "kerf_cad_core.jewelry.gallery",
+    "kerf_cad_core.jewelry.head_wizard",
 ]
 
 # ── kerf_core contract (built by kerf-core agent in parallel) ─────────────────
