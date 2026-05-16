@@ -70,7 +70,7 @@ async def register(app: FastAPI, ctx):
 
     # Build `provides` list based on available deps
     # fem.nonlinear is pure-Python — always available
-    provides = ["fem.nonlinear"]
+    provides = ["fem.nonlinear", "fem.electromagnetics"]
     if _DOLFINX_AVAILABLE:
         provides.append("fem.linear-static")
         provides.append("fem.thermal")
