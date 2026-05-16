@@ -679,6 +679,90 @@ class TestShearFlow:
 
 
 # ===========================================================================
+# 14b. Externally-citable reference cases (worked examples / code tables)
+# ===========================================================================
+
+class TestExternalReferenceCases:
+    """Each assertion checks against a specific, citable published answer."""
+
+    def test_aisc_C12x30_channel_Ix(self):
+        # AISC Steel Construction Manual, 15th ed., Shapes Database — C12x30:
+        # d=12.0 in, bf=3.17 in, tf=0.501 in, tw=0.510 in, Ix = 162 in^4.
+        # Rectangle decomposition (no fillets) should land within ~1%.
+        r = section_properties("channel", b=3.17, d=12.0, tf=0.501, tw=0.510)
+        assert abs(r["Ix"] - 162.0) / 162.0 < 0.01
+
+    def test_aisc_C12x30_channel_area(self):
+        # AISC C12x30: A = 8.81 in^2 (rectangle model ignores fillets → ~0.3% low).
+        r = section_properties("channel", b=3.17, d=12.0, tf=0.501, tw=0.510)
+        assert abs(r["A"] - 8.81) / 8.81 < 0.01
+
+    def test_aisc_W14x90_plastic_Zx(self):
+        # AISC Shapes Database — W14x90: bf=14.52, d=14.0, tf=0.710, tw=0.440 in.
+        # Zx = 157 in^3 (rectangle model w/o fillets ~1.7% low).
+        r = section_properties("I", bf=14.52, d=14.0, tf=0.710, tw=0.440)
+        assert abs(r["Zx"] - 157.0) / 157.0 < 0.02
+
+    def test_aisc_W14x90_weak_axis_plastic_Zy(self):
+        # AISC W14x90: Zy = 75.6 in^3.  Pre-fix code returned ~151 (2x error).
+        r = section_properties("I", bf=14.52, d=14.0, tf=0.710, tw=0.440)
+        assert abs(r["Zy"] - 75.6) / 75.6 < 0.02
+
+    def test_hibbeler_solid_circle_polar_J(self):
+        # Hibbeler, Mechanics of Materials: solid shaft J = π d^4 / 32.
+        # d = 0.04 m → J = π(0.04)^4/32 = 2.5133e-7 m^4.
+        r = section_properties("circle", d=0.04)
+        assert abs(r["J"] - math.pi * 0.04 ** 4 / 32.0) / (math.pi * 0.04 ** 4 / 32.0) < REL
+
+    def test_roark_ss_point_load_offset_max_deflection(self):
+        # Roark's Formulas, 8th ed., Table 8.1, case 1e (SS, off-centre point):
+        # P=1000 N at a=2 m on L=5 m span, EI = 1.0e6 N·m².
+        # δ_max = 0.01615 m at x = sqrt((L²−b²)/3) (b = shorter dist = 2 m... a>b).
+        # Closed-form Roark value: x_m = sqrt((25-4)/3)=2.6458 m,
+        # δ = P·b·x·(L²−b²−x²)/(6 EI L) with b=2 → 1000·2·2.6458·(25-4-7)/(6e6·5)
+        E, I, L, P = 1.0, 1.0e6, 5.0, 1000.0
+        r = beam_loads("simply_supported", "point", E=E, I=I, L=L, P=P, a=3.0)
+        # a=3, b=2 → b_s=2; x_m = sqrt((25-4)/3) = 2.64575 m
+        x_m = math.sqrt((25.0 - 4.0) / 3.0)
+        d_ref = P * 2.0 * x_m * (25.0 - 4.0 - x_m ** 2) / (6.0 * 1.0e6 * 5.0)
+        assert abs(r["max_deflection"] - d_ref) / d_ref < 1e-6
+
+    def test_roark_cantilever_point_tip_deflection(self):
+        # Roark Table 8.1 case 1a: cantilever, tip point load,
+        # δ = P L³/(3EI).  P=5 kN, L=3 m, EI=200e9·1e-6=2e5 → δ=0.225 m.
+        r = beam_loads("cantilever", "point", E=200e9, I=1e-6, L=3.0, P=5000.0, a=3.0)
+        assert abs(r["max_deflection"] - 0.225) / 0.225 < 1e-9
+
+    def test_roark_fixed_fixed_central_point(self):
+        # Roark Table 8.2: fixed-fixed central point load δ = P L³/(192 EI),
+        # fixed-end moment M = P L / 8.
+        E, I, L, P = 200e9, 1e-6, 4.0, 12000.0
+        r = beam_loads("fixed_fixed", "point", E=E, I=I, L=L, P=P, a=L / 2.0)
+        assert abs(r["max_deflection"] - P * L ** 3 / (192.0 * E * I)) / (P * L ** 3 / (192.0 * E * I)) < 1e-9
+        assert abs(r["max_moment"] - P * L / 8.0) / (P * L / 8.0) < 1e-9
+
+    def test_hibbeler_mohr_principal_angle(self):
+        # Hibbeler, Mechanics of Materials, 10th ed., Example 9.6:
+        # σx = -20 MPa, σy = 90 MPa, τxy = 60 MPa →
+        # σ1 = 116.4 MPa, σ2 = -46.4 MPa, θp2 = -23.7° (to σ1 axis +66.3°/-23.7°).
+        r = mohr_circle(-20e6, 90e6, 60e6)
+        assert abs(r["sigma_1"] - 116.4e6) / 116.4e6 < 5e-3
+        assert abs(r["sigma_2"] - (-46.4e6)) / 46.4e6 < 5e-3
+        # principal angle: tan(2θp)=2·60/(-20-90) → 2θp = atan2(120,-110)
+        theta_ref = math.degrees(0.5 * math.atan2(2.0 * 60e6, -20e6 - 90e6))
+        assert abs(r["theta_p_deg"] - theta_ref) < 1e-6
+
+    def test_euler_pinned_column_known_value(self):
+        # Hibbeler, Mechanics of Materials, Euler column:
+        # P_cr = π²EI/(KL)².  Steel rod E=200 GPa, I=4.909e-9 m^4 (d=20 mm),
+        # L=2 m, K=1 → P_cr = π²·200e9·4.909e-9/4 = 2423 N.
+        r = buckling(2.0, math.pi * 0.01 ** 2, math.pi * 0.02 ** 4 / 64.0,
+                     200e9, Fy=10e9, K=1.0)
+        Pe = math.pi ** 2 * 200e9 * (math.pi * 0.02 ** 4 / 64.0) / 4.0
+        assert abs(r["P_euler"] - Pe) / Pe < REL
+
+
+# ===========================================================================
 # 15. LLM tool wrappers
 # ===========================================================================
 

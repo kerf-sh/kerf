@@ -357,9 +357,10 @@ def _section_I(dims: dict, warns: list) -> dict:
     Zx = bf * tf * (d / 2.0 - tf / 2.0) + tw * hw ** 2 / 8.0
     Zx *= 2.0   # × 2 for both sides of neutral axis
 
-    # Zy — plastic neutral axis is the vertical axis of symmetry
-    Zy = 2.0 * (tf * bf ** 2 / 4.0) + hw * tw ** 2 / 4.0
-    Zy *= 2.0   # × 2 for both sides
+    # Zy — plastic neutral axis is the vertical axis of symmetry.
+    # Z_y = Σ A_i·|x_i| about the y-axis = tf·bf²/2 + hw·tw²/4
+    # (AISC Shapes Database; cf. W-shape Zy = bf²·tf/2 + tw²·hw/4).
+    Zy = tf * bf ** 2 / 2.0 + hw * tw ** 2 / 4.0
 
     # Torsion constant (open thin-wall): J = (1/3) Σ b_i t_i³
     J = (1.0 / 3.0) * (2.0 * bf * tf ** 3 + hw * tw ** 3)
@@ -417,10 +418,11 @@ def _section_channel(dims: dict, warns: list) -> dict:
     # Standard formula for C-channel Ix (about centroid, y-symmetric):
     Ix = (b * d ** 3 - (b - tw) * hw ** 3) / 12.0   # not quite right either
 
-    # Correct formula: treat as two flanges + web
-    # Web (d × tw centred at d/2):
-    Ix_web = tw * d ** 3 / 12.0
-    # Each flange (b × tf, centred at (d/2 - tf/2) from centroid):
+    # Correct formula: treat as two flanges + web, consistent with the
+    # area model A = hw·tw + 2·b·tf (web spans only between the flanges).
+    # Web (hw × tw centred at d/2):
+    Ix_web = tw * hw ** 3 / 12.0
+    # Each flange (b × tf, centred at (hw/2 + tf/2) = (d - tf)/2 from centroid):
     d_flange = (d - tf) / 2.0
     Ix_flange = b * tf ** 3 / 12.0 + b * tf * d_flange ** 2
     Ix = Ix_web + 2.0 * Ix_flange
@@ -841,7 +843,11 @@ def _fixed_fixed(lt, E, I, L, EI, params, warns):
         else:
             delta = 0.0
         slope = 0.0  # zero at both clamped ends
-        M_max = max(MA, MB, P * a * b / L)  # approximate
+        # Roark Table 8.2: moment under the load M_load = 2 P a² b² / L³.
+        # The governing |M| is the larger of the fixed-end moments and the
+        # moment under the load (for a central load all three equal P·L/8).
+        M_load = 2.0 * P * a ** 2 * b ** 2 / L ** 3
+        M_max = max(MA, MB, M_load)
         V_max = max(Ra, Rb)
         return _beam_result(delta, slope, M_max, V_max, Ra, Rb, EI, warns)
 
@@ -1192,12 +1198,13 @@ def mohr_circle(sigma_x: float, sigma_y: float, tau_xy: float) -> dict:
     sigma_2 = avg - R
     tau_max = R
 
-    # Angle to principal plane (from Hibbeler §9.2)
-    dx = (sx - sy) / 2.0
-    if dx == 0.0 and txy == 0.0:
+    # Angle to the major-principal plane (Hibbeler, Mechanics of Materials,
+    # §9.3, Eq. 9-4):  tan(2θ_p) = 2·τxy / (σx − σy).
+    # θ_p1 (orientation of σ1) = ½·atan2(2·τxy, σx − σy).
+    if (sx - sy) == 0.0 and txy == 0.0:
         theta_p = 0.0
     else:
-        theta_p = 0.5 * math.atan2(-txy, dx)  # radians; -txy per sign convention
+        theta_p = 0.5 * math.atan2(2.0 * txy, sx - sy)
     theta_p_deg = math.degrees(theta_p)
 
     return {
