@@ -1,0 +1,41 @@
+# kerf-electronics PCB controlled-impedance stackup sub-package.
+# Public API re-exported from impedance.py.
+from kerf_electronics.stackup.impedance import (
+    copper_weight_to_thickness_mm,
+    microstrip_z0,
+    embedded_microstrip_z0,
+    stripline_z0_symmetric,
+    stripline_z0_asymmetric,
+    cpwg_z0,
+    differential_microstrip_z0,
+    differential_stripline_z0,
+    effective_er,
+    propagation_delay_ps_per_mm,
+    wavelength_mm,
+    trace_width_for_z0,
+    diff_pair_spacing_for_zdiff,
+    conductor_loss_db_per_mm,
+    dielectric_loss_db_per_mm,
+    stackup_thickness_mm,
+    stackup_impedance_budget,
+)
+
+__all__ = [
+    "copper_weight_to_thickness_mm",
+    "microstrip_z0",
+    "embedded_microstrip_z0",
+    "stripline_z0_symmetric",
+    "stripline_z0_asymmetric",
+    "cpwg_z0",
+    "differential_microstrip_z0",
+    "differential_stripline_z0",
+    "effective_er",
+    "propagation_delay_ps_per_mm",
+    "wavelength_mm",
+    "trace_width_for_z0",
+    "diff_pair_spacing_for_zdiff",
+    "conductor_loss_db_per_mm",
+    "dielectric_loss_db_per_mm",
+    "stackup_thickness_mm",
+    "stackup_impedance_budget",
+]
