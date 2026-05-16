@@ -163,6 +163,8 @@ _TOOL_MODULES = [
     "kerf_cad_core.jewelry.head_wizard",
     "kerf_cad_core.geom.subd",
     "kerf_cad_core.geom.blocks",
+    "kerf_cad_core.geom.mesh_to_nurbs",
+    "kerf_cad_core.geom.section_contour",
 ]
 
 # ── kerf_core contract (built by kerf-core agent in parallel) ─────────────────
