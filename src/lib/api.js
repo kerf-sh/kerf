@@ -348,6 +348,10 @@ export const api = {
     request(`/api/share/${token}`, { auth: false }),
   acceptShareLink: (token) =>
     request(`/api/share/${token}/accept`, { method: 'POST' }),
+  addShareComment: (token, customerName, body) =>
+    request(`/api/share/${token}/comments`, { method: 'POST', body: { customer_name: customerName, body }, auth: false }),
+  recordShareApproval: (token, customerName, signature) =>
+    request(`/api/share/${token}/approve`, { method: 'POST', body: { customer_name: customerName, signature }, auth: false }),
 
   // ---- Models ----
   listModels: () => request('/api/models'),

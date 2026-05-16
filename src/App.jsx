@@ -24,6 +24,7 @@ import AdminDistributors from './routes/AdminDistributors.jsx'
 import AdminPublishers from './routes/AdminPublishers.jsx'
 import Mechanical from './routes/domains/Mechanical.jsx'
 import JewelryConfigurator from './routes/JewelryConfigurator.jsx'
+import JewelryShare from './routes/JewelryShare.jsx'
 import ProtectedRoute from './routes/ProtectedRoute.jsx'
 import Electronics from './routes/domains/Electronics.jsx'
 import CompareHub from './routes/compare/index.jsx'
@@ -146,6 +147,7 @@ export default function App() {
       )}
       <Route path="/domains/jewelry" element={<JewelryDomainPage />} />
       <Route path="/jewelry-configurator" element={<JewelryConfigurator />} />
+      <Route path="/share/:token" element={<JewelryShare />} />
       <Route path="/domains/architecture" element={<Architecture />} />
 
       <Route element={<ProtectedRoute />}>
