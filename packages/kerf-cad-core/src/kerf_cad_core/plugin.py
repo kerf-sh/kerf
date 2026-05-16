@@ -104,6 +104,7 @@ _TOOL_MODULES = [
     "kerf_cad_core.seismic.tools",
     "kerf_cad_core.concrete.tools",
     "kerf_cad_core.solarpv.tools",
+    "kerf_cad_core.timber.tools",
 ]
 
 # ── kerf_core contract (built by kerf-core agent in parallel) ─────────────────
