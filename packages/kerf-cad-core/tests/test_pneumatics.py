@@ -812,3 +812,95 @@ class TestToolWrappers:
         ctx = _ctx()
         raw = _run(run_pneu_frl_drop(ctx, _args(Q_free_m3s=1e-3)))
         _err_tool(raw)
+
+
+# ===========================================================================
+# 9. CITABLE EXTERNAL-REFERENCE CASES — known numeric answers
+# ===========================================================================
+#
+# Cross-checked against ISO 6358 / NFPA / SMC / Festo worked examples with
+# hand-computable answers.  SAFETY-relevant: pneumatic pressure systems.
+#
+# Sources
+# -------
+# [ISO6358]  ISO 6358-1:2013 — sonic conductance C, critical ratio b.
+# [NFPA]     NFPA T3.21.3 — cylinder force/speed conventions.
+# [SMC]      SMC "Pneumatic Actuator" technical handbook.
+# [Festo]    Festo "Pneumatic Fundamentals" (2nd ed.) — free-air & valve flow.
+# ===========================================================================
+
+class TestCitableReferenceCases:
+
+    def test_ref_cylinder_force_nfpa_100mm_6bar(self):
+        """[NFPA / SMC] Theoretical extend force = gauge pressure × bore area.
+        100 mm bore, 6 bar gauge: A_bore = π/4·0.10² = 7.85398e-3 m²,
+        F_th = 6e5 · 7.85398e-3 = 4712.389 N.
+        """
+        res = cylinder(0.100, 0.025, 6e5 + _P_ATM)
+        assert res["ok"] is True
+        A = math.pi / 4.0 * 0.100 ** 2
+        assert res["F_extend_th_N"] == pytest.approx(6e5 * A, rel=1e-9)
+        assert res["F_extend_th_N"] == pytest.approx(4712.389, abs=1e-3)
+
+    def test_ref_iso6358_critical_pressure_ratio(self):
+        """[ISO6358] Ideal-gas critical pressure ratio for air (γ=1.4):
+        b_ideal = (2/(γ+1))^(γ/(γ−1)) = (2/2.4)^3.5 = 0.528282.
+        """
+        assert _B_IDEAL == pytest.approx(0.528282, abs=1e-6)
+
+    def test_ref_iso6358_choked_flow(self):
+        """[ISO6358 / Festo] Choked volumetric flow q = C·P1·√(T_N/T1).
+        C=1.5e-8 m³/(s·Pa), P1=8 bar abs, T1=T_N
+        → q = 1.5e-8·8e5 = 0.012 m³/s = 720 Nl/min (choked, P2/P1=0.125<b).
+        """
+        res = valve_flow_iso6358(8e5, 1e5, _T_N, 1.5e-8, 0.30)
+        assert res["ok"] is True
+        assert res["choked"] is True
+        assert res["q_m3s_normal"] == pytest.approx(0.012, rel=1e-9)
+        assert res["q_Nl_min"] == pytest.approx(720.0, rel=1e-9)
+
+    def test_ref_air_consumption_compression_ratio(self):
+        """[Festo] Double-acting free-air consumption.
+        bore=50 mm, rod=20 mm, stroke=100 mm, 6 bar abs, 30 cycles/min, T=T_N.
+        V_cyc = (A_b+A_r)·s·r ; Q = V_cyc·cpm·1000.  Hand → 64.18058 Nl/min.
+        """
+        res = air_consumption(0.050, 0.020, 0.100, 6e5, 30.0)
+        assert res["ok"] is True
+        A_b = math.pi / 4.0 * 0.050 ** 2
+        A_r = math.pi / 4.0 * (0.050 ** 2 - 0.020 ** 2)
+        r = 6e5 / _P_ATM
+        hand = (A_b * 0.100 + A_r * 0.100) * r * 30.0 * 1000.0
+        assert res["Q_free_Nl_min"] == pytest.approx(hand, rel=1e-9)
+        assert res["Q_free_Nl_min"] == pytest.approx(64.18058, abs=1e-4)
+
+    def test_ref_receiver_sizing_isothermal(self):
+        """[Festo] Free air stored ΔV = V·(P_hi−P_lo)/P_atm·(T_N/T).
+        V=0.5 m³, P_hi=8 bar abs, P_lo=6 bar abs, Q_d=1e-3 m³/s, T=T_N.
+        ΔV = 0.5·(2e5/101325) = 0.986923 m³ ; t = ΔV/Q_d = 986.923 s.
+        """
+        res = receiver_sizing(0.5, 8e5, 6e5, 1e-3)
+        assert res["ok"] is True
+        hand = 0.5 * (2e5 / _P_ATM) * 1.0
+        assert res["delta_V_free_m3"] == pytest.approx(hand, rel=1e-12)
+        assert res["t_supply_s"] == pytest.approx(986.92327, abs=1e-3)
+
+    def test_ref_charge_time_isothermal(self):
+        """[Festo] Charge time t = V·(ΔP/P_atm)·(T_N/T) / Q_compressor.
+        V=0.3 m³, P0=P_atm, P_tg=8 bar abs, Q_c=2e-3 m³/s
+        → ΔV = 0.3·((8e5−101325)/101325) = 2.068616 m³, t = 1034.30792 s.
+        """
+        res = charge_time(0.3, _P_ATM, 8e5, 2e-3)
+        assert res["ok"] is True
+        hand = 0.3 * ((8e5 - _P_ATM) / _P_ATM)
+        assert res["delta_V_free_m3"] == pytest.approx(hand, rel=1e-12)
+        assert res["t_charge_s"] == pytest.approx(1034.30792, abs=1e-3)
+
+    def test_ref_valve_flow_cv_choked_constant(self):
+        """[Masoneilan/Fisher] Choked Cv air flow q_max = 417·Cv·P1[bar]·
+        √(T_N/(SG·T)).  Cv=2, P1=6 bar, SG=1, T=T_N
+        → q_max = 417·2·6·1 = 5004 Nl/min.
+        """
+        res = valve_flow_cv(2.0, 6e5, 6e5 * 0.30, _T_N, SG_gas=1.0)
+        assert res["ok"] is True
+        assert res["choked"] is True
+        assert res["q_max_Nl_min"] == pytest.approx(5004.0, rel=1e-9)
