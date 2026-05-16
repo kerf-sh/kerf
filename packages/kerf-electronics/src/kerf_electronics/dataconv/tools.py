@@ -364,8 +364,8 @@ _DS_SQNR_SPEC = ToolSpec(
     name="dac_delta_sigma_sqnr",
     description=(
         "Compute ideal ΔΣ modulator SQNR and noise-shaping performance.\n\n"
-        "Candy & Temes (1992):\n"
-        "  SQNR [dB] ≈ 10log10(π^(2L)/(2L+1)) + (6L+3)×10log10(OSR)\n\n"
+        "Schreier & Temes Eq. 2.10 (Candy & Temes 1992):\n"
+        "  SQNR [dB] ≈ 10log10((2L+1)/π^(2L)) + (20L+10)log10(OSR) + 1.76\n\n"
         "Warns if order > 5 (stability) or OSR < 4 (insufficient noise shaping).\n\n"
         "Input: { order, osr }\n"
         "Returns: { ok, order, osr, sqnr_db, enob_equivalent, osr_insufficient }"

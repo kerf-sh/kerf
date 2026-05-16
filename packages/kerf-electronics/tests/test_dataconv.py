@@ -33,15 +33,16 @@ Covers ≥ 30 tests:
     - jitter_limited flag triggers when jitter >> quantisation
     - thermal_limited flag when kTC >> quantisation
 
-  oversampling_gain
+  oversampling_gain  (Kester, Analog Devices MT-001)
     - OSR=1 → process_gain = 0 dB
-    - OSR=4 → process_gain = 10*log10(4)/2 = 3.01 dB
-    - OSR=256 → process_gain = 12.04 dB (4 effective bits gained)
+    - OSR=4 → process_gain = 10*log10(4) = 6.02 dB (1 ENOB / 4× OSR)
+    - OSR=256 → process_gain = 24.08 dB (4 effective bits gained)
     - target_enob triggers osr_required computation
     - osr_insufficient flag when osr_required > 256
 
-  delta_sigma_sqnr
-    - L=1, OSR=64: SQNR computed via Candy & Temes formula
+  delta_sigma_sqnr  (Schreier & Temes Eq. 2.10)
+    - L=1, OSR=64: SQNR ≈ 51 dB (textbook reference value)
+    - L=2, OSR=64: SQNR ≈ 79 dB (textbook reference value)
     - Higher order → higher SQNR at same OSR
     - Higher OSR → higher SQNR at same order
     - OSR < 4 → osr_insufficient=True + warning
@@ -410,18 +411,28 @@ class TestOversamplingGain:
         assert res["ok"] is True
         assert abs(res["process_gain_db"]) < 1e-9
 
-    def test_osr_4_gives_3db(self):
-        """OSR=4 → process gain = 10*log10(4)/2 ≈ 3.01 dB."""
+    def test_osr_4_gives_6db(self):
+        """OSR=4 → process gain = 10*log10(4) ≈ 6.02 dB (1 ENOB / 4× OSR).
+
+        Kester, Analog Devices MT-001 "Taking the Mystery out of the
+        Infamous Formula": oversampling without noise shaping improves
+        SNR by 10·log10(OSR) dB; a 4× OSR buys exactly 6.02 dB ≈ 1 bit.
+        """
         res = oversampling_gain(bits=12, osr=4.0)
         assert res["ok"] is True
-        expected = 10.0 * math.log10(4.0) / 2.0
+        expected = 10.0 * math.log10(4.0)  # 6.0206 dB
         assert abs(res["process_gain_db"] - expected) < 0.01
+        assert abs(res["process_gain_db"] - 6.0206) < 0.01
 
-    def test_osr_256_gives_12db(self):
-        """OSR=256 → process gain = 10*log10(256)/2 ≈ 12.04 dB."""
+    def test_osr_256_gives_24db(self):
+        """OSR=256 → process gain = 10*log10(256) ≈ 24.08 dB (4 ENOB).
+
+        Kester MT-001: 256× OSR = 4 doublings-of-4 = 4 bits = 24.08 dB.
+        """
         res = oversampling_gain(bits=12, osr=256.0)
-        expected = 10.0 * math.log10(256.0) / 2.0
+        expected = 10.0 * math.log10(256.0)  # 24.08 dB
         assert abs(res["process_gain_db"] - expected) < 0.01
+        assert abs(res["process_gain_db"] - 24.082) < 0.01
 
     def test_target_enob_gives_osr_required(self):
         """target_enob forces osr_required computation."""
@@ -454,15 +465,35 @@ class TestOversamplingGain:
 
 class TestDeltaSigmaSqnr:
     def test_first_order_osr64(self):
-        """L=1, OSR=64: verify Candy & Temes formula numerically."""
+        """L=1, OSR=64: verify Schreier & Temes Eq. 2.10 numerically.
+
+        Schreier & Temes, "Understanding Delta-Sigma Data Converters"
+        (2005) Eq. 2.10:  SQNR = 10log10[(2L+1)/π^(2L)]
+                                  + (20L+10)log10(OSR) + 1.76.
+        Textbook reference: 1st-order, OSR=64 → ≈ 51 dB (≈8 ENOB).
+        """
         L, osr = 1, 64.0
         res = delta_sigma_sqnr(L, osr)
         assert res["ok"] is True
         expected = (
-            10.0 * math.log10((math.pi ** 2) / 3.0)
-            + 9.0 * 10.0 * math.log10(osr)
+            10.0 * math.log10((2 * L + 1) / (math.pi ** (2 * L)))
+            + (20 * L + 10) * math.log10(osr)
+            + 1.76
         )
         assert abs(res["sqnr_db"] - expected) < 0.01
+        # Sanity vs textbook reference value (≈51 dB, ≈8 ENOB)
+        assert 49.0 < res["sqnr_db"] < 53.0
+
+    def test_second_order_osr64_reference(self):
+        """L=2, OSR=64 → ≈ 79 dB (≈13 ENOB) — canonical textbook value.
+
+        Schreier & Temes 2005 / Pavan-Schreier-Temes 2nd ed.: the
+        oft-quoted "2nd-order ΔΣ, OSR=64 ≈ 80 dB / 13 bits" result.
+        """
+        res = delta_sigma_sqnr(2, 64.0)
+        assert res["ok"] is True
+        assert 77.0 < res["sqnr_db"] < 81.0
+        assert 12.5 < res["enob_equivalent"] < 13.3
 
     def test_higher_order_higher_sqnr(self):
         """L=2 gives higher SQNR than L=1 at same OSR."""
@@ -752,3 +783,91 @@ class TestToolHandlers:
         )
         data = json.loads(result)
         assert data.get("ok") is False or "error" in data
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Externally-citable reference cases (authoritative published numbers)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class TestExternalReferenceCases:
+    """Each case cross-checks an output against a numeric value published in
+    a citable source.  Tolerances reflect the precision quoted in the source.
+    """
+
+    def test_ref_kester_mt001_12bit_snr_74db(self):
+        # Kester, Analog Devices MT-001, Eq. 1: 12-bit ideal SNR = 74 dB.
+        r = ideal_snr(12)
+        assert abs(r["snr_ideal_db"] - 74.0) < 0.05  # 6.02·12+1.76 = 74.0
+
+    def test_ref_kester_mt001_16bit_snr_98db(self):
+        # Kester MT-001: 16-bit ideal SNR = 98.08 dB (≈98 dB quoted).
+        r = ideal_snr(16)
+        assert abs(r["snr_ideal_db"] - 98.08) < 0.05
+
+    def test_ref_kester_mt001_8bit_snr_50db(self):
+        # Kester MT-001: 8-bit ideal SNR = 49.92 dB (≈50 dB quoted).
+        r = ideal_snr(8)
+        assert abs(r["snr_ideal_db"] - 49.92) < 0.05
+
+    def test_ref_ieee1241_enob_from_sinad(self):
+        # IEEE Std 1241-2010 §3.1.7: SINAD = 74 dB → ENOB = 12.00 bits.
+        r = enob_from_sinad(74.0)
+        assert abs(r["enob"] - 12.0) < 0.01
+
+    def test_ref_kester_mt001_osr_4x_one_bit(self):
+        # Kester MT-001: oversampling without noise shaping — 4× OSR buys
+        # exactly 6.02 dB ≈ 1 ENOB. (NO /2 factor.)
+        r = oversampling_gain(bits=12, osr=4.0)
+        assert abs(r["process_gain_db"] - 6.0206) < 0.01
+        assert abs(r["enob_with_osr"] - 13.0) < 0.01  # 12 + 1
+
+    def test_ref_kester_mt001_osr_factor_for_2bits(self):
+        # Kester MT-001: gaining N effective bits needs OSR = 4^N.
+        # 2 extra ENOB from a 12-bit ADC → OSR = 16.
+        r = oversampling_gain(bits=12, osr=1.0, target_enob=14.0)
+        assert abs(r["osr_required"] - 16.0) < 0.5
+
+    def test_ref_schreier_temes_l1_osr64_51db(self):
+        # Schreier & Temes, "Understanding Delta-Sigma Data Converters"
+        # (2005) Eq. 2.10: 1st-order ΔΣ, OSR=64 → ≈51 dB SQNR.
+        r = delta_sigma_sqnr(1, 64.0)
+        assert abs(r["sqnr_db"] - 50.8) < 1.0
+
+    def test_ref_schreier_temes_l2_osr64_79db(self):
+        # Schreier & Temes 2005 / Pavan-Schreier-Temes 2nd ed.: the
+        # canonical "2nd-order ΔΣ, OSR=64 ≈ 80 dB ≈ 13 bit" datum.
+        r = delta_sigma_sqnr(2, 64.0)
+        assert abs(r["sqnr_db"] - 79.2) < 1.0
+        assert abs(r["enob_equivalent"] - 12.86) < 0.2
+
+    def test_ref_schreier_temes_l3_osr64_107db(self):
+        # Schreier & Temes 2005 Eq. 2.10: 3rd-order ΔΣ, OSR=64 → ≈107 dB.
+        r = delta_sigma_sqnr(3, 64.0)
+        assert abs(r["sqnr_db"] - 106.8) < 1.5
+
+    def test_ref_schreier_temes_l2_osr128_94db(self):
+        # Schreier & Temes 2005 Eq. 2.10: 2nd-order, OSR=128 → ≈94 dB
+        # (doubling OSR adds (20·2+10)·log10(2) = 15.05 dB over OSR=64).
+        r64 = delta_sigma_sqnr(2, 64.0)
+        r128 = delta_sigma_sqnr(2, 128.0)
+        assert abs((r128["sqnr_db"] - r64["sqnr_db"]) - 15.05) < 0.1
+        assert abs(r128["sqnr_db"] - 94.25) < 1.0
+
+    def test_ref_bennett_dynamic_range_to_bits(self):
+        # Bennett 1948 / Kester MT-001 inverse: 90 dB DR needs
+        # N = ceil((90−1.76)/6.02) = ceil(14.66) = 15 bits.
+        r = bits_for_dynamic_range(90.0)
+        assert r["bits_min"] == 15
+
+    def test_ref_ktc_noise_1pf_300k_64uv(self):
+        # Johnson-Nyquist kTC sampling-cap noise: sqrt(kT/C) with
+        # C=1 pF, T=300 K → 64.4 µV_rms (standard ADC-driver result,
+        # e.g. Kester "Data Conversion Handbook" §2, ADI MT-090).
+        import warnings as _w
+        with _w.catch_warnings():
+            _w.simplefilter("ignore")
+            r = total_noise_budget(
+                bits=16, v_fs=2.0, freq_in_hz=1e3, t_jitter_s=1e-15,
+                cap_dac_f=1e-12, temp_k=300.0,
+            )
+        assert abs(r["vn_ktc_vrms"] * 1e6 - 64.4) < 0.5

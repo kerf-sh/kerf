@@ -41,16 +41,25 @@ Total noise budget — RSS of independent noise floors:
     Overall SNR: 20×log10(V_fs / (sqrt(2) × 2 × Vn_total))
         (V_fs/2 is peak sine amplitude; RMS = V_fs/(2√2) )
 
-Oversampling & decimation processing gain:
+Oversampling & decimation processing gain (Kester, Analog Devices
+MT-001 "Taking the Mystery out of the Infamous Formula"; Data
+Conversion Handbook §2):
     OSR = f_s / (2 × BW)
-    Process gain [dB] = 10×log10(OSR) / 2  [3 dB per octave]
+    Process gain [dB] = 10×log10(OSR)   [3.01 dB per octave of OSR,
+        i.e. 6.02 dB → 1 ENOB per 4× oversampling, NO noise shaping]
     → equivalent Nyquist-rate ENOB_nyq = (SNR_with_osr − 1.76) / 6.02
     → required OSR for target ENOB: OSR = 4^(ENOB_target − ENOB_nyq)
+      (consistent with 6.02 dB / bit and 10·log10(OSR) processing gain)
 
-ΔΣ modulator — SQNR and noise shaping (Candy & Temes 1992):
-    SQNR [dB] ≈ 10×log10[ (π^(2L)) / (2L+1) ] + (6L+3) × 10×log10(OSR)
+ΔΣ modulator — peak SQNR with ideal noise shaping (Schreier & Temes,
+"Understanding Delta-Sigma Data Converters" 2005, Eq. 2.10; Candy &
+Temes 1992; 1-bit quantiser, full-scale sine input):
+    SQNR [dB] ≈ 10×log10[ (2L+1) / π^(2L) ] + (20L+10)×log10(OSR) + 1.76
     where L = modulator order.  This is the ideal SQNR ignoring in-band
-    distortion and stability limits.
+    distortion and stability limits.  Reference numbers (textbook):
+      L=1, OSR=64  → ≈ 51 dB (≈8 ENOB)
+      L=2, OSR=64  → ≈ 79 dB (≈13 ENOB)
+      L=3, OSR=64  → ≈ 107 dB (≈17 ENOB)
 
 SAR ADC conversion time and settling:
     t_convert = N × (t_comp + t_sw)
@@ -546,9 +555,11 @@ def oversampling_gain(
     target_enob: Optional[float] = None,
 ) -> dict:
     """
-    Oversampling and decimation processing gain.
+    Oversampling and decimation processing gain (no noise shaping).
 
-    Process gain [dB] = 10 × log10(OSR) / 2  (3 dB per octave of oversampling)
+    Kester, Analog Devices MT-001 / Data Conversion Handbook §2:
+        Process gain [dB] = 10 × log10(OSR)   (3.01 dB per OSR octave;
+        a 4× increase in OSR buys 6.02 dB ≈ 1 ENOB)
     OSR = f_s / (2 × signal_BW)
 
     With decimation (sinc³ or similar), the noise floor in the signal band
@@ -579,7 +590,10 @@ def oversampling_gain(
         return {"ok": False, "reason": "osr must be a real number ≥ 1"}
 
     snr_nyq = 6.02 * bits + 1.76
-    process_gain_db = 10.0 * math.log10(osr) / 2.0
+    # Kester MT-001: oversampling (no noise shaping) processing gain is
+    # 10·log10(OSR) dB — 6.02 dB (1 ENOB) per 4× OSR, consistent with the
+    # osr_required = 4^Δenob relation below.
+    process_gain_db = 10.0 * math.log10(osr)
     snr_osr = snr_nyq + process_gain_db
     enob_osr = (snr_osr - 1.76) / 6.02
 
@@ -623,11 +637,17 @@ def oversampling_gain(
 
 def delta_sigma_sqnr(order: int, osr: float) -> dict:
     """
-    Ideal SQNR for a ΔΣ modulator of given order and OSR.
+    Ideal peak SQNR for a ΔΣ modulator of given order and OSR.
 
-    Candy & Temes (1992) ideal noise-shaping formula:
-        SQNR [dB] ≈ 10×log10[ (π^(2L)) / (2L+1) ] + (6L+3) × 10×log10(OSR)
+    Schreier & Temes, "Understanding Delta-Sigma Data Converters"
+    (2005) Eq. 2.10; Candy & Temes (1992).  For an Lth-order modulator
+    with a 1-bit quantiser and a full-scale sinusoidal input:
+        SQNR [dB] ≈ 10×log10[ (2L+1) / π^(2L) ]
+                    + (20L+10) × log10(OSR) + 1.76
         where L = modulator order.
+    Reference (textbook) values:
+        L=1, OSR=64  → ≈ 51 dB    L=2, OSR=64  → ≈ 79 dB
+        L=3, OSR=64  → ≈ 107 dB   L=2, OSR=128 → ≈ 94 dB
 
     Valid for first-order (L=1) through fifth-order (L=5) single-bit modulators.
     Higher orders require careful stability analysis (not modelled here).
@@ -651,10 +671,12 @@ def delta_sigma_sqnr(order: int, osr: float) -> dict:
         return {"ok": False, "reason": "osr must be a real number ≥ 2"}
 
     L = order
-    # SQNR [dB] = 10*log10(pi^(2L)/(2L+1)) + (6L+3)*10*log10(OSR)
+    # Schreier & Temes Eq. 2.10 (1-bit quantiser, sine input):
+    # SQNR = 10·log10[(2L+1)/π^(2L)] + (20L+10)·log10(OSR) + 1.76
     sqnr_db = (
-        10.0 * math.log10((math.pi ** (2 * L)) / (2 * L + 1))
-        + (6 * L + 3) * 10.0 * math.log10(osr)
+        10.0 * math.log10((2 * L + 1) / (math.pi ** (2 * L)))
+        + (20 * L + 10) * math.log10(osr)
+        + 1.76
     )
     enob = (sqnr_db - 1.76) / 6.02
 
@@ -685,7 +707,7 @@ def delta_sigma_sqnr(order: int, osr: float) -> dict:
         "enob_equivalent": round(enob, 4),
         "osr_insufficient": osr_insufficient,
         "warnings_list": warn_list,
-        "formula": "Candy & Temes (1992): SQNR = 10log10(π^(2L)/(2L+1)) + (6L+3)×10log10(OSR)",
+        "formula": "Schreier & Temes Eq. 2.10: SQNR = 10log10((2L+1)/π^(2L)) + (20L+10)log10(OSR) + 1.76",
     }
 
 
