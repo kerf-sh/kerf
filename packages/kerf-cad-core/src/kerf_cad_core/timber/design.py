@@ -263,7 +263,7 @@ def CM_wet(prop: str, species_type: str = "sawn") -> dict:
 # ---------------------------------------------------------------------------
 
 def Ct_temp(prop: str, temp_F: float) -> dict:
-    """Temperature factor Ct (NDS Table 2.3.4).
+    """Temperature factor Ct (NDS 2018 Table 2.3.3).
 
     Parameters
     ----------
@@ -289,22 +289,24 @@ def Ct_temp(prop: str, temp_F: float) -> dict:
     if T > 150.0:
         return _err(f"temp_F={T} exceeds NDS limit of 150°F for Ct applicability.")
 
+    # NDS 2018 Table 2.3.3 (dry / in-service moisture content ≤ 19%):
+    #   T ≤ 100°F                  : Ct = 1.0 (all)
+    #   100°F < T ≤ 125°F          : Fb,Fv,Fc,Fc⊥,Ft = 0.8 ; E,Emin = 0.9
+    #   125°F < T ≤ 150°F          : Fb,Fv,Fc,Fc⊥,Ft = 0.7 ; E,Emin = 0.9
+    # Fc⊥ takes the SAME factor as Fb/Fv/Fc/Ft (it is not given a separate
+    # reduced value in NDS Table 2.3.3 for the dry condition).
     if T <= 100.0:
         Ct = 1.0
     elif T <= 125.0:
-        if p in props_fb_fv_fc_ft:
+        if p in props_E:
+            Ct = 0.9
+        else:  # Fb, Fv, Fc, Ft, Fc_perp
             Ct = 0.8
-        elif p in props_fc_perp:
-            Ct = 0.67
-        else:  # E/Emin
-            Ct = 0.9
     else:  # 125 < T <= 150
-        if p in props_fb_fv_fc_ft:
-            Ct = 0.7
-        elif p in props_fc_perp:
-            Ct = 0.58
-        else:
+        if p in props_E:
             Ct = 0.9
+        else:  # Fb, Fv, Fc, Ft, Fc_perp
+            Ct = 0.7
 
     return {"ok": True, "Ct": Ct, "prop": p, "temp_F": T}
 
@@ -1180,15 +1182,19 @@ def check_combined_bending_axial(
     fc_psi: float,
     Fc_star_psi: float,
     FcE_psi: float,
+    CP: float = 1.0,
 ) -> dict:
     """Combined bending + axial compression interaction (NDS §3.9.2).
 
-    NDS Eq. (3.9-3):
+    NDS 2018 Eq. (3.9-3) (single-axis bending):
 
         (fc / Fc')² + fb / (Fb' × [1 - fc/FcE]) <= 1.0
 
-    where Fc' = Fc_star × CP (already in Fc_prime_psi here via CP=1 path —
-    caller passes Fc_star (Fc without CP) separately so FcE can be compared).
+    where Fc' = Fc* × CP is the compression design value parallel to grain
+    INCLUDING the column-stability factor CP (NDS §3.7.1).  The first
+    (axial) term MUST use Fc' — using Fc* (without CP) understates the axial
+    demand and is unconservative.  Pass the computed CP (from
+    CP_column_stability); the function forms Fc' = Fc_star × CP internally.
 
     Parameters
     ----------
@@ -1202,6 +1208,9 @@ def check_combined_bending_axial(
         Fc* (Fc × all factors except CP) (psi).
     FcE_psi : float
         Euler critical buckling stress (psi).
+    CP : float
+        Column-stability factor (NDS §3.7.1), 0 < CP <= 1.  Default 1.0
+        (back-compatible; only valid for a fully braced / stocky member).
 
     Returns
     -------
@@ -1222,12 +1231,19 @@ def check_combined_bending_axial(
     e = _guard_positive("FcE_psi", FcE_psi)
     if e:
         return _err(e)
+    e = _guard_positive("CP", CP)
+    if e:
+        return _err(e)
+    if float(CP) > 1.0:
+        return _err(f"CP must be <= 1.0, got {CP}")
 
     fc = float(fc_psi)
     fb = float(fb_psi)
     Fb_p = float(Fb_prime_psi)
     Fc_star = float(Fc_star_psi)
     FcE = float(FcE_psi)
+    # Fc' = Fc* × CP  (NDS §3.7.1 / Eq. 3.9-3 first term uses Fc', not Fc*)
+    Fc_prime = Fc_star * float(CP)
 
     warnings: list[str] = []
 
@@ -1245,8 +1261,8 @@ def check_combined_bending_axial(
             "warnings": warnings,
         }
 
-    # NDS §3.9.2 interaction term
-    term1 = (fc / Fc_star) ** 2
+    # NDS §3.9.2 interaction terms — axial term uses Fc' (= Fc* × CP)
+    term1 = (fc / Fc_prime) ** 2
     term2 = fb / (Fb_p * denom_euler)
     interaction = term1 + term2
 
@@ -1265,6 +1281,8 @@ def check_combined_bending_axial(
         "fc_psi": fc,
         "fb_psi": fb,
         "Fc_star_psi": Fc_star,
+        "Fc_prime_psi": Fc_prime,
+        "CP": float(CP),
         "FcE_psi": FcE,
         "Fb_prime_psi": Fb_p,
         "warnings": warnings,

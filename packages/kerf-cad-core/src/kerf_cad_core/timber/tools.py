@@ -505,7 +505,8 @@ _check_combined_spec = ToolSpec(
     description=(
         "Check combined bending + axial compression interaction (NDS §3.9.2).\n"
         "\n"
-        "NDS Eq. 3.9-3: (fc/Fc*)² + fb / (Fb' × (1 - fc/FcE)) <= 1.0\n"
+        "NDS Eq. 3.9-3: (fc/Fc')² + fb / (Fb' × (1 - fc/FcE)) <= 1.0, "
+        "Fc' = Fc*·CP\n"
         "\n"
         "Returns interaction ratio, pass/fail, and warnings.\n"
         "Warns if fc >= FcE (Euler buckling imminent).\n"
@@ -520,6 +521,7 @@ _check_combined_spec = ToolSpec(
             "fc_psi": {"type": "number", "description": "Actual compression stress (psi). Must be >= 0."},
             "Fc_star_psi": {"type": "number", "description": "Fc* = Fc × all factors except CP (psi). Must be > 0."},
             "FcE_psi": {"type": "number", "description": "Euler critical buckling stress (psi). Must be > 0."},
+            "CP": {"type": "number", "description": "Column-stability factor (NDS §3.7.1), 0 < CP <= 1. The axial term uses Fc' = Fc*·CP. Default 1.0."},
         },
         "required": ["fb_psi", "Fb_prime_psi", "fc_psi", "Fc_star_psi", "FcE_psi"],
     },
@@ -536,7 +538,8 @@ async def run_timber_check_combined(ctx: ProjectCtx, args: bytes) -> str:
         if a.get(field) is None:
             return json.dumps({"ok": False, "reason": f"{field} is required"})
     result = check_combined_bending_axial(
-        a["fb_psi"], a["Fb_prime_psi"], a["fc_psi"], a["Fc_star_psi"], a["FcE_psi"]
+        a["fb_psi"], a["Fb_prime_psi"], a["fc_psi"], a["Fc_star_psi"], a["FcE_psi"],
+        a.get("CP", 1.0),
     )
     return ok_payload(result) if result["ok"] else json.dumps(result)
 

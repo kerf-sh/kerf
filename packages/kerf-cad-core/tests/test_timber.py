@@ -821,6 +821,106 @@ class TestReferenceDesignValues:
 
 
 # ===========================================================================
+# 17b. NDS 2018 worked-example reference cases (citable known answers)
+# ===========================================================================
+
+class TestNDSReferenceCases:
+    """Each assertion checks a specific NDS 2018 / Breyer value."""
+
+    def test_CD_table_2_3_2(self):
+        # NDS 2018 Table 2.3.2 exact CD values.
+        assert CD_load_duration("permanent")["CD"] == pytest.approx(0.9)
+        assert CD_load_duration("ten_year")["CD"] == pytest.approx(1.0)
+        assert CD_load_duration("snow")["CD"] == pytest.approx(1.15)
+        assert CD_load_duration("seven_day")["CD"] == pytest.approx(1.25)
+        assert CD_load_duration("wind")["CD"] == pytest.approx(1.6)
+        assert CD_load_duration("impact")["CD"] == pytest.approx(2.0)
+
+    def test_Ct_Fc_perp_uses_same_as_Fb_table_2_3_3(self):
+        # NDS 2018 Table 2.3.3 (dry): Fc⊥ takes the SAME Ct as Fb/Fv/Fc/Ft
+        # (0.8 at 100–125°F, 0.7 at 125–150°F) — NOT 0.67/0.58 (the bug).
+        assert Ct_temp("Fc_perp", 110.0)["Ct"] == pytest.approx(0.8)
+        assert Ct_temp("Fc_perp", 140.0)["Ct"] == pytest.approx(0.7)
+        assert Ct_temp("Fb", 110.0)["Ct"] == pytest.approx(0.8)
+        assert Ct_temp("E", 140.0)["Ct"] == pytest.approx(0.9)
+
+    def test_FcE_critical_NDS_3_7_1_5(self):
+        # NDS 2018 §3.7.1.5: FcE = 0.822·E'_min/(le/d)².
+        # E'_min = 580,000 psi, le/d = 30 → FcE = 0.822·580000/900 = 529.7 psi.
+        r = FcE_critical(580_000.0, 30.0)
+        assert r["FcE_psi"] == pytest.approx(0.822 * 580_000.0 / 900.0, rel=1e-9)
+
+    def test_CP_Ylinen_NDS_3_7_1_5(self):
+        # NDS 2018 §3.7.1.5 Ylinen: CP=(1+a)/(2c)−√[((1+a)/(2c))²−a/c],
+        # c=0.8 sawn.  Fc*=1400, FcE=800 → α=0.5714,
+        # A=(1.5714)/1.6=0.98214 → CP = 0.98214 − √(0.96460 − 0.71429) = 0.4815.
+        r = CP_column_stability(25.0, 1400.0, 800.0)
+        a = 800.0 / 1400.0
+        A = (1.0 + a) / 1.6
+        cp_ref = A - math.sqrt(A * A - a / 0.8)
+        assert r["CP"] == pytest.approx(cp_ref, rel=1e-9)
+
+    def test_CL_Ylinen_NDS_3_3_3(self):
+        # NDS 2018 §3.3.3.8: RB=√(le·d/b²); FbE=1.20·E'min/RB²;
+        # CL=(1+α)/1.9−√[((1+α)/1.9)²−α/0.95], α=FbE/Fb*.
+        # le=8 ft=96 in, b=1.5, d=9.25 → RB=√(96·9.25/2.25)=19.87,
+        # FbE=1.20·690000/394.7=2097 psi.
+        r = CL_beam_stability(8.0, 1.5, 9.25, 690_000.0, 1500.0)
+        RB = math.sqrt(96.0 * 9.25 / (1.5 ** 2))
+        FbE = 1.20 * 690_000.0 / RB ** 2
+        a = FbE / 1500.0
+        A = (1.0 + a) / 1.9
+        cl_ref = A - math.sqrt(A * A - a / 0.95)
+        assert r["RB"] == pytest.approx(RB, rel=1e-9)
+        assert r["CL"] == pytest.approx(cl_ref, rel=1e-9)
+
+    def test_withdrawal_nail_NDS_12_2_3(self):
+        # NDS 2018 §12.2.3: W = 1380·G^2.5·D^1.5 lb/in.
+        # 16d common nail D=0.162 in, DF-L G=0.50 →
+        # W = 1380·0.5^2.5·0.162^1.5 = 1380·0.17678·0.06517 = 15.90 lb/in.
+        r = withdrawal_nail(0.162, 1.5, 0.50)
+        assert r["W_per_in_lb"] == pytest.approx(1380.0 * 0.50 ** 2.5 * 0.162 ** 1.5, rel=1e-9)
+
+    def test_combined_axial_term_uses_Fc_prime_with_CP(self):
+        # NDS 2018 Eq. 3.9-3 first term is (fc/Fc')² with Fc' = Fc*·CP.
+        # Bug fix: previously used Fc* (no CP) which is unconservative.
+        # fc=500, Fc*=1400, CP=0.6 → Fc'=840 → term1=(500/840)²=0.3543
+        # (was (500/1400)²=0.1276 before the fix — far too low).
+        r = check_combined_bending_axial(
+            fb_psi=300.0, Fb_prime_psi=1200.0, fc_psi=500.0,
+            Fc_star_psi=1400.0, FcE_psi=1000.0, CP=0.6,
+        )
+        assert r["term_axial"] == pytest.approx((500.0 / (1400.0 * 0.6)) ** 2, rel=1e-9)
+        assert r["Fc_prime_psi"] == pytest.approx(840.0, rel=1e-9)
+
+    def test_combined_default_CP_back_compatible(self):
+        # With default CP=1.0, Fc' = Fc* and result matches the legacy formula.
+        r = check_combined_bending_axial(300.0, 1200.0, 500.0, 1400.0, 1000.0)
+        assert r["term_axial"] == pytest.approx((500.0 / 1400.0) ** 2, rel=1e-9)
+
+    def test_DFL_select_structural_full_row_NDS_table_4A(self):
+        # NDS Supplement 2018 Table 4A — Douglas Fir-Larch, Select Structural:
+        # Fb=1500, Ft=1000, Fv=180, Fc⊥=625, Fc=1700, E=1.9e6, Emin=0.69e6.
+        r = reference_design_values("douglas_fir_larch", "select_structural")
+        assert r["Fb_psi"] == 1500.0
+        assert r["Ft_psi"] == 1000.0
+        assert r["Fv_psi"] == 180.0
+        assert r["Fc_perp_psi"] == 625.0
+        assert r["Fc_psi"] == 1700.0
+        assert r["E_psi"] == 1_900_000.0
+        assert r["Emin_psi"] == 690_000.0
+
+    def test_sawn_section_2x10_NDS_supplement_1B(self):
+        # NDS Supplement Table 1B: 2x10 dressed = 1.5 × 9.25 in.
+        # A=13.875 in², S = b·d²/6 = 1.5·9.25²/6 = 21.39 in³,
+        # I = b·d³/12 = 1.5·9.25³/12 = 98.93 in⁴.
+        r = sawn_section(2, 10)
+        assert r["A_in2"] == pytest.approx(1.5 * 9.25, rel=1e-9)
+        assert r["S_in3"] == pytest.approx(1.5 * 9.25 ** 2 / 6.0, rel=1e-9)
+        assert r["I_in4"] == pytest.approx(1.5 * 9.25 ** 3 / 12.0, rel=1e-9)
+
+
+# ===========================================================================
 # 18. LLM tool wrappers
 # ===========================================================================
 
