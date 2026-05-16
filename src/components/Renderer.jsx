@@ -10,6 +10,7 @@ import { distance, formatDistance } from '../lib/measure.js'
 import { cullByFrustum, setUserVisible, frustumCullEnabled } from '../lib/frustumCull.js'
 import { planInstances, instancingEnabled } from '../lib/instancingPlan.js'
 import { createZebraMaterial } from '../lib/zebraMaterial.js'
+import { recordTurntable as _recordTurntable } from '../lib/turntableRender.js'
 
 const PALETTE = [0xc9a96b, 0x6b9bc9, 0xc96b89, 0x89c96b, 0xc9b86b, 0x9b6bc9]
 const HIGHLIGHT_EMISSIVE = 0x4d3c00 // kerf yellow tint
@@ -716,6 +717,18 @@ function Renderer({
           }
         })
       }),
+
+    /**
+     * Orbit the camera 360° and capture each frame as a PNG data-URL.
+     * Delegates to turntableRender.recordTurntable() using the live scene/camera/renderer.
+     * @param {object} [opts]  See turntableRender.recordTurntable opts.
+     * @returns {Promise<string[]>}
+     */
+    recordTurntable: (opts = {}) => {
+      const s = stateRef.current
+      if (!s) return Promise.resolve([])
+      return _recordTurntable(s.scene, s.camera, s.renderer, opts)
+    },
   }), [])
 
   // HUD shows the prop-driven selection if present, else the last clicked id.
