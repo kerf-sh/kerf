@@ -161,6 +161,8 @@ _TOOL_MODULES = [
     "kerf_cad_core.jewelry.gem_studio",
     "kerf_cad_core.jewelry.gallery",
     "kerf_cad_core.jewelry.head_wizard",
+    "kerf_cad_core.geom.subd",
+    "kerf_cad_core.geom.blocks",
 ]
 
 # ── kerf_core contract (built by kerf-core agent in parallel) ─────────────────
