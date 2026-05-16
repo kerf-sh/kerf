@@ -115,6 +115,8 @@ _TOOL_MODULES = [
     "kerf_cad_core.combustion.tools",
     "kerf_cad_core.corrosion.tools",
     "kerf_cad_core.flowmeter.tools",
+    "kerf_cad_core.turbo.tools",
+    "kerf_cad_core.ergonomics.tools",
 ]
 
 # ── kerf_core contract (built by kerf-core agent in parallel) ─────────────────
