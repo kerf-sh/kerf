@@ -536,6 +536,118 @@ class TestSolveBarPlasticAnalytical:
 
 
 # ===========================================================================
+# 7b. CITABLE REFERENCE CASES — known numeric answers
+# ---------------------------------------------------------------------------
+# Sources:
+#   Logan, D.L. "A First Course in the Finite Element Method", 5th ed.
+#   Cook, R.D. et al. "Concepts and Applications of FEA", 4th ed.
+#   Young & Budynas, "Roark's Formulas for Stress and Strain", 7th ed.
+#   de Souza Neto et al. "Computational Methods for Plasticity" (1-D
+#       bilinear isotropic hardening closed form).
+# ===========================================================================
+
+class TestCitableReferenceCases:
+
+    def test_axial_bar_roark_closed_form(self):
+        """Roark's Formulas, Table 8.1 (axial member): δ = P·L/(A·E).
+        Steel bar L=2 m, A=5e-4 m², E=200 GPa, P=50 kN →
+        δ = 50000·2/(5e-4·200e9) = 1.0e-3 m, σ = P/A = 1.0e8 Pa."""
+        nodes = [[0.0, 0.0], [2.0, 0.0]]
+        elements = [[0, 1]]
+        supports = {0: {"ux": True, "uy": True}}
+        loads = {1: {"fx": 50000.0, "fy": 0.0}}
+        res = solve_truss(nodes, elements, supports, loads, E=200e9, A=5e-4)
+        assert res["ok"] is True
+        assert abs(res["displacements"][1][0] - 1.0e-3) / 1.0e-3 < REL
+        assert abs(res["element_stresses"][0] - 1.0e8) / 1.0e8 < REL
+        assert abs(res["element_strains"][0] - 5.0e-4) / 5.0e-4 < REL
+
+    def test_symmetric_a_frame_logan_45deg(self):
+        """Logan §3 / Hibbeler statics: symmetric two-bar A-frame.
+        Nodes 0(0,0) and 1(2,0) pinned, apex 2(1,1) loaded with a
+        downward P.  Each bar is at 45°, length √2.  Method of joints:
+        2·F·sin45° = P → F = P/√2 (compression in both bars).
+        Apex vertical deflection v = δ_axial/sin45° with
+        δ_axial = F·L/(A·E).  Choose P = 1e4·√2 N so F = 1e4 N exactly;
+        with E=200 GPa, A=1e-4 m² → v = 1.0e-3 m."""
+        import math as _m
+        P = 1.0e4 * _m.sqrt(2.0)
+        nodes = [[0.0, 0.0], [2.0, 0.0], [1.0, 1.0]]
+        elements = [[0, 2], [1, 2]]
+        supports = {0: {"ux": True, "uy": True},
+                    1: {"ux": True, "uy": True}}
+        loads = {2: {"fx": 0.0, "fy": -P}}
+        E, A = 200e9, 1e-4
+        res = solve_truss(nodes, elements, supports, loads, E=E, A=A)
+        assert res["ok"] is True
+        # Method-of-joints axial force: P/√2 = 1e4 N, compression
+        assert abs(res["element_forces"][0] + 1.0e4) / 1.0e4 < 1e-6
+        assert abs(res["element_forces"][1] + 1.0e4) / 1.0e4 < 1e-6
+        # Apex vertical deflection (closed form)
+        L = _m.sqrt(2.0)
+        delta_axial = 1.0e4 * L / (A * E)
+        v_exp = delta_axial / _m.sin(_m.pi / 4.0)  # = 1.0e-3 m
+        assert abs(res["displacements"][2][1] + v_exp) / v_exp < 1e-6
+        assert abs(res["displacements"][2][1] + 1.0e-3) / 1.0e-3 < 1e-6
+        # Global equilibrium: Σ vertical reactions = +P
+        assert abs(sum(r[1] for r in res["reactions"]) - P) / P < 1e-6
+
+    def test_truss_static_equilibrium_logan(self):
+        """Logan §3: global equilibrium — Σ reactions = applied loads.
+        Two bars from a wall to a common loaded apex, vertical load P.
+        Sum of vertical reactions must equal +P, horizontal must vanish."""
+        P = 10000.0
+        nodes = [[0.0, 0.0], [0.0, 2.0], [2.0, 1.0]]
+        elements = [[0, 2], [1, 2]]
+        supports = {0: {"ux": True, "uy": True},
+                    1: {"ux": True, "uy": True}}
+        loads = {2: {"fx": 0.0, "fy": -P}}
+        res = solve_truss(nodes, elements, supports, loads)
+        assert res["ok"] is True
+        ry = sum(r[1] for r in res["reactions"])
+        rx = sum(r[0] for r in res["reactions"])
+        assert abs(ry - P) / P < 1e-6
+        assert abs(rx) < 1e-6
+
+    def test_bar_plastic_bilinear_closed_form(self):
+        """1-D bilinear isotropic hardening, closed-form total strain past
+        yield (de Souza Neto et al., Computational Methods for Plasticity):
+            ε = σ/E + (σ − σ_y)/H,   ε_p = (σ − σ_y)/H
+        E=200 GPa, σ_y=250 MPa, H=10 GPa, A=1e-4, L=1 m, F=50 kN
+        → σ = 500 MPa, ε = 500e6/200e9 + 250e6/10e9 = 0.0275,
+          ε_p = 0.025."""
+        res = solve_bar_plastic(1.0, 1e-4, 200e9, 250e6, 10e9, 50000.0,
+                                steps=40)
+        assert res["ok"] is True
+        sigma = 50000.0 / 1e-4  # 5.0e8 Pa
+        eps_exact = sigma / 200e9 + (sigma - 250e6) / 10e9
+        ep_exact = (sigma - 250e6) / 10e9
+        assert abs(res["stress"][-1] - sigma) / sigma < 1e-6
+        assert abs(res["strain"][-1] - eps_exact) / eps_exact < 1e-6
+        assert abs(res["plastic_strain"][-1] - ep_exact) / ep_exact < 1e-6
+
+    def test_bar_perfect_plastic_stress_cap(self):
+        """Perfect plasticity (H=0): stress saturates exactly at σ_y
+        regardless of further loading (elastic–perfectly-plastic limit,
+        de Souza Neto §7). σ_y=250 MPa → final σ = 250 MPa."""
+        res = solve_bar_plastic(1.0, 1e-4, 200e9, 250e6, 0.0, 80000.0,
+                                steps=40)
+        assert res["ok"] is True
+        assert res["plastic"] is True
+        assert abs(res["stress"][-1] - 250e6) / 250e6 < 1e-6
+
+    def test_bar_at_yield_onset_exact(self):
+        """Force exactly at first yield: F_y = σ_y·A = 250e6·1e-4 = 25 kN.
+        Strain = σ_y/E = 1.25e-3, plastic strain = 0 (yield onset)."""
+        res = solve_bar_plastic(1.0, 1e-4, 200e9, 250e6, 10e9, 25000.0,
+                                steps=20)
+        assert res["ok"] is True
+        assert abs(res["stress"][-1] - 250e6) / 250e6 < 1e-6
+        assert abs(res["strain"][-1] - 250e6 / 200e9) / (250e6 / 200e9) < 1e-6
+        assert res["plastic_strain"][-1] < 1e-12
+
+
+# ===========================================================================
 # 8. LLM tool wrappers — fea_solve_truss
 # ===========================================================================
 

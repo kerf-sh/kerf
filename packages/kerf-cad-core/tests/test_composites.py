@@ -660,6 +660,126 @@ class TestFirstPlyFailureLoad:
 
 
 # ===========================================================================
+# 8b. CITABLE REFERENCE CASES — known numeric answers from textbooks
+# ---------------------------------------------------------------------------
+# Source: Jones, R.M. "Mechanics of Composite Materials", 2nd ed. (1999),
+#         Table 2-3 (T300/5208 graphite-epoxy) and §2.6/§2.7 worked
+#         transformation example.  Gibson, R.F. "Principles of Composite
+#         Material Mechanics", 4th ed., E-glass/epoxy properties.
+# ===========================================================================
+
+class TestCitableReferenceCases:
+
+    def test_jones_T300_5208_Q_matrix(self):
+        """Jones Table 2-3 (T300/5208): E1=181, E2=10.3 GPa, ν12=0.28,
+        G12=7.17 GPa →  Q11=181.8 GPa, Q22=10.34 GPa, Q12=2.897 GPa,
+        Q66=7.17 GPa  (reduced plane-stress stiffness)."""
+        res = reduced_stiffness(181e9, 10.3e9, 0.28, 7.17e9)
+        assert res["ok"] is True
+        assert abs(res["Q11"] / 1e9 - 181.8) / 181.8 < 1e-3
+        assert abs(res["Q22"] / 1e9 - 10.34) / 10.34 < 2e-3
+        assert abs(res["Q12"] / 1e9 - 2.897) / 2.897 < 2e-3
+        assert abs(res["Q66"] / 1e9 - 7.17) / 7.17 < 1e-6
+
+    def test_jones_T300_5208_transform_45deg(self):
+        """Jones §2.7 worked example, T300/5208 at θ=45°:
+        Q̄11=Q̄22=56.66 GPa, Q̄12=42.32 GPa, Q̄66=46.59 GPa,
+        Q̄16=Q̄26=42.87 GPa."""
+        res_Q = reduced_stiffness(181e9, 10.3e9, 0.28, 7.17e9)
+        qb = transform_Q(res_Q, 45.0)
+        assert qb["ok"] is True
+        assert abs(qb["Q_bar_11"] / 1e9 - 56.66) / 56.66 < 1e-3
+        assert abs(qb["Q_bar_22"] / 1e9 - 56.66) / 56.66 < 1e-3
+        assert abs(qb["Q_bar_12"] / 1e9 - 42.32) / 42.32 < 1e-3
+        assert abs(qb["Q_bar_66"] / 1e9 - 46.59) / 46.59 < 1e-3
+        assert abs(qb["Q_bar_16"] / 1e9 - 42.87) / 42.87 < 2e-3
+
+    def test_transform_90deg_swaps_Q11_Q22_exact(self):
+        """Jones §2.7: at θ=90° the transformed stiffness swaps
+        Q̄11↔Q22 and Q̄22↔Q11 exactly (fibre rotated transverse)."""
+        res_Q = reduced_stiffness(181e9, 10.3e9, 0.28, 7.17e9)
+        qb = transform_Q(res_Q, 90.0)
+        assert abs(qb["Q_bar_11"] - res_Q["Q22"]) / res_Q["Q22"] < 1e-9
+        assert abs(qb["Q_bar_22"] - res_Q["Q11"]) / res_Q["Q11"] < 1e-9
+
+    def test_gibson_eglass_epoxy_Q(self):
+        """Gibson 4th ed. typical E-glass/epoxy: E1=38.6 GPa, E2=8.27 GPa,
+        ν12=0.26, G12=4.14 GPa → Q11≈39.17 GPa, Q22≈8.39 GPa,
+        Q12≈2.18 GPa (ν 21 = 0.26·8.27/38.6 = 0.0557)."""
+        res = reduced_stiffness(38.6e9, 8.27e9, 0.26, 4.14e9)
+        assert res["ok"] is True
+        assert abs(res["Q11"] / 1e9 - 39.17) / 39.17 < 2e-3
+        assert abs(res["Q22"] / 1e9 - 8.39) / 8.39 < 2e-3
+        assert abs(res["Q12"] / 1e9 - 2.18) / 2.18 < 5e-3
+        assert abs(res["nu21"] - 0.26 * 8.27 / 38.6) < 1e-9
+
+    def test_unidirectional_0deg_Ex_equals_E1(self):
+        """A single 0° ply laminate has effective Ex = E1 exactly and
+        Ey = E2 exactly (Jones §2.5, lamina = laminate of one ply).
+        T300/5208 → Ex = 181 GPa, Ey = 10.3 GPa."""
+        plies = [_cf_ply(0.0, 0.125e-3)]
+        abd = abd_matrix(plies)
+        mod = laminate_engineering_moduli(abd)
+        assert mod["ok"] is True
+        assert abs(mod["Ex"] - 181e9) / 181e9 < 1e-3
+        assert abs(mod["Ey"] - 10.3e9) / 10.3e9 < 1e-3
+        assert abs(mod["nu_xy"] - 0.28) / 0.28 < 1e-3
+
+    def test_quasi_isotropic_graphite_epoxy_modulus(self):
+        """[0/±45/90]s quasi-isotropic T300/5208: the laminate is
+        in-plane isotropic, Ex = Ey.  The QI plane-stress modulus from
+        CLT is ≈ 69.7 GPa with ν_xy ≈ 0.30 (Jones §4.6, Daniel & Ishai
+        QI laminate result)."""
+        t = 0.125e-3
+        angles = [0, 45, -45, 90, 90, -45, 45, 0]
+        plies = [_cf_ply(a, t) for a in angles]
+        abd = abd_matrix(plies)
+        mod = laminate_engineering_moduli(abd)
+        assert mod["ok"] is True
+        assert abs(mod["Ex"] - mod["Ey"]) / mod["Ex"] < 1e-4
+        assert abs(mod["Ex"] / 1e9 - 69.7) / 69.7 < 5e-3
+        assert abs(mod["nu_xy"] - 0.30) / 0.30 < 0.02
+
+    def test_tsai_wu_uniaxial_fibre_tension_onset(self):
+        """Tsai-Wu (Jones §2.9; Tsai & Wu 1971) under pure σ1 reduces to
+        F1·σ1 + F11·σ1² = 1 with F1 = 1/F1t − 1/F1c, F11 = 1/(F1t·F1c).
+        With F1t=F1c (=1500 MPa) F1=0, so failure at σ1 = F1t exactly.
+        F.I. at σ1 = F1t must equal 1.0."""
+        fi = failure_indices(
+            [S_cf["F1t"], 0.0, 0.0],
+            [S_cf["F1t"] / 181e9, 0.0, 0.0],
+            S_cf,
+            criteria=["tsai-wu"],
+        )
+        assert fi["ok"] is True
+        assert abs(fi["tsai_wu"]["fi"] - 1.0) < 1e-6
+
+    def test_tsai_hill_transverse_tension_onset(self):
+        """Tsai-Hill (Jones §2.9): under pure σ2, F.I.² = (σ2/F2t)².
+        At σ2 = F2t the failure index squared is exactly 1.0."""
+        fi = failure_indices(
+            [0.0, S_cf["F2t"], 0.0],
+            [0.0, S_cf["F2t"] / 10.3e9, 0.0],
+            S_cf,
+            criteria=["tsai-hill"],
+        )
+        assert fi["ok"] is True
+        assert abs(fi["tsai_hill"]["fi_squared"] - 1.0) < 1e-9
+
+    def test_max_stress_shear_onset(self):
+        """Max-stress criterion (Jones §2.9): pure shear τ12 = F12 gives
+        F.I. = |τ12|/F12 = 1.0 exactly (onset of shear failure)."""
+        fi = failure_indices(
+            [0.0, 0.0, S_cf["F12"]],
+            [0.0, 0.0, S_cf["F12"] / 7.17e9],
+            S_cf,
+            criteria=["max-stress"],
+        )
+        assert fi["ok"] is True
+        assert abs(fi["max_stress"]["fi"] - 1.0) < 1e-9
+
+
+# ===========================================================================
 # 9. LLM tool wrappers
 # ===========================================================================
 

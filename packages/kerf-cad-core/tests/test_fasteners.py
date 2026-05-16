@@ -591,6 +591,123 @@ class TestISOThread:
 
 
 # ===========================================================================
+# 10b. CITABLE REFERENCE CASES — known numeric answers
+# ---------------------------------------------------------------------------
+# Sources:
+#   Shigley's Mechanical Engineering Design, 10th ed., Chapter 8
+#     (Eq. 8-17 bolt stiffness, Eq. 8-20 frustum member stiffness,
+#      Eq. 8-27 nut-factor torque, Eq. 8-29 separation, §8-11 Goodman).
+#   ISO 898-1 / ISO 724 tensile stress area  At = π/4·((d2+d3)/2)².
+#   VDI 2230-1:2015, Annex A (frustum stiffness, α = 30°).
+# ===========================================================================
+
+class TestCitableReferenceCases:
+
+    def test_iso_stress_area_matches_iso898(self):
+        """ISO 898-1 Annex defines At = π/4·((d_pitch + d_minor)/2)².
+        Recomputing from the tabulated pitch/minor diameters must
+        reproduce the published stress areas (Shigley Table 8-1):
+        M16 → 156.7 mm², M10 → 58.0 mm², M8 → 36.6 mm²."""
+        for nom, At_pub in ((16.0, 157.0), (10.0, 58.0), (8.0, 36.6),
+                            (6.0, 20.1), (12.0, 84.3), (20.0, 245.0)):
+            e = ISO_THREAD[nom]
+            dp = e["d_pitch_mm"]
+            dr = e["d_minor_mm"]
+            At_calc = math.pi / 4.0 * ((dp + dr) / 2.0) ** 2
+            assert abs(At_calc - At_pub) / At_pub < 0.01, (
+                f"M{nom}: At_calc={At_calc:.2f} vs published {At_pub}"
+            )
+            assert abs(e["stress_area_mm2"] - At_pub) < max(0.6, 0.005 * At_pub)
+
+    def test_preload_nut_factor_shigley_eq_8_27(self):
+        """Shigley Eq. 8-27: T = K·Fi·d  →  Fi = T/(K·d).
+        T=100 N·m, d=20 mm, K=0.20 → Fi = 100/(0.20·0.020) = 25 000 N."""
+        res = preload_from_torque(T=100.0, d=0.020, K=0.20)
+        assert res["ok"] is True
+        assert abs(res["F_preload_N"] - 25000.0) / 25000.0 < REL
+
+    def test_bolt_stiffness_shigley_eq_8_17_fully_threaded(self):
+        """Shigley Eq. 8-17 (fully threaded within grip):
+        kb = E·At/lt with At = π/4·d_minor².
+        M16 minor d=13.546 mm, lt=30 mm, E=200 GPa →
+        At = 1.4412e-4 m², kb = 200e9·1.4412e-4/0.030 = 9.6077e8 N/m."""
+        d_t = 0.013546
+        res = bolt_stiffness(0.016, 0.0, d_t, 0.030, 200e9)
+        assert res["ok"] is True
+        A_t = math.pi / 4.0 * d_t ** 2
+        kb_exp = 200e9 * A_t / 0.030
+        assert abs(res["k_bolt_N_per_m"] - kb_exp) / kb_exp < REL
+        assert abs(res["k_bolt_N_per_m"] - 9.6077e8) / 9.6077e8 < 1e-3
+
+    def test_member_stiffness_shigley_eq_8_20_frustum(self):
+        """Shigley Eq. 8-20 / VDI 2230 frustum, α=30°, washer face
+        d_w = 1.5·d.  Two back-to-back cones in series.
+        Grip 30 mm, steel E=207 GPa, M16 →
+        k_m = 3.7906e9 N/m (hand-evaluated from Eq. 8-20)."""
+        res = clamped_stiffness(0.030, 207e9, 0.016)
+        assert res["ok"] is True
+        E, d, D, l = 207e9, 0.016, 1.5 * 0.016, 0.030
+        t = l / 2.0
+        tan30 = math.tan(math.radians(30.0))
+        num = (2 * t * tan30 + D - d) * (D + d)
+        den = (2 * t * tan30 + D + d) * (D - d)
+        k_cone = math.pi * E * d * tan30 / math.log(num / den)
+        k_m_exp = k_cone / 2.0
+        assert abs(res["k_clamp_N_per_m"] - k_m_exp) / k_m_exp < 1e-9
+        assert abs(res["k_clamp_N_per_m"] - 3.7906e9) / 3.7906e9 < 1e-3
+
+    def test_stiffness_constant_C_shigley(self):
+        """Shigley §8-6 joint stiffness constant C = kb/(kb+km) = Φ.
+        For the M16/30 mm steel joint above: C ≈ 0.202."""
+        kb = bolt_stiffness(0.016, 0.0, 0.013546, 0.030, 200e9)[
+            "k_bolt_N_per_m"]
+        km = clamped_stiffness(0.030, 207e9, 0.016)["k_clamp_N_per_m"]
+        res = joint_load_factor(kb, km)
+        assert res["ok"] is True
+        assert abs(res["Phi"] - kb / (kb + km)) < 1e-12
+        assert abs(res["Phi"] - 0.202) < 5e-3
+
+    def test_separation_factor_shigley_eq_8_29(self):
+        """Shigley Eq. 8-29: load factor against separation
+        n0 = Fi / [P·(1 − C)].  Fi=20 000 N, P=10 000 N, C=0.20 →
+        n0 = 20000 / (10000·0.8) = 2.5."""
+        res = separation_safety(F_preload=20000.0, F_external=10000.0,
+                                Phi=0.20)
+        assert res["ok"] is True
+        assert abs(res["n_sep"] - 2.5) / 2.5 < REL
+
+    def test_working_stress_shigley_eq_8_25(self):
+        """Shigley Eq. 8-25 bolt stress under load:
+        σb = (Fi + C·P)/At.  Fi=20 kN, C=0.20, P=5 kN, At=157 mm² →
+        σb = (20000 + 1000)/157e-6 = 133.758 MPa."""
+        res = bolt_working_stress(20000.0, 5000.0, 0.20, 157e-6)
+        assert res["ok"] is True
+        sig_exp = (20000.0 + 0.20 * 5000.0) / 157e-6
+        assert abs(res["sigma_total_Pa"] - sig_exp) / sig_exp < REL
+        assert abs(res["sigma_total_Pa"] - 133.758e6) / 133.758e6 < 1e-3
+
+    def test_modified_goodman_shigley_fatigue(self):
+        """Shigley §6-12 / §8-11 modified-Goodman criterion:
+        n = 1 / (σa/Se + σm/Sut) for Kf=1.
+        σa=50 MPa, Se=200 MPa, σm=300 MPa, Sut=800 MPa →
+        ratio = 0.25 + 0.375 = 0.625, n = 1.6."""
+        res = fatigue_check(50e6, 200e6, 300e6, 800e6, Kf=1.0)
+        assert res["ok"] is True
+        assert abs(res["goodman_ratio"] - 0.625) / 0.625 < REL
+        assert abs(res["n_goodman"] - 1.6) / 1.6 < REL
+
+    def test_slip_critical_capacity_shigley_eq_8_30(self):
+        """Friction-grip (slip-critical) capacity, Shigley §8-12 /
+        RCSC: n_slip = μ·Fi·N / V.
+        μ=0.35, Fi=20 kN, N=2 bolts, V=10 kN →
+        n_slip = 0.35·20000·2/10000 = 1.4."""
+        res = slip_safety(F_preload=20000.0, F_shear=10000.0,
+                          mu=0.35, n_bolts=2)
+        assert res["ok"] is True
+        assert abs(res["n_slip"] - 1.4) / 1.4 < REL
+
+
+# ===========================================================================
 # 11. LLM tool wrappers
 # ===========================================================================
 
