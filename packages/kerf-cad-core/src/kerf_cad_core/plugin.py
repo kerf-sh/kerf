@@ -86,6 +86,10 @@ _TOOL_MODULES = [
     "kerf_cad_core.hydrology.tools",
     "kerf_cad_core.welding.tools",
     "kerf_cad_core.tolfits.tools",
+    "kerf_cad_core.cncfeeds.tools",
+    "kerf_cad_core.clutchbrake.tools",
+    "kerf_cad_core.pumpsys.tools",
+    "kerf_cad_core.beltchain.tools",
 ]
 
 # ── kerf_core contract (built by kerf-core agent in parallel) ─────────────────
