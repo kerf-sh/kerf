@@ -82,6 +82,7 @@ _TOOL_MODULES = [
     "kerf_cad_core.casting.tools",
     "kerf_cad_core.injection.tools",
     "kerf_cad_core.surveying.tools",
+    "kerf_cad_core.geotech.tools",
 ]
 
 # ── kerf_core contract (built by kerf-core agent in parallel) ─────────────────
