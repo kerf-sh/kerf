@@ -1,13 +1,13 @@
 # NURBS surfacing Phase 4 — full robustness
 
-**Status:** design / plan only. Not commitable until at least one capability's
-binding-probe pass returns a `GO` verdict (see "Pre-flight: binding probe
-extension" below).
-**Owner:** TBD per capability — these are large enough that each capability
-should have its own activation gate.
+**Status:** Capabilities 1, 2, and 4 shipped. Capability 3 (matchSrf) deferred
+pending persistent-face-naming (see Sequencing). Zebra / reflection-line
+viewport toggle shipped (shader-side `ShaderMaterial` in `src/lib/zebraMaterial.js`
++ toggle in `src/components/Renderer.jsx`). Algorithmic G3 structurally deferred
+(`GeomAbs_G3` absent in stock OCCT — confirmed). See status snapshot below.
+**Owner:** imranparuk
 **Companion docs:**
-- [`nurbs-booleans-v1.md`](./nurbs-booleans-v1.md) — small-scope solid-cap
-  path (currently in flight, T1+T2 shipped, T3-T7 in parallel).
+- [`nurbs-booleans-v1.md`](./nurbs-booleans-v1.md) — solid-cap path (shipped).
 - [`nurbs-booleans-scoping.md`](./nurbs-booleans-scoping.md) — original
   scoping with the explicit "what we're NOT doing" list. **This plan is
   the materialised version of those deferred scopes.**
@@ -24,13 +24,29 @@ should have its own activation gate.
 - **Phase 4b (gumball direct face manipulation)** — face translate +
   rotate handles commit `push_pull` / `rotate_face` nodes; edge gumball
   commits `feature_fillet`.
-- **NURBS booleans v1 — solid-cap path (in flight)** — T1+T2 shipped: a
-  binding probe + `surfaceToSolid` helper + `opToSolid` worker handler.
-  T3-T7 wire the Python tool surface, `opBoolean`, inspector entries, and
-  tests. Plan: [`nurbs-booleans-v1.md`](./nurbs-booleans-v1.md). The
-  v1 path is small-scope: cap surfaces to solids via `feature_to_solid`,
-  then use existing `BRepAlgoAPI_Cut_3` / `Fuse_3` / `Common_3` on
-  `TopoDS_Solid`s.
+- **NURBS booleans v1 — solid-cap path (shipped)** — binding probe +
+  `surfaceToSolid` helper + `opToSolid` worker handler + `feature_to_solid`
+  LLM tool + `feature_boolean` LLM tool + inspector entries + tests. Plan:
+  [`nurbs-booleans-v1.md`](./nurbs-booleans-v1.md). Surfaces → solid via
+  `BRepBuilderAPI_Sewing` + `MakeSolid`, then `BRepAlgoAPI_Cut_3` / `Fuse_3`
+  / `Common_3`.
+- **Capability 1 (Robust NURBS-NURBS surface booleans) — shipped.**
+  `feature_surface_boolean` in `surfacing.py` + `opSurfaceBoolean` worker
+  handler. Accepts Face/Shell/Solid operands; returns compound of trimmed face
+  fragments. `ShapeFix_Shape` pre-pass + `ShapeUpgrade_UnifySameDomain`
+  cleanup; `fuzziness` + `coarse_mode` flags. Pure-Python guard layer in
+  `geom/surface_boolean_robust.py`.
+- **Capability 4 (G3 curvature-comb visualisation) — shipped.**
+  `feature_surface_curvature_combs` in `surfacing.py` samples principal
+  curvatures via `GeomLProp_SLProps`; Three.js `CurvatureCombOverlay.jsx`
+  renders combs in-viewport. Algorithmic G3 enforcement structurally deferred
+  (`GeomAbs_G3` absent from `GeomAbs_Shape` enum — confirmed).
+- **P1-6 zebra / reflection-line viewport toggle — shipped.**
+  `src/lib/zebraMaterial.js` — `THREE.ShaderMaterial` that reflects the view
+  direction in the surface normal and projects onto a periodic stripe axis
+  (classic parallel-tube environment-map simulation). "Zebra" button in the
+  viewport top-right swaps every mesh to the zebra material and restores on
+  toggle-off. No WASM rebuild required.
 - **Capability 2 (Trim-by-curve) — pure-Python + worker wiring shipped.**
   `packages/kerf-cad-core/src/kerf_cad_core/geom/trim_curve.py` implements
   UV-space projection (`project_curve_to_uv`), face splitting (`split_face_uv`,
