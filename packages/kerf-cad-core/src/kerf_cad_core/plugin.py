@@ -135,6 +135,8 @@ _TOOL_MODULES = [
     "kerf_cad_core.reliability.tools",
     "kerf_cad_core.thermalcut.tools",
     "kerf_cad_core.heattreat.tools",
+    "kerf_cad_core.waterhammer.tools",
+    "kerf_cad_core.pavement.tools",
 ]
 
 # ── kerf_core contract (built by kerf-core agent in parallel) ─────────────────
