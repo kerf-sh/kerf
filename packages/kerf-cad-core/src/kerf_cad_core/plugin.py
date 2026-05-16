@@ -148,6 +148,12 @@ _TOOL_MODULES = [
     "kerf_cad_core.elecpower.tools",
     "kerf_cad_core.plumbing.tools",
     "kerf_cad_core.earthworks.tools",
+    "kerf_cad_core.geom.make2d",
+    "kerf_cad_core.geom.curve_toolkit",
+    "kerf_cad_core.geom.surface_analysis",
+    "kerf_cad_core.geom.mesh_repair",
+    "kerf_cad_core.geom.unroll_srf",
+    "kerf_cad_core.geom.solid_features",
 ]
 
 # ── kerf_core contract (built by kerf-core agent in parallel) ─────────────────
