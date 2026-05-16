@@ -196,9 +196,12 @@ def fcc_limit_dbuvm(
     """
     FCC Part 15 §15.109 radiated emission limit in dBμV/m.
 
-    Limits are defined at 10 m (Class A) or 3 m (Class B).  When
-    distance_m differs from the reference distance, the limit is adjusted
-    using the 20*log10(d_ref/d) free-space correction.
+    FCC §15.109 publishes Class A limits at 10 m and Class B limits at 3 m.
+    Internally, both tables are stored as 10 m–equivalent values (the Class B
+    3 m values have been scaled to 10 m via 20·log10(3/10) ≈ −10.46 dB so
+    that a single reference-distance correction based on 10 m applies to both
+    classes).  When distance_m differs from 10 m, the limit is adjusted using
+    the 20·log10(10/distance_m) free-space correction.
 
     Parameters
     ----------
@@ -228,8 +231,14 @@ def fcc_limit_dbuvm(
             "reason": f"No FCC Class {class_} limit defined for {freq_hz/1e6:.1f} MHz",
         }
 
-    # Reference distances: Class A → 10 m, Class B → 3 m per FCC §15.109
-    ref_dist = 10.0 if class_ == "A" else 3.0
+    # Both tables store 10 m–equivalent values (see _FCC_CLASS_A_10M / _FCC_CLASS_B_10M).
+    # FCC §15.109 publishes Class B at 3 m and Class A at 10 m, but the stored limits are
+    # already scaled to the 10 m reference distance so that a single distance correction
+    #   20·log10(10 / distance_m)
+    # produces the correct limit at any requested distance.
+    # (Bug fix: previously ref_dist was set to 3 m for Class B, which applied the wrong
+    # correction factor and returned limits 10.46 dB too low at every distance.)
+    ref_dist = 10.0  # both tables use 10 m as the common reference
     # Adjust to requested distance using 1/r (free-space)
     correction_db = 20.0 * math.log10(ref_dist / distance_m)
     limit_adj = limit_at_ref + correction_db

@@ -326,11 +326,13 @@ class TestRadiatedCommonMode:
 class TestLimitLines:
     def test_fcc_class_b_50mhz_at_3m(self):
         """FCC Class B: 50 MHz at 3 m.
-        Table limit is 29.5 dBμV/m at reference (3 m for Class B).
-        At 3 m from 3 m ref → correction = 20*log10(3/3) = 0 dB → 29.5."""
+        FCC §15.109 publishes 100 µV/m = 40.0 dBµV/m at 3 m for the 30–88 MHz band.
+        The internal table stores 10 m–equivalent values (29.5 dBµV/m); at 3 m the
+        free-space correction adds 20·log10(10/3) ≈ +10.46 dB → ≈ 39.96 dBµV/m."""
         res = fcc_limit_dbuvm(freq_hz=50e6, class_="B", distance_m=3.0)
         assert res["ok"] is True
-        assert abs(res["limit_dbuvm"] - 29.5) < 0.01
+        # 100 µV/m at 3 m = 40.0 dBµV/m; allow ±0.1 dB for rounding in stored table
+        assert abs(res["limit_dbuvm"] - 40.0) < 0.1
 
     def test_fcc_class_a_50mhz_at_10m(self):
         """FCC Class A: 50 MHz at 10 m reference → 39.5 dBμV/m."""
@@ -419,9 +421,10 @@ class TestEmissionMargin:
             class_="B",
             distance_m=3.0,
         )
-        # FCC Class B at 3 m: 29.5 dBμV/m → margin = 29.5 - 25.0 = 4.5
+        # FCC Class B at 3 m: ~39.96 dBμV/m (100 µV/m per FCC §15.109 Table 2)
+        # margin = limit - emission = ~39.96 - 25.0 = ~14.96 dB
         assert res["ok"] is True
-        assert abs(res["margin_db"] - 4.5) < 0.01
+        assert abs(res["margin_db"] - (res["limit_dbuvm"] - emission)) < 1e-6
 
     def test_fcc_vs_cispr_class_b_differ(self):
         """FCC and CISPR Class B limits differ at same freq/distance."""
