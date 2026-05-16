@@ -1,7 +1,6 @@
 # NURBS surfacing Phase 4 — full robustness
 
-**Status:** Capabilities 1, 2, and 4 shipped. Capability 3 (matchSrf) deferred
-pending persistent-face-naming (see Sequencing). Zebra / reflection-line
+**Status:** Capabilities 1, 2, 3 (pure-Python core), and 4 shipped. Capability 3 (matchSrf) pure-Python pole-adjustment core shipped; OCC GeomFill_NSections binding remains WASM-blocked (C3-T1 pending). Zebra / reflection-line
 viewport toggle shipped (shader-side `ShaderMaterial` in `src/lib/zebraMaterial.js`
 + toggle in `src/components/Renderer.jsx`). Algorithmic G3 structurally deferred
 (`GeomAbs_G3` absent in stock OCCT — confirmed). See status snapshot below.
