@@ -254,10 +254,17 @@ class TestTBeamFlange:
         assert r["be_in"] == approx(72)
 
     def test_l_beam_one(self):
-        """L-beam uses L/12 for span criterion."""
+        """L-beam uses 6*hf and L/12 (ACI 318-19 Table 6.3.2.1)."""
         r = tbeam_effective_flange(12, 4, 240, 72, side="one")
-        # 8*hf=32, sw/2=30, L/12=20 → overhang=20 → be=32
+        # 6*hf=24, sw/2=30, L/12=20 → overhang=20 (L/12) → be=32
         assert r["be_in"] == approx(32)
+
+    def test_l_beam_governed_by_6hf(self):
+        """ACI 318-19 Table 6.3.2.1: one-sided flange overhang ≤ 6·hf
+        (NOT 8·hf — that was a bug). hf=3 → 6·hf=18 governs over
+        sw/2=(120-12)/2=54 and ln/12=600/12=50 → be = 12 + 18 = 30."""
+        r = tbeam_effective_flange(12, 3, 600, 120, side="one")
+        assert r["be_in"] == approx(30)
 
     def test_flange_governed_by_hf(self):
         """Narrow spacing → governed by 8*hf."""
@@ -488,3 +495,86 @@ class TestCrackControl:
         # More bars (same total As) → lower service stress
         # Actually more As → lower kd and higher jd → lower fs
         assert r6["fs_psi"] < r3["fs_psi"]
+
+
+# ===========================================================================
+# ACI 318-19 worked-example reference cases (citable known answers)
+# ===========================================================================
+
+class TestACIReferenceCases:
+    """Each assertion is checked against a specific citable ACI/textbook value."""
+
+    def test_singly_reinforced_hand_calc(self):
+        # Wight & MacGregor / McCormac singly-reinforced rectangular beam:
+        # b=12 in, d=21 in, As=3.0 in², f'c=4000 psi, fy=60,000 psi.
+        # a = As·fy/(0.85·f'c·b) = 180000/40800 = 4.412 in
+        # Mn = As·fy·(d − a/2) = 180000·18.794 = 3.383e6 lb·in = 3383 kip·in
+        # εt = 0.003·(d−c)/c, c = a/β₁ = 5.190 → εt = 0.00914 > 0.005 → φ=0.90
+        r = beam_flexure(12, 21, 3.0, 4000, 60000)
+        assert r["a_in"] == pytest.approx(4.412, rel=1e-3)
+        assert r["Mn_kipin"] == pytest.approx(3382.9, rel=2e-3)
+        assert r["phi"] == pytest.approx(0.90, rel=1e-9)
+        assert r["zone"] == "tension-controlled"
+
+    def test_beta1_table_22_2_2_4_3(self):
+        # ACI 318-19 Table 22.2.2.4.3 exact tabulated values.
+        assert _beta1(3000) == pytest.approx(0.85)
+        assert _beta1(4000) == pytest.approx(0.85)
+        assert _beta1(5000) == pytest.approx(0.80)   # 0.85 − 0.05·1
+        assert _beta1(6000) == pytest.approx(0.75)   # 0.85 − 0.05·2
+        assert _beta1(8000) == pytest.approx(0.65)   # 0.85 − 0.05·4
+        assert _beta1(12000) == pytest.approx(0.65)  # floor
+
+    def test_phi_transition_table_21_2_2(self):
+        # ACI 318-19 Table 21.2.2: φ = 0.65 + 0.25·(εt−εty)/(0.005−εty),
+        # Grade 60 εty = 0.002.  At εt = 0.0035 (midpoint) φ = 0.775.
+        phi, zone = _phi_flexure(0.0035)
+        assert phi == pytest.approx(0.775, rel=1e-6)
+        assert zone == "transition"
+        assert _phi_flexure(0.005)[0] == pytest.approx(0.90)
+        assert _phi_flexure(0.002)[0] == pytest.approx(0.65)
+
+    def test_balanced_rho_4ksi_60ksi(self):
+        # ACI derivation: ρb = 0.85·β₁·(f'c/fy)·(87000/(87000+fy)).
+        # f'c=4000, fy=60000 → 0.85·0.85·(4/60)·(87/147) = 0.02851.
+        rb = _rho_balanced(4000, 60000)
+        assert rb == pytest.approx(0.0285, rel=5e-3)
+
+    def test_column_pure_axial_ACI_22_4_2_2(self):
+        # ACI 318-19 Eq. 22.4.2.2: Pn = 0.85·f'c·(Ag−Ast) + fy·Ast.
+        # 16×16 tied, Ast=4.0 in², f'c=4000, fy=60000.
+        # Pn = 0.85·4·(256−4) + 60·4 = 856.8 + 240 = 1096.8 kip
+        # φPn = 0.65·0.80·1096.8 = 570.3 kip (ACI Table 22.4.2.1, 21.2.2).
+        c = column_axial(16, 16, 4.0, 4000, 60000, column_type="tied")
+        assert c["Pn_kip"] == pytest.approx(1096.8, rel=1e-3)
+        assert c["phi_Pn_kip"] == pytest.approx(570.3, rel=1e-3)
+
+    def test_column_spiral_factors(self):
+        # ACI Table 22.4.2.1 / 21.2.2: spiral φ=0.75, axial factor 0.85.
+        c = column_axial(16, 16, 4.0, 4000, 60000, column_type="spiral")
+        assert c["phi_Pn_kip"] == pytest.approx(0.75 * 0.85 * 1096.8, rel=1e-3)
+
+    def test_shear_simplified_Vc_ACI_22_5_5_1(self):
+        # ACI 318-19 Table 22.5.5.1 simplified: Vc = 2·λ·√f'c·bw·d.
+        # bw=12, d=20, f'c=4000 → Vc = 2·1·63.246·12·20 = 30358 lb = 30.36 kip
+        r = beam_shear(12, 20, 4000, 60000, 0.0, 0.0, 12.0)
+        assert r["Vc_kip"] == pytest.approx(2 * math.sqrt(4000) * 12 * 20 / 1000.0, rel=1e-6)
+
+    def test_shear_Vs_ACI_22_5_10_5_3(self):
+        # ACI 318-19 Eq. 22.5.10.5.3: Vs = Av·fyt·d/s.
+        # Av=0.22 in² (#3 stirrup, 2 legs), fyt=60000, d=20, s=8
+        # Vs = 0.22·60000·20/8 = 33000 lb = 33.0 kip
+        r = beam_shear(12, 20, 4000, 60000, 0.0, 0.22, 8.0)
+        assert r["Vs_kip"] == pytest.approx(0.22 * 60000 * 20 / 8 / 1000.0, rel=1e-6)
+
+    def test_Ec_and_fr_ACI_19_2(self):
+        # ACI 318-19 19.2.2.1b: Ec = 57000·√f'c; 19.2.3.1: fr = 7.5·√f'c.
+        # f'c=4000 → Ec = 3,604,997 psi; fr = 474.3 psi.
+        r = immediate_deflection(12, 24, 21, 3.0, 4000, 60000, 100.0, 240.0)
+        assert r["Ec_psi"] == pytest.approx(57000 * math.sqrt(4000), rel=1e-6)
+
+    def test_l_beam_overhang_6hf_ACI_6_3_2_1(self):
+        # ACI 318-19 Table 6.3.2.1: one-sided flange overhang ≤ 6·hf
+        # (this was previously a bug — used 8·hf).
+        r = tbeam_effective_flange(12, 3, 600, 120, side="one")
+        assert r["be_in"] == pytest.approx(12 + 6 * 3)  # 6·hf governs

@@ -453,16 +453,17 @@ def tbeam_effective_flange(
         warnings.append("side must be 'both' or 'one'; defaulting to 'both'")
         side = "both"
 
-    # ACI 318-19 §6.3.2.1: each overhanging flange width ≤
-    #   8*hf  (criterion a)
-    #   sw/2  where sw = clear distance to adjacent web (criterion b)
-    #   ln/8  where ln = span length (criterion c)
+    # ACI 318-19 Table 6.3.2.1.
+    #   Symmetric T-beam (both sides), overhang each side ≤ least of:
+    #     8*hf,  sw/2,  ln/8
+    #   Flange on one side only (L-beam / edge), overhang ≤ least of:
+    #     6*hf,  sw/2,  ln/12
     sw = spacing_in - bw  # clear distance to adjacent web
     if side == "both":
         overhang_each = min(8 * hf, sw / 2, span_in / 8)
         be = bw + 2 * overhang_each
     else:  # L-beam / one side only
-        overhang_each = min(8 * hf, sw / 2, span_in / 12)
+        overhang_each = min(6 * hf, sw / 2, span_in / 12)
         be = bw + overhang_each
 
     return {
