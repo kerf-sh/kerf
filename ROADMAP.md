@@ -269,7 +269,74 @@ roadmap no longer narrates it.
   → `docs/llm/configurations.md`.
 - **Materials database** ✅ — `.material` kind, 55 seeded materials.
 - **Two coexisting kernels** ✅ — `.jscad` (mesh) + `.feature` (OCCT BRep),
-  shared `.sketch`/`.assembly`/`.drawing`.
+  shared `.sketch`/`.assembly`/`.drawing`. A **third, pure-Python B-rep +
+  NURBS kernel** (`packages/kerf-cad-core/src/kerf_cad_core/geom/`) now
+  produces validated `Body` topology, tolerant booleans, G1/G2 fillets,
+  closest-point, hardened SSI, and a parametric history DAG with
+  persistent face naming — usable without OCCT. See **Geometry kernel —
+  depth** below and `docs/plans/geometry-kernel-roadmap.md`.
+
+### Geometry kernel — depth
+
+<!-- Status reconciled 2026-05-17: P0 + P1 (5 streams) + P3 keystone landed in
+     packages/kerf-cad-core/src/kerf_cad_core/geom/. Plan + per-task checklist
+     in docs/plans/geometry-kernel-roadmap.md. P2 (pure-Python STEP/IGES +
+     SubD↔NURBS + mesh→NURBS autosurface + 2D region boolean) = next focus.
+     Test count is verified via `pytest --collect-only`, not estimated. -->
+
+The pure-Python geometry kernel jumped from *Rhino-width construction
+verbs but no topology binding and no closest-point* to a real
+math-depth moat. Detail + per-task checklist in
+[`docs/plans/geometry-kernel-roadmap.md`](./docs/plans/geometry-kernel-roadmap.md).
+Quick map of what is in `packages/kerf-cad-core/src/kerf_cad_core/geom/`:
+
+- **B-rep topology keystone** ✅ — `brep.py` (1 312 LOC): radial-edge-ish
+  `Body → Solid → Shell → Face → Loop → Coedge → Edge → Vertex` hierarchy,
+  nine Euler operators with exact inverses, generalised Euler–Poincaré
+  invariant *enforced and re-checked*, six-point `validate_body`. Contract
+  frozen in `geom/BREP_CONTRACT.md`.
+- **Build bridge** ✅ — `brep_build.py` (833 LOC) — analytic verbs (box /
+  cylinder / sphere / Coons patch) emit a `validate_body`-clean `Body`;
+  every public constructor ends with an internal `validate_body` assertion.
+- **Tolerant pure-Python solid booleans** ✅ — `sew.py` (386 LOC) +
+  `boolean.py` (1 195 LOC). Face-imprint via SSI, tolerance-monotonic
+  vertex/edge merge, regularised cut / fuse / common over the primitive
+  matrix; result is `validate_body`-clean and 2-manifold. No OCCT required.
+- **G1 / G2 surface blend + edge fillet + chamfer** ✅ — `fillet_solid.py`
+  (1 631 LOC) + `chamfer.py` (1 040 LOC). Rolling-ball trim+sew on
+  planar+planar and planar+cylindrical edge contracts; constant /
+  asymmetric / variable-width chamfer; G2 cross-sections with verified
+  curvature continuity.
+- **Surface + curve + loop offsets** ✅ — `offset.py` (877 LOC) — exact-
+  distance offsets with self-intersection trim; analytic oracles
+  (concentric circle, parallel plane, sphere r→r+d).
+- **Coons patches** ✅ — `coons.py` (519 LOC) — boundary interpolation
+  exact to `1e-12`.
+- **Closest-point / point-inversion** ✅ — `inversion.py` (629 LOC).
+  Foundational primitive for snapping, projection, deviation, SSI seeding,
+  fitting, draft analysis. Piegl 6.1 with analytic first + second partials
+  on rational surfaces.
+- **Hardened SSI** ✅ — `intersection.py` rebuilt with loop-detection,
+  tangential-branch detection, small-loop guard, analytic line/quadric
+  specialisations; rational-weight bug fixed.
+- **Parametric history DAG with persistent face/edge naming** ✅ —
+  `geom/history/` (1 962 LOC across `feature.py`, `persistent_naming.py`,
+  `dag.py`, `evaluators.py`). Three-part `feature_id::role::fingerprint`
+  selectors. Edit a box parameter ⇒ a downstream fillet still targets the
+  semantically same edge, not a different one. Box / cylinder / sphere /
+  boolean / chamfer / fillet evaluators wired.
+- **Ship-gate kernel tests, all green** ✅ — verified by `pytest
+  --collect-only` on the listed files (2026-05-17): `test_brep_topology`
+  51, `test_euler_invariants` 63, `test_brep_build` 43,
+  `test_boolean_solid` 36, `test_chamfer` 30, `test_fillet_blend_g2` 53,
+  `test_offset` 33, `test_coons` 49, `test_surface_analysis_refvalues` 46,
+  `test_nurbs_correctness` 44, `test_inversion` 42, `test_ssi_robust` 37,
+  `test_curve_toolkit_exact` 46, `test_history_dag` 47 — **620 hermetic
+  analytic-oracle-asserted tests**. Full repo collection: 23 902 tests.
+- **P2 next** 🚧 — pure-Python STEP AP203/214 reader/writer (decouple
+  interop fidelity from OCCT); SubD ↔ NURBS watertight `Body` bridge;
+  mesh → NURBS autosurface to a deviation tolerance; 2D region boolean
+  on planar loops (sketch-driven solids without OCCT round-trip).
 
 ### Mechanical / CAD
 - **OCCT `.feature` Phase 2/3** ✅ — Pad/Pocket/Revolve/Hole/Fillet/Chamfer/
@@ -298,9 +365,13 @@ roadmap no longer narrates it.
 - **Rhino parity** ✅ — 3DM I/O, SubD (Catmull-Clark), quad remesh, mesh
   tools, layers/display, parametric `.graph`, render output, curve depth,
   drafting completeness.
-- **Persistent face naming** 🚧 — sketch-anchored + topo-hash; T1–T2
-  shipped, boolean hardening = P0-4.
-  → `docs/plans/persistent-face-naming.md`.
+- **Persistent face naming** ✅ — sketch-anchored + topo-hash (frontend
+  T1–T2 + boolean hardening T3 shipped) **plus** a kernel-side
+  `feature_id::role::fingerprint` selector now wired into the pure-Python
+  parametric DAG (`geom/history/persistent_naming.py`) so a downstream
+  fillet/chamfer survives an upstream parameter edit.
+  → `docs/plans/persistent-face-naming.md`,
+  `docs/plans/geometry-kernel-roadmap.md`.
 
 ### Simulation / manufacturing
 - **FEM** ✅ — FEniCSx (+ CalculiX) linear-static + modal (SLEPc) + steady
