@@ -9,6 +9,7 @@ import { Routes, Route, Navigate } from 'react-router-dom'
 import ProtectedRoute from './routes/ProtectedRoute.jsx'
 import ShortcutsModal from './components/ShortcutsModal.jsx'
 import RouteFallback from './components/RouteFallback.jsx'
+import ScrollToTop from './components/ScrollToTop.jsx'
 
 // ── lazy (route-level code splitting) ─────────────────────────────────────
 // Every route below is converted from an eager `import X from '...'` to
@@ -148,6 +149,7 @@ export default function App() {
   const localShortcut = localMode && accessToken
   return (
     <>
+    <ScrollToTop />
     <ShortcutsModal />
     <Suspense fallback={<RouteFallback />}>
     <Routes>
