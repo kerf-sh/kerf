@@ -29,3 +29,15 @@ Trigger keywords: EMC, EMI, radiated emissions, FCC Part 15, CISPR 22, CISPR 32,
 
 1. Call `emc_radiated_differential` with `freq_hz=2e6`, `loop_area_m2=50e-6`, `current_a=2`, `distance_m=3` → get `e_field_dbuvm`.
 2. Call `emc_emission_margin` with that `e_field_dbuvm`, `freq_hz=2e6`, `standard="cispr"`, `class_="B"`, `distance_m=3` → get `margin_db` and `passes`.
+
+---
+
+## Important: FCC Class B reference-distance correction
+
+FCC §15.109 publishes Class B limits at 3 m and Class A limits at 10 m. **Both tables are stored internally as 10 m-equivalent values.** The Class B 3 m values were pre-scaled to 10 m by adding `20·log10(3/10) ≈ −10.46 dB` before storage. The `fcc_limit_dbuvm` function then applies a single `20·log10(10/distance_m)` correction to reach any requested distance.
+
+**Do not re-introduce a separate 3 m reference distance for Class B** — the stored `_FCC_CLASS_B_10M` table already accounts for it. Using `ref_dist = 3.0` for Class B would produce limits 10.46 dB too low at every distance (a previous bug that was corrected by fixing `ref_dist = 10.0` for both tables).
+
+The same unified `ref_dist = 10.0` approach applies to the CISPR 32 limit tables.
+
+References: FCC Title 47, Part 15, §15.109; CISPR 32:2015 Annex B Table B.4.
