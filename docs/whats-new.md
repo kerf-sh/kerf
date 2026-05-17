@@ -2,6 +2,35 @@
 
 Recent features shipped to Kerf. See [ROADMAP.md](https://github.com/kerf-sh/kerf/blob/main/ROADMAP.md) for the full list and status of every item.
 
+## Sprint — 17 May 2026 — geometry kernel keystone + history DAG + boot loader + docs viewer + comparison expansion
+
+Five user-facing wins landed together:
+
+- **B-rep topology keystone + tolerant pure-Python solid booleans** — the
+  pure-Python geometry kernel now emits topologically validated solids
+  end-to-end; cut / fuse / common run without OCCT and return watertight
+  2-manifold bodies. Detail in the kernel section below.
+- **Parametric history DAG with persistent face / edge naming** — edit an
+  upstream parameter and a downstream fillet still targets the
+  *semantically same* edge, not a different one (`feature_id::role::
+  fingerprint` three-part selectors).
+- **Pre-React boot loader** — Kerf-branded SVG triangles loader paints
+  immediately in `index.html`, then transitions cleanly into the first
+  React route. No more blank screen on first load.
+- **Docs viewer redesign** — grouped sidebar (domains + workflows + cloud
+  + reference + develop), breadcrumbs, TOC, audit-filter; manifest
+  generation now emits the grouped taxonomy automatically.
+- **Comparison pages expanded** — Altium, MatrixGold, Blender, Onshape
+  are new; FreeCAD, KiCad, Rhino, Revit, Fusion pages were deepened.
+  Nine head-to-head comparison pages now live under `/compare/`.
+- **Renderer hero / PBR upgrade** — 2048×2048 4× supersample,
+  ACES tonemap, PMREM-pre-filtered RoomEnvironment HDRI, and bloom — one
+  production-grade lighting path shared by Workshop covers, share-cards,
+  and the primary 3D viewport.
+- **Frontend touch + responsive polish** — Renderer + Gumball touch
+  gestures, Editor responsive layout, top-bar overflow, Docs mobile
+  drawer.
+
 ## Sprint — mid-May 2026 — geometry kernel step-change
 
 The pure-Python geometry kernel went from "approximate circles, broken or

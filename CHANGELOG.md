@@ -73,6 +73,47 @@ boolean delegated to OCCT* to a real math-depth moat. All in
 Plan + per-task `GK-NN` checklist (P2 interop is next):
 [`docs/plans/geometry-kernel-roadmap.md`](./docs/plans/geometry-kernel-roadmap.md).
 
+### 2026-05-17 — Renderer hero / docs viewer / comparison expansion / boot loader
+
+Same date, separate workstreams that landed in the same window as the kernel
+step-change above. Tracked here as a sibling section so the kernel entry
+stays self-contained.
+
+- **Renderer hero / PBR upgrade** — `captureHeroShot` (`src/lib/heroShot.js`)
+  now renders at 2048×2048 with 4× supersampling, ACES tonemapping, a
+  PMREM-pre-filtered RoomEnvironment HDRI, and `UnrealBloomPass`; wired into
+  `src/components/Renderer.jsx` so Workshop covers, share-cards, and the
+  primary 3D viewport share one production-grade lighting path.
+- **Frontend touch + responsive polish** — T-C1/T-C2 touch in Renderer,
+  T-C3 Gumball touch, T-L1/T-L2 Editor responsive + top-bar overflow,
+  T-H2 Docs mobile drawer.
+- **Pre-React boot loader** — `src/components/Loader.jsx` +
+  `src/components/RouteFallback.jsx` + a pre-React-mount Kerf-branded SVG
+  triangles loader injected in `index.html` (no more blank screen on first
+  paint).
+- **Docs viewer redesign** — grouped sidebar (`domains` + workflows + cloud
+  + reference + develop groups) with breadcrumbs, TOC, audit-filter, and
+  internal-planning-artifact filtering; `scripts/build-docs-manifest.mjs`
+  emits the grouped taxonomy into `public/docs-manifest.json`.
+- **Comparison pages expanded** — `src/routes/compare/` now ships
+  Altium, Blender, Freecad, Fusion, KiCad, MatrixGold, Onshape, Revit,
+  Rhino; the existing Freecad/Kicad/Rhino/Revit/Fusion pages were
+  deepened, and Altium/MatrixGold/Blender/Onshape are new this session.
+- **Documentation expansion** — ~75 new per-package `llm_docs/` pages
+  across kerf-cad-core, kerf-electronics, kerf-imports, kerf-fem,
+  kerf-mates, kerf-{cloud,billing,pricing}, kerf-{workers,parts,partsgen,
+  cam,topo}, kerf-{core,auth,api}; 17 new user-facing pages under `docs/`
+  (`getting-started`, `local-install`, `local-self-host`, `cloud-features`,
+  `projects`, `sharing`, `workshop`, `github-sync`, `billing-and-credits`,
+  `account-and-auth`, `file-revisions`, `persona-bundles`,
+  `plugins-development`, `configuration`, `deployment`, `llm-tool-authoring`,
+  `sdk`, `api-reference`, `data-model`, `tool-registry`, `contributing`,
+  `troubleshooting`, and the three vertical workflow guides:
+  `jewelry-workflow`, `mechanical-workflow`, `electronic-workflow`).
+- **Cross-vertical e2e tests** — 57 cross-vertical parametric e2e tests
+  spanning jewelry / mechanical / electronic workflows, in addition to
+  the 620 kernel ship-gate tests. Full repo total ~23 902, all green.
+
 ## [0.1.0] — 2026-05-15
 
 Initial public release. The core platform across mechanical, electronics,
