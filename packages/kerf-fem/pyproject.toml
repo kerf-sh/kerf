@@ -6,6 +6,7 @@ build-backend = "hatchling.build"
 name = "kerf-fem"
 version = "0.1.0"
 license = { text = "MIT" }
+classifiers = ["License :: OSI Approved :: MIT License"]
 description = "Finite-element analysis plugin for Kerf"
 requires-python = ">=3.11"
 dependencies = [

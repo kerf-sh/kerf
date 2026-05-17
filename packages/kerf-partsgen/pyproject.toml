@@ -8,6 +8,7 @@ version = "0.1.0"
 description = "Token-frugal, contributor-run pipeline that builds an original (MIT) parametric standard-parts library for the Kerf Workshop"
 requires-python = ">=3.11"
 license = { text = "MIT" }
+classifiers = ["License :: OSI Approved :: MIT License"]
 dependencies = []
 
 [project.optional-dependencies]

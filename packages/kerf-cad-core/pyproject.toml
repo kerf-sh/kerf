@@ -6,6 +6,7 @@ build-backend = "hatchling.build"
 name = "kerf-cad-core"
 version = "0.1.0"
 license = { text = "MIT" }
+classifiers = ["License :: OSI Approved :: MIT License"]
 description = "Shared pythonOCC base layer for Kerf CAD compute plugins"
 requires-python = ">=3.10"
 dependencies = [

@@ -8,6 +8,7 @@ version = "0.1.0"
 description = "Kerf auth plugin: JWT, sessions, OAuth, API tokens"
 requires-python = ">=3.11"
 license = { text = "MIT" }
+classifiers = ["License :: OSI Approved :: MIT License"]
 dependencies = [
     "fastapi>=0.111.0",
     "asyncpg>=0.29.0",

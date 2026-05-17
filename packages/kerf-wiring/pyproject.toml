@@ -8,6 +8,7 @@ version = "0.1.0"
 description = "Wiring / cable-harness diagram plugin for Kerf (.wiring → SVG via WireViz)"
 readme = "README.md"
 license = { text = "MIT" }
+classifiers = ["License :: OSI Approved :: MIT License"]
 requires-python = ">=3.11"
 dependencies = [
     "fastapi",

@@ -8,6 +8,7 @@ version = "0.1.0"
 description = "IEC 61131-3 Structured Text plugin for Kerf (.plc.st — syntax-highlighted editor + offline MATIEC lint)"
 readme = "README.md"
 license = { text = "MIT" }
+classifiers = ["License :: OSI Approved :: MIT License"]
 requires-python = ">=3.11"
 dependencies = [
     "fastapi",

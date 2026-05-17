@@ -9,6 +9,7 @@ description = "Kerf core: FastAPI app, plugin loader, shared infrastructure"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
+classifiers = ["License :: OSI Approved :: MIT License"]
 dependencies = [
     "fastapi>=0.111.0",
     "uvicorn[standard]>=0.29.0",

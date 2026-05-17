@@ -6,6 +6,7 @@ build-backend = "hatchling.build"
 name = "kerf-imports"
 version = "0.1.0"
 license = { text = "MIT" }
+classifiers = ["License :: OSI Approved :: MIT License"]
 description = "Import adapters (KiCad, FreeCAD, Rhino3dm) + Rhino-parity tools for Kerf"
 requires-python = ">=3.11"
 dependencies = []
