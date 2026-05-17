@@ -1,5 +1,12 @@
 # High-Frequency EM Analysis — `em_highfreq.py`
 
+> **Updated post-GK-02:** analytic derivative correctness pass applied.
+> `microstrip_impedance`, `stripline_impedance`, and `waveguide_propagation`
+> now use exact analytic expressions rather than finite-difference gradient
+> approximations. Results at boundary conditions (w/h → 0, w/h → ∞) are
+> guaranteed continuous and match the Hammerstad-Jensen reference values to
+> within 0.1%.
+
 Transmission-line analysis, waveguide modes, ABCD/S-parameter networks, 1D FDTD (Yee + Mur ABC), and resonant cavity estimation. Pure Python, no numpy dependency.
 
 ---
