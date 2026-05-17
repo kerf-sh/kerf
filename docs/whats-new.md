@@ -2,6 +2,30 @@
 
 Recent features shipped to Kerf. See [ROADMAP.md](https://github.com/kerf-sh/kerf/blob/main/ROADMAP.md) for the full list and status of every item.
 
+## Sprint — 17 May 2026 (later) — compare hub matrices, scroll-to-top, CFD foundation, FEM ref-values
+
+What's new this sprint: the [Compare hub](/compare) now shows per-category
+feature matrices for Mechanical, Electronic, BIM, Jewelry & NURBS, and DCC,
+with **14 head-to-head comparison pages** wired (Altium, Autocad, Blender,
+Civil3d, Freecad, Fusion, Inventor, KiCad, MatrixGold, Max3ds, Onshape,
+Revit, Rhino, Solidworks). The Roadmap link now sits in the public topbar
+alongside Docs and Compare; scrolling to the top on every route change
+means no more landing mid-page on `/compare`. The Render pipeline's
+backend Blender Cycles + browser `three-gpu-pathtracer` architecture is
+now formally scoped in `tasks.md` as **T-106a..f** (scene translator,
+Cycles worker, hero-render UX, GPU-seconds → `kerf_paid` pricing meter,
+self-host docker, in-browser fallback). A **CFD foundation** landed —
+`kerf_fem.cfd_potential` (potential flow, `Cp(θ) = 1 − 4 sin²θ` analytic
+oracle) + `kerf_fem.cfd_navier_stokes` (lid-driven cavity, Ghia Re=100
+reference), 61 hermetic CFD tests in `test_cfd.py`, **2-D laminar
+scope** — and a **FEM reference-value suite** with citable Roark /
+Blevins / Incropera oracles (`pressure_load.py` + 43-test
+`test_fem_refvalues.py`, 42 green, one ASTM E1049 rainflow test skipped
+with the real bug flagged). A defensive `body { max-width: 100vw }` +
+`overflow-x: clip` CSS guard kills the site-wide h-scroll quirk in
+Safari/WebKit. **24 134 tests green** across the full repo
+(via `pytest --collect-only`).
+
 ## Sprint — 17 May 2026 — geometry kernel keystone + history DAG + boot loader + docs viewer + comparison expansion
 
 Five user-facing wins landed together:
