@@ -159,6 +159,10 @@ export default function SketchView({
     setLineDraft({ ...lineDraftRef.current })
   }, [])
 
+  // Right-inspector collapsed state — hidden by default on narrow viewports
+  // (< lg) so the canvas gets the full width on mobile/tablet.
+  const [inspectorOpen, setInspectorOpen] = useState(false)
+
   // Pulse-on-click highlight for constraint rows. When the user clicks a row
   // in the constraint list, we set `pulseConstraintId` so the linked entities
   // and the constraint label briefly glow. Auto-clears after ~1.4s.
@@ -258,6 +262,59 @@ export default function SketchView({
       y: cy - (wy - view.cy) * view.scale,
     }
   }, [view])
+
+  // ---- Pointer / touch handlers ------------------------------------------
+  // Two-finger pinch-zoom state for touch devices.
+  const pinchRef = useRef(null)
+
+  function onPointerDown(e) {
+    if (e.pointerType !== 'touch') return
+    try { e.currentTarget.setPointerCapture(e.pointerId) } catch {}
+    if (pinchRef.current?.p1 && !pinchRef.current.p2) {
+      pinchRef.current.p2 = { id: e.pointerId, x: e.clientX, y: e.clientY }
+      pinchRef.current.initDist = Math.hypot(
+        pinchRef.current.p2.x - pinchRef.current.p1.x,
+        pinchRef.current.p2.y - pinchRef.current.p1.y,
+      )
+      pinchRef.current.initScale = view.scale
+    } else {
+      pinchRef.current = { p1: { id: e.pointerId, x: e.clientX, y: e.clientY }, p2: null, initDist: 0, initScale: view.scale }
+    }
+  }
+
+  function onPointerMove(e) {
+    if (e.pointerType !== 'touch') return
+    const ref = pinchRef.current
+    if (!ref) return
+    if (ref.p1?.id === e.pointerId) ref.p1 = { ...ref.p1, x: e.clientX, y: e.clientY }
+    else if (ref.p2?.id === e.pointerId) ref.p2 = { ...ref.p2, x: e.clientX, y: e.clientY }
+    if (ref.p1 && ref.p2) {
+      const dist = Math.hypot(ref.p2.x - ref.p1.x, ref.p2.y - ref.p1.y)
+      if (dist > 0 && ref.initDist > 0) {
+        const nextScale = Math.max(0.5, Math.min(80, ref.initScale * (dist / ref.initDist)))
+        setView((v) => ({ ...v, scale: nextScale }))
+      }
+    } else if (ref.p1) {
+      const dx = (e.clientX - ref.p1.prevX) / view.scale
+      const dy = (e.clientY - ref.p1.prevY) / view.scale
+      if (ref.p1.prevX !== undefined) {
+        setView((v) => ({ cx: v.cx - dx, cy: v.cy + dy, scale: v.scale }))
+      }
+      ref.p1 = { ...ref.p1, prevX: e.clientX, prevY: e.clientY }
+    }
+  }
+
+  function onPointerUp(e) {
+    if (e.pointerType !== 'touch') return
+    const ref = pinchRef.current
+    if (!ref) return
+    if (ref.p2 && (ref.p1?.id === e.pointerId || ref.p2?.id === e.pointerId)) {
+      const remaining = ref.p1?.id === e.pointerId ? ref.p2 : ref.p1
+      pinchRef.current = { p1: remaining, p2: null, initDist: 0, initScale: view.scale }
+    } else {
+      pinchRef.current = null
+    }
+  }
 
   // ---- Pan + zoom ----
   const panRef = useRef(null)
@@ -1143,7 +1200,7 @@ export default function SketchView({
   return (
     <div className="h-full flex bg-ink-950 text-ink-100 min-h-0 relative" ref={containerRef}>
       {/* Left palette */}
-      <div className="w-12 flex-shrink-0 flex flex-col items-center py-2 gap-1 border-r border-ink-800 overflow-y-auto">
+      <div className="w-10 sm:w-12 flex-shrink-0 flex flex-col items-center py-2 gap-1 border-r border-ink-800 overflow-y-auto">
         {TOOLS.map((t) => (
           <ToolButton key={t.id} tool={t} active={tool === t.id} onClick={() => { setTool(t.id); setPendingPoints([]) }} />
         ))}
@@ -1204,6 +1261,7 @@ export default function SketchView({
           style={{
             background: 'transparent',
             cursor: dimDrag ? 'ew-resize' : tool === 'select' ? (dragging ? 'grabbing' : 'default') : 'crosshair',
+            touchAction: 'none',
           }}
           onWheel={onWheel}
           onMouseDown={onMouseDown}
@@ -1212,6 +1270,10 @@ export default function SketchView({
           onMouseLeave={() => { setHover(null); setSnap(null); panRef.current = null; setDragging(null) }}
           onContextMenu={onContextMenu}
           onDoubleClick={onDoubleClick}
+          onPointerDown={onPointerDown}
+          onPointerMove={onPointerMove}
+          onPointerUp={onPointerUp}
+          onPointerLeave={() => { pinchRef.current = null }}
         >
           <SketchGrid view={view} svgRef={svgRef} />
           <SketchAxes view={view} svgRef={svgRef} />
@@ -1404,6 +1466,24 @@ export default function SketchView({
         )}
       </div>
 
+      {/* Inspector open/close toggle — visible only below lg breakpoint */}
+      <button
+        type="button"
+        aria-label={inspectorOpen ? 'Close constraints panel' : 'Open constraints panel'}
+        title={inspectorOpen ? 'Close constraints panel' : 'Open constraints panel'}
+        onClick={() => setInspectorOpen((v) => !v)}
+        className="lg:hidden absolute top-1/2 -translate-y-1/2 z-[10]
+          w-5 h-10 flex items-center justify-center
+          bg-ink-900/90 border border-ink-800 rounded-l-md
+          text-ink-400 hover:text-kerf-300 hover:bg-ink-800/80 transition-colors
+          focus-visible:ring-2 focus-visible:ring-kerf-300/50 focus-visible:outline-none"
+        style={{ right: inspectorOpen ? 256 : 0 }}
+      >
+        <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
+          <path d={inspectorOpen ? 'M3 2l4 3-4 3' : 'M7 2L3 5l4 3'} stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </button>
+
       {/* Right inspector */}
       <SketchInspector
         sketch={sketch}
@@ -1414,6 +1494,7 @@ export default function SketchView({
         onDelete={onDelete}
         onPulse={pulseConstraint}
         pulseConstraintId={pulseConstraintId}
+        open={inspectorOpen}
       />
     </div>
   )
@@ -1430,9 +1511,12 @@ function ToolButton({ tool, active, onClick, disabled }) {
       onClick={onClick}
       disabled={disabled}
       title={tool.label}
-      className={`w-9 h-9 rounded flex items-center justify-center
-        ${active ? 'bg-kerf-300/20 text-kerf-300 ring-1 ring-kerf-300/40' : 'text-ink-300 hover:bg-ink-800 hover:text-kerf-300'}
-        ${disabled ? 'opacity-30 cursor-not-allowed hover:bg-transparent' : ''}`}
+      aria-label={tool.label}
+      aria-pressed={active || undefined}
+      className={`w-8 h-8 sm:w-9 sm:h-9 rounded flex items-center justify-center transition-colors
+        focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-kerf-300/50
+        ${active ? 'bg-kerf-300/20 text-kerf-300 ring-1 ring-kerf-300/40' : 'text-ink-300 hover:bg-ink-800/80 hover:text-kerf-300'}
+        ${disabled ? 'opacity-30 cursor-not-allowed hover:bg-transparent hover:text-ink-300' : ''}`}
     >
       <Icon size={14} />
     </button>
@@ -2094,7 +2178,7 @@ function LineDraftStrip({ startEntity, cursor, worldToScreen, draft, draftRef, o
           onChange={(e) => update('length', e.target.value)}
           onFocus={() => { draftRef.current = { ...draftRef.current, focus: 'length' } }}
           onKeyDown={(e) => onKey(e, 'length')}
-          className={`w-20 bg-ink-950 border rounded px-2 py-1 text-xs font-mono outline-none
+          className={`w-20 bg-ink-950 border rounded px-2 py-1 text-xs font-mono outline-none focus-visible:ring-2 focus-visible:ring-kerf-300/50
             ${draft.lockLength ? 'border-kerf-300/60 text-kerf-100' : 'border-ink-800 text-ink-300'}`}
           title="Length in mm — type a number to lock the line's length, then click to commit. Tab → Angle."
         />
@@ -2110,7 +2194,7 @@ function LineDraftStrip({ startEntity, cursor, worldToScreen, draft, draftRef, o
           onChange={(e) => update('angle', e.target.value)}
           onFocus={() => { draftRef.current = { ...draftRef.current, focus: 'angle' } }}
           onKeyDown={(e) => onKey(e, 'angle')}
-          className={`w-20 bg-ink-950 border rounded px-2 py-1 text-xs font-mono outline-none
+          className={`w-20 bg-ink-950 border rounded px-2 py-1 text-xs font-mono outline-none focus-visible:ring-2 focus-visible:ring-kerf-300/50
             ${draft.lockAngle ? 'border-kerf-300/60 text-kerf-100' : 'border-ink-800 text-ink-300'}`}
           title="Angle in degrees from +X — type a number to lock direction. Tab → Length. Enter to commit, Esc to cancel."
         />
@@ -2284,7 +2368,7 @@ function EntityMiniToolbar({ sketch, selection, worldToScreen, onApply, onLockLe
 
   return (
     <div
-      className="absolute z-[4] flex flex-wrap items-center gap-1 px-1.5 py-1 rounded-md bg-ink-900/95 border border-ink-700 shadow-lg backdrop-blur max-w-[420px]"
+      className="absolute z-[4] flex flex-wrap items-center gap-1 px-1.5 py-1 rounded-md bg-ink-900/95 border border-ink-800 shadow-lg backdrop-blur max-w-[420px]"
       style={{
         // Top-right of the bbox, plus a small gutter so it never sits on the
         // entity. Clamp to the canvas rect would be nicer; v1 lets the user's
@@ -2300,7 +2384,7 @@ function EntityMiniToolbar({ sketch, selection, worldToScreen, onApply, onLockLe
           type="button"
           onClick={b.onClick}
           title={b.tooltip}
-          className="px-2 py-0.5 rounded text-[10px] font-medium text-ink-200 hover:bg-kerf-300/15 hover:text-kerf-100 border border-transparent hover:border-kerf-300/40"
+          className="px-2 py-0.5 rounded text-[10px] font-medium text-ink-300 hover:bg-kerf-300/15 hover:text-kerf-100 border border-transparent hover:border-kerf-300/40 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-kerf-300/50"
         >
           {b.short}
         </button>
@@ -2311,9 +2395,16 @@ function EntityMiniToolbar({ sketch, selection, worldToScreen, onApply, onLockLe
 
 function DimensionPrompt({ spec, onCommit, onCancel }) {
   const [text, setText] = useState(String(spec.defaultValue || 0))
+  const labelId = 'dimension-prompt-label'
   return (
-    <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-ink-900 border border-kerf-300/40 rounded-md p-3 shadow-2xl flex items-center gap-2">
-      <span className="text-[11px] uppercase tracking-wider text-ink-400">
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby={labelId}
+      className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-ink-900 border border-kerf-300/40 rounded-md p-3 shadow-2xl flex flex-wrap items-center gap-2 z-[10]"
+      onKeyDown={(e) => { if (e.key === 'Escape') { e.preventDefault(); onCancel() } }}
+    >
+      <span id={labelId} className="text-[11px] uppercase tracking-wider text-ink-400">
         {spec.kind === 'angle' ? 'Angle (deg)' : spec.kind === 'radius' ? 'Radius (mm)' : spec.kind === 'diameter' ? 'Diameter (mm)' : 'Distance (mm)'}
       </span>
       <input
@@ -2326,16 +2417,17 @@ function DimensionPrompt({ spec, onCommit, onCancel }) {
           if (e.key === 'Enter') { e.preventDefault(); const v = Number(text); if (Number.isFinite(v)) onCommit(v) }
           if (e.key === 'Escape') { e.preventDefault(); onCancel() }
         }}
-        className="w-24 bg-ink-950 border border-ink-800 rounded px-2 py-1 text-xs font-mono text-ink-100 outline-none focus:border-kerf-300/60"
+        className="w-24 bg-ink-950 border border-ink-800 rounded px-2 py-1 text-xs font-mono text-ink-100 outline-none focus-visible:border-kerf-300/60 focus-visible:ring-2 focus-visible:ring-kerf-300/50"
       />
       <button
         type="button"
-        className="px-2 py-1 rounded bg-kerf-300 text-ink-950 text-[11px] font-medium"
+        className="px-2 py-1 rounded bg-kerf-300 text-ink-950 text-[11px] font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-kerf-300/50"
         onClick={() => { const v = Number(text); if (Number.isFinite(v)) onCommit(v) }}
       >Set</button>
       <button
         type="button"
-        className="px-2 py-1 rounded text-ink-400 hover:text-ink-100 text-[11px]"
+        aria-label="Cancel dimension"
+        className="px-2 py-1 rounded text-ink-400 hover:text-ink-100 transition-colors text-[11px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-kerf-300/50"
         onClick={onCancel}
       >Cancel</button>
     </div>
@@ -2344,9 +2436,16 @@ function DimensionPrompt({ spec, onCommit, onCancel }) {
 
 function FilletPrompt({ initial, onCommit, onCancel }) {
   const [text, setText] = useState(String(initial || 1))
+  const labelId = 'fillet-prompt-label'
   return (
-    <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-ink-900 border border-kerf-300/40 rounded-md p-3 shadow-2xl flex items-center gap-2 z-[5]">
-      <span className="text-[11px] uppercase tracking-wider text-ink-400">Fillet radius (mm)</span>
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby={labelId}
+      className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-ink-900 border border-kerf-300/40 rounded-md p-3 shadow-2xl flex flex-wrap items-center gap-2 z-[5]"
+      onKeyDown={(e) => { if (e.key === 'Escape') { e.preventDefault(); onCancel() } }}
+    >
+      <span id={labelId} className="text-[11px] uppercase tracking-wider text-ink-400">Fillet radius (mm)</span>
       <input
         autoFocus
         type="text"
@@ -2357,11 +2456,11 @@ function FilletPrompt({ initial, onCommit, onCancel }) {
           if (e.key === 'Enter') { e.preventDefault(); const v = Number(text); if (v > 0) onCommit(v) }
           if (e.key === 'Escape') { e.preventDefault(); onCancel() }
         }}
-        className="w-20 bg-ink-950 border border-ink-800 rounded px-2 py-1 text-xs font-mono text-ink-100 outline-none focus:border-kerf-300/60"
+        className="w-20 bg-ink-950 border border-ink-800 rounded px-2 py-1 text-xs font-mono text-ink-100 outline-none focus-visible:border-kerf-300/60 focus-visible:ring-2 focus-visible:ring-kerf-300/50"
       />
-      <button type="button" className="px-2 py-1 rounded bg-kerf-300 text-ink-950 text-[11px] font-medium"
+      <button type="button" className="px-2 py-1 rounded bg-kerf-300 text-ink-950 text-[11px] font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-kerf-300/50"
         onClick={() => { const v = Number(text); if (v > 0) onCommit(v) }}>Apply</button>
-      <button type="button" className="px-2 py-1 rounded text-ink-400 hover:text-ink-100 text-[11px]"
+      <button type="button" aria-label="Cancel fillet" className="px-2 py-1 rounded text-ink-400 hover:text-ink-100 transition-colors text-[11px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-kerf-300/50"
         onClick={onCancel}>Cancel</button>
     </div>
   )
@@ -2381,9 +2480,16 @@ function PatternPrompt({ spec, onCommit, onCancel }) {
     else if (isLinear) onCommit({ dx: Number(dx), dy: Number(dy), count: Number(count) | 0 })
     else if (isPolar) onCommit({ totalAngleDeg: Number(angleDeg), count: Number(count) | 0 })
   }
+  const patternLabelId = 'pattern-prompt-label'
   return (
-    <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-ink-900 border border-kerf-300/40 rounded-md p-4 shadow-2xl space-y-2 z-[5] w-72">
-      <div className="text-[11px] uppercase tracking-wider text-ink-400">
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby={patternLabelId}
+      className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-ink-900 border border-kerf-300/40 rounded-md p-4 shadow-2xl space-y-2 z-[5] w-72"
+      onKeyDown={(e) => { if (e.key === 'Escape') { e.preventDefault(); onCancel() } }}
+    >
+      <div id={patternLabelId} className="text-[11px] uppercase tracking-wider text-ink-400">
         {isMirror ? 'Mirror' : isLinear ? 'Linear pattern' : 'Polar pattern'}
       </div>
       {isLinear && (
@@ -2417,9 +2523,9 @@ function PatternPrompt({ spec, onCommit, onCancel }) {
         </>
       )}
       <div className="flex justify-end gap-2 pt-1">
-        <button type="button" className="px-2 py-1 rounded text-ink-400 hover:text-ink-100 text-[11px]"
+        <button type="button" aria-label="Cancel pattern" className="px-2 py-1 rounded text-ink-400 hover:text-ink-100 transition-colors text-[11px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-kerf-300/50"
           onClick={onCancel}>Cancel</button>
-        <button type="button" className="px-2 py-1 rounded bg-kerf-300 text-ink-950 text-[11px] font-medium"
+        <button type="button" className="px-2 py-1 rounded bg-kerf-300 text-ink-950 text-[11px] font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-kerf-300/50"
           onClick={submit}>Apply</button>
       </div>
     </div>
@@ -2435,7 +2541,7 @@ function NumField({ label, value, onChange }) {
         inputMode="decimal"
         value={String(value)}
         onChange={(e) => onChange(e.target.value)}
-        className="w-24 bg-ink-950 border border-ink-800 rounded px-2 py-1 text-xs font-mono text-ink-100 outline-none focus:border-kerf-300/60"
+        className="w-24 bg-ink-950 border border-ink-800 rounded px-2 py-1 text-xs font-mono text-ink-100 outline-none focus-visible:border-kerf-300/60 focus-visible:ring-2 focus-visible:ring-kerf-300/50"
       />
     </label>
   )
@@ -2863,7 +2969,7 @@ function SketchBackdrop3D({ sketch, view, loadParts, tool, onProjectEdge }) {
 // ---------------------------------------------------------------------------
 // Right-rail inspector: selection details + visible-3D picker.
 
-function SketchInspector({ sketch, files, selection, onSelect, onChange, onDelete, onPulse, pulseConstraintId }) {
+function SketchInspector({ sketch, files, selection, onSelect, onChange, onDelete, onPulse, pulseConstraintId, open }) {
   const cons = sketch.constraints || []
 
   const selectedConstraints = (cons || []).filter((c) => selection.includes(c.id))
@@ -2878,7 +2984,16 @@ function SketchInspector({ sketch, files, selection, onSelect, onChange, onDelet
   }
 
   return (
-    <aside className="w-64 flex-shrink-0 border-l border-ink-800 flex flex-col min-h-0">
+    <aside
+      aria-label="Sketch constraints and properties"
+      className={`
+        w-64 flex-shrink-0 border-l border-ink-800 flex flex-col min-h-0
+        lg:relative lg:translate-x-0
+        absolute right-0 top-0 bottom-0 z-[9] transition-transform duration-200
+        bg-ink-950
+        ${open ? 'translate-x-0' : 'translate-x-full lg:translate-x-0'}
+      `}
+    >
       <div className="p-2 border-b border-ink-800">
         <div className="text-[10px] uppercase tracking-wider text-ink-400 mb-1">Selection</div>
         {selection.length === 0 ? (
@@ -2950,7 +3065,8 @@ function SketchInspector({ sketch, files, selection, onSelect, onChange, onDelet
                       onChange(deleteConstraint(sketch, c.id))
                     }}
                     className={`w-full text-left px-2 py-1 rounded text-[11px] flex items-center gap-1.5 transition-colors
-                      ${selection.includes(c.id) ? 'bg-kerf-300/15 text-kerf-100' : 'hover:bg-ink-800 text-ink-300'}
+                      focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-kerf-300/50
+                      ${selection.includes(c.id) ? 'bg-kerf-300/15 text-kerf-100' : 'hover:bg-ink-800/80 text-ink-300 hover:text-ink-100'}
                       ${pulsing ? 'ring-1 ring-amber-300/80 bg-amber-300/10' : ''}`}
                   >
                     <span className="text-ink-100">{label}</span>
@@ -2990,7 +3106,8 @@ function SketchInspector({ sketch, files, selection, onSelect, onChange, onDelet
           <button
             type="button"
             onClick={onDelete}
-            className="w-full inline-flex items-center justify-center gap-1.5 px-2 py-1.5 rounded bg-red-950/40 border border-red-900/60 text-red-300 hover:bg-red-950/60 text-[11px]"
+            aria-label="Delete selection"
+            className="w-full inline-flex items-center justify-center gap-1.5 px-2 py-1.5 rounded bg-red-950/40 border border-red-900/60 text-red-300 hover:bg-red-950/60 transition-colors text-[11px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/50"
           >
             <Trash2 size={11} />
             Delete selection (Del)
@@ -3012,8 +3129,9 @@ function ConstraintRow({ c, onChangeValue, onDelete }) {
         <button
           type="button"
           onClick={onDelete}
-          className="text-ink-500 hover:text-red-400"
+          className="text-ink-500 hover:text-red-400 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-kerf-300/50 rounded"
           title="Delete constraint"
+          aria-label="Delete constraint"
         >
           <Trash2 size={11} />
         </button>
@@ -3026,7 +3144,7 @@ function ConstraintRow({ c, onChangeValue, onDelete }) {
           onChange={(e) => setDraft(e.target.value)}
           onBlur={() => { const v = Number(draft); if (Number.isFinite(v)) onChangeValue(v) }}
           onKeyDown={(e) => { if (e.key === 'Enter') { e.target.blur() } }}
-          className="w-full bg-ink-950 border border-ink-800 rounded px-2 py-1 font-mono text-[11px] text-ink-100 outline-none focus:border-kerf-300/60"
+          className="w-full bg-ink-950 border border-ink-800 rounded px-2 py-1 font-mono text-[11px] text-ink-100 outline-none focus-visible:border-kerf-300/60 focus-visible:ring-2 focus-visible:ring-kerf-300/50"
         />
       )}
     </div>

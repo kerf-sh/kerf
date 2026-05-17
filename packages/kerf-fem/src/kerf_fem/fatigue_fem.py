@@ -245,8 +245,8 @@ def _rainflow(series: list[float]) -> list[tuple[float, float, float]]:
             rng_X = abs(C - B)  # candidate cycle range
             rng_Y = abs(B - A)  # preceding range
             rng_Z = abs(D - C)  # following range
-            if rng_X <= rng_Y and rng_X <= rng_Z:
-                # Full cycle: B-C
+            if rng_X >= rng_Y and rng_X >= rng_Z:
+                # Full cycle: B-C (largest range enclosed by smaller flanking ranges)
                 mean_val = (B + C) / 2.0
                 cycles.append((rng_X, mean_val, 1.0))
                 # Remove B and C from stack

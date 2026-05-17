@@ -532,7 +532,6 @@ def test_basquin_miner_sum_equals_one_at_failure():
     assert abs(damage - 1.0) < 0.01
 
 
-@pytest.mark.skip(reason="Exposes real bug in fatigue_fem._rainflow: history 0→A→0→-A→0 returns 0 full cycles instead of the ASTM E1049 expectation of 1. Track as a bug to fix in fatigue_fem; the test stays as the spec.")
 def test_rainflow_single_cycle_ASTM_E1049():
     """ASTM E1049 example: single-amplitude cycle counted exactly once.
        History 0 → +A → 0 → −A → 0 contains exactly one cycle of range 2A,
