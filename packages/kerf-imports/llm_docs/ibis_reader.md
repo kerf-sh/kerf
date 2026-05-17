@@ -1,100 +1,141 @@
 # IBIS Reader — `ibis_reader.py`
 
-ANSI/EIA-656 IBIS (I/O Buffer Information Specification) file reader. Parses buffer models for SI simulation and package parasitic extraction.
+ANSI/EIA-656 IBIS (I/O Buffer Information Specification) file reader. Parses buffer models, package parasitics, pin tables, and V-I / V-t waveform data for SI simulation. Pure Python — stdlib only; IBIS is a line-oriented keyword text format.
 
 ---
 
 ## Standard
 
-ANSI/EIA-656 IBIS versions 3.2–6.1. A plain-text line-format specification for I/O buffer electrical models, used by signal integrity tools (HyperLynx, SiSoft Quantum SI, Ansys SIwave).
+ANSI/EIA-656 IBIS versions 1.x–6.x. Used by HyperLynx, SiSoft Quantum SI, Ansys SIwave, and similar signal-integrity tools.
 
 ---
 
-## Public API
+## Public entrypoint
 
-### `read_ibis(path_or_fileobj) → IBISFile`
+### `parse_ibis(text: str | bytes) → dict`
 
-Parse a `.ibs` file. Returns an `IBISFile` dataclass.
+Parse an IBIS `.ibs` file. Returns a plain dict — never raises.
 
-`IBISFile` fields:
+**Supported IBIS keywords:**
+- `[IBIS Ver]`, `[File Name]`, `[File Rev]`
+- `[Component]`, `[Manufacturer]`
+- `[Package]` — R_pkg / L_pkg / C_pkg with typ/min/max columns
+- `[Pin]` — pin table: signal_name, model_name, R/L/C per pin
+- `[Model]` — Model_type, C_comp, Vinl, Vinh, Vmeas
+- `[Voltage Range]`, `[Temperature Range]`
+- `[Pullup]`, `[Pulldown]`, `[GND_clamp]`, `[POWER_clamp]` — V-I tables
+- `[Ramp]` — dV/dt_r and dV/dt_f
+
+Unsupported keywords collected in `warnings`; never raise.
+
+**Return schema (success):**
+```json
+{
+  "ok": true,
+  "ibis_version": "6.1",
+  "file_name": "my_device.ibs",
+  "file_rev": "1.0",
+  "components": [
+    {
+      "name": "MY_IC",
+      "manufacturer": "ACME Corp",
+      "package": {
+        "R_pkg": {"typ": 0.1, "min": 0.08, "max": 0.12},
+        "L_pkg": {"typ": 2.5e-9, "min": 2.0e-9, "max": 3.0e-9},
+        "C_pkg": {"typ": 1.5e-12, "min": 1.2e-12, "max": 1.8e-12}
+      },
+      "pins": [
+        {
+          "name": "A0",
+          "signal_name": "DATA0",
+          "model_name": "LVCMOS18_OUT",
+          "R_pin": null,
+          "L_pin": null,
+          "C_pin": null
+        }
+      ]
+    }
+  ],
+  "models": {
+    "LVCMOS18_OUT": {
+      "name": "LVCMOS18_OUT",
+      "model_type": "Output",
+      "c_comp": {"typ": 2.5e-12, "min": null, "max": null},
+      "vinl": 0.45,
+      "vinh": 1.35,
+      "vmeas": 0.9,
+      "voltage_range": {"typ": 1.8, "min": 1.7, "max": 1.9},
+      "pulldown": [{"V": 0.0, "typ": 0.0, "min": null, "max": null}, ...],
+      "pullup": [...],
+      "gnd_clamp": [...],
+      "power_clamp": [...],
+      "ramp": {
+        "dV_dt_r": {"typ": "1.2V/1ns", "min": null, "max": null},
+        "dV_dt_f": {"typ": "1.1V/1.1ns", "min": null, "max": null}
+      },
+      "temperature_range": {"typ": 25.0, "min": 0.0, "max": 85.0}
+    }
+  },
+  "warnings": []
+}
 ```
-header: IBISHeader
-components: list[IBISComponent]
-models: list[IBISModel]
+
+**Return schema (error):**
+```json
+{"ok": false, "reason": "..."}
 ```
-
-### `IBISHeader`
-
-```python
-@dataclass
-class IBISHeader:
-    ibis_ver: str        # e.g. "6.1"
-    file_name: str
-    file_rev: str
-    source: str
-    notes: str
-```
-
-### `IBISComponent`
-
-```python
-@dataclass
-class IBISComponent:
-    name: str
-    manufacturer: str
-    package: PackageParasitics    # R_pkg, L_pkg, C_pkg
-    pins: list[PinRecord]         # {pin_name, signal_name, model_name, R_pin, L_pin, C_pin}
-```
-
-### `IBISModel`
-
-```python
-@dataclass
-class IBISModel:
-    name: str
-    model_type: str           # "Input", "Output", "I/O", "3-state", "Open_drain", etc.
-    c_comp_pf: float          # Buffer input capacitance
-    vinl_v: float             # Input low threshold
-    vinh_v: float             # Input high threshold
-    iv_data: dict             # {"pullup": [(V, I), ...], "pulldown": [(V, I), ...]}
-    vt_data: dict             # {"rising": [(t, V), ...], "falling": [(t, V), ...]}
-    ramp: dict | None         # {"dV/dt_r": ..., "dV/dt_f": ...}
-    diff_model_ref: str | None
-```
-
-### `get_model(ibis_file, model_name) → IBISModel | None`
-
-Look up a model by name; returns `None` if not found.
-
-### `extract_vt_waveform(model, *, edge="rising", supply_v=3.3) → list[tuple[float, float]]`
-
-Return the V(t) waveform for a given edge as `[(t_s, V), ...]`.
 
 ---
 
 ## Usage
 
 ```python
-from kerf_imports.ibis_reader import read_ibis, get_model, extract_vt_waveform
+from kerf_imports.ibis_reader import parse_ibis
 
-ibis = read_ibis("my_device.ibs")
-print(ibis.header.ibis_ver)
+with open("my_device.ibs") as f:
+    text = f.read()
 
-for comp in ibis.components:
-    print(comp.name, comp.package)
+result = parse_ibis(text)
+if not result["ok"]:
+    print("Parse error:", result["reason"])
+else:
+    print("IBIS version:", result["ibis_version"])
 
-model = get_model(ibis, "LVDS_OUT_100")
-if model:
-    print(model.model_type, model.c_comp_pf)
-    waveform = extract_vt_waveform(model, edge="rising", supply_v=1.8)
+    for comp in result["components"]:
+        print(comp["name"], comp["manufacturer"])
+        print("L_pkg typ:", comp["package"]["L_pkg"]["typ"])
+        for pin in comp["pins"]:
+            print(f"  {pin['name']} → model {pin['model_name']}")
+
+    # Access a model's V-I data
+    model = result["models"].get("LVCMOS18_OUT")
+    if model:
+        print("Model type:", model["model_type"])
+        print("C_comp typ:", model["c_comp"]["typ"])
+        for row in model["pulldown"][:3]:
+            print(f"  V={row['V']:.3f}, I_typ={row['typ']}")
 ```
+
+---
+
+## LLM tool
+
+**`import_ibis`** — registered via `@register`; gated on `"imports.ibis"` capability.
+
+Accepts `file_id` pointing to an `.ibs` file already uploaded to the project. Returns the same dict schema as `parse_ibis`.
 
 ---
 
 ## Notes
 
 - Read-only: no write support.
+- V-I and V-t tables are returned as raw rows with typ/min/max columns. The `ramp` section `dV_dt_r`/`dV_dt_f` values are stored as raw strings (e.g. `"1.2V/1ns"`) because the IBIS spec allows flexible formatting.
 - IBIS BIRD (Buffer Interface Reference Data) extensions and multi-lingual model containers (`.ams`) are not supported.
-- `iv_data` and `vt_data` are parsed as raw tables; use `extract_vt_waveform` for a normalised waveform.
-- `ramp` is populated from `[Ramp]` section if present; preferred over `[Rising Waveform]` for fast approximations.
-- Differential models (`[Diff Pin]`) are cross-linked via `diff_model_ref`.
+- `[Rising Waveform]` / `[Falling Waveform]` V-t table sections are not currently parsed (only `[Ramp]` is extracted). If you need full waveform data, use an IBIS-AMI capable tool.
+- Differential models referenced by `[Diff Pin]` sections are not cross-linked in the output; both halves are returned as independent models.
+
+---
+
+## Standard citation
+
+ANSI/EIA-656 — I/O Buffer Information Specification (IBIS), revision 6.1 (IBIS Open Forum, 2019).
