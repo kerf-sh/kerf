@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "kerf-sdk"
-version = "0.1.1"
+version = "0.1.2"
 description = "Python SDK for Kerf — talk to a Kerf instance over HTTP/JSON-RPC"
 readme = "README.md"
 license = { file = "LICENSE" }
@@ -21,7 +21,7 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://kerf.app"
+Homepage = "https://kerf.sh"
 Repository = "https://github.com/kerf-sh/kerf"
 
 [tool.hatch.build.targets.wheel]
