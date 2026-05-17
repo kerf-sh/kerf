@@ -214,6 +214,31 @@ export default function Layout({ children, wide = false, padded = true }) {
             )}
           </div>
           <div className="flex items-center gap-3">
+            {/* Public top-nav: visitor-facing pages always available regardless
+                of auth / cloud state. */}
+            <nav
+              className="hidden md:flex items-center gap-1 mr-1"
+              aria-label="Primary"
+            >
+              <Link
+                to="/docs"
+                className="text-xs text-ink-300 hover:text-ink-100 px-2 py-1 rounded-md hover:bg-ink-800/80 transition-colors"
+              >
+                Docs
+              </Link>
+              <Link
+                to="/compare"
+                className="text-xs text-ink-300 hover:text-ink-100 px-2 py-1 rounded-md hover:bg-ink-800/80 transition-colors"
+              >
+                Compare
+              </Link>
+              <Link
+                to="/roadmap"
+                className="text-xs text-ink-300 hover:text-ink-100 px-2 py-1 rounded-md hover:bg-ink-800/80 transition-colors"
+              >
+                Roadmap
+              </Link>
+            </nav>
             {/* Cloud top-nav: Workshop hosts the project showcase, Library
                 hosts the parts catalog. Both are cloud-only — gated on
                 `cloudEnabled`. Hidden for signed-out and OSS callers. */}

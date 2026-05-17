@@ -1,48 +1,84 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, lazy, Suspense } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
-import Landing from './routes/Landing.jsx'
-import DomainsHub from './routes/domains/index.jsx'
-import JewelryDomainPage from './routes/domains/Jewelry.jsx'
-import Architecture from './routes/domains/Architecture.jsx'
-import Automotive from './routes/domains/Automotive.jsx'
-import Pricing from './routes/Pricing.jsx'
-import Roadmap from './routes/Roadmap.jsx'
-import DocsHome from './routes/Docs/index.jsx'
-import DocsArticle from './routes/Docs/Article.jsx'
-import Login from './routes/Login.jsx'
-import Signup from './routes/Signup.jsx'
-import AuthCallback from './routes/AuthCallback.jsx'
-import Projects from './routes/Projects.jsx'
-import Editor from './routes/Editor.jsx'
-import Library from './routes/Library.jsx'
-import LibraryPart from './routes/LibraryPart.jsx'
-import BOMPage from './routes/BOM.jsx'
-import Profile from './routes/Profile.jsx'
-import WorkspaceSettings from './routes/WorkspaceSettings.jsx'
-import WorkspaceMembers from './routes/WorkspaceMembers.jsx'
-import AdminDistributors from './routes/AdminDistributors.jsx'
-import AdminPublishers from './routes/AdminPublishers.jsx'
-import Mechanical from './routes/domains/Mechanical.jsx'
-import JewelryConfigurator from './routes/JewelryConfigurator.jsx'
-import JewelryShare from './routes/JewelryShare.jsx'
+
+// ── eager (lightweight, shell-critical) ───────────────────────────────────
+// ProtectedRoute is a tiny wrapper used to gate the /projects, /editor, etc.
+// sub-tree — it has to render synchronously so React Router can resolve the
+// nested <Outlet/>. ShortcutsModal is mounted on every page and would just be
+// a flicker if lazy.
 import ProtectedRoute from './routes/ProtectedRoute.jsx'
-import Electronics from './routes/domains/Electronics.jsx'
-import CompareHub from './routes/compare/index.jsx'
-import FreecadPage from './routes/compare/Freecad.jsx'
-import KicadPage from './routes/compare/Kicad.jsx'
-import RhinoPage from './routes/compare/Rhino.jsx'
-import RevitPage from './routes/compare/Revit.jsx'
-import FusionPage from './routes/compare/Fusion.jsx'
 import ShortcutsModal from './components/ShortcutsModal.jsx'
+import RouteFallback from './components/RouteFallback.jsx'
+
+// ── lazy (route-level code splitting) ─────────────────────────────────────
+// Every route below is converted from an eager `import X from '...'` to
+// `const X = lazy(() => import('...'))` so each route ships as its own chunk
+// and the initial bundle no longer drags in Editor + tscircuit + Monaco for
+// users who only hit /landing or /docs. Suspense is wired with RouteFallback
+// (the kerf-Loader-backed fallback) below.
+const Landing = lazy(() => import('./routes/Landing.jsx'))
+const DomainsHub = lazy(() => import('./routes/domains/index.jsx'))
+const JewelryDomainPage = lazy(() => import('./routes/domains/Jewelry.jsx'))
+const Architecture = lazy(() => import('./routes/domains/Architecture.jsx'))
+const Automotive = lazy(() => import('./routes/domains/Automotive.jsx'))
+const Pricing = lazy(() => import('./routes/Pricing.jsx'))
+const Roadmap = lazy(() => import('./routes/Roadmap.jsx'))
+const DocsHome = lazy(() => import('./routes/Docs/index.jsx'))
+const DocsArticle = lazy(() => import('./routes/Docs/Article.jsx'))
+const Login = lazy(() => import('./routes/Login.jsx'))
+const Signup = lazy(() => import('./routes/Signup.jsx'))
+const AuthCallback = lazy(() => import('./routes/AuthCallback.jsx'))
+const Projects = lazy(() => import('./routes/Projects.jsx'))
+const Editor = lazy(() => import('./routes/Editor.jsx'))
+const Library = lazy(() => import('./routes/Library.jsx'))
+const LibraryPart = lazy(() => import('./routes/LibraryPart.jsx'))
+const BOMPage = lazy(() => import('./routes/BOM.jsx'))
+const Profile = lazy(() => import('./routes/Profile.jsx'))
+const WorkspaceSettings = lazy(() => import('./routes/WorkspaceSettings.jsx'))
+const WorkspaceMembers = lazy(() => import('./routes/WorkspaceMembers.jsx'))
+const AdminDistributors = lazy(() => import('./routes/AdminDistributors.jsx'))
+const AdminPublishers = lazy(() => import('./routes/AdminPublishers.jsx'))
+const Mechanical = lazy(() => import('./routes/domains/Mechanical.jsx'))
+const JewelryConfigurator = lazy(() => import('./routes/JewelryConfigurator.jsx'))
+const JewelryShare = lazy(() => import('./routes/JewelryShare.jsx'))
+const Electronics = lazy(() => import('./routes/domains/Electronics.jsx'))
+const CompareHub = lazy(() => import('./routes/compare/index.jsx'))
+const FreecadPage = lazy(() => import('./routes/compare/Freecad.jsx'))
+const KicadPage = lazy(() => import('./routes/compare/Kicad.jsx'))
+const RhinoPage = lazy(() => import('./routes/compare/Rhino.jsx'))
+const RevitPage = lazy(() => import('./routes/compare/Revit.jsx'))
+const FusionPage = lazy(() => import('./routes/compare/Fusion.jsx'))
+// New compare pages landed in the refactor branch (May 2026). These slot in
+// alongside the original five — same shape, separate chunks.
+const SolidworksPage = lazy(() => import('./routes/compare/Solidworks.jsx'))
+const OnshapePage = lazy(() => import('./routes/compare/Onshape.jsx'))
+const AltiumPage = lazy(() => import('./routes/compare/Altium.jsx'))
+const MatrixGoldPage = lazy(() => import('./routes/compare/MatrixGold.jsx'))
+const BlenderPage = lazy(() => import('./routes/compare/Blender.jsx'))
+const AutocadPage = lazy(() => import('./routes/compare/Autocad.jsx'))
+const InventorPage = lazy(() => import('./routes/compare/Inventor.jsx'))
+const Civil3dPage = lazy(() => import('./routes/compare/Civil3d.jsx'))
+const Max3dsPage = lazy(() => import('./routes/compare/Max3ds.jsx'))
+
+// Cloud surface — these come from the cloud/ open-core split and may be
+// stubs on OSS builds. useCloudConfig stays eager (we need it before any
+// route renders) but is imported from its own file so the cloud-index
+// barrel doesn't end up in the initial chunk; the route components
+// themselves lazy-import their own modules and become their own chunks.
+import { useCloudConfig } from './cloud/useCloudConfig.js'
+const BillingPanel = lazy(() =>
+  import('./cloud/BillingPanel.jsx').then((m) => ({ default: m.BillingPanel })),
+)
+const Workshop = lazy(() =>
+  import('./cloud/Workshop.jsx').then((m) => ({ default: m.Workshop })),
+)
+const WorkshopListing = lazy(() =>
+  import('./cloud/WorkshopListing.jsx').then((m) => ({ default: m.WorkshopListing })),
+)
+const AdminEmail = lazy(() => import('./cloud/AdminEmail.jsx'))
+
 import { useAuth } from './store/auth.js'
 import { api } from './lib/api.js'
-import {
-  useCloudConfig,
-  BillingPanel,
-  Workshop,
-  WorkshopListing,
-  AdminEmail,
-} from './cloud/index.js'
 
 export default function App() {
   const { cloudEnabled, localMode, ready: cloudConfigReady } = useCloudConfig()
@@ -113,6 +149,7 @@ export default function App() {
   return (
     <>
     <ShortcutsModal />
+    <Suspense fallback={<RouteFallback />}>
     <Routes>
       <Route
         path="/"
@@ -141,6 +178,15 @@ export default function App() {
       <Route path="/compare/rhino" element={<RhinoPage />} />
       <Route path="/compare/revit" element={<RevitPage />} />
       <Route path="/compare/fusion" element={<FusionPage />} />
+      <Route path="/compare/solidworks" element={<SolidworksPage />} />
+      <Route path="/compare/onshape" element={<OnshapePage />} />
+      <Route path="/compare/altium" element={<AltiumPage />} />
+      <Route path="/compare/matrixgold" element={<MatrixGoldPage />} />
+      <Route path="/compare/blender" element={<BlenderPage />} />
+      <Route path="/compare/autocad" element={<AutocadPage />} />
+      <Route path="/compare/inventor" element={<InventorPage />} />
+      <Route path="/compare/civil3d" element={<Civil3dPage />} />
+      <Route path="/compare/max3ds" element={<Max3dsPage />} />
       {cloudEnabled && <Route path="/workshop" element={<Workshop />} />}
       {cloudEnabled && (
         <Route path="/workshop/:slug" element={<WorkshopListing />} />
@@ -169,6 +215,7 @@ export default function App() {
 
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
+    </Suspense>
     </>
   )
 }

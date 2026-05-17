@@ -57,6 +57,79 @@ const PAGES = {
     slug: 'fusion',
     product: 'Fusion 360',
   },
+  solidworks: {
+    title: 'Kerf vs SOLIDWORKS — mechanical CAD compared',
+    description:
+      'SOLIDWORKS is the incumbent professional mechanical CAD. See how ' +
+      "Kerf's MIT open-core, chat-driven, multi-discipline workspace compares — honestly.",
+    slug: 'solidworks',
+    product: 'SOLIDWORKS',
+  },
+  onshape: {
+    title: 'Kerf vs Onshape — cloud CAD compared',
+    description:
+      "Onshape pioneered real-time collaborative cloud CAD. See how Kerf's " +
+      'MIT open-core, chat-driven, multi-discipline stack compares.',
+    slug: 'onshape',
+    product: 'Onshape',
+  },
+  altium: {
+    title: 'Kerf vs Altium Designer — PCB & ECAD tools compared',
+    description:
+      'Altium Designer is the industry-standard commercial ECAD platform. ' +
+      "See how Kerf's open-core, multi-discipline, chat-driven approach compares.",
+    slug: 'altium',
+    product: 'Altium Designer',
+  },
+  matrixgold: {
+    title: 'Kerf vs MatrixGold — jewelry CAD compared',
+    description:
+      'MatrixGold is the professional standard for jewelry CAD. See how ' +
+      "Kerf's 40-module jewelry vertical, open-core licence, and workflow " +
+      'compare — honestly.',
+    slug: 'matrixgold',
+    product: 'MatrixGold',
+  },
+  blender: {
+    title: 'Kerf vs Blender — CAD vs DCC compared',
+    description:
+      'Blender is a world-class mesh/DCC tool, not a B-rep CAD. See where they ' +
+      "overlap and where Kerf's parametric engineering workflow is the right fit.",
+    slug: 'blender',
+    product: 'Blender',
+  },
+  autocad: {
+    title: 'Kerf vs AutoCAD — drafting vs parametric 3D CAD compared',
+    description:
+      'AutoCAD owns 2D drafting and the .dwg ecosystem. See where Kerf fits — ' +
+      'a 3D parametric workspace with chat-driven UX and multi-discipline scope.',
+    slug: 'autocad',
+    product: 'AutoCAD',
+  },
+  inventor: {
+    title: 'Kerf vs Autodesk Inventor — mechanical CAD compared',
+    description:
+      'Inventor is a top-tier mechanical CAD. See where Kerf overlaps and where ' +
+      'the multi-discipline parametric history workflow differs.',
+    slug: 'inventor',
+    product: 'Autodesk Inventor',
+  },
+  civil3d: {
+    title: 'Kerf vs Civil 3D — civil infrastructure design compared',
+    description:
+      'Civil 3D owns corridor modelling and pipe networks. See where Kerf ' +
+      "complements with civil-engineering calc modules (hydrology / geotech / pavement / surveying).",
+    slug: 'civil3d',
+    product: 'Civil 3D',
+  },
+  max3ds: {
+    title: 'Kerf vs 3ds Max — modelling and rendering compared',
+    description:
+      '3ds Max is the archviz / game-art DCC standard. See where Kerf overlaps ' +
+      'for product visualisation and where the engineering CAD workflow differs.',
+    slug: 'max3ds',
+    product: '3ds Max',
+  },
 }
 
 /**
