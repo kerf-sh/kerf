@@ -50,6 +50,7 @@ import {
   Move, Crosshair, GitBranch, Repeat, FlipHorizontal,
   PencilLine, Pointer, Waves, Layers3, Aperture, Plus,
   X, ChevronRight, LayoutGrid, Combine, Scissors, Grid3x3,
+  MoreHorizontal, SlidersHorizontal,
 } from 'lucide-react'
 import FeatureRenderer from './FeatureRenderer.jsx'
 import {
@@ -1853,6 +1854,25 @@ function useClickOutside(ref, onOutside, enabled) {
   }, [ref, onOutside, enabled])
 }
 
+
+// Long-press hook for touch devices. Returns pointer-event handlers that
+// fire `onLongPress` after `delay` ms of continuous contact. Cancels on
+// move or early release.
+function useLongPress(onLongPress, delay = 500) {
+  const timerRef = useRef(null)
+  const cancel = useCallback(() => {
+    if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null }
+  }, [])
+  const onPointerDown = useCallback((e) => {
+    if (e.pointerType !== 'touch') return
+    timerRef.current = setTimeout(() => { onLongPress(e) }, delay)
+  }, [onLongPress, delay])
+  const onPointerUp = cancel
+  const onPointerCancel = cancel
+  const onPointerMove = cancel
+  useEffect(() => cancel, [cancel])
+  return { onPointerDown, onPointerUp, onPointerCancel, onPointerMove }
+}
 // ---------------------------------------------------------------------------
 // Component.
 
@@ -1877,6 +1897,10 @@ export default function FeatureView({
   const clearFeatureSelection = useWorkspace((s) => s.clearFeatureSelection)
   const createSketchOnFace = useWorkspace((s) => s.createSketchOnFace)
   const selectFile = useWorkspace((s) => s.selectFile)
+
+  // Inspector drawer open state — on narrow viewports (< md) the inspector
+  // slides in as an overlay; on ≥ md it is always visible as the right pane.
+  const [inspectorOpen, setInspectorOpen] = useState(false)
 
   // Selected feature in the timeline (by id).
   const [selectedId, setSelectedId] = useState(null)
@@ -2221,21 +2245,25 @@ export default function FeatureView({
   return (
     <div className="flex-1 min-h-0 flex flex-col bg-ink-950 text-ink-100">
       {/* Unified toolbar — add-feature popover + file name + timeline chips
-          on the left; pick-mode controls on the right. */}
+          on the left; pick-mode controls + inspector toggle on the right. */}
       <div className="border-b border-ink-800 bg-ink-900 px-3 h-11 flex items-center gap-2">
         <AddFeaturePopover onPick={(op) => addFeature(op)} />
 
-        <span className="w-px h-5 bg-ink-800 mx-0.5 flex-shrink-0" />
+        <span className="w-px h-5 bg-ink-800 mx-0.5 flex-shrink-0" aria-hidden="true" />
 
         <span
-          className="text-xs text-ink-400 truncate max-w-[160px] flex-shrink-0"
+          className="text-xs text-ink-400 truncate max-w-[120px] sm:max-w-[160px] flex-shrink-0"
           title={fileName}
         >
           {fileName}
         </span>
 
-        {/* Timeline — scroll horizontally if it gets long. */}
+        {/* Timeline — scroll horizontally if it gets long.
+            role="tree" + role="treeitem" for a11y even though it is a flat
+            timeline (aria-level="1" throughout). */}
         <div
+          role="tree"
+          aria-label="Feature timeline"
           className="flex-1 min-w-0 flex items-center gap-1 overflow-x-auto scrollbar-thin"
           title={tree.length > 1 ? 'Selections may reset after structural changes.' : undefined}
         >
@@ -2249,44 +2277,16 @@ export default function FeatureView({
               const Icon = kind?.icon || Box
               const isSel = node.id === selectedId
               return (
-                <div key={node.id} className="flex items-center gap-1 flex-shrink-0">
-                  {idx > 0 && <ChevronRight size={11} className="text-ink-600" />}
-                  <button
-                    type="button"
-                    onClick={() => setSelectedId(node.id)}
-                    onContextMenu={(ev) => {
-                      ev.preventDefault()
-                      if (confirm(`Delete ${kind?.label || node.op} '${node.id}'?`)) removeFeature(node.id)
-                    }}
-                    className={`group relative inline-flex items-center gap-1.5 pl-1.5 pr-2 py-1 rounded-md border text-xs transition-colors
-                      ${isSel
-                        ? 'border-kerf-300/60 bg-kerf-300/10 text-kerf-100 shadow-[0_0_0_1px_rgba(255,214,51,0.15)]'
-                        : 'border-ink-800 bg-ink-850 text-ink-200 hover:border-ink-600 hover:bg-ink-800'}`}
-                    title={`${kind?.label || node.op} · right-click to delete`}
-                  >
-                    <span
-                      className={`inline-flex items-center justify-center w-4 h-4 rounded text-[10px] font-mono leading-none
-                        ${isSel ? 'bg-kerf-300/30 text-kerf-100' : 'bg-ink-800 text-ink-400'}`}
-                    >
-                      {idx + 1}
-                    </span>
-                    <Icon size={12} className={isSel ? 'text-kerf-200' : 'text-ink-300'} />
-                    <span>{kind?.label || node.op}</span>
-                    {isSel && (
-                      <span
-                        role="button"
-                        aria-label="Delete feature"
-                        onClick={(ev) => {
-                          ev.stopPropagation()
-                          if (confirm(`Delete ${kind?.label || node.op} '${node.id}'?`)) removeFeature(node.id)
-                        }}
-                        className="ml-0.5 -mr-0.5 inline-flex items-center justify-center w-4 h-4 rounded text-ink-400 hover:text-red-300 hover:bg-red-900/30"
-                      >
-                        <X size={10} />
-                      </span>
-                    )}
-                  </button>
-                </div>
+                <FeatureTimelineChip
+                  key={node.id}
+                  node={node}
+                  kind={kind}
+                  Icon={Icon}
+                  idx={idx}
+                  isSel={isSel}
+                  onSelect={() => { setSelectedId(node.id); setInspectorOpen(true) }}
+                  onDelete={() => { if (confirm(`Delete ${kind?.label || node.op} '${node.id}'?`)) removeFeature(node.id) }}
+                />
               )
             })
           )}
@@ -2308,7 +2308,7 @@ export default function FeatureView({
             label="Edges"
             title="Click edges to select. Shift-click to add. Drives Fillet/Chamfer manual edge_ids."
           />
-          <span className="w-px h-5 bg-ink-800 mx-1" />
+          <span className="w-px h-5 bg-ink-800 mx-1" aria-hidden="true" />
           <ModeBtn
             active={featurePickMode === 'pushpull'}
             onClick={() => setFeaturePickMode(featurePickMode === 'pushpull' ? null : 'pushpull')}
@@ -2323,12 +2323,29 @@ export default function FeatureView({
             label="Sketch on face"
             title="Click a planar face to create a new sketch on it."
           />
+          {/* Inspector toggle — only visible on narrow viewports (< md). */}
+          <button
+            type="button"
+            onClick={() => setInspectorOpen((v) => !v)}
+            aria-label={inspectorOpen ? 'Close inspector' : 'Open inspector'}
+            aria-expanded={inspectorOpen}
+            aria-controls="feature-inspector-panel"
+            className={`md:hidden inline-flex items-center justify-center w-7 h-7 rounded-md border text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-kerf-300/60
+              ${inspectorOpen
+                ? 'border-kerf-300/60 bg-kerf-300/15 text-kerf-100'
+                : 'border-ink-700 bg-transparent text-ink-300 hover:bg-ink-800'}`}
+          >
+            <SlidersHorizontal size={13} aria-hidden="true" />
+          </button>
         </div>
       </div>
 
-      {/* Main: viewport + inspector. */}
-      <div className="flex-1 min-h-0 grid" style={{ gridTemplateColumns: '1fr 280px' }}>
-        <main className="relative min-h-0 min-w-0">
+      {/* Main: viewport + inspector.
+          ≥ md: side-by-side grid (1fr 280px), inspector always visible.
+          < md: stacked; inspector is an off-canvas overlay anchored to the
+                bottom (slides up, covers ~60% of height). */}
+      <div className="flex-1 min-h-0 relative md:grid" style={{ gridTemplateColumns: '1fr 280px' }}>
+        <main className="relative min-h-0 min-w-0 h-full">
           <FeatureRenderer
             meshes={meshes}
             selection={featureSelection}
@@ -2340,13 +2357,13 @@ export default function FeatureView({
           />
           {evalState.loading && (
             <div className="absolute top-3 left-3 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-ink-900/85 backdrop-blur border border-ink-700 text-[11px] text-ink-200 shadow-lg shadow-black/30">
-              <Loader2 size={11} className="animate-spin text-kerf-300" />
+              <Loader2 size={11} className="animate-spin text-kerf-300" aria-hidden="true" />
               <span>Evaluating</span>
             </div>
           )}
           {featurePickMode && (
             <div className="absolute top-3 right-3 inline-flex items-center gap-1.5 pl-2 pr-1 py-1 rounded-md bg-kerf-300/15 backdrop-blur border border-kerf-300/40 text-[11px] text-kerf-100 shadow-lg shadow-black/30">
-              <Crosshair size={11} />
+              <Crosshair size={11} aria-hidden="true" />
               <span>
                 {featurePickMode === 'pushpull' && 'Push/Pull · drag a face'}
                 {featurePickMode === 'sketch_on_face' && 'Click a planar face'}
@@ -2360,17 +2377,43 @@ export default function FeatureView({
               <button
                 type="button"
                 onClick={() => setFeaturePickMode(null)}
-                className="ml-0.5 inline-flex items-center justify-center w-4 h-4 rounded text-kerf-200 hover:text-white hover:bg-kerf-300/20"
+                aria-label="Cancel pick mode"
+                className="ml-0.5 inline-flex items-center justify-center w-4 h-4 rounded text-kerf-200 hover:text-white hover:bg-kerf-300/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-kerf-300/60"
                 title="Cancel pick"
               >
-                <X size={10} />
+                <X size={10} aria-hidden="true" />
               </button>
             </div>
           )}
         </main>
 
-        {/* Right: inspector */}
-        <aside className="border-l border-ink-800 bg-ink-900/60 min-h-0 overflow-y-auto">
+        {/* Right: inspector — always visible at ≥ md; drawer overlay at < md. */}
+        {/* Backdrop for the mobile drawer */}
+        {inspectorOpen && (
+          <div
+            className="md:hidden fixed inset-0 z-30 bg-black/40"
+            aria-hidden="true"
+            onClick={() => setInspectorOpen(false)}
+          />
+        )}
+        <aside
+          id="feature-inspector-panel"
+          aria-label="Feature inspector"
+          className={`
+            md:border-l md:border-ink-800 md:bg-ink-900/60 md:min-h-0 md:overflow-y-auto md:static md:translate-y-0 md:z-auto md:block md:shadow-none
+            fixed bottom-0 left-0 right-0 z-40 max-h-[65vh] overflow-y-auto rounded-t-xl border-t border-ink-700 bg-ink-900 shadow-2xl shadow-black/60 transition-transform duration-200
+            ${inspectorOpen ? 'translate-y-0' : 'translate-y-full md:translate-y-0'}
+          `}
+        >
+          {/* Mobile handle — tap to close */}
+          <div
+            className="md:hidden flex justify-center py-2 cursor-pointer"
+            onClick={() => setInspectorOpen(false)}
+            aria-label="Close inspector"
+            role="button"
+          >
+            <span className="w-8 h-1 rounded-full bg-ink-600" aria-hidden="true" />
+          </div>
           {!selectedFeature ? (
             <div className="p-4 text-xs text-ink-500 italic">
               Select a feature in the timeline to edit its parameters.
@@ -2398,19 +2441,19 @@ export default function FeatureView({
       <div className="flex items-center gap-3 px-3 h-7 border-t border-ink-800 bg-ink-900 text-[11px] font-mono text-ink-500 flex-shrink-0">
         {evalState.error ? (
           <span className="inline-flex items-center gap-1.5 text-red-400 min-w-0">
-            <AlertTriangle size={11} className="flex-shrink-0" />
+            <AlertTriangle size={11} className="flex-shrink-0" aria-hidden="true" />
             <span className="truncate" title={evalState.error}>{evalState.error}</span>
           </span>
         ) : (
           <span className="inline-flex items-center gap-1.5">
             <span className="text-ink-300">{vertexCount.toLocaleString()}</span>
             <span className="text-ink-500">vertices</span>
-            <span className="text-ink-700">·</span>
+            <span className="text-ink-700" aria-hidden="true">·</span>
             <span className="text-ink-300">{meshes.length}</span>
             <span className="text-ink-500">{meshes.length === 1 ? 'body' : 'bodies'}</span>
             {evalState.ms != null && (
               <>
-                <span className="text-ink-700">·</span>
+                <span className="text-ink-700" aria-hidden="true">·</span>
                 <span>{evalState.ms}ms</span>
               </>
             )}
@@ -2423,31 +2466,126 @@ export default function FeatureView({
               <span className="text-ink-500">Sel</span>
               <span className="text-ink-300">{featureSelection.faceIds.size}</span>
               <span className="text-ink-500">{featureSelection.faceIds.size === 1 ? 'face' : 'faces'}</span>
-              <span className="text-ink-700">·</span>
+              <span className="text-ink-700" aria-hidden="true">·</span>
               <span className="text-ink-300">{featureSelection.edgeIds.size}</span>
               <span className="text-ink-500">{featureSelection.edgeIds.size === 1 ? 'edge' : 'edges'}</span>
             </span>
             <button
               type="button"
               onClick={() => clearFeatureSelection()}
-              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-ink-400 hover:text-kerf-300 hover:bg-ink-800"
+              aria-label="Clear viewport selection"
+              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-ink-400 hover:text-kerf-300 hover:bg-ink-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-kerf-300/60"
               title="Clear viewport selection"
             >
               clear
             </button>
-            <span className="w-px h-4 bg-ink-800" />
+            <span className="w-px h-4 bg-ink-800" aria-hidden="true" />
           </>
         )}
         <button
           type="button"
           onClick={() => triggerEvaluate()}
-          className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-ink-300 hover:text-kerf-300 hover:bg-ink-800"
+          aria-label="Force re-evaluation"
+          className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-ink-300 hover:text-kerf-300 hover:bg-ink-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-kerf-300/60"
           title="Force re-evaluation"
         >
-          <Play size={10} />
+          <Play size={10} aria-hidden="true" />
           <span>Re-evaluate</span>
         </button>
       </div>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// FeatureTimelineChip — a single chip in the horizontal timeline. Handles
+// pointer-unified interactions:
+//   - pointer (mouse/stylus): hover shows X delete button; right-click deletes.
+//   - touch: long-press opens a small dot-menu (⋯) popover with Delete.
+//   - keyboard: Enter/Space selects; Delete key deletes.
+
+function FeatureTimelineChip({ node, kind, Icon, idx, isSel, onSelect, onDelete }) {
+  const [dotMenuOpen, setDotMenuOpen] = useState(false)
+  const wrapRef = useRef(null)
+  useClickOutside(wrapRef, () => setDotMenuOpen(false), dotMenuOpen)
+  const longPress = useLongPress(useCallback(() => setDotMenuOpen(true), []))
+
+  const label = kind?.label || node.op
+
+  function handleKeyDown(e) {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelect() }
+    if (e.key === 'Delete') onDelete()
+  }
+
+  return (
+    <div ref={wrapRef} role="treeitem" aria-selected={isSel} aria-level={1} className="flex items-center gap-1 flex-shrink-0 relative">
+      {idx > 0 && <ChevronRight size={11} className="text-ink-600" aria-hidden="true" />}
+      <button
+        type="button"
+        onClick={onSelect}
+        onKeyDown={handleKeyDown}
+        onContextMenu={(ev) => { ev.preventDefault(); onDelete() }}
+        {...longPress}
+        aria-label={`${label}, feature ${idx + 1}${isSel ? ', selected' : ''}`}
+        className={`group relative inline-flex items-center gap-1.5 pl-1.5 pr-2 py-1 rounded-md border text-xs transition-colors
+          focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-kerf-300/60
+          ${isSel
+            ? 'border-kerf-300/60 bg-kerf-300/10 text-kerf-100 shadow-[0_0_0_1px_rgba(255,214,51,0.15)]'
+            : 'border-ink-800 bg-ink-850 text-ink-200 hover:border-ink-600 hover:bg-ink-800'}`}
+        title={`${label} · right-click or long-press to delete`}
+      >
+        <span
+          aria-hidden="true"
+          className={`inline-flex items-center justify-center w-4 h-4 rounded text-[10px] font-mono leading-none flex-shrink-0
+            ${isSel ? 'bg-kerf-300/30 text-kerf-100' : 'bg-ink-800 text-ink-400'}`}
+        >
+          {idx + 1}
+        </span>
+        <Icon size={12} aria-hidden="true" className={isSel ? 'text-kerf-200' : 'text-ink-300'} />
+        {/* Label truncates at narrow viewport */}
+        <span className="truncate max-w-[6rem] sm:max-w-[8rem]">{label}</span>
+        {/* Desktop: show X delete button when selected */}
+        {isSel && (
+          <button
+            type="button"
+            aria-label={`Delete ${label}`}
+            onClick={(ev) => { ev.stopPropagation(); onDelete() }}
+            className="ml-0.5 -mr-0.5 inline-flex items-center justify-center w-4 h-4 rounded text-ink-400 hover:text-red-300 hover:bg-red-900/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/60"
+          >
+            <X size={10} aria-hidden="true" />
+          </button>
+        )}
+      </button>
+      {/* Dot-menu — always accessible; on touch long-press opens it automatically. */}
+      <button
+        type="button"
+        aria-label={`Actions for ${label}`}
+        aria-expanded={dotMenuOpen}
+        aria-haspopup="menu"
+        onClick={(e) => { e.stopPropagation(); setDotMenuOpen((v) => !v) }}
+        className={`inline-flex items-center justify-center w-5 h-5 rounded text-ink-500 hover:text-ink-200 hover:bg-ink-700 transition-colors flex-shrink-0
+          focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-kerf-300/60
+          ${dotMenuOpen ? 'text-ink-200 bg-ink-700' : ''}`}
+        title="Feature actions"
+      >
+        <MoreHorizontal size={12} aria-hidden="true" />
+      </button>
+      {dotMenuOpen && (
+        <div
+          role="menu"
+          className="absolute top-full left-0 mt-1 z-50 min-w-[130px] rounded-md border border-ink-700 bg-ink-900 shadow-xl shadow-black/50 py-0.5"
+        >
+          <button
+            role="menuitem"
+            type="button"
+            onClick={() => { setDotMenuOpen(false); onDelete() }}
+            className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-red-300 hover:bg-red-900/25 focus-visible:outline-none focus-visible:bg-red-900/25"
+          >
+            <Trash2 size={11} aria-hidden="true" />
+            Delete feature
+          </button>
+        </div>
+      )}
     </div>
   )
 }
@@ -2466,24 +2604,30 @@ function AddFeaturePopover({ onPick }) {
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
+        aria-label="Add feature to timeline"
+        aria-expanded={open}
+        aria-haspopup="menu"
         className={`inline-flex items-center gap-1.5 pl-2 pr-2.5 py-1.5 rounded-md border text-xs font-medium transition-colors
+          focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-kerf-300/60
           ${open
             ? 'border-kerf-300/60 bg-kerf-300/15 text-kerf-100'
             : 'border-ink-700 bg-ink-850 text-ink-100 hover:bg-ink-800 hover:border-ink-600'}`}
         title="Add a feature to the timeline"
       >
-        <Plus size={13} className={open ? 'text-kerf-200' : 'text-kerf-300'} />
+        <Plus size={13} aria-hidden="true" className={open ? 'text-kerf-200' : 'text-kerf-300'} />
         <span>Add feature</span>
         <ChevronDown
           size={11}
+          aria-hidden="true"
           className={`text-ink-400 transition-transform ${open ? 'rotate-180' : ''}`}
         />
       </button>
 
       {open && (
         <div
-          className="absolute top-full left-0 mt-1.5 z-30 w-[420px] rounded-lg border border-ink-700 bg-ink-900 shadow-2xl shadow-black/60 overflow-hidden"
+          className="absolute top-full left-0 mt-1.5 z-30 w-[min(420px,calc(100vw-2rem))] rounded-lg border border-ink-700 bg-ink-900 shadow-2xl shadow-black/60 overflow-hidden"
           role="menu"
+          aria-label="Add feature"
         >
           <div className="max-h-[70vh] overflow-y-auto py-1.5">
             {FEATURE_CATEGORIES.map((cat, ci) => (
@@ -2500,11 +2644,13 @@ function AddFeaturePopover({ onPick }) {
                       <button
                         key={op}
                         type="button"
+                        role="menuitem"
                         onClick={() => { onPick(op); setOpen(false) }}
-                        className="group flex flex-col items-center gap-1 px-2 py-2.5 rounded-md text-ink-200 hover:bg-ink-800 hover:text-kerf-200 transition-colors"
+                        aria-label={`Add ${k.label}`}
+                        className="group flex flex-col items-center gap-1 px-2 py-2.5 rounded-md text-ink-200 hover:bg-ink-800 hover:text-kerf-200 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-kerf-300/60"
                         title={`Add ${k.label}`}
                       >
-                        <Icon size={18} className="text-ink-300 group-hover:text-kerf-300" />
+                        <Icon size={18} aria-hidden="true" className="text-ink-300 group-hover:text-kerf-300" />
                         <span className="text-[11px] leading-none">{k.label}</span>
                       </button>
                     )
@@ -2551,11 +2697,19 @@ function FeatureInspector({
   }
   const Icon = kind.icon
 
+  // Shared input/select classes — h-8 px-2 text-sm matches Editor.jsx baseline.
+  const inputCls = 'w-full h-8 px-2 text-sm bg-ink-900 border border-ink-800 rounded ' +
+    'focus:outline-none focus:border-kerf-300/50 focus-visible:ring-2 focus-visible:ring-kerf-300/40 ' +
+    'text-ink-100 font-mono'
+  const selectCls = 'w-full h-8 px-2 text-sm bg-ink-900 border border-ink-800 rounded ' +
+    'focus:outline-none focus:border-kerf-300/50 focus-visible:ring-2 focus-visible:ring-kerf-300/40 ' +
+    'text-ink-100'
+
   return (
     <div className="flex flex-col">
       {/* Header — feature name + reorder + delete. */}
       <div className="sticky top-0 z-10 px-3 py-2.5 bg-ink-900 border-b border-ink-800 flex items-center gap-2">
-        <span className="inline-flex items-center justify-center w-6 h-6 rounded bg-kerf-300/15 border border-kerf-300/30 flex-shrink-0">
+        <span className="inline-flex items-center justify-center w-6 h-6 rounded bg-kerf-300/15 border border-kerf-300/30 flex-shrink-0" aria-hidden="true">
           <Icon size={13} className="text-kerf-200" />
         </span>
         <div className="min-w-0 flex-1">
@@ -2564,30 +2718,33 @@ function FeatureInspector({
             {feature.id}
           </div>
         </div>
-        <div className="flex items-center gap-0.5 flex-shrink-0">
+        <div className="flex items-center gap-0.5 flex-shrink-0" role="group" aria-label="Feature actions">
           <button
             type="button"
             onClick={onMoveUp}
-            className="inline-flex items-center justify-center w-6 h-6 rounded text-ink-400 hover:text-kerf-300 hover:bg-ink-800"
+            aria-label="Move feature up in timeline"
+            className="inline-flex items-center justify-center w-6 h-6 rounded text-ink-400 hover:text-kerf-300 hover:bg-ink-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-kerf-300/60"
             title="Move up in timeline"
           >
-            <ChevronUp size={13} />
+            <ChevronUp size={13} aria-hidden="true" />
           </button>
           <button
             type="button"
             onClick={onMoveDown}
-            className="inline-flex items-center justify-center w-6 h-6 rounded text-ink-400 hover:text-kerf-300 hover:bg-ink-800"
+            aria-label="Move feature down in timeline"
+            className="inline-flex items-center justify-center w-6 h-6 rounded text-ink-400 hover:text-kerf-300 hover:bg-ink-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-kerf-300/60"
             title="Move down in timeline"
           >
-            <ChevronDown size={13} />
+            <ChevronDown size={13} aria-hidden="true" />
           </button>
           <button
             type="button"
             onClick={onDelete}
-            className="inline-flex items-center justify-center w-6 h-6 rounded text-ink-400 hover:text-red-300 hover:bg-red-900/25"
+            aria-label={`Delete ${kind.label} feature`}
+            className="inline-flex items-center justify-center w-6 h-6 rounded text-ink-400 hover:text-red-300 hover:bg-red-900/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/60"
             title="Delete this feature"
           >
-            <Trash2 size={12} />
+            <Trash2 size={12} aria-hidden="true" />
           </button>
         </div>
       </div>
@@ -2596,13 +2753,19 @@ function FeatureInspector({
       <div className="px-3 py-3 space-y-3">
       {kind.fields.map((field) => {
         if (field.showWhen && !field.showWhen(feature)) return null
+        const fieldId = `inspector-${feature.id}-${field.key}`
+        const complexKinds = ['edge_picker','face_picker','face_picker_single','axis_picker','plane_picker','sketch_path_list','edge_radius_list']
         return (
           <div key={field.key} className="space-y-1.5">
-            <label className="block text-[11px] font-medium text-ink-300">
+            <label
+              htmlFor={complexKinds.includes(field.kind) ? undefined : fieldId}
+              className="block text-[11px] font-medium text-ink-300"
+            >
               {field.label}
             </label>
             {field.kind === 'number' && (
               <input
+                id={fieldId}
                 type="number"
                 value={feature[field.key] ?? ''}
                 onChange={(ev) => {
@@ -2612,16 +2775,27 @@ function FeatureInspector({
                 min={field.min}
                 max={field.max}
                 step={field.step ?? 'any'}
-                className="w-full px-2 py-1 bg-ink-950 border border-ink-700 rounded text-xs font-mono
-                           focus:outline-none focus:border-kerf-300/60"
+                aria-label={field.label}
+                className={inputCls}
+              />
+            )}
+            {field.kind === 'text' && (
+              <input
+                id={fieldId}
+                type="text"
+                value={feature[field.key] ?? ''}
+                onChange={(ev) => onPatch({ [field.key]: ev.target.value })}
+                aria-label={field.label}
+                className={inputCls}
               />
             )}
             {field.kind === 'select' && (
               <select
+                id={fieldId}
                 value={feature[field.key] ?? field.options?.[0]?.value}
                 onChange={(ev) => onPatch({ [field.key]: ev.target.value })}
-                className="w-full px-2 py-1 bg-ink-950 border border-ink-700 rounded text-xs
-                           focus:outline-none focus:border-kerf-300/60"
+                aria-label={field.label}
+                className={selectCls}
               >
                 {(field.options || []).map((o) => (
                   <option key={o.value} value={o.value}>{o.label}</option>
@@ -2630,10 +2804,11 @@ function FeatureInspector({
             )}
             {field.kind === 'sketch_picker' && (
               <select
+                id={fieldId}
                 value={feature[field.key] ?? ''}
                 onChange={(ev) => onPatch({ [field.key]: ev.target.value })}
-                className="w-full px-2 py-1 bg-ink-950 border border-ink-700 rounded text-xs font-mono
-                           focus:outline-none focus:border-kerf-300/60"
+                aria-label={field.label}
+                className={selectCls + ' font-mono'}
               >
                 <option value="">— pick a sketch —</option>
                 {sketchPaths.map((s) => (
@@ -2643,10 +2818,11 @@ function FeatureInspector({
             )}
             {field.kind === 'feature_picker' && (
               <select
+                id={fieldId}
                 value={feature[field.key] ?? ''}
                 onChange={(ev) => onPatch({ [field.key]: ev.target.value })}
-                className="w-full px-2 py-1 bg-ink-950 border border-ink-700 rounded text-xs font-mono
-                           focus:outline-none focus:border-kerf-300/60"
+                aria-label={field.label}
+                className={selectCls + ' font-mono'}
               >
                 <option value="">— pick a feature —</option>
                 {bodyFeatures.map((n) => (
@@ -2695,14 +2871,17 @@ function FeatureInspector({
                 onArmPick={() => setFeaturePickMode('one_shot_plane', { featureId: feature.id, fieldKey: field.key, accept: 'face' })}
               />
             )}
-            {field.kind === 'bool' && (
-              <label className="flex items-center gap-2 px-2 py-1 bg-ink-950 border border-ink-700 rounded text-xs cursor-pointer">
+            {(field.kind === 'bool' || field.kind === 'boolean') && (
+              <label className="flex items-center gap-2 h-8 px-2 bg-ink-900 border border-ink-800 rounded text-sm cursor-pointer hover:border-ink-700">
                 <input
                   type="checkbox"
+                  id={fieldId}
                   checked={feature[field.key] === true}
                   onChange={(ev) => onPatch({ [field.key]: ev.target.checked })}
+                  className="w-3.5 h-3.5 accent-kerf-300"
+                  aria-label={field.label}
                 />
-                <span className="text-ink-300">{feature[field.key] === true ? 'on' : 'off'}</span>
+                <span className="text-ink-300 text-sm">{feature[field.key] === true ? 'on' : 'off'}</span>
               </label>
             )}
             {field.kind === 'sketch_path_list' && (
@@ -2752,27 +2931,30 @@ function SketchPathListField({ value, onChange, sketchPaths }) {
       ) : (
         <div className="space-y-0.5">
           {list.map((p, i) => (
-            <div key={`${p}-${i}`} className="flex items-center gap-1 px-1.5 py-1 bg-ink-950 border border-ink-700 rounded text-xs font-mono">
-              <span className="text-ink-500 w-4 text-right">{i + 1}.</span>
-              <span className="flex-1 truncate text-ink-200">{p}</span>
+            <div key={`${p}-${i}`} className="flex items-center gap-1 px-1.5 py-1 bg-ink-900 border border-ink-800 rounded text-xs font-mono">
+              <span className="text-ink-500 w-4 text-right flex-shrink-0">{i + 1}.</span>
+              <span className="flex-1 truncate text-ink-200 min-w-0">{p}</span>
               <button type="button" disabled={i === 0}
-                className="text-ink-500 hover:text-kerf-300 disabled:opacity-30"
+                aria-label="Move profile up"
+                className="text-ink-500 hover:text-kerf-300 disabled:opacity-30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-kerf-300/60 flex-shrink-0"
                 onClick={() => {
                   const next = [...list]; ;[next[i - 1], next[i]] = [next[i], next[i - 1]]; onChange(next)
                 }}>
-                <ChevronUp size={12} />
+                <ChevronUp size={12} aria-hidden="true" />
               </button>
               <button type="button" disabled={i === list.length - 1}
-                className="text-ink-500 hover:text-kerf-300 disabled:opacity-30"
+                aria-label="Move profile down"
+                className="text-ink-500 hover:text-kerf-300 disabled:opacity-30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-kerf-300/60 flex-shrink-0"
                 onClick={() => {
                   const next = [...list]; ;[next[i + 1], next[i]] = [next[i], next[i + 1]]; onChange(next)
                 }}>
-                <ChevronDown size={12} />
+                <ChevronDown size={12} aria-hidden="true" />
               </button>
               <button type="button"
-                className="text-ink-500 hover:text-red-400"
+                aria-label={`Remove profile ${p}`}
+                className="text-ink-500 hover:text-red-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/60 flex-shrink-0"
                 onClick={() => onChange(list.filter((_, j) => j !== i))}>
-                <Trash2 size={12} />
+                <Trash2 size={12} aria-hidden="true" />
               </button>
             </div>
           ))}
@@ -2782,8 +2964,9 @@ function SketchPathListField({ value, onChange, sketchPaths }) {
         <select
           value=""
           onChange={(ev) => { if (ev.target.value) onChange([...list, ev.target.value]) }}
-          className="w-full px-2 py-1 bg-ink-950 border border-ink-700 rounded text-xs font-mono
-                     focus:outline-none focus:border-kerf-300/60"
+          aria-label="Add profile sketch"
+          className="w-full h-8 px-2 text-sm bg-ink-900 border border-ink-800 rounded font-mono text-ink-100
+                     focus:outline-none focus:border-kerf-300/50 focus-visible:ring-2 focus-visible:ring-kerf-300/40"
         >
           <option value="">— add a profile sketch —</option>
           {remaining.map((s) => (
@@ -2823,39 +3006,42 @@ function EdgeRadiusListField({ value, onChange, pickArmed, onArmPick, selection 
             const start = row.radii?.[0]?.radius ?? 1
             const end = row.radii?.[row.radii.length - 1]?.radius ?? start
             return (
-              <div key={row.edge_id} className="flex items-center gap-1 px-1.5 py-1 bg-ink-950 border border-ink-700 rounded text-[11px] font-mono">
-                <span className="text-ink-500 w-12">edge {row.edge_id}</span>
+              <div key={row.edge_id} className="flex items-center gap-1 px-1.5 py-1 bg-ink-900 border border-ink-800 rounded text-[11px] font-mono">
+                <span className="text-ink-500 w-12 flex-shrink-0">edge {row.edge_id}</span>
                 <input
                   type="number"
                   value={start}
                   step={0.1}
                   min={0.001}
+                  aria-label={`Start radius for edge ${row.edge_id}`}
                   onChange={(ev) => {
                     const v = Number(ev.target.value)
                     const next = [...rows]
                     next[i] = { ...row, radii: [{ at: 0, radius: v }, { at: 1, radius: end }] }
                     onChange(next)
                   }}
-                  className="w-16 px-1 py-0.5 bg-ink-900 border border-ink-700 rounded"
+                  className="w-14 h-6 px-1 bg-ink-800 border border-ink-700 rounded text-ink-100 focus:outline-none focus:border-kerf-300/50"
                 />
-                <span className="text-ink-500">→</span>
+                <span className="text-ink-500" aria-hidden="true">→</span>
                 <input
                   type="number"
                   value={end}
                   step={0.1}
                   min={0.001}
+                  aria-label={`End radius for edge ${row.edge_id}`}
                   onChange={(ev) => {
                     const v = Number(ev.target.value)
                     const next = [...rows]
                     next[i] = { ...row, radii: [{ at: 0, radius: start }, { at: 1, radius: v }] }
                     onChange(next)
                   }}
-                  className="w-16 px-1 py-0.5 bg-ink-900 border border-ink-700 rounded"
+                  className="w-14 h-6 px-1 bg-ink-800 border border-ink-700 rounded text-ink-100 focus:outline-none focus:border-kerf-300/50"
                 />
                 <button type="button"
-                  className="text-ink-500 hover:text-red-400 ml-auto"
+                  aria-label={`Remove edge ${row.edge_id}`}
+                  className="text-ink-500 hover:text-red-400 ml-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/60"
                   onClick={() => onChange(rows.filter((_, j) => j !== i))}>
-                  <Trash2 size={11} />
+                  <Trash2 size={11} aria-hidden="true" />
                 </button>
               </div>
             )
@@ -2865,11 +3051,13 @@ function EdgeRadiusListField({ value, onChange, pickArmed, onArmPick, selection 
       <button
         type="button"
         onClick={onArmPick}
-        className={`w-full px-2 py-1 rounded text-xs border transition-colors ${
-          pickArmed
+        aria-label={pickArmed ? 'Stop picking edges' : 'Pick edges in viewport'}
+        aria-pressed={pickArmed}
+        className={`w-full px-2 h-8 rounded text-sm border transition-colors
+          focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-kerf-300/60
+          ${pickArmed
             ? 'bg-kerf-300/15 border-kerf-300/40 text-kerf-200'
-            : 'bg-ink-950 border-ink-700 text-ink-400 hover:text-kerf-300'
-        }`}
+            : 'bg-ink-900 border-ink-800 text-ink-400 hover:text-kerf-300'}`}
       >
         {pickArmed ? 'Click edges in viewport (Esc to stop)' : 'Pick edges'}
       </button>
@@ -2888,13 +3076,16 @@ function EdgeIdsField({ value, onChange, pickArmed, onArmPick, selection, setSel
         <button
           type="button"
           onClick={onArmPick}
-          className={`inline-flex items-center gap-1 px-2 py-1 rounded text-[11px] border
+          aria-label={pickArmed ? 'Stop picking edges' : 'Pick edges in viewport'}
+          aria-pressed={pickArmed}
+          className={`inline-flex items-center gap-1 px-2 h-7 rounded text-[11px] border
+            focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-kerf-300/60
             ${pickArmed
               ? 'bg-kerf-300/15 border-kerf-300/50 text-kerf-200'
               : 'bg-ink-800 border-ink-700 text-ink-300 hover:border-ink-500'}`}
           title={pickArmed ? 'Stop picking edges' : 'Click in the viewport to pick edges'}
         >
-          <Crosshair size={11} />
+          <Crosshair size={11} aria-hidden="true" />
           <span>{pickArmed ? 'Picking…' : 'Pick edges'}</span>
         </button>
         <span className="text-[11px] text-ink-500">{ids.length} selected</span>
@@ -2913,11 +3104,12 @@ function EdgeIdsField({ value, onChange, pickArmed, onArmPick, selection, setSel
               )
               setSelection({ faceIds: selection?.faceIds || new Set(), edgeIds: filteredEdges })
             }}
-            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-ink-800 border border-ink-700 text-[11px] font-mono text-ink-200 hover:bg-red-900/30 hover:border-red-700"
+            aria-label={`Remove edge ${id}`}
+            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-ink-800 border border-ink-700 text-[11px] font-mono text-ink-200 hover:bg-red-900/30 hover:border-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/60"
             title={`Remove edge ${id}`}
           >
             <span>e{id}</span>
-            <span className="text-ink-500">×</span>
+            <span aria-hidden="true" className="text-ink-500">×</span>
           </button>
         ))}
       </div>
@@ -2957,11 +3149,12 @@ function FaceIdsField({ value, onChange, pickArmed, onArmPick, selection, setSel
               )
               setSelection({ edgeIds: selection?.edgeIds || new Set(), faceIds: filteredFaces })
             }}
-            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-ink-800 border border-ink-700 text-[11px] font-mono text-ink-200 hover:bg-red-900/30 hover:border-red-700"
+            aria-label={`Remove face ${id}`}
+            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-ink-800 border border-ink-700 text-[11px] font-mono text-ink-200 hover:bg-red-900/30 hover:border-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/60"
             title={`Remove face ${id}`}
           >
             <span>f{id}</span>
-            <span className="text-ink-500">×</span>
+            <span aria-hidden="true" className="text-ink-500">×</span>
           </button>
         ))}
       </div>
@@ -2975,17 +3168,19 @@ function SingleFaceIdField({ value, onChange, onArmPick }) {
       <button
         type="button"
         onClick={onArmPick}
-        className="inline-flex items-center gap-1 px-2 py-1 rounded text-[11px] border bg-ink-800 border-ink-700 text-ink-300 hover:border-ink-500"
+        aria-label="Pick face in viewport"
+        className="inline-flex items-center gap-1 px-2 h-8 rounded text-[11px] border bg-ink-800 border-ink-700 text-ink-300 hover:border-ink-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-kerf-300/60 flex-shrink-0"
       >
-        <Crosshair size={11} />
+        <Crosshair size={11} aria-hidden="true" />
         <span>Pick face</span>
       </button>
       <input
         type="number"
         value={value ?? ''}
         onChange={(ev) => onChange(ev.target.value === '' ? '' : Number(ev.target.value))}
-        className="flex-1 px-2 py-1 bg-ink-950 border border-ink-700 rounded text-xs font-mono
-                   focus:outline-none focus:border-kerf-300/60"
+        aria-label="Face ID"
+        className="flex-1 h-8 px-2 bg-ink-900 border border-ink-800 rounded text-sm font-mono text-ink-100
+                   focus:outline-none focus:border-kerf-300/50 focus-visible:ring-2 focus-visible:ring-kerf-300/40"
         placeholder="face id"
       />
     </div>
@@ -3004,8 +3199,9 @@ function AxisField({ value, onChange, onArmPick }) {
             if (ev.target.value === '_edge') return // user must arm pick
             onChange(ev.target.value)
           }}
-          className="flex-1 px-2 py-1 bg-ink-950 border border-ink-700 rounded text-xs
-                     focus:outline-none focus:border-kerf-300/60"
+          aria-label="Axis"
+          className="flex-1 h-8 px-2 text-sm bg-ink-900 border border-ink-800 rounded text-ink-100
+                     focus:outline-none focus:border-kerf-300/50 focus-visible:ring-2 focus-visible:ring-kerf-300/40"
         >
           <option value="x">X</option>
           <option value="y">Y</option>
@@ -3015,10 +3211,11 @@ function AxisField({ value, onChange, onArmPick }) {
         <button
           type="button"
           onClick={onArmPick}
-          className="inline-flex items-center gap-1 px-2 py-1 rounded text-[11px] border bg-ink-800 border-ink-700 text-ink-300 hover:border-ink-500"
+          aria-label="Pick an edge in the viewport for axis"
+          className="inline-flex items-center gap-1 px-2 h-8 rounded text-[11px] border bg-ink-800 border-ink-700 text-ink-300 hover:border-ink-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-kerf-300/60 flex-shrink-0"
           title="Pick an edge in the viewport"
         >
-          <Crosshair size={11} />
+          <Crosshair size={11} aria-hidden="true" />
         </button>
       </div>
     </div>
@@ -3037,8 +3234,9 @@ function PlaneField({ value, onChange, onArmPick }) {
             if (ev.target.value === '_face') return
             onChange(ev.target.value)
           }}
-          className="flex-1 px-2 py-1 bg-ink-950 border border-ink-700 rounded text-xs
-                     focus:outline-none focus:border-kerf-300/60"
+          aria-label="Plane"
+          className="flex-1 h-8 px-2 text-sm bg-ink-900 border border-ink-800 rounded text-ink-100
+                     focus:outline-none focus:border-kerf-300/50 focus-visible:ring-2 focus-visible:ring-kerf-300/40"
         >
           <option value="xy">XY</option>
           <option value="xz">XZ</option>
@@ -3048,10 +3246,11 @@ function PlaneField({ value, onChange, onArmPick }) {
         <button
           type="button"
           onClick={onArmPick}
-          className="inline-flex items-center gap-1 px-2 py-1 rounded text-[11px] border bg-ink-800 border-ink-700 text-ink-300 hover:border-ink-500"
+          aria-label="Pick a planar face in the viewport for plane"
+          className="inline-flex items-center gap-1 px-2 h-8 rounded text-[11px] border bg-ink-800 border-ink-700 text-ink-300 hover:border-ink-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-kerf-300/60 flex-shrink-0"
           title="Pick a planar face in the viewport"
         >
-          <Crosshair size={11} />
+          <Crosshair size={11} aria-hidden="true" />
         </button>
       </div>
     </div>
@@ -3066,12 +3265,15 @@ function ModeBtn({ active, onClick, icon: Icon, label, title }) {
       type="button"
       onClick={onClick}
       title={title}
+      aria-label={label}
+      aria-pressed={active}
       className={`inline-flex items-center gap-1.5 px-2 py-1.5 rounded-md border text-[11px] transition-colors flex-shrink-0
+        focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-kerf-300/60
         ${active
           ? 'border-kerf-300/60 bg-kerf-300/20 text-kerf-100 shadow-[0_0_0_1px_rgba(255,214,51,0.2)]'
           : 'border-transparent bg-transparent text-ink-300 hover:bg-ink-800 hover:text-ink-100'}`}
     >
-      <Icon size={12} />
+      <Icon size={12} aria-hidden="true" />
       <span>{label}</span>
     </button>
   )
