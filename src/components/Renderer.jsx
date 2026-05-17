@@ -4,6 +4,23 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { Line2 } from 'three/examples/jsm/lines/Line2.js'
 import { LineGeometry } from 'three/examples/jsm/lines/LineGeometry.js'
 import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial.js'
+// Post-FX + HDRI imports.  All come from `three/examples/jsm/` and ship with
+// the three package already pinned in package.json (^0.160.0) — no new
+// dependency is added.
+//   - EffectComposer / RenderPass / UnrealBloomPass: bloom for gemstone
+//     highlights, gated behind a quality flag so we can disable when the
+//     browser reports `prefers-reduced-motion` or low-power hints.
+//   - RGBELoader: loads .hdr equirectangular maps when a real HDRI asset
+//     is provided by the caller via `setEnvironmentHdr(url)`.  In the
+//     default offline path we synthesise a tiny DataTexture studio gradient
+//     and route it through PMREMGenerator → scene.environment.
+//   - RoomEnvironment: a self-contained synthetic studio used as the
+//     zero-asset fallback; same approach as FeatureRenderer.jsx already does.
+import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js'
+import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js'
+import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js'
+import { RGBELoader } from 'three/examples/jsm/loaders/RGBELoader.js'
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js'
 import { geom3ToBufferGeometry, combinedBoundingBox } from '../lib/geom3.js'
 import { getTopologyLazy } from '../lib/topology.js'
 import { distance, formatDistance } from '../lib/measure.js'
@@ -13,12 +30,57 @@ import { createZebraMaterial } from '../lib/zebraMaterial.js'
 import { recordTurntable as _recordTurntable } from '../lib/turntableRender.js'
 import { attachDfmOverlay, detachDfmOverlay, refreshDfm } from '../lib/dfmOverlay.js'
 import { renderHeroSet as _renderHeroSet } from '../lib/heroRender.js'
+import { captureHeroShot as _captureHeroShot } from '../lib/heroShot.js'
 
 const PALETTE = [0xc9a96b, 0x6b9bc9, 0xc96b89, 0x89c96b, 0xc9b86b, 0x9b6bc9]
 const HIGHLIGHT_EMISSIVE = 0x4d3c00 // kerf yellow tint
 const BG_COLOR = 0x0f1115 // ink-900
+const BG_COLOR_TOP = 0x1a1d24 // soft studio gradient top (slightly warmer)
 const KERF_YELLOW = 0xffd633
 const INK_300 = 0x8a93a6
+
+// ── Hero / PBR constants ──────────────────────────────────────────────────────
+//
+// Bloom is tuned for *gemstone highlights*, not the over-bloomed beam glow
+// that ruins jewelry photography.  These three numbers are documented in the
+// commit message so future tweakers don't have to reverse-engineer them:
+//
+//   threshold = 0.85 — only the top ~15% of luminance triggers bloom.  Below
+//                       this, regular highlights remain crisp.
+//   radius    = 0.45 — moderate kernel; gives a halo without smearing detail.
+//   strength  = 0.55 — low overall mix; gem facets sparkle but the metal
+//                       body stays sharp.  Crank to ~1.2 for studio diamond
+//                       hero shots; we expose this via setBloomStrength().
+const BLOOM_THRESHOLD = 0.85
+const BLOOM_RADIUS = 0.45
+const BLOOM_STRENGTH = 0.55
+
+// Default tone-mapping exposure.  ACES filmic with exposure=1.0 gives a
+// neutral starting point for jewellery (gold midtones don't blow out, dark
+// rhodium retains shape).  The UI slider exposes this 0.2 … 2.0.
+const DEFAULT_EXPOSURE = 1.0
+
+// Default hero-shot resolution + supersampling.  Matches heroShot.js defaults
+// but redeclared here so the Renderer UI button doesn't have to import the
+// internal `_internals` table.
+const HERO_DEFAULT_W = 2048
+const HERO_DEFAULT_H = 2048
+const HERO_DEFAULT_SAMPLES = 4
+
+/**
+ * Detect a reduced-motion or low-power preference.  Browsers expose this via
+ * `matchMedia('(prefers-reduced-motion: reduce)')`; we treat it as a hint to
+ * skip bloom by default.  Wrapped in try/catch so it works in jsdom (which
+ * provides matchMedia but may not honour all media queries).
+ */
+function prefersReducedMotion() {
+  try {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return false
+    return window.matchMedia('(prefers-reduced-motion: reduce)').matches === true
+  } catch {
+    return false
+  }
+}
 
 // NURBS surface tessellation note:
 //
@@ -106,6 +168,23 @@ function Renderer({
   const [hudId, setHudId] = useState(null)
   const [leaderHtml, setLeaderHtml] = useState(null) // {x, y, text} screen coords
   const [zebraOn, setZebraOn] = useState(false)
+  // Exposure slider state — wired into the tone-mapping exposure of the
+  // WebGLRenderer.  Lives in a state hook (not a ref) so the slider thumb
+  // updates as the user drags; the live render loop reads renderer state
+  // directly on each frame so there's no re-render thrash.
+  const [exposure, setExposure] = useState(DEFAULT_EXPOSURE)
+  // Bloom is gated by both an auto detection (prefers-reduced-motion) and a
+  // user override.  Default ON unless the OS hints otherwise.
+  const [bloomOn, setBloomOn] = useState(() => !prefersReducedMotion())
+  // Background mode toggle for hero-shot framing.  'studio' = dark gradient
+  // (default), 'hdri' = the loaded environment map shown as background too
+  // (so reflections and background are consistent).  We never apply the HDRI
+  // to the background by default — full HDRI bg can look noisy for everyday
+  // viewport editing.
+  const [hdriBackground, setHdriBackground] = useState(false)
+  // Hero-shot capture in-flight flag so we can dim the chrome while the
+  // upscale + blob encode is running.  Pure UX cue, no rendering effect.
+  const [heroBusy, setHeroBusy] = useState(false)
   const modeRef = useRef(mode)
   const selectedFeaturesRef = useRef(selectedFeatures)
   const onPickFeatureRef = useRef(onPickFeature)
@@ -131,31 +210,119 @@ function Renderer({
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, preserveDrawingBuffer: true })
     renderer.setPixelRatio(window.devicePixelRatio || 1)
     renderer.setClearColor(BG_COLOR, 1)
+
+    // ── PBR upgrade ──────────────────────────────────────────────────────
+    // ACES filmic tonemap + sRGB output is the de-facto "looks like KeyShot"
+    // pipeline for PBR jewellery / product viz.  `useLegacyLights = false`
+    // tells Three.js to use the new physically-correct lighting model
+    // (intensities in candela / lumens / lux), `physicallyCorrectLights` is
+    // the older alias kept for back-compat with three pre-r155.  We set both
+    // so future three-version bumps don't silently regress.
+    renderer.toneMapping = THREE.ACESFilmicToneMapping
+    renderer.toneMappingExposure = DEFAULT_EXPOSURE
+    if ('outputColorSpace' in renderer) {
+      renderer.outputColorSpace = THREE.SRGBColorSpace
+    }
+    if ('physicallyCorrectLights' in renderer) {
+      renderer.physicallyCorrectLights = true
+    }
+    if ('useLegacyLights' in renderer) {
+      renderer.useLegacyLights = false
+    }
+    // Shadow map for the contact-shadow plane and the casting sun light.
+    // PCFSoft gives the softest 5×5 PCF kernel without going to VSM.
+    renderer.shadowMap.enabled = true
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap
+
     mount.appendChild(renderer.domElement)
     renderer.domElement.style.display = 'block'
     renderer.domElement.style.width = '100%'
     renderer.domElement.style.height = '100%'
 
     const scene = new THREE.Scene()
-    scene.background = new THREE.Color(BG_COLOR)
+    // Soft studio gradient via Canvas2D → CanvasTexture.  This is the default
+    // "studio" background; the HDRI is only applied to scene.background when
+    // the user explicitly flips the "HDRI bg" toggle for a hero shot.
+    const gradientBg = _makeStudioGradientTexture(BG_COLOR, BG_COLOR_TOP)
+    if (gradientBg) {
+      scene.background = gradientBg
+    } else {
+      scene.background = new THREE.Color(BG_COLOR)
+    }
 
     const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 5000)
     camera.position.set(80, 80, 80)
     camera.lookAt(0, 0, 0)
 
-    const ambient = new THREE.AmbientLight(0xffffff, 0.45)
-    const key = new THREE.DirectionalLight(0xffffff, 0.9)
+    // ── PBR environment ──────────────────────────────────────────────────
+    // Synthetic neutral studio HDR built from RoomEnvironment (ships with
+    // three/examples).  Zero external assets — works offline, no CORS, and
+    // it's been the standard "tiny PBR test rig" in three since r131.  This
+    // is the *default*; callers can call ref.setEnvironmentHdr(url) to swap
+    // in a real .hdr asset later (e.g. for a heavy jewellery hero render).
+    const pmrem = new THREE.PMREMGenerator(renderer)
+    pmrem.compileEquirectangularShader()
+    let envTexture = null
+    try {
+      envTexture = pmrem.fromScene(new RoomEnvironment(0.5), 0.04).texture
+      scene.environment = envTexture
+    } catch (e) {
+      // Some headless GL contexts can't run the PMREM shader; PBR materials
+      // still work without env, they just don't get reflections.  Skip
+      // silently — the contact shadows + bloom still elevate the look.
+    }
+
+    // Three-point lighting tuned for physical units.  In the new lighting
+    // model intensities are roughly lumens for points / spots and lux for
+    // directionals, so values that worked at 0.9 on the old pipeline need
+    // a generous bump for the same perceived brightness.  These are tuned
+    // alongside the env-map ambient (RoomEnvironment) to land at neutral.
+    const ambient = new THREE.AmbientLight(0xffffff, 0.25)
+    const key = new THREE.DirectionalLight(0xffffff, 2.2)
     key.position.set(60, 90, 40)
-    const fill = new THREE.DirectionalLight(0x99ccff, 0.35)
+    // Cast shadows from the key only — adding shadows on every light triples
+    // the GPU cost for no visible win.
+    key.castShadow = true
+    key.shadow.mapSize.width = 1024
+    key.shadow.mapSize.height = 1024
+    // Tune the shadow camera to a sensible default cube; the parts-rebuild
+    // path widens it to match the bounding box of the actual model so the
+    // shadow map stays high-resolution at any scale.
+    key.shadow.camera.near = 1
+    key.shadow.camera.far = 1000
+    key.shadow.camera.left = -200
+    key.shadow.camera.right = 200
+    key.shadow.camera.top = 200
+    key.shadow.camera.bottom = -200
+    key.shadow.bias = -0.0005
+    key.shadow.normalBias = 0.02
+    const fill = new THREE.DirectionalLight(0x99ccff, 0.8)
     fill.position.set(-50, 30, -60)
     scene.add(ambient, key, fill)
+
+    // ── Contact shadow plane ────────────────────────────────────────────
+    // A large transparent ShadowMaterial plane that only catches shadows.
+    // The plane sits a hair below the auto-framed model and is repositioned
+    // in the parts-rebuild effect (so it follows the actual model bottom).
+    const contactShadowMat = new THREE.ShadowMaterial({ opacity: 0.42 })
+    const contactShadowPlane = new THREE.Mesh(
+      new THREE.PlaneGeometry(400, 400),
+      contactShadowMat,
+    )
+    contactShadowPlane.rotation.x = -Math.PI / 2
+    contactShadowPlane.position.y = -0.001
+    contactShadowPlane.receiveShadow = true
+    contactShadowPlane.userData._heroChrome = false // not hidden during hero
+    scene.add(contactShadowPlane)
 
     // Subtle ground grid.
     const grid = new THREE.GridHelper(400, 40, 0x232730, 0x14171c)
     grid.rotation.x = Math.PI / 2 // JSCAD is Z-up; spin grid into XY plane.
+    grid.userData._heroChrome = true // hide for hero shots
     scene.add(grid)
 
     const axes = new THREE.AxesHelper(20)
+    axes.userData._heroChrome = true // hide for hero shots
     scene.add(axes)
 
     const controls = new OrbitControls(camera, renderer.domElement)
@@ -194,6 +361,27 @@ function Renderer({
     const pointer = new THREE.Vector2()
     raycaster.params.Line2 = { threshold: 8 }
 
+    // ── Post-FX composer ─────────────────────────────────────────────────
+    // RenderPass draws the scene; UnrealBloomPass adds the gem-highlight
+    // halo on top.  We keep a reference to the bloom pass so the user-facing
+    // toggle can enable/disable just that pass (cheap: re-renders without
+    // post-FX) without tearing down the composer.
+    //
+    // The composer's render-target size is wired into applySize() below so
+    // it tracks the canvas pixel size on container resizes.
+    const composer = new EffectComposer(renderer)
+    composer.setPixelRatio(window.devicePixelRatio || 1)
+    const renderPass = new RenderPass(scene, camera)
+    composer.addPass(renderPass)
+    const bloomPass = new UnrealBloomPass(
+      new THREE.Vector2(1, 1),  // resized in applySize
+      BLOOM_STRENGTH,
+      BLOOM_RADIUS,
+      BLOOM_THRESHOLD,
+    )
+    bloomPass.enabled = !prefersReducedMotion()
+    composer.addPass(bloomPass)
+
     let running = true
     function loop() {
       if (!running) return
@@ -213,7 +401,14 @@ function Renderer({
         // skips objects without geometry.boundingBox in a safe way).
       }
 
-      renderer.render(scene, camera)
+      // Drive the post-FX composer when bloom is on; fall back to the bare
+      // renderer.render() path when bloom is off so the second framebuffer
+      // copy of EffectComposer doesn't eat fillrate on low-end devices.
+      if (bloomPass.enabled) {
+        composer.render()
+      } else {
+        renderer.render(scene, camera)
+      }
       // Update leader-line HUD (project the midpoint to screen).
       const pos = stateRef.current?.leaderMidpoint
       if (pos) {
@@ -241,6 +436,12 @@ function Renderer({
       renderer.setSize(w, h, false)
       camera.aspect = w / h
       camera.updateProjectionMatrix()
+      // Keep post-FX composer + bloom pass in sync with the canvas size.
+      // EffectComposer.setSize() resizes its internal render targets; the
+      // bloom pass's `resolution` Vector2 drives the blur kernel and must
+      // match the canvas to avoid soft / pixelated halos.
+      composer.setSize(w, h)
+      bloomPass.resolution.set(w, h)
       // Update LineMaterial.resolution on every fat-line we own.
       const s = stateRef.current
       if (s) {
@@ -448,6 +649,21 @@ function Renderer({
       leaderMidpoint: null,
       leaderText: '',
       setLeaderScreen: setLeaderHtml,
+      // PBR / post-FX:
+      composer,
+      renderPass,
+      bloomPass,
+      pmrem,
+      envTexture,
+      gradientBg,
+      // Lights + helpers — held so we can re-tune the shadow camera in the
+      // parts-rebuild effect and dispose cleanly on unmount.
+      key,
+      ambient,
+      fill,
+      contactShadowPlane,
+      grid,
+      axes,
     }
 
     return () => {
@@ -459,6 +675,14 @@ function Renderer({
       renderer.domElement.removeEventListener('pointerup', onPointerUp)
       renderer.domElement.removeEventListener('pointercancel', onPointerCancel)
       disposeAll(stateRef.current)
+      try { composer.dispose?.() } catch { /* older three lacks dispose */ }
+      try { bloomPass.dispose?.() } catch {}
+      try { renderPass.dispose?.() } catch {}
+      try { pmrem.dispose?.() } catch {}
+      try { envTexture?.dispose?.() } catch {}
+      try { gradientBg?.dispose?.() } catch {}
+      try { contactShadowMat.dispose?.() } catch {}
+      try { contactShadowPlane.geometry?.dispose?.() } catch {}
       controls.dispose()
       renderer.dispose()
       if (renderer.domElement.parentNode === mount) mount.removeChild(renderer.domElement)
@@ -547,6 +771,10 @@ function Renderer({
         // Parallel list: instanceId → Component.id so pick handlers can look up
         // the right component.
         instMesh.userData.componentIds = group.componentIds
+        // Shadow casting on for the InstancedMesh — the contact-shadow plane
+        // collects these to give the model a grounded look.
+        instMesh.castShadow = true
+        instMesh.receiveShadow = true
 
         group.transforms.forEach((m4, idx) => {
           instMesh.setMatrixAt(idx, m4)
@@ -584,6 +812,10 @@ function Renderer({
       mesh.userData.id = part.id
       mesh.userData.kind = 'part'
       mesh.userData.componentId = part.componentId || null
+      // Shadow flags — the contact-shadow plane grounds the model and parts
+      // sharing the scene cast onto each other (intended for assemblies).
+      mesh.castShadow = true
+      mesh.receiveShadow = true
       meshGroup.add(mesh)
       entries.push({ id: part.id, geometry })
 
@@ -621,6 +853,31 @@ function Renderer({
         camera.updateProjectionMatrix()
         controls.target.copy(center)
         controls.update()
+
+        // Re-tune the key-light shadow camera to fit the model.  An oversized
+        // shadow camera spreads the 1024² shadow map over too much area and
+        // looks pixelated; a tight one clips.  We use 1.4× the largest axis
+        // as the half-extent so there's a small margin for OrbitControls
+        // panning before clipping shows up.
+        if (s.key && s.key.shadow && s.key.shadow.camera) {
+          const half = radius * 1.4
+          s.key.shadow.camera.left = -half
+          s.key.shadow.camera.right = half
+          s.key.shadow.camera.top = half
+          s.key.shadow.camera.bottom = -half
+          s.key.shadow.camera.near = Math.max(0.1, radius / 50)
+          s.key.shadow.camera.far = radius * 8 + 100
+          s.key.shadow.camera.updateProjectionMatrix()
+        }
+        // Drop the contact-shadow plane just under the model bottom.  We
+        // subtract a tiny epsilon so the plane never z-fights with parts
+        // that rest exactly on Y=0.
+        if (s.contactShadowPlane) {
+          s.contactShadowPlane.position.y = box.min.y - radius * 0.0005
+          // Scale the plane to comfortably contain the model + soft halo.
+          const scale = Math.max(1, radius * 0.04)
+          s.contactShadowPlane.scale.setScalar(scale)
+        }
       }
       s.lastPartsKey = key
     }
@@ -712,6 +969,41 @@ function Renderer({
     applyModeVisibility(s, mode)
     clearHoverOverlay(s)
   }, [mode, parts, topologies])
+
+  // ----- Tone-mapping exposure -----
+  // Pushes the slider value straight into the WebGLRenderer; the render loop
+  // picks it up on the next frame without a React re-render.
+  useEffect(() => {
+    const s = stateRef.current
+    if (!s) return
+    s.renderer.toneMappingExposure = exposure
+  }, [exposure])
+
+  // ----- Bloom toggle -----
+  // We re-route the loop to skip composer when bloom is off (handled in the
+  // render loop above by inspecting bloomPass.enabled).  This effect just
+  // flips the flag.
+  useEffect(() => {
+    const s = stateRef.current
+    if (!s || !s.bloomPass) return
+    s.bloomPass.enabled = bloomOn
+  }, [bloomOn])
+
+  // ----- HDRI-as-background toggle -----
+  // When the user wants the env-map to also be the background (typical for
+  // hero shots), we swap scene.background to the env texture.  Off → restore
+  // the studio gradient.
+  useEffect(() => {
+    const s = stateRef.current
+    if (!s) return
+    if (hdriBackground && s.envTexture) {
+      s.scene.background = s.envTexture
+    } else if (s.gradientBg) {
+      s.scene.background = s.gradientBg
+    } else {
+      s.scene.background = new THREE.Color(BG_COLOR)
+    }
+  }, [hdriBackground])
 
   // ----- Selection overlays + leader line -----
   useEffect(() => {
@@ -823,11 +1115,89 @@ function Renderer({
     }
   }, [zebraOn, parts])
 
+  // ----- Hero-shot capture (shared between UI button + imperative API) -----
+  // Defined here as a closure so the UI button and the ref both invoke the
+  // same path.  Hides UI chrome by walking the live state graph rather than
+  // mutating React state — avoids a re-render mid-capture.
+  async function doCaptureHeroShot(opts = {}) {
+    const s = stateRef.current
+    if (!s) return null
+    // Build the chrome-hide list: aux groups + grid + axes + leader line +
+    // hover overlay + any DFM markers + any current selection overlays.
+    // The contact-shadow plane is NOT hidden (it grounds the model).
+    const hideTargets = []
+    if (s.grid) hideTargets.push(s.grid)
+    if (s.axes) hideTargets.push(s.axes)
+    if (s.leaderGroup) hideTargets.push(s.leaderGroup)
+    if (s.overlayGroup) hideTargets.push(s.overlayGroup)
+    if (s.edgeGroup) hideTargets.push(s.edgeGroup)
+    if (s.vertexGroup) hideTargets.push(s.vertexGroup)
+    setHeroBusy(true)
+    try {
+      // Suppress the leader HTML overlay too — it's outside the canvas.
+      const prevSetLeader = s.setLeaderScreen
+      s.setLeaderScreen = () => {}
+      try {
+        return await _captureHeroShot({
+          renderer: s.renderer,
+          scene: s.scene,
+          camera: s.camera,
+          composer: s.bloomPass && s.bloomPass.enabled ? s.composer : null,
+          width: opts.width ?? HERO_DEFAULT_W,
+          height: opts.height ?? HERO_DEFAULT_H,
+          samples: opts.samples ?? HERO_DEFAULT_SAMPLES,
+          transparent: !!opts.transparent,
+          background: opts.background,
+          hideTargets,
+        })
+      } finally {
+        s.setLeaderScreen = prevSetLeader
+      }
+    } finally {
+      setHeroBusy(false)
+    }
+  }
+
   // ----- Imperative handle: expose canvas snapshot for thumbnails -----
   // The Editor calls this after a successful save (debounced) to grab a
   // small JPEG of the current scene. We render once more synchronously
   // (so post-save geometry is on-screen) and crop to a square through an
   // offscreen canvas before encoding.
+  /**
+   * Imperative API surface exposed to the parent via ref:
+   *
+   *   snapshot({ size, quality }) → Promise<Blob | null>
+   *     Existing thumbnail capture (small JPEG, center-cropped to square).
+   *     Unchanged from prior behaviour.
+   *
+   *   recordTurntable(opts) → Promise<string[]>
+   *     Existing 360° orbit capture; delegates to turntableRender.js.
+   *
+   *   renderHeroSet(opts) → Promise<{ stills, turntable }>
+   *     Existing 4-still + N-frame turntable capture; delegates to
+   *     heroRender.js.
+   *
+   *   captureHeroShot({ width, height, samples, transparent, background })
+   *     → Promise<Blob | null>
+   *     NEW.  One-click marketing-quality single-image capture.  Defaults to
+   *     2048×2048 / 4 supersample passes.  UI chrome (grid, axes, hover
+   *     overlays, leader line, DFM markers) is hidden for the duration of
+   *     the capture and restored afterwards (even on error).  Returns a
+   *     PNG Blob; the caller is responsible for download / upload.
+   *
+   *   setEnvironmentHdr(url, [opts]) → Promise<void>
+   *     NEW.  Swap the synthetic RoomEnvironment for a real .hdr asset
+   *     loaded via RGBELoader.  Passing null reverts to the synthetic env.
+   *
+   *   setBloomEnabled(on) → void
+   *   setBloomStrength(strength) → void
+   *   setExposure(value) → void
+   *     NEW.  Programmatic counterparts to the UI toggles for tests /
+   *     keybindings / other components that want to drive PBR knobs.
+   *
+   *   setDfmIssues(issues) → void
+   *     Existing DFM overlay attach/detach.
+   */
   useImperativeHandle(ref, () => ({
     /**
      * Capture the rendered scene as a JPEG Blob.
@@ -880,9 +1250,79 @@ function Renderer({
       return _recordTurntable(s.scene, s.camera, s.renderer, opts)
     },
     renderHeroSet: (opts = {}) => { const s = stateRef.current; if (!s) return Promise.resolve({ stills: [], turntable: [] }); return _renderHeroSet(s.scene, s.camera, s.renderer, opts) },
+
+    /**
+     * captureHeroShot — marketing-quality single image.
+     *
+     * @param {object} [opts]
+     * @param {number}  [opts.width=2048]   Output width (px).
+     * @param {number}  [opts.height=2048]  Output height (px).
+     * @param {number}  [opts.samples=4]    Supersampling passes.
+     * @param {boolean} [opts.transparent=false]  Transparent PNG background.
+     * @param {number}  [opts.background]   Hex color override for background.
+     * @returns {Promise<Blob|null>}
+     */
+    captureHeroShot: (opts = {}) => doCaptureHeroShot(opts),
+
+    /**
+     * setEnvironmentHdr — swap scene.environment to a real .hdr loaded via
+     * RGBELoader.  Pass null to revert to the synthetic RoomEnvironment.
+     *
+     * @param {string|null} url
+     * @returns {Promise<void>}
+     */
+    setEnvironmentHdr: (url) => new Promise((resolve, reject) => {
+      const s = stateRef.current
+      if (!s) return resolve()
+      if (!url) {
+        // Revert: rebuild from RoomEnvironment if we previously swapped out.
+        try {
+          const tex = s.pmrem.fromScene(new RoomEnvironment(0.5), 0.04).texture
+          // Dispose the old environment to release the GPU texture.
+          s.envTexture?.dispose?.()
+          s.envTexture = tex
+          s.scene.environment = tex
+          if (hdriBackground) s.scene.background = tex
+        } catch (e) {
+          return reject(e)
+        }
+        return resolve()
+      }
+      const loader = new RGBELoader()
+      loader.load(url, (hdrTex) => {
+        try {
+          const pmremTex = s.pmrem.fromEquirectangular(hdrTex).texture
+          hdrTex.dispose()
+          s.envTexture?.dispose?.()
+          s.envTexture = pmremTex
+          s.scene.environment = pmremTex
+          if (hdriBackground) s.scene.background = pmremTex
+          resolve()
+        } catch (e) {
+          reject(e)
+        }
+      }, undefined, (err) => reject(err))
+    }),
+
+    /** Toggle bloom on/off programmatically. */
+    setBloomEnabled: (on) => { setBloomOn(!!on) },
+
+    /** Override bloom strength (default 0.55). */
+    setBloomStrength: (strength) => {
+      const s = stateRef.current
+      if (!s || !s.bloomPass) return
+      s.bloomPass.strength = Number(strength) || 0
+    },
+
+    /** Override tone-mapping exposure (0.2 .. 2.0 typical). */
+    setExposure: (value) => { setExposure(Number(value) || DEFAULT_EXPOSURE) },
+
+    /** Toggle the HDRI-as-background mode. */
+    setHdriBackground: (on) => { setHdriBackground(!!on) },
+
     /** Paint DFM issue markers in the viewport. Pass null/[] to clear. */
     setDfmIssues: (issues) => { const s = stateRef.current; if (!s) return; issues?.length ? attachDfmOverlay(s.scene, s.camera, s.renderer, issues) : detachDfmOverlay() },
-  }), [])
+  }), [hdriBackground])
 
   // HUD shows the prop-driven selection if present, else the last clicked id.
   const displayedId = selectedId ?? hudId
@@ -925,6 +1365,86 @@ function Renderer({
       >
         Zebra
       </button>
+
+      {/* PBR / hero-shot toolbar.
+          Lives in the top-right under the Zebra button.  Surfaces:
+            • Hero button — invokes the imperative captureHeroShot() and
+              triggers a PNG download.  This is the one-click marketing
+              shot the task brief calls out.
+            • Bloom toggle — gates UnrealBloomPass.  Visible state lets
+              users opt out if gemstone bloom is heavier than they want
+              (auto-off on prefers-reduced-motion).
+            • HDRI bg toggle — only meaningful for hero shots; cycles
+              scene.background between the studio gradient and the
+              env-map texture.
+            • Exposure slider — direct write to
+              renderer.toneMappingExposure.  Range 0.2…2.0, default 1.0. */}
+      <div className="absolute top-12 right-3 z-10 flex flex-col gap-1.5 items-end">
+        <button
+          type="button"
+          onClick={async () => {
+            const blob = await doCaptureHeroShot({})
+            if (blob && typeof URL !== 'undefined' && typeof URL.createObjectURL === 'function') {
+              const url = URL.createObjectURL(blob)
+              const a = document.createElement('a')
+              a.href = url
+              a.download = `kerf-hero-${Date.now()}.png`
+              document.body.appendChild(a)
+              a.click()
+              document.body.removeChild(a)
+              URL.revokeObjectURL(url)
+            }
+          }}
+          disabled={heroBusy}
+          title="Hero shot: render at 2048×2048 with bloom + ACES tonemap and download a PNG (no UI chrome)"
+          className={`px-2 py-1 rounded text-[11px] font-mono transition-colors ${
+            heroBusy
+              ? 'bg-ink-800 text-ink-500 border border-ink-700 cursor-wait'
+              : 'bg-ink-900/80 text-ink-300 border border-ink-700 hover:text-kerf-300 hover:border-kerf-300/50 backdrop-blur'
+          }`}
+        >
+          {heroBusy ? 'Rendering…' : 'Hero'}
+        </button>
+        <button
+          type="button"
+          onClick={() => setBloomOn((v) => !v)}
+          title="Toggle bloom (gem highlights). Auto-off on prefers-reduced-motion."
+          className={`px-2 py-1 rounded text-[11px] font-mono transition-colors ${
+            bloomOn
+              ? 'bg-kerf-300 text-ink-950 border border-kerf-300'
+              : 'bg-ink-900/80 text-ink-300 border border-ink-700 hover:text-kerf-300 hover:border-kerf-300/50 backdrop-blur'
+          }`}
+        >
+          Bloom
+        </button>
+        <button
+          type="button"
+          onClick={() => setHdriBackground((v) => !v)}
+          title="Show the HDRI environment map as the scene background (best for hero shots)"
+          className={`px-2 py-1 rounded text-[11px] font-mono transition-colors ${
+            hdriBackground
+              ? 'bg-kerf-300 text-ink-950 border border-kerf-300'
+              : 'bg-ink-900/80 text-ink-300 border border-ink-700 hover:text-kerf-300 hover:border-kerf-300/50 backdrop-blur'
+          }`}
+        >
+          HDRI bg
+        </button>
+        <div className="flex items-center gap-1 px-2 py-1 rounded bg-ink-900/80 border border-ink-700 backdrop-blur">
+          <label className="text-[10px] font-mono text-ink-400" htmlFor="kerf-exposure-slider">EV</label>
+          <input
+            id="kerf-exposure-slider"
+            type="range"
+            min="0.2"
+            max="2.0"
+            step="0.05"
+            value={exposure}
+            onChange={(e) => setExposure(parseFloat(e.target.value) || DEFAULT_EXPOSURE)}
+            title="Tone-mapping exposure (ACES filmic)"
+            className="w-20 accent-kerf-300"
+          />
+          <span className="text-[10px] font-mono text-ink-300 w-8 text-right">{exposure.toFixed(2)}</span>
+        </div>
+      </div>
     </div>
   )
 }
@@ -933,6 +1453,40 @@ export default forwardRef(Renderer)
 
 // ---------------------------------------------------------------------------
 // Helpers using the renderer's ref state object.
+
+/**
+ * Build a vertical gradient texture used as the default studio background.
+ * Top → bg_top (a hair warmer/lighter), bottom → bg_bottom.  Built with a
+ * Canvas2D context (already required elsewhere for thumbnails) so we don't
+ * need a shader background or an external image.  Returns null if the host
+ * environment can't create a canvas — caller falls back to a solid color.
+ *
+ * The resulting CanvasTexture is wrapped in repeat-mode + sRGB color space
+ * so PBR materials see a colorimetrically-correct background colour.
+ */
+function _makeStudioGradientTexture(bottomHex, topHex) {
+  if (typeof document === 'undefined' || typeof document.createElement !== 'function') {
+    return null
+  }
+  try {
+    const canvas = document.createElement('canvas')
+    canvas.width = 2
+    canvas.height = 256
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return null
+    const grad = ctx.createLinearGradient(0, 0, 0, 256)
+    grad.addColorStop(0, '#' + topHex.toString(16).padStart(6, '0'))
+    grad.addColorStop(1, '#' + bottomHex.toString(16).padStart(6, '0'))
+    ctx.fillStyle = grad
+    ctx.fillRect(0, 0, 2, 256)
+    const tex = new THREE.CanvasTexture(canvas)
+    if ('colorSpace' in tex) tex.colorSpace = THREE.SRGBColorSpace
+    tex.needsUpdate = true
+    return tex
+  } catch {
+    return null
+  }
+}
 
 function applyModeVisibility(s, mode) {
   if (!s) return
