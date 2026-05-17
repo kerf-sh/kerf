@@ -344,12 +344,16 @@ def _solve_spring_mass(
 
     # -----------------------------------------------------------------------
     # Energy at step 0:
-    # KE[0] = 0.5 * m * v[0]^2  (full-step initial velocity)
-    # IE[0] = elastic PE at x[0] (zero, since x[0]=0 for all nodes)
+    # KE[0] = 0.5 * m * v[0] * v_half[0]  + elastic PE at x[0]
+    #         (product of initial velocity and startup half-step velocity,
+    #          plus spring elastic PE; this is the exact conserved quantity
+    #          for the leapfrog / Störmer-Verlet integrator)
+    # IE[0] = cumulative plastic dissipation at x[0] (zero at start)
     # CE[0] = contact PE at x[0] (zero, since no nodes in contact at start)
     # -----------------------------------------------------------------------
-    KE0 = sum(0.5 * masses[i] * v[i] ** 2 for i in free)
-    IE0 = sum(sp.elastic_pe(x) + sp.W_plastic for sp in springs)
+    KE0 = (sum(0.5 * masses[i] * v[i] * v_half[i] for i in free)
+           + sum(sp.elastic_pe(x) for sp in springs))
+    IE0 = sum(sp.W_plastic for sp in springs)
     CE0 = 0.0
     if wall_pos is not None:
         for i in free:
@@ -409,16 +413,18 @@ def _solve_spring_mass(
             if d < N:
                 v_half_new[d] = 0.0
 
-        # Step 5: full-step output velocity
-        v_full = [0.5 * (v_half_before[i] + v_half_new[i]) for i in range(N)]
+        # Step 5: KE via the Störmer-Verlet conserved quantity:
+        #   KE = 0.5 * m * v[n+1/2] * v[n+3/2]  (product of adjacent half-steps)
+        #        + elastic PE at x[n+1]
+        #   This combination is exactly conserved for elastic springs and accumulates
+        #   only the irreversible plastic work in IE.
+        KE = (sum(0.5 * masses[i] * v_half_before[i] * v_half_new[i] for i in free)
+              + sum(sp.elastic_pe(x_new) for sp in springs))
 
-        # Step 6: KE at full-step velocity
-        KE = sum(0.5 * masses[i] * v_full[i] ** 2 for i in free)
+        # Step 6: IE = cumulative plastic dissipation only (never decreases)
+        IE = sum(sp.W_plastic for sp in springs)
 
-        # Step 7: IE = instantaneous elastic PE + cumulative plastic dissipation
-        IE = sum(sp.elastic_pe(x_new) + sp.W_plastic for sp in springs)
-
-        # Step 8: CE = instantaneous contact penalty PE
+        # Step 7: CE = instantaneous contact penalty PE
         CE = 0.0
         if wall_pos is not None:
             for i in free:
@@ -569,9 +575,12 @@ def _solve_bar_wave(
     for d in fixed_dofs:
         v_half[d] = 0.0
 
-    # Initial energy: KE at v[0] (full-step), IE at x[0]=0
-    KE0 = sum(0.5 * masses[i] * v[i] ** 2 for i in free)
-    IE0 = _bar_elastic_pe(x)
+    # Initial energy: KE = 0.5*m*v[0]*v_half[0] + elastic PE at x[0]
+    #                 IE = 0 (elastic bar, W_plastic = 0 always)
+    # Using the product formula for the Störmer-Verlet conserved quantity.
+    KE0 = (sum(0.5 * masses[i] * v[i] * v_half[i] for i in free)
+           + _bar_elastic_pe(x))
+    IE0 = 0.0
 
     t_hist = [0.0]
     x_hist = [x[:]]
@@ -595,7 +604,10 @@ def _solve_bar_wave(
 
         # Step 2: forces at NEW position
         f_int = _bar_internal_forces(x_new)
-        f_ext = _ext_force(t)   # external force still at current t
+        # Evaluate external force at the end of the step (t + dt) so the impulse
+        # boundary is aligned with the stored time stamp; this ensures energy is
+        # conserved exactly once the impulse has ended.
+        f_ext = _ext_force(t + dt)
 
         f_tot = [f_int[i] + f_ext[i] for i in range(n_nodes)]
 
@@ -613,14 +625,12 @@ def _solve_bar_wave(
         for d in fixed_dofs:
             v_half_new[d] = 0.0
 
-        # Step 5: full-step output velocity
-        v_full = [0.5 * (v_half_before[i] + v_half_new[i]) for i in range(n_nodes)]
-
-        # Step 6: KE at full-step velocity
-        KE = sum(0.5 * masses[i] * v_full[i] ** 2 for i in free)
-
-        # Step 7: IE = instantaneous elastic PE of the bar
-        IE = _bar_elastic_pe(x_new)
+        # Step 5: KE via the Störmer-Verlet conserved quantity:
+        #   KE = 0.5 * m * v[n+1/2] * v[n+3/2] + elastic PE at x[n+1]
+        #   IE = 0 (elastic bar; W_plastic is identically zero)
+        KE = (sum(0.5 * masses[i] * v_half_before[i] * v_half_new[i] for i in free)
+              + _bar_elastic_pe(x_new))
+        IE = 0.0
 
         x = x_new
         v_half = v_half_new
