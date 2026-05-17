@@ -857,6 +857,9 @@ async def list_projects(request: Request, payload: dict = Depends(require_auth))
             p = dict(row)
             p["id"] = str(p["id"])
             p["workspace_id"] = str(p["workspace_id"])
+            # Frontend (ProjectCard.isOwner / role badge) consumes my_role,
+            # not the raw workspace-member column name.
+            p["my_role"] = p.pop("role", None)
             if p.get("thumbnail_storage_key"):
                 p["thumbnail_url"] = f"/api/projects/{p['id']}/thumbnail"
             else:

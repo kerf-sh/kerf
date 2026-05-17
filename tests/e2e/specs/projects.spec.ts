@@ -46,12 +46,6 @@ test.describe('Projects page (local mode)', () => {
   })
 
   test('rename a project', async ({ page }) => {
-    test.skip(
-      true,
-      'Project-card actions menu currently exposes only "Share" on the ' +
-        'refactor branch — Rename is not present. Un-skip when the card ' +
-        'actions menu reinstates Rename.',
-    )
     const pp = new ProjectsPage(page)
     const original = `e2e-rename-${uid()}`
     const renamed = `${original}-renamed`
@@ -76,12 +70,6 @@ test.describe('Projects page (local mode)', () => {
   })
 
   test('delete a project', async ({ page }) => {
-    test.skip(
-      true,
-      'Project-card actions menu currently exposes only "Share" on the ' +
-        'refactor branch — Delete is not present. Un-skip when the card ' +
-        'actions menu reinstates Delete.',
-    )
     const pp = new ProjectsPage(page)
     const name = `e2e-delete-${uid()}`
     await pp.goto()

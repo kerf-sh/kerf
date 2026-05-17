@@ -104,22 +104,31 @@ export class ProjectsPage {
    * Wait for a project card with the given name to appear in the grid.
    */
   async expectProjectVisible(name: string) {
-    await expect(this.page.locator('h3', { hasText: name })).toBeVisible()
+    // Exact match: a renamed project ("<name>-renamed") contains the
+    // original name as a substring, so hasText would false-match.
+    await expect(
+      this.page.getByRole('heading', { level: 3, name, exact: true }),
+    ).toBeVisible()
   }
 
   /**
    * Wait for a project card with the given name to disappear.
    */
   async expectProjectGone(name: string) {
-    await expect(this.page.locator('h3', { hasText: name })).not.toBeVisible()
+    await expect(
+      this.page.getByRole('heading', { level: 3, name, exact: true }),
+    ).toHaveCount(0)
   }
 
   /** Fill and submit the Rename modal (assumes it is already open). */
   async submitRename(newName: string) {
-    const nameInput = this.page.getByLabel('Name')
+    // Scope to the dialog: getByLabel('Name') alone also matches the
+    // "Rename project" dialog (substring of "reName") — strict violation.
+    const dialog = this.page.getByRole('dialog', { name: 'Rename project' })
+    const nameInput = dialog.getByRole('textbox', { name: 'Name', exact: true })
     await nameInput.clear()
     await nameInput.fill(newName)
-    await this.page.getByRole('button', { name: 'Save' }).click()
+    await dialog.getByRole('button', { name: 'Save' }).click()
   }
 
   /** Click "Delete project" in the confirm dialog (assumes it is already open). */
