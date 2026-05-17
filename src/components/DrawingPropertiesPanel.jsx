@@ -71,17 +71,19 @@ export default function DrawingPropertiesPanel({
   const materialFiles = allFiles?.filter((f) => f?.kind === 'material') || []
 
   return (
-    <div className="absolute top-3 right-3 z-10 w-72 rounded-md bg-ink-900/95 border border-ink-700 backdrop-blur shadow-xl text-ink-100 overflow-hidden">
+    <div className="absolute top-3 right-3 z-10 w-72 max-w-[calc(100vw-1.5rem)] rounded-md bg-ink-900/95 border border-ink-700 backdrop-blur shadow-xl text-ink-100 overflow-hidden">
       <button
         type="button"
         onClick={() => setOpen((s) => !s)}
-        className="w-full flex items-center justify-between px-3 py-2 text-[11px] uppercase tracking-wider font-semibold text-ink-300 hover:text-kerf-300 hover:bg-ink-800/60"
+        aria-expanded={open}
+        aria-controls="drawing-panel-body"
+        className="w-full flex items-center justify-between px-3 py-2 text-[11px] uppercase tracking-wider font-semibold text-ink-300 hover:text-kerf-300 hover:bg-ink-800/60 focus-visible:ring-2 focus-visible:ring-kerf-300 focus-visible:outline-none"
       >
         Drawing
-        <span className="text-ink-500">{open ? '−' : '+'}</span>
+        <span className="text-ink-500" aria-hidden="true">{open ? '−' : '+'}</span>
       </button>
       {open && (
-        <div className="border-t border-ink-800">
+        <div id="drawing-panel-body" className="border-t border-ink-800 overflow-y-auto max-h-[calc(100vh-6rem)]">
           {/* Sheet picker — only shown for multi-sheet drawings. */}
           {sheets.length > 1 && (
             <Section title={`Sheets (${sheets.length})`}>
@@ -106,14 +108,14 @@ export default function DrawingPropertiesPanel({
               <input
                 value={frame.title || ''}
                 onChange={(e) => onUpdateFrame?.({ title: e.target.value })}
-                className="flex-1 bg-ink-950 border border-ink-700 rounded px-1.5 py-0.5 text-xs text-ink-100"
+                className="flex-1 h-8 bg-ink-900 border border-ink-800 rounded px-2 text-xs text-ink-100 focus-visible:ring-2 focus-visible:ring-kerf-300 focus-visible:outline-none"
               />
             </Row>
             <Row label="Size">
               <select
                 value={frame.size}
                 onChange={(e) => onUpdateFrame?.({ size: e.target.value })}
-                className="flex-1 bg-ink-950 border border-ink-700 rounded px-1.5 py-0.5 text-xs text-ink-100"
+                className="flex-1 h-8 bg-ink-900 border border-ink-800 rounded px-2 text-xs text-ink-100 focus-visible:ring-2 focus-visible:ring-kerf-300 focus-visible:outline-none"
               >
                 {SHEET_OPTIONS.map((s) => (
                   <option key={s} value={s}>{s.replace('_', ' ')}</option>
@@ -122,7 +124,7 @@ export default function DrawingPropertiesPanel({
               <select
                 value={frame.orientation}
                 onChange={(e) => onUpdateFrame?.({ orientation: e.target.value })}
-                className="ml-1 bg-ink-950 border border-ink-700 rounded px-1.5 py-0.5 text-xs text-ink-100"
+                className="ml-1 h-8 bg-ink-900 border border-ink-800 rounded px-2 text-xs text-ink-100 focus-visible:ring-2 focus-visible:ring-kerf-300 focus-visible:outline-none"
               >
                 <option value="landscape">Landscape</option>
                 <option value="portrait">Portrait</option>
@@ -132,7 +134,7 @@ export default function DrawingPropertiesPanel({
               <select
                 value={frame.template || 'default'}
                 onChange={(e) => onUpdateFrame?.({ template: e.target.value })}
-                className="flex-1 bg-ink-950 border border-ink-700 rounded px-1.5 py-0.5 text-xs text-ink-100"
+                className="flex-1 h-8 bg-ink-900 border border-ink-800 rounded px-2 text-xs text-ink-100 focus-visible:ring-2 focus-visible:ring-kerf-300 focus-visible:outline-none"
               >
                 {TEMPLATES.map((t) => (
                   <option key={t} value={t}>{TEMPLATE_LABELS[t] || t}</option>
@@ -143,14 +145,14 @@ export default function DrawingPropertiesPanel({
               <input
                 value={frame.author || ''}
                 onChange={(e) => onUpdateFrame?.({ author: e.target.value })}
-                className="flex-1 bg-ink-950 border border-ink-700 rounded px-1.5 py-0.5 text-xs text-ink-100"
+                className="flex-1 h-8 bg-ink-900 border border-ink-800 rounded px-2 text-xs text-ink-100 focus-visible:ring-2 focus-visible:ring-kerf-300 focus-visible:outline-none"
               />
             </Row>
             <Row label="Date">
               <input
                 value={frame.date || ''}
                 onChange={(e) => onUpdateFrame?.({ date: e.target.value })}
-                className="flex-1 bg-ink-950 border border-ink-700 rounded px-1.5 py-0.5 text-xs text-ink-100"
+                className="flex-1 h-8 bg-ink-900 border border-ink-800 rounded px-2 text-xs text-ink-100 focus-visible:ring-2 focus-visible:ring-kerf-300 focus-visible:outline-none"
                 placeholder="YYYY-MM-DD"
               />
             </Row>
@@ -169,7 +171,7 @@ export default function DrawingPropertiesPanel({
                   }
                   onUpdateFrame?.(patch)
                 }}
-                className="flex-1 bg-ink-950 border border-ink-700 rounded px-1.5 py-0.5 text-xs text-ink-100"
+                className="flex-1 h-8 bg-ink-900 border border-ink-800 rounded px-2 text-xs text-ink-100 focus-visible:ring-2 focus-visible:ring-kerf-300 focus-visible:outline-none"
                 placeholder="1:1"
               />
             </Row>
@@ -177,7 +179,7 @@ export default function DrawingPropertiesPanel({
               <input
                 value={frame.sheet_number || ''}
                 onChange={(e) => onUpdateFrame?.({ sheet_number: e.target.value })}
-                className="flex-1 bg-ink-950 border border-ink-700 rounded px-1.5 py-0.5 text-xs text-ink-100"
+                className="flex-1 h-8 bg-ink-900 border border-ink-800 rounded px-2 text-xs text-ink-100 focus-visible:ring-2 focus-visible:ring-kerf-300 focus-visible:outline-none"
                 placeholder="1/1"
               />
             </Row>
@@ -185,14 +187,14 @@ export default function DrawingPropertiesPanel({
               <input
                 value={frame.notes || ''}
                 onChange={(e) => onUpdateFrame?.({ notes: e.target.value })}
-                className="flex-1 bg-ink-950 border border-ink-700 rounded px-1.5 py-0.5 text-xs text-ink-100"
+                className="flex-1 h-8 bg-ink-900 border border-ink-800 rounded px-2 text-xs text-ink-100 focus-visible:ring-2 focus-visible:ring-kerf-300 focus-visible:outline-none"
               />
             </Row>
             <Row label="Material">
               <select
                 value={frame.material || ''}
                 onChange={(e) => onUpdateFrame?.({ material: e.target.value || undefined })}
-                className="flex-1 bg-ink-950 border border-ink-700 rounded px-1.5 py-0.5 text-xs text-ink-100"
+                className="flex-1 h-8 bg-ink-900 border border-ink-800 rounded px-2 text-xs text-ink-100 focus-visible:ring-2 focus-visible:ring-kerf-300 focus-visible:outline-none"
               >
                 <option value="">— none —</option>
                 {materialFiles.map((f) => (
@@ -239,9 +241,10 @@ export default function DrawingPropertiesPanel({
                 type="button"
                 onClick={() => setAdding(true)}
                 title="Add view"
-                className="p-0.5 rounded hover:bg-ink-700 text-ink-300 hover:text-kerf-300"
+                aria-label="Add view"
+                className="p-0.5 rounded hover:bg-ink-700 text-ink-300 hover:text-kerf-300 focus-visible:ring-2 focus-visible:ring-kerf-300 focus-visible:outline-none"
               >
-                <Plus size={12} />
+                <Plus size={12} aria-hidden="true" />
               </button>
             }
           >
@@ -253,18 +256,20 @@ export default function DrawingPropertiesPanel({
                   <button
                     type="button"
                     title={v.show_hidden === false ? 'Hidden lines off' : 'Hidden lines on'}
+                    aria-label={v.show_hidden === false ? 'Show hidden lines' : 'Hide hidden lines'}
                     onClick={() => onUpdateView?.(v.id, { show_hidden: !v.show_hidden })}
-                    className="text-ink-400 hover:text-kerf-300"
+                    className="text-ink-400 hover:text-kerf-300 focus-visible:ring-2 focus-visible:ring-kerf-300 focus-visible:outline-none rounded"
                   >
-                    {v.show_hidden === false ? <EyeOff size={11} /> : <Eye size={11} />}
+                    {v.show_hidden === false ? <EyeOff size={11} aria-hidden="true" /> : <Eye size={11} aria-hidden="true" />}
                   </button>
                   <button
                     type="button"
                     title={v.is_section ? 'Section view (hatched)' : 'Toggle section'}
+                    aria-label={v.is_section ? 'Disable section view' : 'Enable section view'}
                     onClick={() => onUpdateView?.(v.id, { is_section: !v.is_section })}
-                    className={`${v.is_section ? 'text-kerf-300' : 'text-ink-500'} hover:text-kerf-300`}
+                    className={`${v.is_section ? 'text-kerf-300' : 'text-ink-500'} hover:text-kerf-300 focus-visible:ring-2 focus-visible:ring-kerf-300 focus-visible:outline-none rounded`}
                   >
-                    <Scissors size={11} />
+                    <Scissors size={11} aria-hidden="true" />
                   </button>
                   <span className="truncate flex-1 font-mono">
                     {projectionLabel(v.projection)} · {file?.name || '?'}{partLabel}
@@ -272,10 +277,11 @@ export default function DrawingPropertiesPanel({
                   <button
                     type="button"
                     title="Remove view"
+                    aria-label="Remove view"
                     onClick={() => onRemoveView?.(v.id)}
-                    className="text-ink-500 hover:text-kerf-300"
+                    className="text-ink-500 hover:text-kerf-300 focus-visible:ring-2 focus-visible:ring-kerf-300 focus-visible:outline-none rounded"
                   >
-                    <Trash2 size={11} />
+                    <Trash2 size={11} aria-hidden="true" />
                   </button>
                 </div>
               )
@@ -310,22 +316,31 @@ export default function DrawingPropertiesPanel({
               {centerlines.map((c) => (
                 <div key={c.id} className="flex items-center gap-1.5 py-0.5 text-[11px] text-ink-300">
                   <span className="flex-1 font-mono truncate">center · {c.id.slice(-4)}</span>
-                  <button onClick={() => onRemoveCenterline?.(c.id)}
-                    className="text-ink-500 hover:text-amber-300"><Trash2 size={11} /></button>
+                  <button type="button" onClick={() => onRemoveCenterline?.(c.id)}
+                    aria-label="Remove centerline"
+                    className="text-ink-500 hover:text-amber-300 focus-visible:ring-2 focus-visible:ring-kerf-300 focus-visible:outline-none rounded">
+                    <Trash2 size={11} aria-hidden="true" />
+                  </button>
                 </div>
               ))}
               {breaks.map((b) => (
                 <div key={b.id} className="flex items-center gap-1.5 py-0.5 text-[11px] text-ink-300">
                   <span className="flex-1 font-mono truncate">break · {b.orientation}</span>
-                  <button onClick={() => onRemoveBreak?.(b.id)}
-                    className="text-ink-500 hover:text-amber-300"><Trash2 size={11} /></button>
+                  <button type="button" onClick={() => onRemoveBreak?.(b.id)}
+                    aria-label="Remove break line"
+                    className="text-ink-500 hover:text-amber-300 focus-visible:ring-2 focus-visible:ring-kerf-300 focus-visible:outline-none rounded">
+                    <Trash2 size={11} aria-hidden="true" />
+                  </button>
                 </div>
               ))}
               {symbols.map((s) => (
                 <div key={s.id} className="flex items-center gap-1.5 py-0.5 text-[11px] text-ink-300">
                   <span className="flex-1 font-mono truncate">{s.kind}</span>
-                  <button onClick={() => onRemoveSymbol?.(s.id)}
-                    className="text-ink-500 hover:text-amber-300"><Trash2 size={11} /></button>
+                  <button type="button" onClick={() => onRemoveSymbol?.(s.id)}
+                    aria-label={`Remove ${s.kind} symbol`}
+                    className="text-ink-500 hover:text-amber-300 focus-visible:ring-2 focus-visible:ring-kerf-300 focus-visible:outline-none rounded">
+                    <Trash2 size={11} aria-hidden="true" />
+                  </button>
                 </div>
               ))}
             </Section>
@@ -337,21 +352,24 @@ export default function DrawingPropertiesPanel({
               <button
                 type="button"
                 onClick={onExportSvg}
-                className="flex-1 px-2 py-1 rounded bg-ink-800 text-ink-100 text-[11px] hover:bg-ink-700 hover:text-kerf-300"
+                aria-label="Export as SVG"
+                className="flex-1 px-2 py-1 rounded bg-ink-800 text-ink-100 text-[11px] hover:bg-ink-700 hover:text-kerf-300 focus-visible:ring-2 focus-visible:ring-kerf-300 focus-visible:outline-none"
               >
                 SVG
               </button>
               <button
                 type="button"
                 onClick={onExportPng}
-                className="flex-1 px-2 py-1 rounded bg-ink-800 text-ink-100 text-[11px] hover:bg-ink-700 hover:text-kerf-300"
+                aria-label="Export as PNG"
+                className="flex-1 px-2 py-1 rounded bg-ink-800 text-ink-100 text-[11px] hover:bg-ink-700 hover:text-kerf-300 focus-visible:ring-2 focus-visible:ring-kerf-300 focus-visible:outline-none"
               >
                 PNG
               </button>
               <button
                 type="button"
                 onClick={onExportPdf}
-                className="flex-1 px-2 py-1 rounded bg-ink-800 text-ink-100 text-[11px] hover:bg-ink-700 hover:text-kerf-300"
+                aria-label="Export as PDF"
+                className="flex-1 px-2 py-1 rounded bg-ink-800 text-ink-100 text-[11px] hover:bg-ink-700 hover:text-kerf-300 focus-visible:ring-2 focus-visible:ring-kerf-300 focus-visible:outline-none"
               >
                 PDF
               </button>
@@ -381,9 +399,11 @@ function Section({ title, action, children }) {
 
 function Row({ label, children }) {
   return (
-    <div className="flex items-center gap-1.5">
-      <span className="w-14 text-[10px] text-ink-500 flex-shrink-0">{label}</span>
-      {children}
+    <div className="flex flex-col">
+      <span className="text-xs text-ink-400 mb-1">{label}</span>
+      <div className="flex items-center gap-1.5">
+        {children}
+      </div>
     </div>
   )
 }
@@ -446,7 +466,7 @@ function AddViewForm({ files, projectId, drawing, onCancel, onAdd, onAddStandard
       <select
         value={sourceId}
         onChange={(e) => setPick({ sourceId: e.target.value, partId: '*' })}
-        className="w-full bg-ink-950 border border-ink-700 rounded px-1.5 py-0.5 text-[11px] text-ink-100"
+        className="w-full h-8 bg-ink-900 border border-ink-800 rounded px-2 text-[11px] text-ink-100 focus-visible:ring-2 focus-visible:ring-kerf-300 focus-visible:outline-none"
       >
         {files.map((f) => (
           <option key={f.id} value={f.id}>{f.name}</option>
@@ -457,7 +477,7 @@ function AddViewForm({ files, projectId, drawing, onCancel, onAdd, onAddStandard
           value={partId}
           onChange={(e) => setPick({ sourceId, partId: e.target.value })}
           disabled={loadingParts}
-          className="flex-1 bg-ink-950 border border-ink-700 rounded px-1.5 py-0.5 text-[11px] text-ink-100 disabled:opacity-50"
+          className="flex-1 h-8 bg-ink-900 border border-ink-800 rounded px-2 text-[11px] text-ink-100 disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-kerf-300 focus-visible:outline-none"
         >
           <option value="*">* (all parts)</option>
           {(partIds || []).map((id) => (
@@ -472,7 +492,7 @@ function AddViewForm({ files, projectId, drawing, onCancel, onAdd, onAddStandard
       <select
         value={projection}
         onChange={(e) => setProjection(e.target.value)}
-        className="w-full bg-ink-950 border border-ink-700 rounded px-1.5 py-0.5 text-[11px] text-ink-100"
+        className="w-full h-8 bg-ink-900 border border-ink-800 rounded px-2 text-[11px] text-ink-100 focus-visible:ring-2 focus-visible:ring-kerf-300 focus-visible:outline-none"
       >
         {PROJECTIONS.map((p) => (
           <option key={p} value={p}>{projectionLabel(p)}</option>
@@ -483,14 +503,14 @@ function AddViewForm({ files, projectId, drawing, onCancel, onAdd, onAddStandard
           type="button"
           onClick={() => canAdd && onAdd({ source_file_id: sourceId, part_id: partId, projection })}
           disabled={!canAdd}
-          className="flex-1 px-2 py-0.5 rounded bg-kerf-300 text-ink-950 text-[11px] font-medium hover:bg-kerf-200 disabled:opacity-40"
+          className="flex-1 px-2 py-0.5 rounded bg-kerf-300 text-ink-950 text-[11px] font-medium hover:bg-kerf-200 disabled:opacity-40 focus-visible:ring-2 focus-visible:ring-ink-950 focus-visible:outline-none"
         >
           Add
         </button>
         <button
           type="button"
           onClick={onCancel}
-          className="flex-1 px-2 py-0.5 rounded bg-ink-800 text-ink-200 text-[11px] hover:bg-ink-700"
+          className="flex-1 px-2 py-0.5 rounded bg-ink-800 text-ink-200 text-[11px] hover:bg-ink-700 focus-visible:ring-2 focus-visible:ring-kerf-300 focus-visible:outline-none"
         >
           Cancel
         </button>
@@ -549,9 +569,10 @@ function AnnotationInspector({ ann, onUpdate, onDelete }) {
           type="button"
           onClick={onDelete}
           title="Delete annotation"
-          className="p-0.5 rounded hover:bg-ink-700 text-ink-300 hover:text-amber-300"
+          aria-label="Delete annotation"
+          className="p-0.5 rounded hover:bg-ink-700 text-ink-300 hover:text-amber-300 focus-visible:ring-2 focus-visible:ring-kerf-300 focus-visible:outline-none"
         >
-          <Trash2 size={12} />
+          <Trash2 size={12} aria-hidden="true" />
         </button>
       }
     >
@@ -560,7 +581,7 @@ function AnnotationInspector({ ann, onUpdate, onDelete }) {
           <input
             value={ann.text || ''}
             onChange={(e) => onUpdate({ text: e.target.value })}
-            className="flex-1 bg-ink-950 border border-ink-700 rounded px-1.5 py-0.5 text-xs text-ink-100"
+            className="flex-1 h-8 bg-ink-900 border border-ink-800 rounded px-2 text-xs text-ink-100 focus-visible:ring-2 focus-visible:ring-kerf-300 focus-visible:outline-none"
           />
         </Row>
       )}
@@ -572,7 +593,7 @@ function AnnotationInspector({ ann, onUpdate, onDelete }) {
             min={1}
             value={ann.fontSize ?? 3.5}
             onChange={(e) => onUpdate({ fontSize: Number(e.target.value) || 3.5 })}
-            className="flex-1 bg-ink-950 border border-ink-700 rounded px-1.5 py-0.5 text-xs text-ink-100"
+            className="flex-1 h-8 bg-ink-900 border border-ink-800 rounded px-2 text-xs text-ink-100 focus-visible:ring-2 focus-visible:ring-kerf-300 focus-visible:outline-none"
           />
         </Row>
       )}
@@ -582,12 +603,12 @@ function AnnotationInspector({ ann, onUpdate, onDelete }) {
             type="color"
             value={ann.color || '#d9a800'}
             onChange={(e) => onUpdate({ color: e.target.value })}
-            className="w-8 h-5 bg-ink-950 border border-ink-700 rounded"
+            className="w-8 h-8 bg-ink-900 border border-ink-800 rounded focus-visible:ring-2 focus-visible:ring-kerf-300 focus-visible:outline-none"
           />
           <input
             value={ann.color || '#d9a800'}
             onChange={(e) => onUpdate({ color: e.target.value })}
-            className="ml-1 flex-1 bg-ink-950 border border-ink-700 rounded px-1.5 py-0.5 text-xs text-ink-100 font-mono"
+            className="ml-1 flex-1 h-8 bg-ink-900 border border-ink-800 rounded px-2 text-xs text-ink-100 font-mono focus-visible:ring-2 focus-visible:ring-kerf-300 focus-visible:outline-none"
           />
         </Row>
       )}
@@ -596,7 +617,7 @@ function AnnotationInspector({ ann, onUpdate, onDelete }) {
           <select
             value={ann.side || 'right'}
             onChange={(e) => onUpdate({ side: e.target.value })}
-            className="flex-1 bg-ink-950 border border-ink-700 rounded px-1.5 py-0.5 text-xs text-ink-100"
+            className="flex-1 h-8 bg-ink-900 border border-ink-800 rounded px-2 text-xs text-ink-100 focus-visible:ring-2 focus-visible:ring-kerf-300 focus-visible:outline-none"
           >
             <option value="left">left</option>
             <option value="right">right</option>
@@ -609,12 +630,12 @@ function AnnotationInspector({ ann, onUpdate, onDelete }) {
             type="color"
             value={ann.stroke || '#d9a800'}
             onChange={(e) => onUpdate({ stroke: e.target.value })}
-            className="w-8 h-5 bg-ink-950 border border-ink-700 rounded"
+            className="w-8 h-8 bg-ink-900 border border-ink-800 rounded focus-visible:ring-2 focus-visible:ring-kerf-300 focus-visible:outline-none"
           />
           <input
             value={ann.stroke || '#d9a800'}
             onChange={(e) => onUpdate({ stroke: e.target.value })}
-            className="ml-1 flex-1 bg-ink-950 border border-ink-700 rounded px-1.5 py-0.5 text-xs text-ink-100 font-mono"
+            className="ml-1 flex-1 h-8 bg-ink-900 border border-ink-800 rounded px-2 text-xs text-ink-100 font-mono focus-visible:ring-2 focus-visible:ring-kerf-300 focus-visible:outline-none"
           />
         </Row>
       )}
@@ -624,7 +645,7 @@ function AnnotationInspector({ ann, onUpdate, onDelete }) {
             value={ann.fill || ''}
             placeholder="none"
             onChange={(e) => onUpdate({ fill: e.target.value || undefined })}
-            className="flex-1 bg-ink-950 border border-ink-700 rounded px-1.5 py-0.5 text-xs text-ink-100 font-mono"
+            className="flex-1 h-8 bg-ink-900 border border-ink-800 rounded px-2 text-xs text-ink-100 font-mono focus-visible:ring-2 focus-visible:ring-kerf-300 focus-visible:outline-none"
           />
         </Row>
       )}
@@ -636,7 +657,7 @@ function AnnotationInspector({ ann, onUpdate, onDelete }) {
             min={0.05}
             value={ann.width ?? 0.3}
             onChange={(e) => onUpdate({ width: Number(e.target.value) || 0.3 })}
-            className="flex-1 bg-ink-950 border border-ink-700 rounded px-1.5 py-0.5 text-xs text-ink-100"
+            className="flex-1 h-8 bg-ink-900 border border-ink-800 rounded px-2 text-xs text-ink-100 focus-visible:ring-2 focus-visible:ring-kerf-300 focus-visible:outline-none"
           />
         </Row>
       )}
@@ -652,7 +673,7 @@ function AnnotationInspector({ ann, onUpdate, onDelete }) {
       <button
         type="button"
         onClick={onDelete}
-        className="mt-1 w-full px-2 py-1 rounded bg-ink-800 text-amber-300 text-[11px] hover:bg-ink-700"
+        className="mt-1 w-full px-2 py-1 rounded bg-ink-800 text-amber-300 text-[11px] hover:bg-ink-700 focus-visible:ring-2 focus-visible:ring-kerf-300 focus-visible:outline-none"
       >
         Delete annotation
       </button>
@@ -837,9 +858,10 @@ function DimensionInspector({ dim, onUpdate, onDelete }) {
           type="button"
           onClick={onDelete}
           title="Delete dimension"
-          className="p-0.5 rounded hover:bg-ink-700 text-ink-300 hover:text-amber-300"
+          aria-label="Delete dimension"
+          className="p-0.5 rounded hover:bg-ink-700 text-ink-300 hover:text-amber-300 focus-visible:ring-2 focus-visible:ring-kerf-300 focus-visible:outline-none"
         >
-          <Trash2 size={12} />
+          <Trash2 size={12} aria-hidden="true" />
         </button>
       }
     >
@@ -853,7 +875,7 @@ function DimensionInspector({ dim, onUpdate, onDelete }) {
               onUpdate({ value: dim.value || dim.text_override || '' })
             }
           }}
-          className="flex-1 bg-ink-950 border border-ink-700 rounded px-1.5 py-0.5 text-xs text-ink-100"
+          className="flex-1 h-8 bg-ink-900 border border-ink-800 rounded px-2 text-xs text-ink-100 focus-visible:ring-2 focus-visible:ring-kerf-300 focus-visible:outline-none"
         >
           <option value="auto">auto-measured</option>
           <option value="manual">manual override</option>
@@ -864,7 +886,7 @@ function DimensionInspector({ dim, onUpdate, onDelete }) {
           value={dim.value ?? dim.text_override ?? ''}
           placeholder="auto"
           onChange={(e) => onUpdate({ value: e.target.value || null, text_override: '' })}
-          className="flex-1 bg-ink-950 border border-ink-700 rounded px-1.5 py-0.5 text-xs text-ink-100 font-mono"
+          className="flex-1 h-8 bg-ink-900 border border-ink-800 rounded px-2 text-xs text-ink-100 font-mono focus-visible:ring-2 focus-visible:ring-kerf-300 focus-visible:outline-none"
         />
       </Row>
       {(dim.kind === 'linear' || dim.kind === 'aligned' ||
@@ -876,7 +898,7 @@ function DimensionInspector({ dim, onUpdate, onDelete }) {
             step="0.5"
             value={Number.isFinite(dim.offset) ? dim.offset : 8}
             onChange={(e) => onUpdate({ offset: Number(e.target.value) })}
-            className="flex-1 bg-ink-950 border border-ink-700 rounded px-1.5 py-0.5 text-xs text-ink-100 font-mono"
+            className="flex-1 h-8 bg-ink-900 border border-ink-800 rounded px-2 text-xs text-ink-100 font-mono focus-visible:ring-2 focus-visible:ring-kerf-300 focus-visible:outline-none"
           />
         </Row>
       )}
@@ -888,7 +910,7 @@ function DimensionInspector({ dim, onUpdate, onDelete }) {
             min={1}
             value={Number.isFinite(dim.radius) ? dim.radius : 10}
             onChange={(e) => onUpdate({ radius: Number(e.target.value) })}
-            className="flex-1 bg-ink-950 border border-ink-700 rounded px-1.5 py-0.5 text-xs text-ink-100 font-mono"
+            className="flex-1 h-8 bg-ink-900 border border-ink-800 rounded px-2 text-xs text-ink-100 font-mono focus-visible:ring-2 focus-visible:ring-kerf-300 focus-visible:outline-none"
           />
         </Row>
       )}
@@ -912,9 +934,10 @@ function SymbolInspector({ sym, onUpdate, onDelete }) {
           type="button"
           onClick={onDelete}
           title="Delete symbol"
-          className="p-0.5 rounded hover:bg-ink-700 text-ink-300 hover:text-amber-300"
+          aria-label="Delete symbol"
+          className="p-0.5 rounded hover:bg-ink-700 text-ink-300 hover:text-amber-300 focus-visible:ring-2 focus-visible:ring-kerf-300 focus-visible:outline-none"
         >
-          <Trash2 size={12} />
+          <Trash2 size={12} aria-hidden="true" />
         </button>
       }
     >
@@ -923,7 +946,7 @@ function SymbolInspector({ sym, onUpdate, onDelete }) {
           <input
             value={params[k] ?? ''}
             onChange={(e) => onUpdate({ params: { ...params, [k]: e.target.value } })}
-            className="flex-1 bg-ink-950 border border-ink-700 rounded px-1.5 py-0.5 text-xs text-ink-100 font-mono"
+            className="flex-1 h-8 bg-ink-900 border border-ink-800 rounded px-2 text-xs text-ink-100 font-mono focus-visible:ring-2 focus-visible:ring-kerf-300 focus-visible:outline-none"
           />
         </Row>
       ))}
@@ -932,7 +955,7 @@ function SymbolInspector({ sym, onUpdate, onDelete }) {
           type="number" step="0.5"
           value={Number.isFinite(sym.position?.x) ? sym.position.x : 0}
           onChange={(e) => onUpdate({ position: { ...sym.position, x: Number(e.target.value) } })}
-          className="flex-1 bg-ink-950 border border-ink-700 rounded px-1.5 py-0.5 text-xs text-ink-100 font-mono"
+          className="flex-1 h-8 bg-ink-900 border border-ink-800 rounded px-2 text-xs text-ink-100 font-mono focus-visible:ring-2 focus-visible:ring-kerf-300 focus-visible:outline-none"
         />
       </Row>
       <Row label="Y">
@@ -940,7 +963,7 @@ function SymbolInspector({ sym, onUpdate, onDelete }) {
           type="number" step="0.5"
           value={Number.isFinite(sym.position?.y) ? sym.position.y : 0}
           onChange={(e) => onUpdate({ position: { ...sym.position, y: Number(e.target.value) } })}
-          className="flex-1 bg-ink-950 border border-ink-700 rounded px-1.5 py-0.5 text-xs text-ink-100 font-mono"
+          className="flex-1 h-8 bg-ink-900 border border-ink-800 rounded px-2 text-xs text-ink-100 font-mono focus-visible:ring-2 focus-visible:ring-kerf-300 focus-visible:outline-none"
         />
       </Row>
     </Section>
