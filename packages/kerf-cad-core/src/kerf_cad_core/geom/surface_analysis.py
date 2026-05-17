@@ -31,8 +31,26 @@ isocurve_extract(surface, parameter, direction, num_samples) -> dict
 area_centroid_secondmoment(surface, nu, nv) -> dict
     Numeric surface area, centroid, and second moments of area by integration.
 
-All functions return {"ok": True/False, "reason": str, ...} — never raise.
+Single-point analytic curvature functions (use analytic surface_derivatives):
+    mean_curvature(surf, u, v) -> float
+    gaussian_curvature(surf, u, v) -> float
+    principal_curvatures(surf, u, v) -> (k1, k2) with k1 >= k2
+    draft_angle(surf, u, v, pull_dir) -> float  (degrees)
+    deviation(surf_a, surf_b, samples) -> (max_dev, mean_dev)
+    zebra_stripe(surf, u, v, n_stripes, view_dir) -> float in [0, 1]
+
+All grid functions return {"ok": True/False, "reason": str, ...} — never raise.
 LLM tools are registered via @register (gated, mirrors trim_curve.py pattern).
+
+References
+----------
+Piegl & Tiller, "The NURBS Book", 2nd ed., Springer 1997 — §6.1 surface
+derivatives, §8.1 revolution surfaces.
+do Carmo, M.P., "Differential Geometry of Curves and Surfaces",
+Prentice-Hall 1976 — §3.3 first/second fundamental forms,
+§3.4 Gaussian and mean curvature formulas.
+Goldman, R., "Curvature formulas for implicit curves and surfaces",
+CAGD 22(7) 2005 — for the fundamental-form determinant approach.
 """
 
 from __future__ import annotations
@@ -42,7 +60,7 @@ from typing import List, Optional, Sequence, Tuple, Union
 
 import numpy as np
 
-from kerf_cad_core.geom.nurbs import NurbsSurface, find_span
+from kerf_cad_core.geom.nurbs import NurbsSurface, find_span, surface_derivatives
 
 # ---------------------------------------------------------------------------
 # Correct Cox-de Boor basis function evaluation
@@ -74,20 +92,8 @@ def _basis_fns(i: int, u: float, degree: int, knots: np.ndarray) -> np.ndarray:
 
 def _eval_surface(surf: NurbsSurface, u: float, v: float) -> np.ndarray:
     """Evaluate NurbsSurface at (u, v) using correct basis functions."""
-    nu = surf.num_control_points_u
-    nv = surf.num_control_points_v
-    span_u = find_span(nu - 1, surf.degree_u, u, surf.knots_u)
-    span_v = find_span(nv - 1, surf.degree_v, v, surf.knots_v)
-    Nu = _basis_fns(span_u, u, surf.degree_u, surf.knots_u)
-    Nv = _basis_fns(span_v, v, surf.degree_v, surf.knots_v)
-    dim = surf.control_points.shape[2]
-    result = np.zeros(dim)
-    for i in range(surf.degree_u + 1):
-        for j in range(surf.degree_v + 1):
-            idx_i = span_u - surf.degree_u + i
-            idx_j = span_v - surf.degree_v + j
-            result += Nu[i] * Nv[j] * surf.control_points[idx_i, idx_j]
-    return result
+    from kerf_cad_core.geom.nurbs import surface_evaluate
+    return surface_evaluate(surf, u, v)
 
 
 # ---------------------------------------------------------------------------
@@ -107,25 +113,15 @@ def _surface_partials(
     h_u: Optional[float] = None,
     h_v: Optional[float] = None,
 ) -> Tuple[np.ndarray, np.ndarray]:
-    """Return (dp/du, dp/dv) via central finite differences."""
-    u_min = float(surf.knots_u[0])
-    u_max = float(surf.knots_u[-1])
-    v_min = float(surf.knots_v[0])
-    v_max = float(surf.knots_v[-1])
+    """Return (dp/du, dp/dv) using analytic surface_derivatives.
 
-    if h_u is None:
-        h_u = max(1e-6, (u_max - u_min) * 5e-4)
-    if h_v is None:
-        h_v = max(1e-6, (v_max - v_min) * 5e-4)
+    The h_u / h_v parameters are retained for signature compatibility but are
+    ignored: analytic (exact) partials are always used.
 
-    u_p = min(u_max, u + h_u)
-    u_m = max(u_min, u - h_u)
-    v_p = min(v_max, v + h_v)
-    v_m = max(v_min, v - h_v)
-
-    dp_du = (_eval_surface(surf, u_p, v)[:3] - _eval_surface(surf, u_m, v)[:3]) / max(u_p - u_m, 1e-15)
-    dp_dv = (_eval_surface(surf, u, v_p)[:3] - _eval_surface(surf, u, v_m)[:3]) / max(v_p - v_m, 1e-15)
-    return dp_du, dp_dv
+    Reference: Piegl & Tiller Alg. A3.6 + A4.4 (rational surface derivatives).
+    """
+    SKL = surface_derivatives(surf, u, v, d=1)
+    return SKL[1, 0][:3].copy(), SKL[0, 1][:3].copy()
 
 
 def _surface_second_partials(
@@ -135,43 +131,13 @@ def _surface_second_partials(
     h_u: Optional[float] = None,
     h_v: Optional[float] = None,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Return (d²p/du², d²p/dv², d²p/dudv) via central finite differences."""
-    u_min = float(surf.knots_u[0])
-    u_max = float(surf.knots_u[-1])
-    v_min = float(surf.knots_v[0])
-    v_max = float(surf.knots_v[-1])
+    """Return (d²p/du², d²p/dv², d²p/dudv) using analytic surface_derivatives.
 
-    if h_u is None:
-        h_u = max(1e-5, (u_max - u_min) * 2e-3)
-    if h_v is None:
-        h_v = max(1e-5, (v_max - v_min) * 2e-3)
-
-    u_p = min(u_max, u + h_u)
-    u_m = max(u_min, u - h_u)
-    v_p = min(v_max, v + h_v)
-    v_m = max(v_min, v - h_v)
-
-    duu = (
-        _eval_surface(surf, u_p, v)[:3]
-        - 2.0 * _eval_surface(surf, u, v)[:3]
-        + _eval_surface(surf, u_m, v)[:3]
-    ) / max((u_p - u_m) ** 2 / 4.0, 1e-30)
-
-    dvv = (
-        _eval_surface(surf, u, v_p)[:3]
-        - 2.0 * _eval_surface(surf, u, v)[:3]
-        + _eval_surface(surf, u, v_m)[:3]
-    ) / max((v_p - v_m) ** 2 / 4.0, 1e-30)
-
-    # Mixed partial via four-point cross difference
-    dudv = (
-        _eval_surface(surf, u_p, v_p)[:3]
-        - _eval_surface(surf, u_p, v_m)[:3]
-        - _eval_surface(surf, u_m, v_p)[:3]
-        + _eval_surface(surf, u_m, v_m)[:3]
-    ) / max((u_p - u_m) * (v_p - v_m), 1e-30)
-
-    return duu, dvv, dudv
+    The h_u / h_v parameters are retained for signature compatibility but are
+    ignored: analytic (exact) second-order partials are always used.
+    """
+    SKL = surface_derivatives(surf, u, v, d=2)
+    return SKL[2, 0][:3].copy(), SKL[0, 2][:3].copy(), SKL[1, 1][:3].copy()
 
 
 def _unit_normal(dp_du: np.ndarray, dp_dv: np.ndarray) -> np.ndarray:
@@ -201,6 +167,273 @@ def _clamp_grid(nu: int, nv: int) -> Tuple[int, int]:
 
 
 # ---------------------------------------------------------------------------
+# _analytic_curvature_data — shared kernel for all curvature queries
+# ---------------------------------------------------------------------------
+
+def _analytic_curvature_data(
+    surf: NurbsSurface, u: float, v: float
+) -> Optional[dict]:
+    """Compute the full differential-geometry data at a single (u, v) point.
+
+    Uses exact analytic derivatives from ``surface_derivatives`` (Piegl &
+    Tiller Alg. A3.6 / A4.4).  Returns a dict with:
+
+        Su, Sv          first partials (3-vectors)
+        Suu, Svv, Suv   second partials (3-vectors)
+        n               outward unit normal Su × Sv / |Su × Sv|
+        E, F, G         first fundamental form coefficients
+        e, f, g         second fundamental form coefficients (L, M, N in
+                        classical notation)
+        EGF2            EG − F² (> 0 for a regular point)
+        K               Gaussian curvature  (eg − f²) / (EG − F²)
+        H               mean curvature      (eG − 2fF + gE) / (2(EG − F²))
+        k1, k2          principal curvatures  H ± sqrt(H²−K),  k1 >= k2
+
+    Returns ``None`` when the point is degenerate (|Su × Sv| < 1e-14 or
+    EG − F² < 1e-20).
+
+    Reference: do Carmo §3.3; Goldman CAGD 2005.
+    """
+    SKL = surface_derivatives(surf, u, v, d=2)
+    Su  = SKL[1, 0][:3]
+    Sv  = SKL[0, 1][:3]
+    Suu = SKL[2, 0][:3]
+    Svv = SKL[0, 2][:3]
+    Suv = SKL[1, 1][:3]
+
+    cross = np.cross(Su, Sv)
+    mag = float(np.linalg.norm(cross))
+    if mag < 1e-14:
+        return None
+
+    n = cross / mag
+
+    E = float(np.dot(Su, Su))
+    F = float(np.dot(Su, Sv))
+    G = float(np.dot(Sv, Sv))
+    EGF2 = E * G - F * F
+
+    if EGF2 < 1e-20:
+        return None
+
+    # Second fundamental form (shape operator coefficients).
+    # e = L = Suu · n,  f = M = Suv · n,  g = N = Svv · n
+    # (Piegl & Tiller §6.1; do Carmo §3.3)
+    e = float(np.dot(Suu, n))
+    f = float(np.dot(Suv, n))
+    g = float(np.dot(Svv, n))
+
+    K = (e * g - f * f) / EGF2
+    H = (e * G - 2.0 * f * F + g * E) / (2.0 * EGF2)
+
+    disc = max(0.0, H * H - K)
+    sq = math.sqrt(disc)
+    k1 = H + sq   # larger principal curvature
+    k2 = H - sq   # smaller principal curvature
+
+    return {
+        "Su": Su, "Sv": Sv,
+        "Suu": Suu, "Svv": Svv, "Suv": Suv,
+        "n": n,
+        "E": E, "F": F, "G": G,
+        "e": e, "f": f, "g": g,
+        "EGF2": EGF2,
+        "K": K, "H": H,
+        "k1": k1, "k2": k2,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Single-point analytic curvature functions
+# ---------------------------------------------------------------------------
+
+def mean_curvature(surf: NurbsSurface, u: float, v: float) -> float:
+    """Mean curvature H at a single parameter point (u, v).
+
+    H = (eG − 2fF + gE) / (2(EG − F²))
+
+    where E, F, G are the first fundamental form coefficients from the first
+    partial derivatives S_u, S_v and e, f, g are the second fundamental form
+    coefficients from the second partial derivatives S_uu, S_vv, S_uv
+    projected onto the unit surface normal.
+
+    Uses exact analytic derivatives via ``surface_derivatives`` (Piegl &
+    Tiller Alg. A3.6 / A4.4, rational-correct).
+
+    Returns ``float('nan')`` at degenerate points (poles, singularities).
+
+    Reference: do Carmo §3.3, eq. (7).
+    """
+    cd = _analytic_curvature_data(surf, float(u), float(v))
+    if cd is None:
+        return float("nan")
+    return cd["H"]
+
+
+def gaussian_curvature(surf: NurbsSurface, u: float, v: float) -> float:
+    """Gaussian curvature K at a single parameter point (u, v).
+
+    K = (eg − f²) / (EG − F²)
+
+    Uses exact analytic derivatives via ``surface_derivatives``.
+
+    Returns ``float('nan')`` at degenerate points.
+
+    Reference: do Carmo §3.3, eq. (6).
+    """
+    cd = _analytic_curvature_data(surf, float(u), float(v))
+    if cd is None:
+        return float("nan")
+    return cd["K"]
+
+
+def principal_curvatures(surf: NurbsSurface, u: float, v: float) -> Tuple[float, float]:
+    """Principal curvatures (k1, k2) at a single parameter point (u, v).
+
+    k1 and k2 are the eigenvalues of the shape operator:
+        k1 = H + sqrt(H² − K)   (larger / more-positive)
+        k2 = H − sqrt(H² − K)   (smaller / more-negative)
+
+    They satisfy:  k1 + k2 = 2H   and   k1 * k2 = K.
+
+    Returns ``(nan, nan)`` at degenerate points.
+
+    Reference: do Carmo §3.4; Piegl & Tiller §6.1.
+    """
+    cd = _analytic_curvature_data(surf, float(u), float(v))
+    if cd is None:
+        return float("nan"), float("nan")
+    return cd["k1"], cd["k2"]
+
+
+def draft_angle(
+    surf: NurbsSurface,
+    u: float,
+    v: float,
+    pull_dir: Sequence[float],
+) -> float:
+    """Draft angle (degrees) at a single parameter point (u, v).
+
+    The draft angle is the signed angle between the surface normal and the
+    projection plane perpendicular to the pull direction.  Equivalently:
+
+        draft = arcsin(n · pull_hat)
+
+    where ``n`` is the unit outward normal and ``pull_hat`` is the unit pull
+    direction.  A positive value means the surface faces toward the pull
+    direction (positive draft); negative means undercut.
+
+    Uses the analytic unit normal from ``surface_derivatives``.
+
+    Returns ``float('nan')`` at degenerate points or for a zero pull vector.
+    """
+    pull = np.asarray(pull_dir, dtype=float).ravel()[:3]
+    pnrm = float(np.linalg.norm(pull))
+    if pnrm < 1e-15:
+        return float("nan")
+    pull = pull / pnrm
+
+    cd = _analytic_curvature_data(surf, float(u), float(v))
+    if cd is None:
+        return float("nan")
+
+    cos_a = float(np.clip(np.dot(cd["n"], pull), -1.0, 1.0))
+    return math.degrees(math.asin(cos_a))
+
+
+def deviation(
+    surf_a: NurbsSurface,
+    surf_b: NurbsSurface,
+    samples: int = 20,
+) -> Tuple[float, float]:
+    """Hausdorff-style max and mean deviation between two NURBS surfaces.
+
+    Samples ``surf_a`` on an N×N grid (N = ``samples``), finds the closest
+    point on ``surf_b`` for each sample via a brute-force search on the same
+    N×N reference grid of ``surf_b``, and returns (max_deviation,
+    mean_deviation).
+
+    Because the query and reference grids use the same linspace parameters,
+    when ``surf_a`` and ``surf_b`` are the same object the sampled points are
+    EXACT coincidences and the returned distances are 0.0 to floating-point
+    precision.
+
+    Returns (max_dev, mean_dev).  Both are 0.0 when the surfaces are identical.
+    """
+    n = max(3, int(samples))
+    n = min(n, _MAX_GRID)
+    us_a, vs_a = _uv_grid(surf_a, n, n)
+    us_b, vs_b = _uv_grid(surf_b, n, n)
+
+    # Pre-evaluate surf_b on the same grid
+    pts_b = np.zeros((n * n, 3))
+    k = 0
+    for u in us_b:
+        for v in vs_b:
+            pts_b[k] = _eval_surface(surf_b, u, v)[:3]
+            k += 1
+
+    dists = []
+    k = 0
+    for u in us_a:
+        for v in vs_a:
+            pa = _eval_surface(surf_a, u, v)[:3]
+            d2_min = float(np.min(np.sum((pts_b - pa) ** 2, axis=1)))
+            dists.append(math.sqrt(max(0.0, d2_min)))
+            k += 1
+
+    dists = np.array(dists)
+    return float(np.max(dists)), float(np.mean(dists))
+
+
+def zebra_stripe(
+    surf: NurbsSurface,
+    u: float,
+    v: float,
+    n_stripes: int = 8,
+    view_dir: Optional[Sequence[float]] = None,
+) -> float:
+    """Zebra-stripe analytic value for visual G1/G2 continuity inspection.
+
+    Returns a scalar in [0, 1] representing the zebra stripe intensity at
+    surface parameter (u, v).  A value near 1.0 is "in a white stripe",
+    near 0.0 is "in a black stripe".  The stripe pattern corresponds to the
+    standard Rhino ZebraAnalysis rendering.
+
+    The zebra stripe value is:
+
+        stripe = 0.5 + 0.5 * cos(n_stripes * π * dot(n, light_hat))
+
+    where ``n`` is the unit surface normal and ``light_hat`` is the unit view
+    (or light) direction — by default ``[0, 0, 1]`` (world up).  The cosine
+    modulation maps the normal's projection onto the view direction into
+    equally-spaced dark/light bands, which is the standard approach used for
+    visual curvature inspection.
+
+    Returns ``float('nan')`` at degenerate points.
+
+    Reference: Levin, A., "Interpolating nets of curves by smooth
+    subdivision surfaces", SIGGRAPH 1999; Piegl & Tiller §10.2.
+    """
+    if view_dir is None:
+        light = np.array([0.0, 0.0, 1.0])
+    else:
+        light = np.asarray(view_dir, dtype=float).ravel()[:3]
+        lnrm = float(np.linalg.norm(light))
+        if lnrm < 1e-15:
+            light = np.array([0.0, 0.0, 1.0])
+        else:
+            light = light / lnrm
+
+    cd = _analytic_curvature_data(surf, float(u), float(v))
+    if cd is None:
+        return float("nan")
+
+    t = float(np.dot(cd["n"], light))
+    return 0.5 + 0.5 * math.cos(n_stripes * math.pi * t)
+
+
+# ---------------------------------------------------------------------------
 # gaussian_mean_curvature
 # ---------------------------------------------------------------------------
 
@@ -210,6 +443,10 @@ def gaussian_mean_curvature(
     nv: int = _DEFAULT_NV,
 ) -> dict:
     """Compute Gaussian curvature K and mean curvature H across a UV grid.
+
+    Uses exact analytic derivatives from ``surface_derivatives`` (Piegl &
+    Tiller Alg. A3.6 / A4.4) for rational-exact results on every surface
+    type including rational NURBS.
 
     Parameters
     ----------
@@ -237,37 +474,14 @@ def gaussian_mean_curvature(
 
         for i, u in enumerate(us):
             for j, v in enumerate(vs):
-                dp_du, dp_dv = _surface_partials(surface, u, v)
-                duu, dvv, dudv = _surface_second_partials(surface, u, v)
-                n = _unit_normal(dp_du, dp_dv)
-
-                # First fundamental form coefficients
-                E = float(np.dot(dp_du, dp_du))
-                F = float(np.dot(dp_du, dp_dv))
-                G = float(np.dot(dp_dv, dp_dv))
-                EG_F2 = E * G - F * F
-
-                if abs(EG_F2) < 1e-20:
+                cd = _analytic_curvature_data(surface, u, v)
+                if cd is None:
                     continue
 
-                # Second fundamental form coefficients
-                e = float(np.dot(duu, n))
-                f = float(np.dot(dudv, n))
-                g = float(np.dot(dvv, n))
-
-                K = (e * g - f * f) / EG_F2
-                H = (e * G - 2.0 * f * F + g * E) / (2.0 * EG_F2)
-
-                # Principal curvatures from H, K
-                disc = max(0.0, H * H - K)
-                sq = math.sqrt(disc)
-                k1 = H + sq
-                k2 = H - sq
-
-                K_grid[i, j] = K
-                H_grid[i, j] = H
-                k1_grid[i, j] = k1
-                k2_grid[i, j] = k2
+                K_grid[i, j] = cd["K"]
+                H_grid[i, j] = cd["H"]
+                k1_grid[i, j] = cd["k1"]
+                k2_grid[i, j] = cd["k2"]
 
         return {
             "ok": True,
@@ -609,24 +823,11 @@ def edge_continuity_report(
             cos_ang = float(np.clip(np.dot(na, nb), -1.0, 1.0))
             g1_deg = math.degrees(math.acos(abs(cos_ang)))
 
-            # Mean curvature at each point
-            def _mean_curv(surf, u, v):
-                dp_du, dp_dv = _surface_partials(surf, u, v)
-                duu, dvv, dudv = _surface_second_partials(surf, u, v)
-                n = _unit_normal(dp_du, dp_dv)
-                E = float(np.dot(dp_du, dp_du))
-                F = float(np.dot(dp_du, dp_dv))
-                G = float(np.dot(dp_dv, dp_dv))
-                EG_F2 = E * G - F * F
-                if abs(EG_F2) < 1e-20:
-                    return 0.0
-                e = float(np.dot(duu, n))
-                f = float(np.dot(dudv, n))
-                g = float(np.dot(dvv, n))
-                return (e * G - 2.0 * f * F + g * E) / (2.0 * EG_F2)
-
-            Ha = _mean_curv(surf_a, ua, va)
-            Hb = _mean_curv(surf_b, ub, vb)
+            # Mean curvature at each point (analytic)
+            cd_a = _analytic_curvature_data(surf_a, ua, va)
+            cd_b = _analytic_curvature_data(surf_b, ub, vb)
+            Ha = cd_a["H"] if cd_a is not None else 0.0
+            Hb = cd_b["H"] if cd_b is not None else 0.0
             g2 = abs(Ha - Hb)
 
             G0_vals.append(g0)
