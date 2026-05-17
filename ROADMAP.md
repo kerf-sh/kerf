@@ -75,7 +75,7 @@ LLM must be able to check its own work and hand off to the real world.
 
 ## §2 — Per-persona deliverable scorecard
 
-<!-- Status reconciled 2026-05-16: ECAD fab output ✅; jewelry render ✅; mechanical sheet metal/weldments/GD&T ✅ (bend table T-4 still pending); architecture IFC Tier 2 + family editor ✅; DXF read+DWG bridge ✅; general DXF writer ✅ (T-7 shipped; DWG via ODA external). -->
+<!-- Status reconciled 2026-05-17: ECAD fab output ✅; jewelry render ✅; mechanical sheet metal/weldments/GD&T ✅ (bend table T-4 now ✅); architecture IFC Tier 2 + family editor ✅; DXF read+DWG bridge ✅; general DXF writer ✅ (T-7 shipped; DWG via ODA external); compare hub w/ per-category matrices + 14 compare pages ✅; ScrollToTop + Roadmap topbar link ✅; FEM reference-value suite + CFD foundation (potential + Navier-Stokes) ✅; body max-width:100vw h-scroll guard ✅. -->
 
 Brutally honest. For each persona: the end deliverable they must ship, and
 whether Kerf can produce it **text-natively today**.
@@ -220,7 +220,7 @@ promoted to near-term P0/P1.
 |---|---|---|---|
 | **Implicit / function-rep (F-rep / SDF) modeling** | nTopology, ImplicitCAD | Field-driven lattices / TPMS / gradient materials. Geometry expressed as a math function is the *ideal* LLM substrate — no topology bookkeeping, infinitely composable, verifiable by sampling the field. Verified absent (no SDF/implicit/TPMS module). | 🔴 not started |
 | **Generative / topology / multi-objective optimization (production-grade)** | Fusion Generative, nTop, OptiStruct | Manufacturing-constrained, multi-load-case, multi-objective, lattice-infill optimization. The LLM frames the objective + constraints in text and reads back a verified result. Verified: basic single-objective SIMP topo-opt shipped (`packages/kerf-topo`, FEniCSx); manufacturing constraints / multi-load / multi-objective / lattice-infill **not** — the deep, production-grade version is unbuilt. | 🚧 in flight |
-| **Simulation pillar** *(user priority — emphasized)* | Abaqus, LS-DYNA, nCode, OpenFOAM / Ansys, Adams | Nonlinear FEA, explicit dynamics / crash, fatigue & durability, CFD, low/high-frequency EM, acoustics, multibody dynamics, coupled multiphysics. Physics is governing equations + boundary conditions = text; the LLM sets up the study and self-checks results. **Verified split:** `packages/kerf-fem` analysis enum was `linear_static \| modal \| thermal` (+ bonded contact) — that slice ✅ shipped. A **parallel FEM-hardening stream** is currently in flight to match CalculiX / Z88 / Mystran depth (T-100); seed modules for `nonlinear`, `explicit`, `acoustics_fem`, `em_field`, `em_highfreq`, and `fatigue_fem` are present in `packages/kerf-fem/src/kerf_fem/` but not yet wired through the public analysis enum. **CFD** is also in flight — `cfd_potential.py` (potential flow) + a heat-transfer / NS path; full CfdOF-class depth (turbulence models, 3-D meshing, OpenFOAM bridge) tracked at T-101. **Crash / multibody / coupled multiphysics still 🔴 not started.** | 🚧 in flight |
+| **Simulation pillar** *(user priority — emphasized)* | Abaqus, LS-DYNA, nCode, OpenFOAM / Ansys, Adams | Nonlinear FEA, explicit dynamics / crash, fatigue & durability, CFD, low/high-frequency EM, acoustics, multibody dynamics, coupled multiphysics. Physics is governing equations + boundary conditions = text; the LLM sets up the study and self-checks results. **Verified split:** `packages/kerf-fem` analysis enum was `linear_static \| modal \| thermal` (+ bonded contact) — that slice ✅ shipped, and a **reference-value suite** with citable Roark / Blevins / Incropera oracles (`pressure_load.py` + 43-test `test_fem_refvalues.py`, 42 green, one ASTM E1049 rainflow test skipped — `fatigue_fem._rainflow` bug flagged) landed this session. A **parallel FEM-hardening stream** is still in flight to match CalculiX / Z88 / Mystran depth (T-100); seed modules for `nonlinear`, `explicit`, `acoustics_fem`, `em_field`, `em_highfreq`, and `fatigue_fem` are present in `packages/kerf-fem/src/kerf_fem/` but not yet wired through the public analysis enum. **CFD foundation** also landed this session — `cfd_potential.py` (potential flow, `Cp(θ)=1−4sin²θ` analytic oracle) + `cfd_navier_stokes.py` (lid-driven cavity, Ghia Re=100 reference), 61 hermetic tests in `test_cfd.py`, **2-D laminar scope**; full CfdOF-class depth (turbulence k-ε / k-ω SST, 3-D unstructured meshing, OpenFOAM bridge) tracked at T-101. **Crash / multibody / coupled multiphysics still 🔴 not started.** | 🚧 in flight |
 | **1D system simulation** | Modelica, Amesim, Simulink | Lumped-parameter thermal / hydraulic / electrical / control networks. Modelica is *text* — a declarative equation-based language — making this exceptionally AI-native. Verified absent. | 🔴 not started |
 | **Manufacturing process simulation** | Moldflow, MAGMASOFT, AutoForm, Vericut | Mold-flow, casting solidification, stamping / forming, AM residual stress, machining (toolpath) verification, weld distortion. Closes the loop between design intent and a producible part the LLM can reason about. Verified absent. | 🔴 not started |
 | **Automatic Feature Recognition (AFR)** | (re-parameterize imported "dumb" STEP into editable features) | Critical AI enabler: turns any imported boundary-rep solid into an editable parametric feature tree, so the LLM can edit *any* model — not just ones authored in Kerf. Verified absent (no feature-recognition module). | 🔴 not started |
@@ -362,10 +362,27 @@ Quick map of what is in `packages/kerf-cad-core/src/kerf_cad_core/geom/`:
   cloud + reference + develop), breadcrumbs, TOC, audit-filter,
   internal-planning-artifact filtering. `scripts/build-docs-manifest.mjs`
   emits the grouped taxonomy into `public/docs-manifest.json`.
-- **Comparison pages** ✅ — `src/routes/compare/` ships **9** head-to-head
-  pages: Altium, Blender, Freecad, Fusion, KiCad, MatrixGold, Onshape,
-  Revit, Rhino. Freecad / KiCad / Rhino / Revit / Fusion were deepened;
-  Altium / MatrixGold / Blender / Onshape are new.
+- **Comparison pages** ✅ — `src/routes/compare/` ships **14**
+  head-to-head pages: Altium, Autocad, Blender, Civil3d, Freecad,
+  Fusion, Inventor, KiCad, MatrixGold, Max3ds, Onshape, Revit, Rhino,
+  Solidworks (plus a singleton drafting card, 14 comparison routes wired
+  in `src/App.jsx`). Freecad / KiCad / Rhino / Revit / Fusion were
+  deepened; Altium / MatrixGold / Blender / Onshape / Solidworks /
+  Autocad / Civil3d / Inventor / Max3ds are new.
+- **Compare hub with per-category feature matrices** ✅ —
+  `src/routes/compare/index.jsx` + `src/routes/compare/CategoryMatrix.jsx`
+  render Mechanical / Electronic / BIM / Jewelry & NURBS / DCC matrices
+  with per-CAD cards (5 mechanical + 2 electronic + 2 BIM + 2 jewelry +
+  2 DCC + 1 drafting).
+- **Scroll-to-top on route change** ✅ — `src/components/ScrollToTop.jsx`
+  wired in `src/App.jsx` (was: landing on `/compare` mid-scroll).
+- **Roadmap link in public topbar** ✅ — `NAV_LINKS` in
+  `src/components/Header.jsx` now exposes `/roadmap` alongside Docs and
+  Compare.
+- **Body max-width h-scroll guard** ✅ — `body { max-width: 100vw }` +
+  `overflow-x: clip` on html/body/#root in `src/index.css` (defensive
+  CSS that makes site-wide horizontal scroll physically impossible on
+  Safari/WebKit); Landing.jsx hero wrapper now clips.
 - **Touch + responsive polish** ✅ — Renderer + Gumball touch gestures,
   Editor responsive layout, top-bar overflow, Docs mobile drawer.
 
@@ -408,6 +425,17 @@ Quick map of what is in `packages/kerf-cad-core/src/kerf_cad_core/geom/`:
 - **FEM** ✅ — FEniCSx (+ CalculiX) linear-static + modal (SLEPc) + steady
   thermal + bonded contact; deformed-shape overlay. *Verified enum:
   `linear_static | modal | thermal` only.*
+- **FEM reference-value suite** ✅ — `kerf_fem.pressure_load` shipped;
+  43-test `test_fem_refvalues.py` with citable Roark / Blevins /
+  Incropera oracles (42 green, one ASTM E1049 rainflow test skipped —
+  real bug flagged in `fatigue_fem._rainflow`, tracked under T-100).
+- **CFD foundation (2-D laminar scope)** ✅ — `kerf_fem.cfd_potential`
+  (potential flow, `Cp(θ) = 1 − 4 sin²θ` analytic oracle) +
+  `kerf_fem.cfd_navier_stokes` (lid-driven cavity, Ghia Re=100
+  reference); 61 hermetic CFD tests in
+  `packages/kerf-fem/tests/test_cfd.py`. Full CfdOF parity (turbulence
+  k-ε / k-ω SST, 3-D unstructured meshing, OpenFOAM bridge) stays
+  in flight under T-101.
 - **Topology optimization** ✅ — SIMP via FEniCSx, NURBS surface fit, multi-body.
 - **CAM** ✅ — 2.5D + 3D parallel/waterline + lathe + **5-axis** constant-tilt
   + 3+2 indexed; tool DB (7 types); LinuxCNC/GRBL/Mach3/Fanuc posts.
@@ -463,8 +491,8 @@ evaluators today.
 
 | # | Gap | vs | T-NN | Status |
 |---|---|---|---|---|
-| G-1 | **FEM matching CalculiX / Z88 / Mystran depth** — nonlinear, explicit, acoustics, EM, fatigue beyond the verified linear-static+modal+thermal slice | CalculiX / Z88 / Mystran | T-100 | 🚧 in flight |
-| G-2 | **CFD (CfdOF-class)** — beyond `cfd_potential` to turbulence models, 3-D meshing, OpenFOAM bridge | CfdOF / OpenFOAM | T-101 | 🚧 in flight |
+| G-1 | **FEM matching CalculiX / Z88 / Mystran depth** — nonlinear, explicit, acoustics, EM, fatigue beyond the verified linear-static+modal+thermal slice. Reference-value suite (`pressure_load.py` + 43-test Roark/Blevins/Incropera oracles, 42 green, rainflow bug flagged) landed this session; full nonlinear/explicit/acoustics/EM/fatigue wiring still ahead. | CalculiX / Z88 / Mystran | T-100 | 🚧 in flight |
+| G-2 | **CFD (CfdOF-class)** — beyond `cfd_potential` / `cfd_navier_stokes` (2-D laminar foundation now landed with 61 hermetic tests) to turbulence models, 3-D unstructured meshing, OpenFOAM bridge | CfdOF / OpenFOAM | T-101 | 🚧 in flight |
 | G-3 | **Interactive push-and-shove diff-pair tuning** — Kerf has length tuning only; KiCad has interactive push-and-shove | KiCad / Altium | T-102 | 🔴 not started |
 | G-4 | **Broader ECAD import** — Allegro / PADS / gEDA / Eagle v10 (today only KiCad-oriented) | Altium / Cadence | T-103 | 🔴 not started |
 | G-5 | **Kernel G3 / NURBS Phase 4 trim-by-curve + class-A leading** — G3 curvature combs partially shipped (#100); imprint + leading still to go | Alias / ICEM Surf | T-104 | 🚧 in flight |
