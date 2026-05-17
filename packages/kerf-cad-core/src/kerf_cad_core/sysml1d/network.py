@@ -846,8 +846,13 @@ def make_hydraulic_l(name: str, n_in: str, n_out: str, L_hyd: float) -> L:
 
 
 def make_mech_r(name: str, n_a: str, n_b: str, b_damp: float) -> R:
-    """Mechanical damper.  effort=force(N), flow=velocity(m/s)."""
-    return R(name, n_a, n_b, b_damp)
+    """Mechanical damper.  effort=force(N), flow=velocity(m/s).
+
+    In the force-velocity (effort-flow) analogy the damper constitutive law is
+    F = b*v, i.e. the element has conductance G = b.  The MNA resistor stamps a
+    conductance G = 1/R, so the equivalent MNA resistance is R = 1/b.
+    """
+    return R(name, n_a, n_b, 1.0 / b_damp)
 
 
 def make_mech_m(name: str, n_a: str, n_ref: str, mass: float) -> C:

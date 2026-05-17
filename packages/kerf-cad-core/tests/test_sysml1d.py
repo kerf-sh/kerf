@@ -462,7 +462,9 @@ class TestMassSpringDamper:
 
         net = self._make_msd(m, b_damp, k, F)
         tau = 1.0 / (ζ * math.sqrt(k / m))
-        result = simulate(net, t_end=6 * tau, dt=tau / 300)
+        # Analytically v(t) = (F/m)*t*exp(-ωn*t); v(6τ) ≈ 0.015 > 0.01.
+        # Need t ≥ 8τ for v < 0.005, so simulate to 8τ.
+        result = simulate(net, t_end=8 * tau, dt=tau / 300)
         assert result["ok"]
 
         v_vals = result["nodes"]["vel"]
