@@ -1183,24 +1183,145 @@ Tier A (single persona unlock), render / SubD / direct-edit → Tier B
   pytest math.
 - **Depends-on:** none
 
-### T-106 Render: caustics + dispersion solver
+### T-106 Render: caustics + dispersion solver (epic — split into T-106a..f)
 - **Tier:** B
 - **Money/reach rationale:** Cross-sector presentation depth — jewelry
   (gem dispersion is the deliverable), automotive (paint / glass
   caustics), architecture (Enscape-class daylighting). PBR + HDRI +
   bloom shipped this session; the next-class jump is a real caustic
-  transport solver.
+  transport solver. Browser path-tracer alone won't cover every
+  customer's GPU; we need a backend render path with hybrid fallback.
+- **Priority:** P2
+- **Status:** 🔴 not started (broken into sub-tasks T-106a..f below)
+- **Scope:** End-to-end backend render via headless Blender Cycles
+  (primary; spectral dispersion shipped in 4.0+), with in-browser
+  `three-gpu-pathtracer` as the free-preview / offline fallback.
+- **Target files/packages:** `packages/kerf-render/src/kerf_render/`
+  (worker + scene-translation), `src/lib/heroShot.js` (browser
+  fallback), `src/components/Renderer.jsx` (panel UI), cloud
+  worker pool + billing.
+- **Definition of Done:** rolled up from T-106a..f.
+- **Depends-on:** none
+
+### T-106a Scene translator + materials mapping (Kerf Body → Blender Cycles)
+- **Tier:** B
 - **Priority:** P2
 - **Status:** 🔴 not started
-- **Scope:** A caustic-transport renderer (photon-map or BDPT) wired
-  into the existing `kerf-render` worker, plus a dispersion model for
-  gem ray-trace. Cycles / V-Ray / Enscape / KeyShot are the reference.
-- **Target files/packages:** `packages/kerf-render/src/kerf_render/`
-  (caustic + dispersion modules), worker route, LLM tool, tests.
-- **Definition of Done:** caustic spot from a glass sphere matches a
-  Cycles reference render within delta-E tolerance; gem dispersion
-  produces a chromatic fan; pytest gated on the renderer.
-- **Depends-on:** none
+- **Scope:** Translate a Kerf scene (Body topology + camera + lights +
+  materials) into Blender format. Path: export Kerf Body via glTF →
+  import in Blender via `bpy.ops.import_scene.gltf` → map Kerf PBR
+  materials (gold / silver / platinum / diamond / sapphire / etc.) to
+  Blender Principled BSDF; gemstones use Glass BSDF with spectral
+  dispersion + Abbe-number lookup from `jewelry/gemstones.py`.
+- **Target files/packages:**
+  `packages/kerf-render/src/kerf_render/cycles_translator.py`,
+  `packages/kerf-render/src/kerf_render/material_mapping.py`,
+  reference tests with synthetic scenes.
+- **Definition of Done:** round-trip a known ring scene (diamond +
+  18k yellow shank) → Cycles renders match a baseline reference
+  image within delta-E tolerance; spectral dispersion produces a
+  chromatic fan on the table beneath the stone.
+- **Depends-on:** none (glTF interop already shipped)
+- **Suggested model tier:** opus
+
+### T-106b Cycles worker (subprocess harness + job lifecycle + cache)
+- **Tier:** B
+- **Priority:** P2
+- **Status:** 🔴 not started
+- **Scope:** Worker process that consumes render jobs from the Postgres
+  queue, drives `bpy` in an isolated subprocess (so a crash doesn't
+  take the harness down), streams tile progress via SSE/WebSocket,
+  writes PNG + multi-pass EXR to object storage, caches by
+  `sha256(scene_blob + preset + renderer_version)`.
+- **Target files/packages:**
+  `packages/kerf-render/src/kerf_render/cycles_worker.py`,
+  `packages/kerf-workers/` integration, Postgres migration for a
+  `render_jobs` table, `kerf_api.routes` job endpoints.
+- **Definition of Done:** queue → render → cache → signed-URL
+  download works end-to-end on a single worker; identical scene
+  hash returns cached result instantly; pytest gated on a fake-bpy
+  harness.
+- **Depends-on:** T-106a
+- **Suggested model tier:** opus
+
+### T-106c Hero-render UX panel (browser-side)
+- **Tier:** B
+- **Priority:** P2
+- **Status:** 🔴 not started
+- **Scope:** Viewport "Hero Render" button + quality picker
+  (Draft 256 / Standard 1024 / Hero 4096 / Cinema 16384 samples),
+  progress bar with tile preview streaming, PNG + EXR download,
+  gallery tab listing past renders for the current project.
+- **Target files/packages:** `src/components/Renderer.jsx`
+  (button + state), new `src/components/HeroRenderPanel.jsx`,
+  `src/lib/heroShot.js` (extend to call backend job API),
+  `src/routes/Projects.jsx` (gallery tab).
+- **Definition of Done:** submit a Hero render from the viewport,
+  watch progress, download PNG + EXR; vitest renders the panel
+  with mocked job state.
+- **Depends-on:** T-106b
+- **Suggested model tier:** sonnet
+
+### T-106d Pricing meter (GPU-seconds → kerf_paid credits)
+- **Tier:** B
+- **Priority:** P2
+- **Status:** 🔴 not started
+- **Scope:** Wire the cycles_worker's GPU-seconds consumption into
+  `kerf-billing` as a metered draw against `kerf_paid` credits.
+  Quality presets map to credit costs (Draft ≈ 0.5 / Standard ≈ 2 /
+  Hero ≈ 10 / Cinema ≈ 60). Free quota: ~3 Hero renders / month on
+  the Studio tier. Cache hits are free.
+- **Target files/packages:** `packages/kerf-billing/src/kerf_billing/`
+  (new meter), `packages/kerf-pricing/` (preset credit prices),
+  `kerf-cloud` billing wire.
+- **Definition of Done:** running a Hero render against a non-cached
+  scene decrements the user's kerf_paid balance by the documented
+  amount; cache hit is zero-cost; rejection if balance < cost.
+- **Depends-on:** T-106b
+- **Suggested model tier:** sonnet
+
+### T-106e Self-host docker image + BYO Blender path
+- **Tier:** B
+- **Priority:** P2
+- **Status:** 🔴 not started
+- **Scope:** Containerised `cycles-worker` (Dockerfile + entrypoint)
+  so a self-hosted user runs the worker on their own GPU box (no
+  cloud bill). Plus a BYO-Blender alternative where the user points
+  `KERF_BLENDER_PATH` at their existing Blender install. Document
+  both paths in `docs/local-self-host.md`.
+- **Target files/packages:**
+  `packages/kerf-render/Dockerfile.cycles-worker`,
+  `packages/kerf-render/entrypoint.sh`,
+  `docs/local-self-host.md` (extend),
+  `docs/cloud-features.md` (clarify the cloud-vs-local split).
+- **Definition of Done:** docker image builds and runs against a
+  local kerf-server; BYO path picks up installed Blender and
+  dispatches a render synchronously.
+- **Depends-on:** T-106b
+- **Suggested model tier:** sonnet
+
+### T-106f In-browser path-tracer fallback (`three-gpu-pathtracer`)
+- **Tier:** B
+- **Priority:** P2
+- **Status:** 🔴 not started
+- **Scope:** Integrate the MIT-licensed `three-gpu-pathtracer` into
+  `src/lib/heroShot.js` as a fallback / free preview path. Reuses
+  the existing scene graph + PMREM HDRI + ACES tonemap. Progressive
+  rendering on the user's GPU; gives caustics + dispersion + SSS
+  in-browser without server compute. Ships as the free preview tier
+  AND the offline / no-cloud fallback for self-host users without
+  a GPU box.
+- **Target files/packages:** `src/lib/heroShot.js` (extend),
+  `src/components/Renderer.jsx` (toggle), `package.json`
+  (`three-gpu-pathtracer` dep — first new npm dep this session;
+  acceptable because it closes the killer jewelry gap).
+- **Definition of Done:** clicking the Hero button in offline mode
+  (or for free-tier users) progressively renders the scene in the
+  browser; diamond + table demonstrates caustics + dispersion
+  visually; vitest sanity-renders a low-sample frame in headless
+  mode.
+- **Depends-on:** T-106a (reuses material mapping)
+- **Suggested model tier:** opus
 
 ### T-107 Direct + parametric history coexistence
 - **Tier:** B
