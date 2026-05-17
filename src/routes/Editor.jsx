@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { Share2, Save, Loader2, ArrowLeft, Check, History, X, RotateCcw, Undo2, Redo2, GitBranch, Clock, MessageSquare, PanelRightClose, PanelRightOpen, Plus, Box, SlidersHorizontal, ChevronDown, ArrowRight, RotateCw } from 'lucide-react'
+import { Share2, Save, Loader2, ArrowLeft, Check, History, X, RotateCcw, Undo2, Redo2, GitBranch, Clock, MessageSquare, PanelRightClose, PanelRightOpen, PanelLeftOpen, PanelLeftClose, Plus, Box, SlidersHorizontal, ChevronDown, ArrowRight, RotateCw, MoreHorizontal } from 'lucide-react'
 import { LogoWordmark } from '../components/Logo.jsx'
 import FileTree from '../components/FileTree.jsx'
 import Renderer from '../components/Renderer.jsx'
@@ -703,72 +703,150 @@ export default function Editor() {
   }
 
   // ----- Vertical split between renderer & editor -----
+  // T-L1: pointer-event based so touch devices can drag the resize handle.
+  // setPointerCapture pins the move/up stream to the handle element, so the
+  // gesture survives the pointer wandering outside the 1.5px-tall track.
+  // Mouse behaviour is preserved (PointerEvent unifies mouse + touch + pen).
   const [splitPct, setSplitPct] = useState(60) // top half = renderer
   const draggingRef = useRef(false)
-  function onSplitMouseDown(e) {
+  function onSplitPointerDown(e) {
     e.preventDefault()
     draggingRef.current = true
     document.body.style.cursor = 'row-resize'
+    try { e.currentTarget.setPointerCapture(e.pointerId) } catch {}
   }
-  useEffect(() => {
-    function move(e) {
-      if (!draggingRef.current) return
-      const container = document.getElementById('editor-center')
-      if (!container) return
-      const r = container.getBoundingClientRect()
-      const pct = ((e.clientY - r.top) / r.height) * 100
-      setSplitPct(Math.min(85, Math.max(15, pct)))
+  function onSplitPointerMove(e) {
+    if (!draggingRef.current) return
+    const container = document.getElementById('editor-center')
+    if (!container) return
+    const r = container.getBoundingClientRect()
+    const pct = ((e.clientY - r.top) / r.height) * 100
+    setSplitPct(Math.min(85, Math.max(15, pct)))
+  }
+  function onSplitPointerUp(e) {
+    if (draggingRef.current) {
+      draggingRef.current = false
+      document.body.style.cursor = ''
     }
-    function up() {
-      if (draggingRef.current) {
-        draggingRef.current = false
-        document.body.style.cursor = ''
-      }
-    }
-    window.addEventListener('mousemove', move)
-    window.addEventListener('mouseup', up)
-    return () => {
-      window.removeEventListener('mousemove', move)
-      window.removeEventListener('mouseup', up)
-    }
-  }, [])
+    try { e.currentTarget.releasePointerCapture(e.pointerId) } catch {}
+  }
 
   // ----- Tab in the left rail's bottom section: Objects | Features -----
   // ----- Vertical split between FileTree & ObjectsPanel in left rail -----
+  // T-L1: pointer-event handlers — same touch/mouse-unified pattern as above.
   const [leftSplitPct, setLeftSplitPct] = useState(60) // top = FileTree
   const leftDraggingRef = useRef(false)
-  function onLeftSplitMouseDown(e) {
+  function onLeftSplitPointerDown(e) {
     e.preventDefault()
     leftDraggingRef.current = true
     document.body.style.cursor = 'row-resize'
+    try { e.currentTarget.setPointerCapture(e.pointerId) } catch {}
   }
-  useEffect(() => {
-    function move(e) {
-      if (!leftDraggingRef.current) return
-      const container = document.getElementById('editor-left')
-      if (!container) return
-      const r = container.getBoundingClientRect()
-      const pct = ((e.clientY - r.top) / r.height) * 100
-      setLeftSplitPct(Math.min(85, Math.max(20, pct)))
+  function onLeftSplitPointerMove(e) {
+    if (!leftDraggingRef.current) return
+    const container = document.getElementById('editor-left')
+    if (!container) return
+    const r = container.getBoundingClientRect()
+    const pct = ((e.clientY - r.top) / r.height) * 100
+    setLeftSplitPct(Math.min(85, Math.max(20, pct)))
+  }
+  function onLeftSplitPointerUp(e) {
+    if (leftDraggingRef.current) {
+      leftDraggingRef.current = false
+      document.body.style.cursor = ''
     }
-    function up() {
-      if (leftDraggingRef.current) {
-        leftDraggingRef.current = false
-        document.body.style.cursor = ''
-      }
-    }
-    window.addEventListener('mousemove', move)
-    window.addEventListener('mouseup', up)
-    return () => {
-      window.removeEventListener('mousemove', move)
-      window.removeEventListener('mouseup', up)
-    }
-  }, [])
+    try { e.currentTarget.releasePointerCapture(e.pointerId) } catch {}
+  }
 
   const [showShare, setShowShare] = useState(false)
   const [chatCollapsed, setChatCollapsed] = useState(() => {
     try { return localStorage.getItem('kerf:chatCollapsed') === '1' } catch { return false }
   })
+  // ----- Responsive drawer state -----
+  // T-L1: on < md (phone) the file-tree and chat collapse into off-canvas
+  // drawers; on md ≤ width < lg (tablet) the file-tree is a drawer and chat is
+  // inline-collapsible; ≥ lg both panes are inline (unchanged desktop layout).
+  // These drawer-open booleans only have effect at < lg widths; the inline
+  // panes always render at ≥ lg via Tailwind utility classes.
+  const [treeDrawerOpen, setTreeDrawerOpen] = useState(false)
+  const [chatDrawerOpen, setChatDrawerOpen] = useState(false)
+  // Route-change auto-close: any time the current file/project changes,
+  // collapse any open drawers so the user lands cleanly on the new canvas.
+  useEffect(() => {
+    setTreeDrawerOpen(false)
+    setChatDrawerOpen(false)
+  }, [projectId, w.currentFileId])
+  // Esc closes drawers (highest priority — runs before the workspace
+  // measure-mode Escape handler below). We attach a capture-phase listener
+  // so it pre-empts the bubble-phase listener registered in the keyboard-
+  // shortcuts effect above.
+  useEffect(() => {
+    if (!treeDrawerOpen && !chatDrawerOpen) return
+    function onEsc(e) {
+      if (e.key !== 'Escape') return
+      if (treeDrawerOpen) { setTreeDrawerOpen(false); e.stopPropagation() }
+      if (chatDrawerOpen) { setChatDrawerOpen(false); e.stopPropagation() }
+    }
+    window.addEventListener('keydown', onEsc, true)
+    return () => window.removeEventListener('keydown', onEsc, true)
+  }, [treeDrawerOpen, chatDrawerOpen])
+  // Body scroll lock while a drawer is open (mobile only — at ≥ lg the
+  // drawers are unreachable anyway).
+  useEffect(() => {
+    if (!treeDrawerOpen && !chatDrawerOpen) return
+    const prev = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => { document.body.style.overflow = prev }
+  }, [treeDrawerOpen, chatDrawerOpen])
+  // Focus trap: when a drawer opens, send focus into it; on close, return
+  // focus to the document body so the next Tab lands somewhere sane. We
+  // pick the first focusable child of the drawer container.
+  const treeDrawerRef = useRef(null)
+  const chatDrawerRef = useRef(null)
+  const treeOpenerRef = useRef(null)
+  const chatOpenerRef = useRef(null)
+  useEffect(() => {
+    if (!treeDrawerOpen) return
+    const root = treeDrawerRef.current
+    if (!root) return
+    const focusable = root.querySelector('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')
+    focusable?.focus?.()
+    function trap(e) {
+      if (e.key !== 'Tab') return
+      const items = root.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')
+      if (!items.length) return
+      const first = items[0]
+      const last = items[items.length - 1]
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus() }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus() }
+    }
+    root.addEventListener('keydown', trap)
+    return () => {
+      root.removeEventListener('keydown', trap)
+      treeOpenerRef.current?.focus?.()
+    }
+  }, [treeDrawerOpen])
+  useEffect(() => {
+    if (!chatDrawerOpen) return
+    const root = chatDrawerRef.current
+    if (!root) return
+    const focusable = root.querySelector('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')
+    focusable?.focus?.()
+    function trap(e) {
+      if (e.key !== 'Tab') return
+      const items = root.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')
+      if (!items.length) return
+      const first = items[0]
+      const last = items[items.length - 1]
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus() }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus() }
+    }
+    root.addEventListener('keydown', trap)
+    return () => {
+      root.removeEventListener('keydown', trap)
+      chatOpenerRef.current?.focus?.()
+    }
+  }, [chatDrawerOpen])
   // Thumbnail refresh (user-triggered "Refresh thumbnail" button in the header).
   const [thumbRefreshing, setThumbRefreshing] = useState(false)
   const [thumbToast, setThumbToast] = useState(null)
@@ -991,14 +1069,29 @@ export default function Editor() {
   return (
     <div className="h-screen flex flex-col bg-ink-950 text-ink-100 overflow-hidden">
       {/* ---------- Top bar ---------- */}
-      <header className="flex items-center gap-3 h-12 px-3 border-b border-ink-800 bg-ink-900 flex-shrink-0">
+      <header className="flex items-center gap-2 sm:gap-3 h-12 px-2 sm:px-3 border-b border-ink-800 bg-ink-900 flex-shrink-0">
         <button
           type="button"
           onClick={() => navigate('/projects')}
           className="p-1.5 rounded hover:bg-ink-800 text-ink-300 hover:text-kerf-300"
           title="Back to projects"
+          aria-label="Back to projects"
         >
           <ArrowLeft size={15} />
+        </button>
+        {/* T-L1: file-tree drawer toggle — only visible < lg where the inline
+            aside is hidden. Opens the off-canvas file-tree drawer. */}
+        <button
+          type="button"
+          ref={treeOpenerRef}
+          onClick={() => setTreeDrawerOpen(true)}
+          className="lg:hidden p-1.5 rounded hover:bg-ink-800 text-ink-300 hover:text-kerf-300"
+          title="Open file tree"
+          aria-label="Open file tree"
+          aria-expanded={treeDrawerOpen}
+          aria-controls="editor-tree-drawer"
+        >
+          <PanelLeftOpen size={15} />
         </button>
         <button
           type="button"
@@ -1131,8 +1224,22 @@ export default function Editor() {
 
         <button
           type="button"
-          onClick={() => setChatCollapsed((v) => !v)}
+          ref={chatOpenerRef}
+          onClick={() => {
+            // T-L1: at < lg the inline chat aside is hidden — the chat toggle
+            // opens/closes the off-canvas drawer instead so chat is still
+            // reachable on tablet/phone. At ≥ lg behaviour is unchanged
+            // (toggle the inline pane via chatCollapsed).
+            if (typeof window !== 'undefined' && window.matchMedia
+                && !window.matchMedia('(min-width: 1024px)').matches) {
+              setChatDrawerOpen((v) => !v)
+            } else {
+              setChatCollapsed((v) => !v)
+            }
+          }}
           title={chatCollapsed ? 'Open chat' : 'Hide chat'}
+          aria-label={chatCollapsed ? 'Open chat panel' : 'Hide chat panel'}
+          aria-expanded={!chatCollapsed || chatDrawerOpen}
           className={`p-1.5 rounded hover:bg-ink-800 ${chatCollapsed ? 'text-ink-300 hover:text-kerf-300' : 'text-kerf-300'}`}
         >
           {chatCollapsed ? <PanelRightOpen size={14} /> : <PanelRightClose size={14} />}
@@ -1158,10 +1265,23 @@ export default function Editor() {
         </div>
       </header>
 
-      {/* ---------- Main grid ---------- */}
-      <div className="flex-1 grid min-h-0" style={{ gridTemplateColumns: chatCollapsed ? '240px 1fr' : '240px 1fr 380px' }}>
-        {/* Left: file tree (top) + objects panel (bottom) */}
-        <aside id="editor-left" className="border-r border-ink-800 min-h-0 flex flex-col overflow-hidden">
+      {/* ---------- Main grid ----------
+          T-L1 responsive shell:
+          - ≥ lg: 3-pane grid `240px 1fr 380px` (chat collapsed: `240px 1fr`).
+            Byte-for-byte identical to the original inline grid-template-columns
+            (Tailwind's arbitrary grid-cols utility compiles to the same CSS).
+          - md ≤ width < lg: single-column flex (canvas only); file-tree is a
+            drawer; the inline chat pane is hidden — chat is reachable via the
+            top-bar chat toggle which on < lg switches semantics to "open chat
+            drawer". The chat-collapsed state and the chat-drawer-open state
+            are kept separate so neither interferes with the other.
+          - < md: same as md — canvas only, both panes as drawers.
+          The `relative` here anchors the `fixed`-positioned drawers below. */}
+      <div className={`flex-1 grid min-h-0 relative grid-cols-1 ${chatCollapsed ? 'lg:grid-cols-[240px_1fr]' : 'lg:grid-cols-[240px_1fr_380px]'}`}>
+        {/* Left: file tree (top) + objects panel (bottom).
+            ≥ lg: inline aside, occupies the first grid column.
+            < lg: hidden (drawer instance below renders the same content). */}
+        <aside id="editor-left" className="hidden lg:flex border-r border-ink-800 min-h-0 flex-col overflow-hidden">
           <div style={{ height: `${leftSplitPct}%` }} className="min-h-0">
             <FileTree
               files={w.files}
@@ -1176,8 +1296,15 @@ export default function Editor() {
             />
           </div>
           <div
-            onMouseDown={onLeftSplitMouseDown}
-            className="h-1.5 bg-ink-800 hover:bg-kerf-300/40 cursor-row-resize flex-shrink-0 transition-colors"
+            role="separator"
+            aria-orientation="horizontal"
+            aria-label="Resize file tree and objects panel"
+            onPointerDown={onLeftSplitPointerDown}
+            onPointerMove={onLeftSplitPointerMove}
+            onPointerUp={onLeftSplitPointerUp}
+            onPointerCancel={onLeftSplitPointerUp}
+            className="h-1.5 bg-ink-800 hover:bg-kerf-300/40 cursor-row-resize flex-shrink-0 transition-colors touch-none"
+            style={{ touchAction: 'none' }}
             title="Drag to resize"
           />
           <div style={{ height: `${100 - leftSplitPct}%` }} className="min-h-0 flex flex-col">
@@ -1730,8 +1857,15 @@ export default function Editor() {
             )}
           </div>
           <div
-            onMouseDown={onSplitMouseDown}
-            className="h-1.5 bg-ink-800 hover:bg-kerf-300/40 cursor-row-resize flex-shrink-0 transition-colors"
+            role="separator"
+            aria-orientation="horizontal"
+            aria-label="Resize renderer and code editor"
+            onPointerDown={onSplitPointerDown}
+            onPointerMove={onSplitPointerMove}
+            onPointerUp={onSplitPointerUp}
+            onPointerCancel={onSplitPointerUp}
+            className="h-1.5 bg-ink-800 hover:bg-kerf-300/40 cursor-row-resize flex-shrink-0 transition-colors touch-none"
+            style={{ touchAction: 'none' }}
             title="Drag to resize"
           />
           <div style={{ height: `${100 - splitPct}%` }} className="min-h-0 flex flex-col">
@@ -1778,9 +1912,11 @@ export default function Editor() {
           )}
         </main>
 
-        {/* Right: chat (hidden entirely when collapsed — center expands into the space). */}
+        {/* Right: chat (hidden entirely when collapsed — center expands into the space).
+            ≥ lg only — at smaller widths chat is reachable via the chat-drawer
+            overlay rendered at the bottom of this component. */}
         {!chatCollapsed && (
-          <aside className="min-h-0 overflow-hidden">
+          <aside className="hidden lg:block min-h-0 overflow-hidden">
             <ChatPanel
               ref={inputRef}
               threads={w.threads}
@@ -1801,6 +1937,142 @@ export default function Editor() {
           </aside>
         )}
       </div>
+
+      {/* ---------- Off-canvas drawers (< lg only) ----------
+          Drawers are `fixed` so they overlay the canvas. The `lg:hidden`
+          guarantees they're invisible (and unfocusable) on desktop ≥ 1024px
+          where the inline panes own the layout. Backdrop is bg-black/40 with
+          `pointer-events-auto` so clicks dismiss; the panel itself stops
+          propagation so inner clicks stay inside the drawer. */}
+      {treeDrawerOpen && (
+        <div className="lg:hidden fixed inset-0 z-40 flex" role="presentation">
+          <div
+            className="absolute inset-0 bg-black/40 pointer-events-auto"
+            onClick={() => setTreeDrawerOpen(false)}
+            aria-hidden="true"
+          />
+          <div
+            ref={treeDrawerRef}
+            role="dialog"
+            aria-modal="true"
+            aria-label="File tree and objects"
+            className="relative w-72 max-w-[85vw] h-full bg-ink-900 border-r border-ink-800 shadow-2xl flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between h-10 px-3 border-b border-ink-800 flex-shrink-0">
+              <span className="text-xs font-medium text-ink-200 uppercase tracking-wider">Files</span>
+              <button
+                type="button"
+                onClick={() => setTreeDrawerOpen(false)}
+                aria-label="Close file tree drawer"
+                className="p-1 rounded text-ink-400 hover:text-ink-100 hover:bg-ink-800"
+              >
+                <X size={14} />
+              </button>
+            </div>
+            <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+              <div style={{ height: `${leftSplitPct}%` }} className="min-h-0">
+                <FileTree
+                  files={w.files}
+                  currentFileId={w.currentFileId}
+                  onSelect={(id) => { w.selectFile(id); setTreeDrawerOpen(false) }}
+                  onCreate={(parentId, kind) => w.createFile(parentId, kind)}
+                  onRename={(id, name) => w.renameFile(id, name)}
+                  onDelete={(id) => { if (confirm('Delete this file?')) w.deleteFile(id) }}
+                  onImportStep={handleImportStep}
+                />
+              </div>
+              <div
+                role="separator"
+                aria-orientation="horizontal"
+                aria-label="Resize file tree and objects panel"
+                onPointerDown={onLeftSplitPointerDown}
+                onPointerMove={onLeftSplitPointerMove}
+                onPointerUp={onLeftSplitPointerUp}
+                onPointerCancel={onLeftSplitPointerUp}
+                className="h-1.5 bg-ink-800 hover:bg-kerf-300/40 cursor-row-resize flex-shrink-0 transition-colors touch-none"
+                style={{ touchAction: 'none' }}
+                title="Drag to resize"
+              />
+              <div style={{ height: `${100 - leftSplitPct}%` }} className="min-h-0 flex flex-col">
+                {circuitFile ? (
+                  <CircuitComponentsPanel
+                    selectedRefdes={w.selectedCircuitRefdes}
+                    selectedNet={w.selectedCircuitNet}
+                    onSelectRefdes={(r) => w.selectCircuitRefdes(r)}
+                    onSelectNet={(n) => w.selectCircuitNet(n)}
+                  />
+                ) : (
+                  <div className="flex-1 min-h-0">
+                    <ObjectsPanel
+                      parts={w.parts}
+                      hiddenIds={hiddenIds}
+                      selectedId={w.pickedPart?.part_id}
+                      onToggleVisibility={(id) => w.togglePartVisibility(w.currentFileId, id)}
+                      onSelect={(id) => w.pickPart(id)}
+                      onIsolate={(id) => w.isolatePart(w.currentFileId, id)}
+                      onShowAll={() => w.showAllParts(w.currentFileId)}
+                      onRecolorPart={(id, rgb) => w.recolorPart(id, rgb)}
+                      onMovePart={(id, d) => w.movePart(id, d)}
+                      onSetPartPosition={(id, p) => w.setPartPosition(id, p)}
+                      isStepFile={stepFile}
+                    />
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {chatDrawerOpen && (
+        <div className="lg:hidden fixed inset-0 z-40 flex justify-end" role="presentation">
+          <div
+            className="absolute inset-0 bg-black/40 pointer-events-auto"
+            onClick={() => setChatDrawerOpen(false)}
+            aria-hidden="true"
+          />
+          <div
+            ref={chatDrawerRef}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Chat"
+            className="relative w-[380px] max-w-[90vw] h-full bg-ink-900 border-l border-ink-800 shadow-2xl flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between h-10 px-3 border-b border-ink-800 flex-shrink-0">
+              <span className="text-xs font-medium text-ink-200 uppercase tracking-wider">Chat</span>
+              <button
+                type="button"
+                onClick={() => setChatDrawerOpen(false)}
+                aria-label="Close chat drawer"
+                className="p-1 rounded text-ink-400 hover:text-ink-100 hover:bg-ink-800"
+              >
+                <X size={14} />
+              </button>
+            </div>
+            <div className="flex-1 min-h-0 overflow-hidden">
+              <ChatPanel
+                ref={inputRef}
+                threads={w.threads}
+                currentThreadId={w.currentThreadId}
+                messages={w.messages}
+                pendingPartRefs={w.pendingPartRefs}
+                sending={w.sending}
+                loadingMessages={w.loadingMessages}
+                onSelectThread={(id) => w.selectThread(id)}
+                onCreateThread={() => w.createThread({ file_id: w.currentFileId })}
+                onToggleStar={(id) => w.toggleStar(id)}
+                onDeleteThread={(id) => {
+                  if (confirm('Delete this thread?')) w.deleteThread(id)
+                }}
+                onRemovePartRef={(i) => w.removePartRef(i)}
+                onSend={(content, opts) => w.sendMessage(content, opts)}
+              />
+            </div>
+          </div>
+        </div>
+      )}
 
       {showShare && projectId && (
         <ShareModal projectId={projectId} onClose={() => setShowShare(false)} />
