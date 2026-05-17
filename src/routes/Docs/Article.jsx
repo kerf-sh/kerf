@@ -3,17 +3,31 @@ import { Link, useParams, Navigate } from 'react-router-dom'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import rehypeHighlight from 'rehype-highlight'
-import { ArrowLeft, ArrowRight, ExternalLink, Menu, Pencil } from 'lucide-react'
+import {
+  ArrowLeft,
+  ArrowRight,
+  ExternalLink,
+  Menu,
+  Pencil,
+  Link as LinkIcon,
+  ChevronRight,
+  ChevronDown,
+} from 'lucide-react'
 import clsx from 'clsx'
 import Header from '../../components/Header.jsx'
 import Sidebar from './Sidebar.jsx'
 import { useDocs } from './docsStore.js'
+import {
+  isInternalPlanning,
+  flatDocOrder,
+  groupForSlug,
+} from './groupTaxonomy.js'
 
 const GITHUB_BASE = 'https://github.com/kerf-sh/kerf'
 
 export default function DocsArticle() {
   const { slug } = useParams()
-  const { status, load, bySlug, entries } = useDocs()
+  const { status, load, bySlug, manifest } = useDocs()
 
   useEffect(() => { load() }, [load])
 
@@ -24,21 +38,36 @@ export default function DocsArticle() {
     return <ArticleShell><div className="text-red-400 text-sm">Failed to load docs.</div></ArticleShell>
   }
 
+  // Defensive 404 for any internal-planning slug. The manifest is supposed to
+  // exclude these and the sidebar filters them out — but if a stale link or
+  // URL guess lands here, render a friendly "not user docs" page rather than
+  // showing the markdown.
   const entry = bySlug.get(slug)
+  if (entry && isInternalPlanning(entry)) {
+    return <ArticleShell><InternalPlanningNotice slug={slug} /></ArticleShell>
+  }
   if (!entry) {
     // Unknown slug → bounce to home (don't render a half-broken article).
     return <Navigate to="/docs" replace />
   }
 
-  // Find prev/next within the same group (and if at edge, the next group).
-  const flat = entries
+  // Prev/next derived from the user-facing taxonomy order (what the sidebar
+  // shows), not the raw manifest order, so users move through the doc set in
+  // the order they see in the nav.
+  const flat = flatDocOrder(manifest)
   const idxOf = flat.findIndex((e) => e.slug === slug)
   const prev = idxOf > 0 ? flat[idxOf - 1] : null
-  const next = idxOf < flat.length - 1 ? flat[idxOf + 1] : null
+  const next = idxOf >= 0 && idxOf < flat.length - 1 ? flat[idxOf + 1] : null
+  const userGroup = groupForSlug(manifest, slug) || entry.group || 'Docs'
 
   return (
     <ArticleShell>
-      <ArticleBody entry={entry} prev={prev} next={next} />
+      <ArticleBody
+        entry={entry}
+        prev={prev}
+        next={next}
+        userGroup={userGroup}
+      />
     </ArticleShell>
   )
 }
@@ -74,10 +103,10 @@ function ArticleShell({ children }) {
   )
 }
 
-function ArticleBody({ entry, prev, next }) {
+function ArticleBody({ entry, prev, next, userGroup }) {
   // Strip the leading H1 — we render it ourselves so the eyebrow/title block
   // can layer on top with consistent spacing across articles.
-  const { title, body, group } = entry
+  const { title, body } = entry
   const trimmedBody = useMemo(() => stripLeadingH1(body), [body])
   const headings = useMemo(() => extractHeadings(trimmedBody), [trimmedBody])
   const articleRef = useRef(null)
@@ -86,26 +115,40 @@ function ArticleBody({ entry, prev, next }) {
     <>
       <article
         ref={articleRef}
-        className="flex-1 min-w-0 px-8 lg:px-16 xl:px-20 py-14 max-w-[800px]"
+        className="flex-1 min-w-0 px-6 sm:px-8 lg:px-14 xl:px-20 py-12 max-w-3xl"
       >
-        {/* Eyebrow */}
-        <div className="mb-3 flex items-center gap-2 text-[11px] uppercase tracking-[0.18em] text-ink-400">
-          <Link to="/docs" className="hover:text-ink-100">Docs</Link>
-          <span>/</span>
-          <span>{group}</span>
-        </div>
+        {/* Breadcrumb: Docs / Group / Page */}
+        <nav
+          aria-label="Breadcrumb"
+          className="mb-4 flex items-center gap-1.5 text-[11px] uppercase tracking-[0.16em] text-ink-400"
+        >
+          <Link to="/docs" className="hover:text-ink-100 transition-colors">
+            Docs
+          </Link>
+          <ChevronRight className="w-3 h-3 opacity-60" />
+          <span>{userGroup}</span>
+          <ChevronRight className="w-3 h-3 opacity-60" />
+          <span className="text-ink-200 normal-case tracking-normal text-[12px] truncate" aria-current="page">
+            {title}
+          </span>
+        </nav>
 
-        <h1 className="font-display text-4xl font-semibold tracking-tight text-ink-50 leading-[1.1]">
+        <h1 className="font-display text-[2.625rem] sm:text-5xl font-semibold tracking-tight text-ink-50 leading-[1.05]">
           {title}
         </h1>
 
         {entry.summary && (
-          <p className="mt-4 text-lg text-ink-300 leading-relaxed">
+          <p className="mt-4 text-lg text-ink-300 leading-relaxed max-w-2xl">
             {entry.summary}
           </p>
         )}
 
         <hr className="my-8 border-ink-800" />
+
+        {/* Mobile TOC disclosure — collapsed at < xl, expanded on demand */}
+        {headings.length > 0 && (
+          <MobileTOC headings={headings} />
+        )}
 
         <div className="docs-prose">
           <ReactMarkdown
@@ -132,7 +175,7 @@ function ArticleBody({ entry, prev, next }) {
           </a>
         </div>
 
-        <nav className="grid gap-3 sm:grid-cols-2">
+        <nav className="grid gap-3 sm:grid-cols-2" aria-label="Previous and next articles">
           {prev ? (
             <Link
               to={`/docs/${prev.slug}`}
@@ -165,10 +208,46 @@ function ArticleBody({ entry, prev, next }) {
       </article>
 
       {/* Right-rail TOC, only on >= xl */}
-      <aside className="hidden xl:block w-[240px] shrink-0 px-6 py-14">
+      <aside className="hidden xl:block w-[240px] shrink-0 px-6 py-12">
         <TOC headings={headings} containerRef={articleRef} />
       </aside>
     </>
+  )
+}
+
+// ----------------------------------------------------------------------------
+// Friendly notice rendered when a `plans/*` or audit slug resolves to an
+// article route. This is a *defensive* path — the docs-manifest is supposed
+// to omit these entries entirely. If something slips through (or the
+// manifest is briefly out of sync) we'd rather show this than expose
+// internal planning material as documentation.
+// ----------------------------------------------------------------------------
+function InternalPlanningNotice({ slug }) {
+  return (
+    <article className="flex-1 min-w-0 px-6 sm:px-8 lg:px-14 py-16 max-w-2xl">
+      <div className="rounded-2xl border border-ink-800 bg-ink-900/40 p-8">
+        <div className="text-[11px] uppercase tracking-[0.18em] text-ink-400 mb-3">
+          Not a user-facing page
+        </div>
+        <h1 className="font-display text-2xl font-semibold text-ink-50 tracking-tight">
+          This is internal planning material, not user documentation.
+        </h1>
+        <p className="mt-4 text-sm text-ink-300 leading-relaxed">
+          The page <code className="font-mono text-kerf-200">{slug}</code> is part of
+          Kerf's internal planning notes and isn't published as part of the
+          user-facing docs. Browse the public documentation index instead.
+        </p>
+        <div className="mt-6 flex items-center gap-3">
+          <Link
+            to="/docs"
+            className="inline-flex items-center gap-1.5 rounded-md bg-kerf-300 text-ink-950 hover:bg-kerf-200 px-3.5 py-2 text-sm font-medium transition-colors"
+          >
+            Back to docs home
+            <ArrowRight className="w-3.5 h-3.5" />
+          </Link>
+        </div>
+      </div>
+    </article>
   )
 }
 
@@ -230,6 +309,52 @@ function TOC({ headings, containerRef }) {
   )
 }
 
+// Collapsed "On this page" disclosure used on < xl. The right-rail TOC is
+// hidden there to keep the prose width readable; tap the disclosure to
+// reveal an inline copy of the same list.
+function MobileTOC({ headings }) {
+  const [open, setOpen] = useState(false)
+  if (!headings.length) return null
+  return (
+    <div className="xl:hidden mb-8 rounded-lg border border-ink-800 bg-ink-900/30">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        className="w-full flex items-center gap-2 px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-[0.16em] text-ink-300 hover:text-ink-100 transition-colors"
+      >
+        {open ? (
+          <ChevronDown className="w-3.5 h-3.5" />
+        ) : (
+          <ChevronRight className="w-3.5 h-3.5" />
+        )}
+        On this page
+        <span className="ml-auto text-[10px] font-mono normal-case tracking-normal text-ink-500">
+          {headings.length}
+        </span>
+      </button>
+      {open && (
+        <ul className="px-4 pb-3 pt-1 flex flex-col gap-1 border-t border-ink-800/70">
+          {headings.map((h) => (
+            <li key={h.id}>
+              <a
+                href={`#${h.id}`}
+                onClick={() => setOpen(false)}
+                className={clsx(
+                  'block text-xs leading-snug py-1 text-ink-300 hover:text-kerf-200 transition-colors',
+                  h.depth === 3 ? 'pl-4' : 'pl-1',
+                )}
+              >
+                {h.text}
+              </a>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
 // ----------------------------------------------------------------------------
 // react-markdown component overrides — Tailwind doesn't ship a typography
 // plugin in this project, so we style each element ourselves. The result is
@@ -242,12 +367,11 @@ const mdComponents = {
     return (
       <h2
         id={id}
-        className="font-display text-2xl font-semibold tracking-tight text-ink-50 mt-12 mb-4 scroll-mt-20 group"
+        className="font-display text-[1.75rem] font-semibold tracking-tight text-ink-50 mt-14 mb-4 scroll-mt-20 group flex items-baseline gap-2"
         {...props}
       >
-        <a href={`#${id}`} className="no-underline hover:text-kerf-200">
-          {children}
-        </a>
+        <span className="flex-1">{children}</span>
+        <AnchorButton id={id} />
       </h2>
     )
   },
@@ -256,10 +380,11 @@ const mdComponents = {
     return (
       <h3
         id={id}
-        className="font-display text-lg font-semibold tracking-tight text-ink-100 mt-8 mb-3 scroll-mt-20"
+        className="font-display text-xl font-semibold tracking-tight text-ink-100 mt-10 mb-3 scroll-mt-20 group flex items-baseline gap-2"
         {...props}
       >
-        {children}
+        <span className="flex-1">{children}</span>
+        <AnchorButton id={id} small />
       </h3>
     )
   },
@@ -269,7 +394,7 @@ const mdComponents = {
     </h4>
   ),
   p: ({ children, ...props }) => (
-    <p className="text-[15px] text-ink-200 leading-[1.75] my-4" {...props}>{children}</p>
+    <p className="text-[15.5px] text-ink-200 leading-[1.78] my-4" {...props}>{children}</p>
   ),
   a: ({ children, href, ...props }) => {
     const isExternal = href && /^(https?:)?\/\//.test(href)
@@ -333,7 +458,7 @@ const mdComponents = {
   li: ({ children, ...props }) => <li {...props}>{children}</li>,
   blockquote: ({ children, ...props }) => (
     <blockquote
-      className="my-5 border-l-2 border-kerf-300/60 bg-kerf-300/[0.06] pl-4 pr-3 py-2 text-[14.5px] text-ink-200 italic rounded-r"
+      className="my-5 border-l-4 border-kerf-400 bg-kerf-300/[0.06] pl-4 pr-3 py-2 text-[14.5px] text-ink-200 italic rounded-r"
       {...props}
     >
       {children}
@@ -343,7 +468,7 @@ const mdComponents = {
     if (inline) {
       return (
         <code
-          className="font-mono text-[0.875em] bg-ink-800 text-kerf-100 border border-ink-700 rounded px-1 py-0.5"
+          className="font-mono text-[0.875em] bg-ink-900 text-ink-100 border border-ink-800 rounded px-1 py-0.5"
           {...props}
         >
           {children}
@@ -351,14 +476,14 @@ const mdComponents = {
       )
     }
     return (
-      <code className={clsx('font-mono text-[13px]', className)} {...props}>
+      <code className={clsx('font-mono text-[13px] text-ink-100', className)} {...props}>
         {children}
       </code>
     )
   },
   pre: ({ children, ...props }) => (
     <pre
-      className="my-5 rounded-lg bg-ink-950/80 border border-ink-800 px-4 py-3 overflow-x-auto text-[13px] leading-[1.6]"
+      className="my-5 rounded-lg bg-ink-900 border border-ink-800 px-4 py-3 overflow-x-auto text-[13px] leading-[1.6] text-ink-100"
       {...props}
     >
       {children}
@@ -387,6 +512,48 @@ const mdComponents = {
   em: ({ children, ...props }) => (
     <em className="text-ink-100 italic" {...props}>{children}</em>
   ),
+}
+
+// Copy-deep-link button rendered next to each H2/H3. Clicking it sets the
+// hash on the current URL and copies the full URL to the clipboard so users
+// can share a deep link. Falls back to just setting the hash if Clipboard
+// API is unavailable (no SSL, ancient browsers).
+function AnchorButton({ id, small }) {
+  const [copied, setCopied] = useState(false)
+  const onClick = (e) => {
+    e.preventDefault()
+    e.stopPropagation()
+    if (typeof window === 'undefined') return
+    const url = `${window.location.origin}${window.location.pathname}#${id}`
+    window.history.replaceState(null, '', `#${id}`)
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(url).then(
+        () => {
+          setCopied(true)
+          setTimeout(() => setCopied(false), 1500)
+        },
+        () => {},
+      )
+    }
+    // Smooth scroll to the heading itself.
+    const el = document.getElementById(id)
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={copied ? 'Link copied' : `Copy link to this section`}
+      className={clsx(
+        'inline-flex items-center justify-center opacity-0 group-hover:opacity-100 focus:opacity-100',
+        'transition-opacity rounded-md text-ink-500 hover:text-kerf-300 hover:bg-ink-900',
+        small ? 'w-5 h-5' : 'w-6 h-6',
+      )}
+      title={copied ? 'Link copied' : 'Copy link to this section'}
+    >
+      <LinkIcon className={small ? 'w-3 h-3' : 'w-3.5 h-3.5'} />
+    </button>
+  )
 }
 
 // ----------------------------------------------------------------------------
