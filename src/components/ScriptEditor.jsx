@@ -88,12 +88,14 @@ export default function ScriptEditor({ content, fileName, file, onChange }) {
             <AlertTriangle size={12} className="text-amber-400 shrink-0 mt-0.5" />
             <div>
               <div className="font-medium text-amber-300">
-                Engine pending — TypeScript runtime not yet wired
+                In-app script editing is read-only — automate with the Python SDK
               </div>
               <div className="text-amber-200/70 mt-0.5">
-                The script kind round-trips today but is read-only in the
-                editor. Bundler, typed <span className="font-mono">kerf.*</span> API,
-                and backend RPC ops land in a follow-up slice.
+                Scripting runs on your machine, not in the browser:
+                {' '}<span className="font-mono">pip install kerf-sdk</span>, then
+                drive this instance over HTTP/JSON-RPC. The in-app
+                {' '}<span className="font-mono">.script</span> kind round-trips
+                and stores fine but is intentionally a read-only stub here.
               </div>
             </div>
           </div>
