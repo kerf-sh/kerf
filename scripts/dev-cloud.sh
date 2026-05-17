@@ -23,8 +23,26 @@
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
+# Optional local secrets (gitignored). Put OAuth creds here to enable
+# "Continue with Google" locally:
+#   GOOGLE_CLIENT_ID=...apps.googleusercontent.com
+#   GOOGLE_CLIENT_SECRET=...
+# Create the client in Google Cloud Console (Web application) with
+# Authorized redirect URI EXACTLY:  http://localhost:8080/auth/google/callback
+if [[ -f .env.local ]]; then
+  set -a; # shellcheck disable=SC1091
+  source .env.local; set +a
+fi
+
 # Local dev DB — role `pc`, db `kerf` (override via env if different).
 export DATABASE_URL="${DATABASE_URL:-postgres://pc@localhost:5432/kerf?sslmode=disable}"
+
+# Google OAuth pass-through (config reads UNPREFIXED names). Redirect URL
+# defaults to http://localhost:8080/auth/google/callback which already
+# matches this script's API port — no override normally needed.
+export GOOGLE_CLIENT_ID="${GOOGLE_CLIENT_ID:-}"
+export GOOGLE_CLIENT_SECRET="${GOOGLE_CLIENT_SECRET:-}"
+export GOOGLE_REDIRECT_URL="${GOOGLE_REDIRECT_URL:-http://localhost:8080/auth/google/callback}"
 
 # Cloud surface, billing dormant (no Paystack needed locally).
 # kerf_core.config.Settings has NO env prefix — these UNPREFIXED names
