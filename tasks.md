@@ -72,6 +72,22 @@ by tier below for reference, but the agent loop pulls in *this* sequence.
 | 32 | **T-53** Nesting / cut-optimization for sheet/laser | B | Cross-sector fabrication multiplier; consumes sheet-metal flat patterns; P2. |
 | 33 | **T-70** Civil engine seed (CRS + TIN terrain) | B | Highest raw societal importance, engine-gated → P3; proof-of-"we do everything" seed. |
 | 34 | **T-71** Marine NURBS hull-fairing seed | B | NURBS-reachable long-tail vertical; P3 proof seed. |
+| 35 | **T-100** FEM matching CalculiX / Z88 / Mystran depth | A | Mechanical + automotive simulation depth (2 personas, P2). Seed nonlinear / explicit / acoustics / EM / fatigue modules already in `kerf-fem`; needs wiring through the public analysis enum + reference-tool match. Hardening stream is in flight in parallel. |
+| 36 | **T-104** Kernel G3 + NURBS Phase 4 trim-by-curve + class-A leading | A | Automotive + jewelry Class-A surface depth. G3 curvature combs partially shipped (#100); imprint (GK-19) + class-A leading remain. Kernel-side depth → opus-spine. |
+| 37 | **T-101** CFD CfdOF-class — turbulence + 3-D meshing + OpenFOAM bridge | A | Mechanical + automotive + aerospace depth. `cfd_potential.py` seed in flight; full CfdOF parity is engine-class. |
+| 38 | **T-109** BIM parametric family-authoring UX | A | Architect-persona depth (Tier-2 family *import* shipped; native authoring is the gap). Revit's signature capability — strong conversion lever for the architect segment. |
+| 39 | **T-111** BIM walls / doors / windows / slabs full parametric | A | Same architect-persona depth; today basic primitives, need full Revit-equivalent parametric envelope objects. |
+| 40 | **T-112** BIM stairs / ramps full | A | Same architect-persona depth; basic stairs shipped, full Revit-class stair/ramp authoring needed. |
+| 41 | **T-110** BIM family library | A | Architect-persona depth: a populated parametric-family catalog (cold-start killer once T-109 lands). |
+| 42 | **T-114** BIM site / earthwork (toposolids) | A | Architect + civil persona depth; basic site only today. |
+| 43 | **T-113** BIM structural grid + framing (Revit Structure / Robot / Tekla) | A | Architect-structural-engineer depth; early today. |
+| 44 | **T-115** BIM material catalogue with render appearance | A | Architect-persona presentation depth; PBR shipped, BIM-bound material library is the gap. |
+| 45 | **T-108** Full joint system (rigid / revolute / slider / cam / gear / pin-slot) | A | Mechanical persona depth; `kerf-mates` ships a constraint solver but fewer joint types than Inventor / SolidWorks / Onshape. |
+| 46 | **T-102** Interactive push-and-shove diff-pair tuning | A | ECAD-persona depth; Kerf has length tuning, KiCad has interactive push-and-shove. |
+| 47 | **T-103** Broader ECAD import (Allegro / PADS / gEDA / Eagle v10) | A | ECAD-persona reach; KiCad-oriented import path is the only one today. |
+| 48 | **T-107** Direct + parametric history coexistence | B | Cross-sector authoring depth (Fusion / Inventor / Onshape class); Kerf is feature-tree primary. |
+| 49 | **T-105** SubD authoring with creases + edit workflow | B | Cross-sector (jewelry / industrial-design / character / marine hull) authoring depth; `subd.py` + quad-remesh shipped, no creation/edit workflow. |
+| 50 | **T-106** Render caustics + dispersion solver | B | Cross-sector presentation depth (jewelry / automotive / architecture). PBR + HDRI + bloom shipped this session; no Cycles / V-Ray / Enscape / KeyShot-class caustic transport. |
 
 > Sub-tasks within a sequenced group (e.g. 5a–5e, 10a–10d, 12a–12f) keep
 > their `Depends-on` chain; the loop completes a group's prerequisites in
@@ -117,6 +133,18 @@ Template:
      file in the plan). P2 (pure-Python STEP/IGES + SubD↔NURBS + mesh→NURBS
      autosurface + 2D region boolean) is the next ranked GK-NN focus and
      surfaces above T-50/T-51/T-52/T-53/T-70/T-71 in opus-spine priority. -->
+<!-- Status reconciled 2026-05-17 (sector-depth gaps): added T-100..T-115
+     for the depth gaps now tracked in ROADMAP §4.5 — FEM matching
+     CalculiX/Z88/Mystran (T-100, in flight), CFD CfdOF-class (T-101, in
+     flight), interactive diff-pair routing (T-102), broader ECAD import
+     (T-103), kernel G3 / Phase-4 trim-by-curve / class-A leading (T-104,
+     in flight), SubD authoring (T-105), render caustics + dispersion
+     (T-106), direct + parametric history coexistence (T-107), full joint
+     system (T-108), BIM family system (T-109), BIM family library
+     (T-110), BIM walls/doors/windows/slabs full (T-111), BIM stairs/ramps
+     full (T-112), BIM structural grid + framing (T-113), BIM site /
+     earthwork toposolids (T-114), BIM material catalogue (T-115). T-100
+     / T-101 / T-104 carry 🚧 in flight; the rest 🔴. -->
 
 > **Geometry kernel — depth (2026-05-17).** Major step-change landed
 > outside the T-NN backlog, on the GK-NN backlog in
@@ -1022,4 +1050,311 @@ Template:
   (hull helper reusing `surfacing.py`), doc.
 - **Definition of Done:** offset table → faired hull surface; curvature
   combs render on it; pytest schema + vitest dispatch.
+- **Depends-on:** none
+
+---
+
+## Sector depth gaps (G-1 … G-16, surfaced 2026-05-17)
+
+Honest depth gaps against the reference tool in each sector. Mapped 1:1 to
+ROADMAP [§4.5](./ROADMAP.md#§4-5--honest-depth-gaps-tracked-2026-05-17).
+Tiering follows the same money/reach rule: BIM / FEM / CFD / ECAD depth →
+Tier A (single persona unlock), render / SubD / direct-edit → Tier B
+(cross-sector multiplier).
+
+### T-100 FEM matching CalculiX / Z88 / Mystran depth
+- **Tier:** A
+- **Money/reach rationale:** Mechanical + automotive simulation depth
+  (2 personas). Seed modules (`nonlinear`, `explicit`, `acoustics_fem`,
+  `em_field`, `em_highfreq`, `fatigue_fem`) are already in
+  `packages/kerf-fem/`; needs wiring through the public `analysis_type`
+  enum + reference-tool match. FEM-hardening stream is in flight in
+  parallel; this task captures **what's left after that lands**.
+- **Priority:** P2
+- **Status:** 🚧 in flight
+- **Scope:** Wire the seed nonlinear / explicit / acoustics / EM /
+  fatigue modules through the public analysis enum + LLM tool surface,
+  then match a CalculiX (nonlinear / contact) + Z88 (linear / modal /
+  nonlinear) + Mystran (modal / aeroelastic) reference test corpus.
+- **Target files/packages:** `packages/kerf-fem/src/kerf_fem/` (`tools.py`
+  analysis-enum extension, plugin capability advertisements,
+  `nonlinear.py` / `explicit.py` / `acoustics_fem.py` / `em_field.py` /
+  `em_highfreq.py` / `fatigue_fem.py`), reference-test corpus under
+  `packages/kerf-fem/tests/`.
+- **Definition of Done:** each module passes its reference-tool match
+  within tolerance; analysis-enum advertises the new types; capability
+  tags appear in `GET /health/capabilities`.
+- **Depends-on:** none
+
+### T-101 CFD CfdOF-class — turbulence + 3-D meshing + OpenFOAM bridge
+- **Tier:** A
+- **Money/reach rationale:** Mechanical + automotive + aerospace
+  simulation depth (3 personas, P2 — moat depth not P0 unlock). Potential
+  flow (`cfd_potential.py`) is the seed already in flight; full CfdOF
+  parity is engine-class.
+- **Priority:** P2
+- **Status:** 🚧 in flight
+- **Scope:** Extend `cfd_potential.py` past the potential-flow seed into
+  full Navier-Stokes + heat transfer with turbulence models (k-ε /
+  k-ω SST), 3-D unstructured meshing, and an OpenFOAM bridge for the
+  serious-CFD path (graceful degrade when the binary is absent, same
+  pattern as CuraEngine / Instant-Meshes).
+- **Target files/packages:** `packages/kerf-fem/src/kerf_fem/cfd_*.py`,
+  optional `packages/kerf-fem/src/kerf_fem/openfoam_bridge.py`, tests.
+- **Definition of Done:** known-solution NS run (lid-driven cavity)
+  matches reference within tolerance; turbulence model toggle works;
+  OpenFOAM bridge round-trips a fixture case with binary present →
+  degrades to sentinel when absent.
+- **Depends-on:** none
+
+### T-102 ECAD: interactive push-and-shove diff-pair routing
+- **Tier:** A
+- **Money/reach rationale:** ECAD-persona depth — KiCad has interactive
+  push-and-shove; Kerf has length tuning only. A visible UX-class quality
+  signal that converts ECAD evaluators after the fab-output unlock.
+- **Priority:** P1
+- **Status:** 🔴 not started
+- **Scope:** An interactive router that displaces neighbouring tracks
+  out of the way as the user drags a new diff-pair, preserving net
+  classes / clearance / length-match constraints. Builds on the shipped
+  shove-router infrastructure.
+- **Target files/packages:** `packages/kerf-electronics/src/
+  kerf_electronics/routing/`, `src/components/PCBView.jsx` (interactive
+  drag UX), tests.
+- **Definition of Done:** dragging a diff-pair pushes neighbouring tracks
+  while preserving the net class / clearance rules; vitest on the shove
+  math + UX integration test.
+- **Depends-on:** none
+
+### T-103 ECAD: broader import (Allegro / PADS / gEDA / Eagle v10)
+- **Tier:** A
+- **Money/reach rationale:** ECAD-persona reach — today only the KiCad
+  family imports; large parts of the working ECAD ecosystem live in
+  Allegro / PADS / gEDA / Eagle. Each adapter unlocks a real workforce
+  slice for the same persona.
+- **Priority:** P1
+- **Status:** 🔴 not started
+- **Scope:** Per-vendor adapter under `packages/kerf-imports/` that
+  parses each vendor's design exchange format (or its open subset) into
+  the same CircuitJSON / schematic / footprint shape KiCad imports
+  produce today. Start with the cheapest (Eagle v10 XML); end on Allegro.
+- **Target files/packages:** new `packages/kerf-imports/src/
+  kerf_imports/{allegro,pads,geda,eagle}/`, tools + docs.
+- **Definition of Done:** each adapter round-trips a pinned fixture
+  to CircuitJSON; pytest with no committed third-party data.
+- **Depends-on:** none
+
+### T-104 Kernel G3 + NURBS Phase 4 trim-by-curve + class-A leading
+- **Tier:** A
+- **Money/reach rationale:** Automotive + jewelry Class-A surfacing
+  depth (2 personas). G3 curvature combs partially shipped (#100);
+  imprint (GK-19) + class-A leading still to go. Kernel-side depth →
+  opus-spine; cross-sector reach via the surfacing path.
+- **Priority:** P1
+- **Status:** 🚧 in flight
+- **Scope:** Extend the Phase-4 NURBS surfacing path past the shipped
+  C0–C2 / G0–G2 + curvature combs into algorithmic G3 (custom-WASM
+  required — stock OCCT cannot enforce `GeomAbs_G3`), full trim-by-curve
+  / imprint (GK-19 in the geometry-kernel roadmap), and the class-A
+  leading surface-quality workflow.
+- **Target files/packages:** `packages/kerf-cad-core/src/kerf_cad_core/
+  geom/` (G3 helpers, trim-by-curve, leading), tests; aligns with
+  `docs/plans/geometry-kernel-roadmap.md` GK-NN slots.
+- **Definition of Done:** G3 enforced across a blend / sweep + analytic
+  oracle; trim-by-curve produces a valid trimmed face; leading workflow
+  flags hot-spots on a class-A test surface; pytest.
+- **Depends-on:** none
+
+### T-105 SubD authoring with creases + edit workflow
+- **Tier:** B
+- **Money/reach rationale:** Cross-sector authoring depth (jewelry,
+  industrial design, character, marine hull). `subd.py` + quad-remesh
+  ship today, but **no SubD creation / edit / crease workflow** —
+  Rhino 8's SubD is the reference.
+- **Priority:** P2
+- **Status:** 🔴 not started
+- **Scope:** Author-time SubD: create from primitives or convert from
+  mesh; edge / vertex / face edit ops with crease weights; round-trip
+  to the existing Catmull-Clark evaluator; UX surface.
+- **Target files/packages:** `packages/kerf-cad-core/src/kerf_cad_core/
+  geom/subd.py` (authoring API extensions), worker handler, tests, UX.
+- **Definition of Done:** create-edit-evaluate round-trips on a SubD
+  cube + cylinder; creases hold under subdivision; vitest dispatch +
+  pytest math.
+- **Depends-on:** none
+
+### T-106 Render: caustics + dispersion solver
+- **Tier:** B
+- **Money/reach rationale:** Cross-sector presentation depth — jewelry
+  (gem dispersion is the deliverable), automotive (paint / glass
+  caustics), architecture (Enscape-class daylighting). PBR + HDRI +
+  bloom shipped this session; the next-class jump is a real caustic
+  transport solver.
+- **Priority:** P2
+- **Status:** 🔴 not started
+- **Scope:** A caustic-transport renderer (photon-map or BDPT) wired
+  into the existing `kerf-render` worker, plus a dispersion model for
+  gem ray-trace. Cycles / V-Ray / Enscape / KeyShot are the reference.
+- **Target files/packages:** `packages/kerf-render/src/kerf_render/`
+  (caustic + dispersion modules), worker route, LLM tool, tests.
+- **Definition of Done:** caustic spot from a glass sphere matches a
+  Cycles reference render within delta-E tolerance; gem dispersion
+  produces a chromatic fan; pytest gated on the renderer.
+- **Depends-on:** none
+
+### T-107 Direct + parametric history coexistence
+- **Tier:** B
+- **Money/reach rationale:** Cross-sector authoring depth (Fusion /
+  Inventor / Onshape coexist direct + history). Kerf is feature-tree
+  primary today; users editing imported "dumb" geometry need deeper
+  direct editing alongside the parametric tree.
+- **Priority:** P2
+- **Status:** 🔴 not started
+- **Scope:** Promote direct edits (face move / pull / patch / delete)
+  into first-class feature nodes in the parametric DAG so a direct
+  edit replays on parameter changes instead of being lost.
+- **Target files/packages:** `packages/kerf-cad-core/src/kerf_cad_core/
+  geom/history/` (direct-edit feature nodes), `src/lib/occtWorker.js`
+  direct-edit handlers, UX.
+- **Definition of Done:** a direct-face-move stays attached to its
+  semantically-named face after an upstream sketch edit; pytest +
+  vitest.
+- **Depends-on:** none
+
+### T-108 Full joint system (rigid / revolute / slider / cam / gear / pin-slot)
+- **Tier:** A
+- **Money/reach rationale:** Mechanical persona depth. `kerf-mates`
+  ships a constraint solver but fewer joint types than Inventor /
+  SolidWorks / Onshape. A real joint library is a conversion lever for
+  the mechanical engineer persona deep in assembly authoring.
+- **Priority:** P1
+- **Status:** 🔴 not started
+- **Scope:** Add rigid / revolute / slider / cam / gear / pin-slot
+  joint types to `kerf-mates` with motion ranges + drives + limits;
+  wire each into the existing mate solver.
+- **Target files/packages:** `packages/kerf-mates/src/kerf_mates/`
+  (joints.py + solver wiring), LLM tools, tests.
+- **Definition of Done:** each joint type has an analytic kinematics
+  reference test; drives animate within limits; pytest.
+- **Depends-on:** none
+
+### T-109 BIM parametric family-authoring UX
+- **Tier:** A
+- **Money/reach rationale:** Architect-persona depth — Revit's signature
+  capability. The Tier-2 family *import* path shipped (T-29); native
+  family **authoring** is the gap. Strong conversion lever for the
+  architect segment.
+- **Priority:** P1
+- **Status:** 🔴 not started
+- **Scope:** A `.family.json` authoring UX where the user defines
+  parameters → constraint-driven nested geometry, with a flex panel
+  that exercises parameter sets. Extends the first-pass family editor
+  (T-30) into a complete authoring surface.
+- **Target files/packages:** `packages/kerf-bim/src/kerf_bim/tools/
+  family.py`, `src/cloud/` or `src/components/` family-editor UI,
+  pytest + vitest.
+- **Definition of Done:** a parametric column / window / door family
+  authored end-to-end flexes correctly across parameter sets; vitest
+  flex test; pytest schema.
+- **Depends-on:** T-30
+
+### T-110 BIM family library (curated catalog)
+- **Tier:** A
+- **Money/reach rationale:** Architect-persona depth — a populated
+  family catalog is a cold-start killer once T-109 lands. Empty
+  library = silent conversion killer.
+- **Priority:** P1
+- **Status:** 🔴 not started
+- **Scope:** Seed a curated parametric-family library across walls /
+  doors / windows / structural sections / MEP fixtures using the same
+  MIT-clean fetch/convert pattern as `kerf-parts`. Pinned, reproducible.
+- **Target files/packages:** `packages/kerf-bim/src/kerf_bim/library/`
+  (new), seed scripts, tests with no committed third-party data.
+- **Definition of Done:** the seed produces ≥1 valid family per
+  category with provenance; pytest reproducible.
+- **Depends-on:** T-109
+
+### T-111 BIM walls / doors / windows / slabs full parametric
+- **Tier:** A
+- **Money/reach rationale:** Architect-persona depth. Today only basic
+  primitives; Revit's full parametric envelope objects (compound walls
+  with layers, parametric door / window types, sloped slabs) are the
+  reference.
+- **Priority:** P1
+- **Status:** 🔴 not started
+- **Scope:** Promote the basic wall / door / window / slab primitives
+  to fully parametric: compound layered walls, parametric door /
+  window types with hardware, sloped + cranked slabs with edge profiles.
+- **Target files/packages:** `packages/kerf-bim/src/kerf_bim/`
+  (walls.py, openings.py, slabs.py extensions), tests.
+- **Definition of Done:** each parametric type flexes across a
+  realistic parameter range and IFC-exports correctly; pytest.
+- **Depends-on:** none
+
+### T-112 BIM stairs / ramps full
+- **Tier:** A
+- **Money/reach rationale:** Architect-persona depth. Basic stairs
+  shipped; full Revit-class stair / ramp authoring (multi-flight,
+  winders, code-compliant rise / run, ramps with landings) is the gap.
+- **Priority:** P1
+- **Status:** 🔴 not started
+- **Scope:** Multi-flight stair authoring with winders, code-compliant
+  rise / run checks, monolithic + assembled construction; ramps with
+  landings + handrails.
+- **Target files/packages:** `packages/kerf-bim/src/kerf_bim/stairs.py`
+  (extension), tests.
+- **Definition of Done:** a multi-flight U-stair + a ramp with two
+  landings IFC-export correctly; pytest.
+- **Depends-on:** none
+
+### T-113 BIM structural grid + framing (Revit Structure / Robot / Tekla)
+- **Tier:** A
+- **Money/reach rationale:** Architect + structural-engineer depth
+  (2 personas). Early today; the Revit Structure / Autodesk Robot /
+  Tekla Structures class is the reference (axis grid + beam / column
+  framing + connections + member rebar).
+- **Priority:** P1
+- **Status:** 🔴 not started
+- **Scope:** A `.grid` axis-grid primitive + framing layout that snaps
+  beams / columns to grid intersections + connection nodes + rebar
+  attachment. Reuses the shipped weldments member primitive where
+  possible.
+- **Target files/packages:** `packages/kerf-bim/src/kerf_bim/`
+  (grid.py, framing.py), tests.
+- **Definition of Done:** a 3-bay × 2-storey frame snaps to a grid +
+  IFC-exports correctly; pytest.
+- **Depends-on:** none
+
+### T-114 BIM site / earthwork (toposolids)
+- **Tier:** A
+- **Money/reach rationale:** Architect + civil persona depth
+  (2 personas). Basic site only today; Revit toposolids + Civil 3D
+  cut/fill is the reference. Bridges to the P3 civil seed (T-70).
+- **Priority:** P1
+- **Status:** 🔴 not started
+- **Scope:** A toposolid type from point cloud / TIN + cut/fill
+  earthwork report. Reuses the T-70 civil TIN engine when present;
+  standalone seed otherwise.
+- **Target files/packages:** `packages/kerf-bim/src/kerf_bim/`
+  (site.py), bridge to `packages/kerf-civil/` once seeded, tests.
+- **Definition of Done:** a TIN → toposolid + cut/fill volume report
+  on a fixture site; pytest.
+- **Depends-on:** none
+
+### T-115 BIM material catalogue with render appearance
+- **Tier:** A
+- **Money/reach rationale:** Architect-persona presentation depth.
+  Generic PBR shipped (this session), but no BIM-bound material library
+  (Revit's "Materials with Appearance" / Enscape-class).
+- **Priority:** P1
+- **Status:** 🔴 not started
+- **Scope:** A `material.bim.json` catalogue with thermal / fire /
+  acoustic + render-appearance (PBR map set + IOR) properties; tie
+  each material to IFC `IfcMaterial` round-trip + the shipped PBR
+  hero renderer.
+- **Target files/packages:** `packages/kerf-bim/src/kerf_bim/
+  materials.py` + seed catalogue, render-appearance wiring into
+  `src/lib/heroShot.js` / `packages/kerf-render/`, tests.
+- **Definition of Done:** a wall with a catalogued material renders
+  via the PBR hero path + IFC round-trips its `IfcMaterial`; pytest.
 - **Depends-on:** none
