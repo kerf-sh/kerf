@@ -352,9 +352,9 @@ export default function SimulationView({ content, fileName }) {
                 <div className="text-[10px] uppercase tracking-wider text-amber-400 font-medium mb-1">
                   Errors
                 </div>
-                <ul className="space-y-0.5">
+                <ul role="list" className="space-y-0.5">
                   {results.errors.map((m, i) => (
-                    <li key={i} className="font-mono break-all">{String(m)}</li>
+                    <li key={i} role="listitem" className="font-mono break-all">{String(m)}</li>
                   ))}
                 </ul>
               </div>
@@ -364,9 +364,9 @@ export default function SimulationView({ content, fileName }) {
                 <div className="text-[10px] uppercase tracking-wider text-ink-500 font-medium mb-1">
                   Warnings
                 </div>
-                <ul className="space-y-0.5">
+                <ul role="list" className="space-y-0.5">
                   {results.warnings.map((m, i) => (
-                    <li key={i} className="font-mono break-all">{String(m)}</li>
+                    <li key={i} role="listitem" className="font-mono break-all">{String(m)}</li>
                   ))}
                 </ul>
               </div>
@@ -489,7 +489,7 @@ function WaveformChart({ waveforms }) {
           <button
             type="button"
             onClick={() => setMode('chart')}
-            className={`flex items-center gap-1 px-2 py-1 text-[10px] uppercase tracking-wider transition-colors ${
+            className={`flex items-center gap-1 px-2 py-1 text-[10px] uppercase tracking-wider transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-kerf-300/70 ${
               mode === 'chart' ? 'bg-ink-800 text-kerf-300' : 'bg-ink-900 text-ink-500 hover:text-ink-300'
             }`}
             aria-pressed={mode === 'chart'}
@@ -500,7 +500,7 @@ function WaveformChart({ waveforms }) {
           <button
             type="button"
             onClick={() => setMode('table')}
-            className={`flex items-center gap-1 px-2 py-1 text-[10px] uppercase tracking-wider transition-colors ${
+            className={`flex items-center gap-1 px-2 py-1 text-[10px] uppercase tracking-wider transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-kerf-300/70 ${
               mode === 'table' ? 'bg-ink-800 text-kerf-300' : 'bg-ink-900 text-ink-500 hover:text-ink-300'
             }`}
             aria-pressed={mode === 'table'}
@@ -516,9 +516,9 @@ function WaveformChart({ waveforms }) {
           <div className="text-[10px] uppercase tracking-wider text-amber-400 font-medium mb-1">
             Chart warnings
           </div>
-          <ul className="space-y-0.5">
+          <ul role="list" className="space-y-0.5">
             {allWarnings.map((m, i) => (
-              <li key={i} className="font-mono break-all">{m}</li>
+              <li key={i} role="listitem" className="font-mono break-all">{m}</li>
             ))}
           </ul>
         </div>

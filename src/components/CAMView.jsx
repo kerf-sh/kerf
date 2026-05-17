@@ -223,6 +223,8 @@ export default function CAMView({ file, projectId, viewRef }) {
             type="button"
             onClick={() => setActiveTab('job')}
             title="CAM Job"
+            aria-label="CAM Job settings"
+            aria-pressed={activeTab === 'job'}
             style={{ ...styles.tabBtn, ...(activeTab === 'job' ? styles.tabBtnActive : {}) }}
           >
             <Settings size={11} />
@@ -231,6 +233,8 @@ export default function CAMView({ file, projectId, viewRef }) {
             type="button"
             onClick={() => setActiveTab('tools')}
             title="Tool Library"
+            aria-label="Tool Library"
+            aria-pressed={activeTab === 'tools'}
             style={{ ...styles.tabBtn, ...(activeTab === 'tools' ? styles.tabBtnActive : {}) }}
           >
             <Wrench size={11} />
@@ -311,7 +315,7 @@ export default function CAMView({ file, projectId, viewRef }) {
           <span style={{ color: '#9ca3af', fontSize: 12, marginLeft: 4 }}>{coolant ? 'Flood' : 'Off'}</span>
         </div>
 
-        <button onClick={handleGenerate} disabled={running || !fid || !pid} style={{ ...styles.button, ...(running ? styles.buttonDisabled : {}) }}>
+        <button type="button" onClick={handleGenerate} disabled={running || !fid || !pid} style={{ ...styles.button, ...(running ? styles.buttonDisabled : {}) }}>
           {running
             ? <><Loader2 size={13} style={styles.spin} /> Generating…</>
             : <><Settings size={13} /> Generate Toolpath</>}
@@ -355,9 +359,26 @@ export default function CAMView({ file, projectId, viewRef }) {
           )}
 
           {canDownload && (
-            <button onClick={handleDownload} style={{ ...styles.button, background: '#1e3a5f', marginTop: 6 }}>
-              <Download size={13} /> Download G-code (.nc)
-            </button>
+            <>
+              <button
+                type="button"
+                onClick={handleDownload}
+                style={{ ...styles.button, background: '#1e3a5f', marginTop: 6 }}
+              >
+                <Download size={13} /> Download G-code (.nc)
+              </button>
+              {result?.gcode_b64 && (
+                <div style={{ marginTop: 8 }}>
+                  <div style={{ ...styles.sectionTitle, marginBottom: 4 }}>
+                    <span>G-code preview</span>
+                  </div>
+                  <pre className="overflow-x-auto bg-ink-900 border border-ink-800 rounded p-2 text-[10px] font-mono text-ink-300 max-h-[60vh] overflow-y-auto leading-relaxed">
+                    {atob(result.gcode_b64).slice(0, 8000)}
+                    {atob(result.gcode_b64).length > 8000 && '\n… (truncated)'}
+                  </pre>
+                </div>
+              )}
+            </>
           )}
         </div>
       )}
@@ -396,7 +417,7 @@ function StatusBadge({ status }) {
 }
 
 const styles = {
-  root: { fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 13, color: '#e5e7eb', background: '#111827', borderRadius: 8, padding: 16, display: 'flex', flexDirection: 'column', gap: 12, minWidth: 320 },
+  root: { fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 13, color: '#e5e7eb', background: '#111827', borderRadius: 8, padding: 16, display: 'flex', flexDirection: 'column', gap: 12, minWidth: 0, width: '100%', height: '100%', overflowY: 'auto', boxSizing: 'border-box' },
   header: { display: 'flex', alignItems: 'center', gap: 8, borderBottom: '1px solid #1f2937', paddingBottom: 10 },
   title: { fontWeight: 600, fontSize: 14, color: '#f3f4f6' },
   section: { display: 'flex', flexDirection: 'column', gap: 8 },
@@ -549,7 +570,7 @@ export function LayeredCAMView({ file, projectId, parsedContent, viewRef }) {
   const isEmpty = layers.length === 0
 
   return (
-    <div style={{ ...styles.root, minWidth: 340, height: '100%', overflow: 'auto' }}>
+    <div style={{ ...styles.root, width: '100%', height: '100%', minWidth: 0, overflowY: 'auto' }}>
       {/* Header */}
       <div style={styles.header}>
         <Layers size={15} style={{ color: '#2dd4bf' }} />
@@ -609,9 +630,9 @@ export function LayeredCAMView({ file, projectId, parsedContent, viewRef }) {
             </div>
           </div>
 
-          {/* SVG canvas */}
+          {/* SVG canvas — w-full, aspect 4:3, capped at 60vh */}
           <div
-            style={{ height: 280, background: '#0d1117', borderRadius: 6, border: '1px solid #1f2937', overflow: 'hidden', position: 'relative', cursor: 'grab' }}
+            style={{ minHeight: 200, maxHeight: 'min(60vh,480px)', aspectRatio: '4/3', width: '100%', background: '#0d1117', borderRadius: 6, border: '1px solid #1f2937', overflow: 'hidden', position: 'relative', cursor: 'grab' }}
             onWheel={onWheel}
             onMouseDown={onMouseDown}
             onMouseMove={onMouseMove}
@@ -645,8 +666,8 @@ export function LayeredCAMView({ file, projectId, parsedContent, viewRef }) {
             )}
           </div>
 
-          {/* Layer list (compact) */}
-          <div style={{ maxHeight: 100, overflowY: 'auto', fontSize: 11, color: '#6b7280', border: '1px solid #1f2937', borderRadius: 4, padding: '4px 0' }}>
+          {/* Layer list (compact) — bounded to avoid page overflow */}
+          <div style={{ maxHeight: 'min(100px,30vh)', overflowY: 'auto', fontSize: 11, color: '#6b7280', border: '1px solid #1f2937', borderRadius: 4, padding: '4px 0' }}>
             {layers.map((l, i) => (
               <div
                 key={i}
@@ -668,6 +689,7 @@ export function LayeredCAMView({ file, projectId, parsedContent, viewRef }) {
           {/* Generate G-code */}
           <div style={styles.section}>
             <button
+              type="button"
               onClick={handleGenerateGcode}
               disabled={gcodeRunning || !file?.id || !projectId}
               style={{ ...styles.button, background: '#0f4c3a', ...(gcodeRunning ? styles.buttonDisabled : {}) }}
@@ -688,9 +710,15 @@ export function LayeredCAMView({ file, projectId, parsedContent, viewRef }) {
                   <CheckCircle size={12} />
                   <span style={{ marginLeft: 6 }}>G-code ready — {gcodeResult.line_count ?? '?'} lines</span>
                 </div>
-                <button onClick={handleDownloadGcode} style={{ ...styles.button, background: '#1e3a5f' }}>
+                <button type="button" onClick={handleDownloadGcode} style={{ ...styles.button, background: '#1e3a5f' }}>
                   <Download size={13} /> Download .nc
                 </button>
+                {gcodeResult?.gcode_b64 && (
+                  <pre className="overflow-x-auto bg-ink-900 border border-ink-800 rounded p-2 text-[10px] font-mono text-ink-300 max-h-[60vh] overflow-y-auto leading-relaxed mt-1">
+                    {atob(gcodeResult.gcode_b64).slice(0, 8000)}
+                    {atob(gcodeResult.gcode_b64).length > 8000 && '\n… (truncated)'}
+                  </pre>
+                )}
               </div>
             )}
           </div>

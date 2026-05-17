@@ -269,32 +269,70 @@ export function initialState() {
 
 function StepIndicator({ current }) {
   return (
-    <div className="flex items-center justify-between mb-8">
-      {STEPS.map((step, i) => {
-        const done = i < current
-        const active = i === current
-        return (
-          <div key={step.id} className="flex items-center flex-1">
-            <div className="flex flex-col items-center gap-1">
-              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold border-2 transition-colors
+    <>
+      {/* Vertical stepper — mobile (< md) */}
+      <nav aria-label="Configuration steps" className="flex flex-col gap-2 mb-6 md:hidden">
+        {STEPS.map((step, i) => {
+          const done = i < current
+          const active = i === current
+          return (
+            <div
+              key={step.id}
+              aria-current={active ? 'step' : undefined}
+              className={`flex items-center gap-3 px-3 py-2 rounded-xl transition-colors
+                ${active ? 'bg-kerf-300/10 border border-kerf-300/40' : 'border border-transparent'}`}
+            >
+              <div className={`w-7 h-7 shrink-0 rounded-full flex items-center justify-center text-xs font-semibold border-2 transition-colors
                 ${done  ? 'bg-kerf-300 border-kerf-300 text-ink-950' :
                   active ? 'bg-ink-800 border-kerf-300 text-kerf-300' :
                            'bg-ink-900 border-ink-700 text-ink-500'}`}>
-                {done ? <CheckCircle size={14} /> : i + 1}
+                {done ? <CheckCircle size={13} /> : i + 1}
               </div>
-              <span className={`text-[10px] font-mono uppercase tracking-wider hidden sm:block
+              <span className={`text-xs font-medium
                 ${active ? 'text-kerf-300' : done ? 'text-ink-400' : 'text-ink-600'}`}>
                 {step.label}
               </span>
+              {active && (
+                <span className="ml-auto text-[10px] font-mono text-kerf-400 uppercase tracking-wider">
+                  Current
+                </span>
+              )}
             </div>
-            {i < STEPS.length - 1 && (
-              <div className={`flex-1 h-0.5 mx-2 mb-4 transition-colors
-                ${i < current ? 'bg-kerf-300' : 'bg-ink-800'}`} />
-            )}
-          </div>
-        )
-      })}
-    </div>
+          )
+        })}
+      </nav>
+
+      {/* Horizontal stepper — tablet/desktop (≥ md) */}
+      <nav aria-label="Configuration steps" className="hidden md:flex items-center justify-between mb-8">
+        {STEPS.map((step, i) => {
+          const done = i < current
+          const active = i === current
+          return (
+            <div key={step.id} className="flex items-center flex-1">
+              <div
+                aria-current={active ? 'step' : undefined}
+                className="flex flex-col items-center gap-1"
+              >
+                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold border-2 transition-colors
+                  ${done  ? 'bg-kerf-300 border-kerf-300 text-ink-950' :
+                    active ? 'bg-ink-800 border-kerf-300 text-kerf-300' :
+                             'bg-ink-900 border-ink-700 text-ink-500'}`}>
+                  {done ? <CheckCircle size={14} /> : i + 1}
+                </div>
+                <span className={`text-[10px] font-mono uppercase tracking-wider
+                  ${active ? 'text-kerf-300' : done ? 'text-ink-400' : 'text-ink-600'}`}>
+                  {step.label}
+                </span>
+              </div>
+              {i < STEPS.length - 1 && (
+                <div className={`flex-1 h-0.5 mx-2 mb-4 transition-colors
+                  ${i < current ? 'bg-kerf-300' : 'bg-ink-800'}`} />
+              )}
+            </div>
+          )
+        })}
+      </nav>
+    </>
   )
 }
 
@@ -303,19 +341,20 @@ function Step1Piece({ state, onChange }) {
     <div>
       <h2 className="text-lg font-semibold text-ink-100 mb-1">What are you designing?</h2>
       <p className="text-sm text-ink-400 mb-6">Choose the piece type to continue.</p>
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
         {PIECE_TYPES.map((p) => (
           <button
             key={p.key}
             type="button"
             onClick={() => onChange({ pieceType: p.key })}
-            className={`flex flex-col items-center gap-3 p-6 rounded-2xl border-2 transition-all
+            aria-pressed={state.pieceType === p.key}
+            aria-label={p.label}
+            className={`flex flex-col items-center gap-3 min-h-[44px] p-6 rounded-2xl border-2 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-kerf-300 focus-visible:ring-offset-2 focus-visible:ring-offset-ink-950
               ${state.pieceType === p.key
                 ? 'border-kerf-300 bg-kerf-300/10 text-kerf-300'
                 : 'border-ink-700 bg-ink-900/40 text-ink-300 hover:border-ink-500'}`}
-            aria-pressed={state.pieceType === p.key}
           >
-            <span className="text-3xl" aria-hidden>{p.icon}</span>
+            <span className="text-3xl" aria-hidden="true">{p.icon}</span>
             <span className="text-sm font-medium">{p.label}</span>
           </button>
         ))}
@@ -331,18 +370,19 @@ function Step2Metal({ state, onChange }) {
       <p className="text-sm text-ink-400 mb-6">Choose the alloy and surface treatment.</p>
 
       <div className="mb-5">
-        <label className="block text-xs font-mono uppercase tracking-wider text-ink-400 mb-2">Alloy</label>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+        <p className="block text-xs font-mono uppercase tracking-wider text-ink-400 mb-2">Alloy</p>
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
           {METAL_OPTIONS.map((m) => (
             <button
               key={m.key}
               type="button"
               onClick={() => onChange({ metal: m.key })}
-              className={`px-3 py-2.5 rounded-xl border text-xs font-medium transition-all text-left
+              aria-pressed={state.metal === m.key}
+              aria-label={`${m.label}${PRICE_PRESET[m.key] ? `, approximately $${PRICE_PRESET[m.key].toFixed(2)} per gram` : ''}`}
+              className={`min-h-[44px] px-3 py-2.5 rounded-xl border text-xs font-medium transition-all text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-kerf-300 focus-visible:ring-offset-2 focus-visible:ring-offset-ink-950
                 ${state.metal === m.key
                   ? 'border-kerf-300 bg-kerf-300/10 text-kerf-300'
                   : 'border-ink-700 bg-ink-900/40 text-ink-300 hover:border-ink-500'}`}
-              aria-pressed={state.metal === m.key}
             >
               {m.label}
               {PRICE_PRESET[m.key] && (
@@ -356,18 +396,19 @@ function Step2Metal({ state, onChange }) {
       </div>
 
       <div>
-        <label className="block text-xs font-mono uppercase tracking-wider text-ink-400 mb-2">Finish</label>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+        <p className="block text-xs font-mono uppercase tracking-wider text-ink-400 mb-2">Finish</p>
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
           {FINISH_OPTIONS.map((f) => (
             <button
               key={f.key}
               type="button"
               onClick={() => onChange({ finish: f.key })}
-              className={`px-3 py-2.5 rounded-xl border text-xs font-medium transition-all text-left
+              aria-pressed={state.finish === f.key}
+              aria-label={`${f.label}, ${f.cost > 0 ? `+$${f.cost}` : 'included'}`}
+              className={`min-h-[44px] px-3 py-2.5 rounded-xl border text-xs font-medium transition-all text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-kerf-300 focus-visible:ring-offset-2 focus-visible:ring-offset-ink-950
                 ${state.finish === f.key
                   ? 'border-kerf-300 bg-kerf-300/10 text-kerf-300'
                   : 'border-ink-700 bg-ink-900/40 text-ink-300 hover:border-ink-500'}`}
-              aria-pressed={state.finish === f.key}
             >
               {f.label}
               <span className="block text-[10px] font-mono text-ink-500 mt-0.5">
@@ -411,7 +452,7 @@ function Step3Stones({ state, onChange }) {
                 value={stone.cut}
                 onChange={(e) => update(i, { cut: e.target.value })}
                 aria-label={`Stone ${i + 1} cut`}
-                className="col-span-2 bg-ink-900 border border-ink-700 rounded px-2 py-1.5 text-xs text-ink-100 focus:outline-none focus:border-kerf-400"
+                className="col-span-2 h-9 bg-ink-900 border border-ink-800 rounded px-2 py-1.5 text-xs text-ink-100 focus:outline-none focus:border-kerf-300 focus-visible:ring-1 focus-visible:ring-kerf-300"
               >
                 {STONE_CUTS.map((c) => (
                   <option key={c} value={c}>{c.replace(/_/g, ' ')}</option>
@@ -425,7 +466,7 @@ function Step3Stones({ state, onChange }) {
                 min={0}
                 step="any"
                 aria-label={`Stone ${i + 1} carat`}
-                className="bg-ink-900 border border-ink-700 rounded px-2 py-1.5 text-xs text-ink-100 focus:outline-none focus:border-kerf-400 [appearance:textfield]"
+                className="h-9 bg-ink-900 border border-ink-800 rounded px-2 py-1.5 text-xs text-ink-100 focus:outline-none focus:border-kerf-300 focus-visible:ring-1 focus-visible:ring-kerf-300 [appearance:textfield]"
               />
               <input
                 type="number"
@@ -435,13 +476,13 @@ function Step3Stones({ state, onChange }) {
                 min={0}
                 step="any"
                 aria-label={`Stone ${i + 1} price per carat`}
-                className="bg-ink-900 border border-ink-700 rounded px-2 py-1.5 text-xs text-ink-100 focus:outline-none focus:border-kerf-400 [appearance:textfield]"
+                className="h-9 bg-ink-900 border border-ink-800 rounded px-2 py-1.5 text-xs text-ink-100 focus:outline-none focus:border-kerf-300 focus-visible:ring-1 focus-visible:ring-kerf-300 [appearance:textfield]"
               />
               <button
                 type="button"
                 onClick={() => remove(i)}
                 aria-label={`Remove stone ${i + 1}`}
-                className="text-ink-500 hover:text-amber-400 text-xs font-mono"
+                className="flex items-center justify-center min-h-[44px] text-ink-500 hover:text-amber-400 text-xs font-mono focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-kerf-300 rounded"
               >
                 ✕
               </button>
@@ -457,7 +498,8 @@ function Step3Stones({ state, onChange }) {
       <button
         type="button"
         onClick={add}
-        className="inline-flex items-center gap-2 text-sm text-kerf-300 hover:text-kerf-200"
+        aria-label="Add gemstone"
+        className="inline-flex items-center gap-2 min-h-[44px] px-3 text-sm text-kerf-300 hover:text-kerf-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-kerf-300 focus-visible:ring-offset-2 focus-visible:ring-offset-ink-950 rounded-lg"
       >
         <Gem size={14} />
         Add stone
@@ -476,20 +518,21 @@ function Step4Setting({ state, onChange }) {
 
       {(state.stones || []).length > 0 && (
         <div className="mb-5">
-          <label className="block text-xs font-mono uppercase tracking-wider text-ink-400 mb-2">
+          <p className="block text-xs font-mono uppercase tracking-wider text-ink-400 mb-2">
             Setting style
-          </label>
-          <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
+          </p>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
             {SETTING_STYLES.map((s) => (
               <button
                 key={s.key}
                 type="button"
                 onClick={() => onChange({ settingStyle: s.key })}
-                className={`px-3 py-2.5 rounded-xl border text-xs font-medium transition-all text-left
+                aria-pressed={state.settingStyle === s.key}
+                aria-label={`${s.label}, $${s.fee} per stone`}
+                className={`min-h-[44px] px-3 py-2.5 rounded-xl border text-xs font-medium transition-all text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-kerf-300 focus-visible:ring-offset-2 focus-visible:ring-offset-ink-950
                   ${state.settingStyle === s.key
                     ? 'border-kerf-300 bg-kerf-300/10 text-kerf-300'
                     : 'border-ink-700 bg-ink-900/40 text-ink-300 hover:border-ink-500'}`}
-                aria-pressed={state.settingStyle === s.key}
               >
                 {s.label}
                 <span className="block text-[10px] font-mono text-ink-500 mt-0.5">
@@ -503,14 +546,18 @@ function Step4Setting({ state, onChange }) {
 
       {state.pieceType === 'ring' && (
         <div className="mb-5">
-          <label className="block text-xs font-mono uppercase tracking-wider text-ink-400 mb-2">
+          <label
+            htmlFor="ring-size-select"
+            className="block text-xs font-mono uppercase tracking-wider text-ink-400 mb-2"
+          >
             Ring size (US)
           </label>
           <select
+            id="ring-size-select"
             value={state.ringSizeUs}
             onChange={(e) => onChange({ ringSizeUs: e.target.value })}
-            aria-label="Ring size"
-            className="w-40 bg-ink-900 border border-ink-700 rounded px-2 py-1.5 text-xs text-ink-100 focus:outline-none focus:border-kerf-400"
+            aria-label="Ring size (US)"
+            className="w-40 h-9 bg-ink-900 border border-ink-800 rounded px-2 text-xs text-ink-100 focus:outline-none focus:border-kerf-300 focus-visible:ring-1 focus-visible:ring-kerf-300"
           >
             <option value="">Select size…</option>
             {RING_SIZES_US.map((sz) => (
@@ -522,14 +569,18 @@ function Step4Setting({ state, onChange }) {
 
       {(state.pieceType === 'pendant' || state.pieceType === 'earring') && (
         <div className="mb-5">
-          <label className="block text-xs font-mono uppercase tracking-wider text-ink-400 mb-2">
+          <label
+            htmlFor="chain-length-select"
+            className="block text-xs font-mono uppercase tracking-wider text-ink-400 mb-2"
+          >
             Chain length (inches)
           </label>
           <select
+            id="chain-length-select"
             value={state.chainLengthInch}
             onChange={(e) => onChange({ chainLengthInch: e.target.value })}
-            aria-label="Chain length"
-            className="w-48 bg-ink-900 border border-ink-700 rounded px-2 py-1.5 text-xs text-ink-100 focus:outline-none focus:border-kerf-400"
+            aria-label="Chain length in inches"
+            className="w-48 h-9 bg-ink-900 border border-ink-800 rounded px-2 text-xs text-ink-100 focus:outline-none focus:border-kerf-300 focus-visible:ring-1 focus-visible:ring-kerf-300"
           >
             <option value="">Select length…</option>
             {CHAIN_LENGTHS_INCH.map((l) => (
@@ -563,35 +614,40 @@ function EstimateCard({ estimate, loading, error }) {
 
   if (!estimate) return null
 
-  const fmt = (n) => (n == null || isNaN(n) ? '—' : n.toFixed(2))
+  const fmtN = (n) => (n == null || isNaN(n) ? '—' : n.toFixed(2))
+  const fmtUsd = (n) => (n == null || isNaN(n) ? '—' : `$${n.toFixed(2)}`)
 
   return (
-    <div className="rounded-xl border border-ink-700 bg-ink-900/50 divide-y divide-ink-800 text-sm">
+    <div
+      role="region"
+      aria-label="Cost estimate breakdown"
+      className="rounded-xl border border-ink-700 bg-ink-900/50 divide-y divide-ink-800 text-sm"
+    >
       <div className="flex justify-between px-4 py-3">
         <span className="text-ink-400">Net weight</span>
-        <span className="font-mono text-ink-200">{fmt(estimate.net_grams)} g</span>
+        <span className="font-mono tabular-nums text-ink-200">{fmtN(estimate.net_grams)} g</span>
       </div>
       <div className="flex justify-between px-4 py-3">
         <span className="text-ink-400">Gross (incl. +15% cast)</span>
-        <span className="font-mono text-ink-200">{fmt(estimate.gross_grams)} g</span>
+        <span className="font-mono tabular-nums text-ink-200">{fmtN(estimate.gross_grams)} g</span>
       </div>
       <div className="flex justify-between px-4 py-3">
         <span className="text-ink-400">Metal material</span>
-        <span className="font-mono text-ink-200">${fmt(estimate.metal_cost)}</span>
+        <span className="font-mono tabular-nums text-ink-200">{fmtUsd(estimate.metal_cost)}</span>
       </div>
       {estimate.stone_cost > 0 && (
         <div className="flex justify-between px-4 py-3">
           <span className="text-ink-400">Stones</span>
-          <span className="font-mono text-ink-200">${fmt(estimate.stone_cost)}</span>
+          <span className="font-mono tabular-nums text-ink-200">{fmtUsd(estimate.stone_cost)}</span>
         </div>
       )}
       <div className="flex justify-between px-4 py-3">
         <span className="text-ink-400">Labour &amp; setting</span>
-        <span className="font-mono text-ink-200">${fmt(estimate.labour)}</span>
+        <span className="font-mono tabular-nums text-ink-200">{fmtUsd(estimate.labour)}</span>
       </div>
       <div className="flex justify-between px-4 py-3 bg-kerf-300/5 rounded-b-xl">
-        <span className="font-semibold text-ink-100">Estimated total</span>
-        <span className="font-mono font-semibold text-kerf-300">${fmt(estimate.total)}</span>
+        <span className="text-lg font-display font-semibold text-ink-100">Estimated total</span>
+        <span className="text-lg font-display font-semibold tabular-nums text-kerf-300">{fmtUsd(estimate.total)}</span>
       </div>
     </div>
   )
@@ -690,7 +746,8 @@ function Step5Review({ state, projectId }) {
             <button
               type="button"
               onClick={fetchEstimate}
-              className="text-xs text-kerf-300 hover:text-kerf-200"
+              aria-label="Refresh cost estimate from server"
+              className="text-xs text-kerf-300 hover:text-kerf-200 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-kerf-300 rounded"
             >
               Refresh
             </button>
@@ -708,13 +765,18 @@ function Step5Review({ state, projectId }) {
         <button
           type="button"
           onClick={() => setOrdered(true)}
-          className="w-full py-3 rounded-xl bg-kerf-300 text-ink-950 font-semibold text-sm hover:bg-kerf-200 transition-colors"
+          aria-label="Place order for this jewelry piece"
+          className="w-full min-h-[44px] py-3 rounded-xl bg-kerf-300 text-ink-950 font-semibold text-sm hover:bg-kerf-200 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-kerf-300 focus-visible:ring-offset-2 focus-visible:ring-offset-ink-950"
         >
           Place order
         </button>
       ) : (
-        <div className="flex items-center gap-2 px-4 py-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-sm text-emerald-300">
-          <CheckCircle size={16} />
+        <div
+          role="status"
+          aria-live="polite"
+          className="flex items-center gap-2 px-4 py-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-sm text-emerald-300"
+        >
+          <CheckCircle size={16} aria-hidden="true" />
           Order placed — your jeweller will be in touch.
         </div>
       )}
@@ -725,6 +787,28 @@ function Step5Review({ state, projectId }) {
 // ---------------------------------------------------------------------------
 // Main wizard component
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// 3D preview viewport placeholder — shown on the review step. Delegates to
+// the project's existing Renderer when one is available; on the standalone
+// /jewelry-configurator route it shows a branded placeholder so the layout
+// reflows correctly on all breakpoints.
+// ---------------------------------------------------------------------------
+
+function ViewportPlaceholder() {
+  return (
+    <div
+      role="img"
+      aria-label="3D jewelry preview (render available in project context)"
+      className="w-full min-h-[280px] sm:min-h-[400px] lg:min-h-[520px] rounded-2xl bg-ink-900 border border-ink-800 flex flex-col items-center justify-center gap-3 mb-6 touch-none select-none"
+    >
+      <div className="grid place-items-center w-12 h-12 rounded-full bg-kerf-300/10 border border-kerf-300/20">
+        <Gem size={20} className="text-kerf-300/60" aria-hidden="true" />
+      </div>
+      <p className="text-xs text-ink-600">3D preview available in project context</p>
+    </div>
+  )
+}
 
 export default function JewelryConfigurator({ projectId }) {
   const [step, setStep] = useState(0)
@@ -755,11 +839,11 @@ export default function JewelryConfigurator({ projectId }) {
 
   return (
     <div className="min-h-screen bg-ink-950 text-ink-100">
-      <div className="max-w-2xl mx-auto px-4 py-10 sm:py-14">
+      <div className="max-w-5xl mx-auto px-4 py-10 sm:py-14">
         {/* Header */}
         <div className="flex items-center gap-3 mb-8">
           <div className="grid place-items-center w-9 h-9 rounded-xl bg-magenta-edge/10 border border-magenta-edge/30">
-            <Gem size={16} className="text-magenta-edge" />
+            <Gem size={16} className="text-magenta-edge" aria-hidden="true" />
           </div>
           <div>
             <h1 className="text-xl font-semibold text-ink-100">Jewelry Configurator</h1>
@@ -770,32 +854,47 @@ export default function JewelryConfigurator({ projectId }) {
         {/* Step indicator */}
         <StepIndicator current={step} />
 
-        {/* Step content */}
-        <div className="mb-6">
-          {step === 0 && <Step1Piece state={state} onChange={patch} />}
-          {step === 1 && <Step2Metal state={state} onChange={patch} />}
-          {step === 2 && <Step3Stones state={state} onChange={patch} />}
-          {step === 3 && <Step4Setting state={state} onChange={patch} />}
-          {step === 4 && <Step5Review state={state} projectId={projectId} />}
-        </div>
+        {/* Review step uses a split layout on ≥ md; other steps single-column */}
+        {isLast ? (
+          <div className="lg:grid lg:grid-cols-[1fr_360px] lg:gap-8 lg:items-start">
+            <div>
+              <ViewportPlaceholder />
+              <Step5Review state={state} projectId={projectId} />
+            </div>
+            <div className="hidden lg:block" />
+          </div>
+        ) : (
+          <div className="max-w-2xl">
+            <div className="mb-6">
+              {step === 0 && <Step1Piece state={state} onChange={patch} />}
+              {step === 1 && <Step2Metal state={state} onChange={patch} />}
+              {step === 2 && <Step3Stones state={state} onChange={patch} />}
+              {step === 3 && <Step4Setting state={state} onChange={patch} />}
+            </div>
+          </div>
+        )}
 
         {/* Validation error */}
         {validationError && (
-          <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-amber-500/10 border border-amber-500/30 mb-4">
-            <AlertTriangle size={13} className="text-amber-400 shrink-0" />
+          <div
+            role="alert"
+            className="flex items-center gap-2 px-3 py-2 rounded-lg bg-amber-500/10 border border-amber-500/30 mb-4 max-w-2xl"
+          >
+            <AlertTriangle size={13} className="text-amber-400 shrink-0" aria-hidden="true" />
             <span className="text-xs text-amber-200">{validationError}</span>
           </div>
         )}
 
         {/* Navigation */}
-        <div className="flex items-center justify-between pt-4 border-t border-ink-800">
+        <div className="flex items-center justify-between pt-4 border-t border-ink-800 max-w-2xl">
           <button
             type="button"
             onClick={goBack}
             disabled={step === 0}
-            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm text-ink-300 hover:text-ink-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            aria-label="Go to previous step"
+            className="inline-flex items-center gap-1.5 min-h-[44px] px-4 py-2 rounded-lg text-sm text-ink-300 hover:text-ink-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-kerf-300 focus-visible:ring-offset-2 focus-visible:ring-offset-ink-950"
           >
-            <ChevronLeft size={15} />
+            <ChevronLeft size={15} aria-hidden="true" />
             Back
           </button>
 
@@ -803,10 +902,11 @@ export default function JewelryConfigurator({ projectId }) {
             <button
               type="button"
               onClick={goNext}
-              className="inline-flex items-center gap-1.5 px-5 py-2 rounded-lg bg-kerf-300 text-ink-950 text-sm font-medium hover:bg-kerf-200 transition-colors"
+              aria-label={`Continue to ${STEPS[step + 1]?.label ?? 'next step'}`}
+              className="inline-flex items-center gap-1.5 min-h-[44px] px-5 py-2 rounded-lg bg-kerf-300 text-ink-950 text-sm font-medium hover:bg-kerf-200 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-kerf-300 focus-visible:ring-offset-2 focus-visible:ring-offset-ink-950"
             >
               Next
-              <ChevronRight size={15} />
+              <ChevronRight size={15} aria-hidden="true" />
             </button>
           )}
         </div>

@@ -280,7 +280,7 @@ function fmt(n, decimals = 2) {
 
 function fmtCost(n) {
   if (n == null || isNaN(n)) return '—'
-  return n.toFixed(2)
+  return `$${n.toFixed(2)}`
 }
 
 // Group METAL_OPTIONS by group for rendering a grouped <select>.
@@ -316,7 +316,7 @@ function NumInput({ value, onChange, placeholder, min, step = 'any', disabled })
       min={min}
       step={step}
       disabled={disabled}
-      className="w-full bg-ink-900 border border-ink-700 rounded px-2 py-1 text-xs text-ink-100 focus:outline-none focus:border-kerf-400 disabled:opacity-50 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+      className="w-full h-9 bg-ink-900 border border-ink-800 rounded px-2 py-1 text-xs text-ink-100 focus:outline-none focus:border-kerf-300 focus-visible:ring-1 focus-visible:ring-kerf-300 disabled:opacity-50 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
     />
   )
 }
@@ -325,7 +325,7 @@ function WeightRow({ label, grams, dwt, ozt }) {
   return (
     <div className="flex items-center justify-between py-1.5 border-b border-ink-800 last:border-0">
       <span className="text-[11px] text-ink-400">{label}</span>
-      <div className="flex items-center gap-3 text-[11px] font-mono">
+      <div className="flex items-center gap-3 text-[11px] font-mono tabular-nums">
         <span className="text-ink-200">{fmt(grams)} g</span>
         <span className="text-ink-500">{fmt(dwt, 3)} dwt</span>
         <span className="text-ink-500">{fmt(ozt, 4)} ozt</span>
@@ -334,11 +334,13 @@ function WeightRow({ label, grams, dwt, ozt }) {
   )
 }
 
-function CostRow({ label, value, accent, indent }) {
+function CostRow({ label, value, accent, indent, total }) {
   return (
     <div className={`flex items-center justify-between py-1 border-b border-ink-800 last:border-0 ${indent ? 'pl-4' : ''}`}>
-      <span className={`text-[11px] ${indent ? 'text-ink-500' : 'text-ink-400'}`}>{label}</span>
-      <span className={`text-[11px] font-mono ${accent ? 'text-kerf-300 font-semibold' : 'text-ink-200'}`}>
+      <span className={`${total ? 'text-sm font-display font-semibold text-ink-100' : indent ? 'text-[11px] text-ink-500' : 'text-[11px] text-ink-400'}`}>
+        {label}
+      </span>
+      <span className={`font-mono tabular-nums text-right ${total ? 'text-lg font-display font-semibold text-kerf-300' : accent ? 'text-[11px] text-kerf-300 font-semibold' : 'text-[11px] text-ink-200'}`}>
         {fmtCost(value)}
       </span>
     </div>
@@ -354,7 +356,7 @@ function SectionHeader({ children }) {
 function CompareTable({ rows }) {
   return (
     <div className="overflow-x-auto mt-2">
-      <table className="w-full text-[11px]">
+      <table className="w-full text-[11px]" aria-label="Metal cost comparison">
         <thead>
           <tr className="text-ink-500 border-b border-ink-800">
             <th className="text-left py-1 pr-2 font-medium">Metal</th>
@@ -368,10 +370,10 @@ function CompareTable({ rows }) {
           {rows.map((row) => (
             <tr key={row.metal} className="border-b border-ink-800/50 hover:bg-ink-800/30">
               <td className="py-1 pr-2 text-ink-200">{row.label || row.metal}</td>
-              <td className="text-right py-1 px-1 font-mono text-ink-300">{fmt(row.net_grams)}</td>
-              <td className="text-right py-1 px-1 font-mono text-ink-300">{fmt(row.gross_grams)}</td>
-              <td className="text-right py-1 px-1 font-mono text-ink-400">{fmt(row.net_dwt, 3)}</td>
-              <td className="text-right py-1 pl-1 font-mono text-kerf-300">{row.total_cost > 0 ? fmtCost(row.total_cost) : '—'}</td>
+              <td className="text-right py-1 px-1 font-mono tabular-nums text-ink-300">{fmt(row.net_grams)}</td>
+              <td className="text-right py-1 px-1 font-mono tabular-nums text-ink-300">{fmt(row.gross_grams)}</td>
+              <td className="text-right py-1 px-1 font-mono tabular-nums text-ink-400">{fmt(row.net_dwt, 3)}</td>
+              <td className="text-right py-1 pl-1 font-mono tabular-nums text-kerf-300">{row.total_cost > 0 ? fmtCost(row.total_cost) : '—'}</td>
             </tr>
           ))}
         </tbody>
@@ -380,82 +382,165 @@ function CompareTable({ rows }) {
   )
 }
 
-// Stone row component
+// Stone row component — table layout on ≥ sm, stacked card on < sm
 function StoneRow({ stone, idx, onChange, onRemove }) {
   const update = (field, val) => onChange(idx, { ...stone, [field]: val })
 
   const useMm = !stone.carat && stone.mm !== undefined
   const [inputMode, setInputMode] = useState(useMm ? 'mm' : 'carat')
 
+  const inputCls = "bg-ink-900 border border-ink-700 rounded px-1 py-0.5 text-[11px] text-ink-100 focus:outline-none focus:border-kerf-300 focus-visible:ring-1 focus-visible:ring-kerf-300 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+
   return (
-    <tr className="border-b border-ink-800/50">
-      <td className="py-1 pr-1">
-        <select
-          value={stone.cut || 'round_brilliant'}
-          onChange={(e) => update('cut', e.target.value)}
-          className="w-full bg-ink-900 border border-ink-700 rounded px-1 py-0.5 text-[11px] text-ink-100 focus:outline-none focus:border-kerf-400"
-        >
-          {CUT_OPTIONS.map((c) => (
-            <option key={c} value={c}>{c.replace(/_/g, ' ')}</option>
-          ))}
-        </select>
-      </td>
-      <td className="py-1 px-1">
-        <div className="flex items-center gap-1">
+    <>
+      {/* Table row — sm and above */}
+      <tr className="hidden sm:table-row border-b border-ink-800/50">
+        <td className="py-1 pr-1">
+          <select
+            value={stone.cut || 'round_brilliant'}
+            onChange={(e) => update('cut', e.target.value)}
+            aria-label={`Stone ${idx + 1} cut`}
+            className={`w-full ${inputCls}`}
+          >
+            {CUT_OPTIONS.map((c) => (
+              <option key={c} value={c}>{c.replace(/_/g, ' ')}</option>
+            ))}
+          </select>
+        </td>
+        <td className="py-1 px-1">
+          <div className="flex items-center gap-1">
+            <input
+              type="number"
+              value={inputMode === 'carat' ? (stone.carat || '') : (stone.mm || '')}
+              onChange={(e) => inputMode === 'carat' ? update('carat', e.target.value) : update('mm', e.target.value)}
+              placeholder={inputMode === 'carat' ? 'ct' : 'mm'}
+              min={0}
+              step="any"
+              aria-label={`Stone ${idx + 1} ${inputMode === 'carat' ? 'carat weight' : 'diameter in mm'}`}
+              className={`w-16 ${inputCls}`}
+            />
+            <button
+              type="button"
+              onClick={() => {
+                const next = inputMode === 'carat' ? 'mm' : 'carat'
+                setInputMode(next)
+              }}
+              aria-label={inputMode === 'carat' ? 'Switch to mm diameter input' : 'Switch to carat input'}
+              className="text-[10px] text-ink-500 hover:text-ink-300 w-6 text-center focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-kerf-300 rounded"
+              title={inputMode === 'carat' ? 'Switch to mm diameter' : 'Switch to carat'}
+            >
+              {inputMode === 'carat' ? 'ct' : 'mm'}
+            </button>
+          </div>
+        </td>
+        <td className="py-1 px-1">
           <input
             type="number"
-            value={inputMode === 'carat' ? (stone.carat || '') : (stone.mm || '')}
-            onChange={(e) => inputMode === 'carat' ? update('carat', e.target.value) : update('mm', e.target.value)}
-            placeholder={inputMode === 'carat' ? 'ct' : 'mm'}
+            value={stone.price_per_carat || ''}
+            onChange={(e) => update('price_per_carat', e.target.value)}
+            placeholder="$/ct"
             min={0}
             step="any"
-            className="w-16 bg-ink-900 border border-ink-700 rounded px-1 py-0.5 text-[11px] text-ink-100 focus:outline-none focus:border-kerf-400 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+            aria-label={`Stone ${idx + 1} price per carat`}
+            className={`w-16 ${inputCls}`}
           />
+        </td>
+        <td className="py-1 px-1">
+          <input
+            type="number"
+            value={stone.count || 1}
+            onChange={(e) => update('count', e.target.value)}
+            min={1}
+            step={1}
+            aria-label={`Stone ${idx + 1} quantity`}
+            className={`w-10 ${inputCls}`}
+          />
+        </td>
+        <td className="py-1 pl-1">
           <button
             type="button"
-            onClick={() => {
-              const next = inputMode === 'carat' ? 'mm' : 'carat'
-              setInputMode(next)
-            }}
-            className="text-[10px] text-ink-500 hover:text-ink-300 w-6 text-center"
-            title={inputMode === 'carat' ? 'Switch to mm diameter' : 'Switch to carat'}
+            onClick={() => onRemove(idx)}
+            aria-label={`Remove stone ${idx + 1}`}
+            className="text-ink-600 hover:text-amber-400 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-kerf-300 rounded"
           >
-            {inputMode === 'carat' ? 'ct' : 'mm'}
+            <Trash2 size={11} />
           </button>
-        </div>
-      </td>
-      <td className="py-1 px-1">
-        <input
-          type="number"
-          value={stone.price_per_carat || ''}
-          onChange={(e) => update('price_per_carat', e.target.value)}
-          placeholder="$/ct"
-          min={0}
-          step="any"
-          className="w-16 bg-ink-900 border border-ink-700 rounded px-1 py-0.5 text-[11px] text-ink-100 focus:outline-none focus:border-kerf-400 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-        />
-      </td>
-      <td className="py-1 px-1">
-        <input
-          type="number"
-          value={stone.count || 1}
-          onChange={(e) => update('count', e.target.value)}
-          min={1}
-          step={1}
-          className="w-10 bg-ink-900 border border-ink-700 rounded px-1 py-0.5 text-[11px] text-ink-100 focus:outline-none focus:border-kerf-400 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-        />
-      </td>
-      <td className="py-1 pl-1">
-        <button
-          type="button"
-          onClick={() => onRemove(idx)}
-          className="text-ink-600 hover:text-amber-400"
-          aria-label="Remove stone"
-        >
-          <Trash2 size={11} />
-        </button>
-      </td>
-    </tr>
+        </td>
+      </tr>
+
+      {/* Stacked card — < sm only */}
+      <tr className="sm:hidden border-b border-ink-800/50">
+        <td colSpan={5} className="py-2">
+          <div className="bg-ink-800/30 rounded-lg p-2 space-y-1.5">
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] text-ink-500 w-12 shrink-0">Cut</span>
+              <select
+                value={stone.cut || 'round_brilliant'}
+                onChange={(e) => update('cut', e.target.value)}
+                aria-label={`Stone ${idx + 1} cut`}
+                className={`flex-1 ${inputCls}`}
+              >
+                {CUT_OPTIONS.map((c) => (
+                  <option key={c} value={c}>{c.replace(/_/g, ' ')}</option>
+                ))}
+              </select>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] text-ink-500 w-12 shrink-0">Weight</span>
+              <input
+                type="number"
+                value={inputMode === 'carat' ? (stone.carat || '') : (stone.mm || '')}
+                onChange={(e) => inputMode === 'carat' ? update('carat', e.target.value) : update('mm', e.target.value)}
+                placeholder={inputMode === 'carat' ? 'ct' : 'mm'}
+                min={0}
+                step="any"
+                aria-label={`Stone ${idx + 1} ${inputMode === 'carat' ? 'carat weight' : 'diameter in mm'}`}
+                className={`w-20 ${inputCls}`}
+              />
+              <button
+                type="button"
+                onClick={() => setInputMode(inputMode === 'carat' ? 'mm' : 'carat')}
+                aria-label={inputMode === 'carat' ? 'Switch to mm input' : 'Switch to carat input'}
+                className="text-[10px] text-ink-500 hover:text-ink-300 px-1 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-kerf-300 rounded"
+              >
+                {inputMode === 'carat' ? 'ct' : 'mm'}
+              </button>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] text-ink-500 w-12 shrink-0">$/ct</span>
+              <input
+                type="number"
+                value={stone.price_per_carat || ''}
+                onChange={(e) => update('price_per_carat', e.target.value)}
+                placeholder="$/ct"
+                min={0}
+                step="any"
+                aria-label={`Stone ${idx + 1} price per carat`}
+                className={`w-20 ${inputCls}`}
+              />
+              <span className="text-[10px] text-ink-500 ml-2">Qty</span>
+              <input
+                type="number"
+                value={stone.count || 1}
+                onChange={(e) => update('count', e.target.value)}
+                min={1}
+                step={1}
+                aria-label={`Stone ${idx + 1} quantity`}
+                className={`w-10 ${inputCls}`}
+              />
+              <button
+                type="button"
+                onClick={() => onRemove(idx)}
+                aria-label={`Remove stone ${idx + 1}`}
+                className="ml-auto text-ink-600 hover:text-amber-400 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-kerf-300 rounded"
+              >
+                <Trash2 size={11} />
+              </button>
+            </div>
+          </div>
+        </td>
+      </tr>
+    </>
   )
 }
 
@@ -660,29 +745,37 @@ export default function JewelryCostPanel({ projectId, onClose }) {
     : (parseFloat(pricePerGram) > 0 || parseFloat(labor) > 0 || parseFloat(finishing) > 0)
 
   return (
-    <div className="h-full flex flex-col min-h-0 bg-ink-950 text-ink-100">
+    <div
+      role="region"
+      aria-label="Cost breakdown"
+      className="h-full flex flex-col min-h-0 bg-ink-950 text-ink-100"
+    >
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-2.5 border-b border-ink-800 flex-shrink-0">
         <div className="flex items-center gap-2">
-          <Scale size={14} className="text-kerf-300" />
+          <Scale size={14} className="text-kerf-300" aria-hidden="true" />
           <span className="text-xs font-semibold uppercase tracking-wider text-ink-300">
             Jeweller&apos;s Quote
           </span>
         </div>
         <div className="flex items-center gap-2">
           {/* Mode toggle */}
-          <div className="flex rounded overflow-hidden border border-ink-700 text-[10px]">
+          <div className="flex rounded overflow-hidden border border-ink-700 text-[10px]" role="group" aria-label="Quote mode">
             <button
               type="button"
               onClick={() => { setMode('full_quote'); setApiResult(null) }}
-              className={`px-2 py-0.5 ${mode === 'full_quote' ? 'bg-kerf-400/20 text-kerf-300' : 'text-ink-500 hover:text-ink-300'}`}
+              aria-pressed={mode === 'full_quote'}
+              aria-label="Full quote mode"
+              className={`px-2 py-0.5 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-kerf-300 ${mode === 'full_quote' ? 'bg-kerf-400/20 text-kerf-300' : 'text-ink-500 hover:text-ink-300'}`}
             >
               Full Quote
             </button>
             <button
               type="button"
               onClick={() => { setMode('casting_cost'); setApiResult(null) }}
-              className={`px-2 py-0.5 border-l border-ink-700 ${mode === 'casting_cost' ? 'bg-kerf-400/20 text-kerf-300' : 'text-ink-500 hover:text-ink-300'}`}
+              aria-pressed={mode === 'casting_cost'}
+              aria-label="Casting cost mode"
+              className={`px-2 py-0.5 border-l border-ink-700 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-kerf-300 ${mode === 'casting_cost' ? 'bg-kerf-400/20 text-kerf-300' : 'text-ink-500 hover:text-ink-300'}`}
             >
               Casting
             </button>
@@ -691,7 +784,8 @@ export default function JewelryCostPanel({ projectId, onClose }) {
             <button
               type="button"
               onClick={onClose}
-              className="text-[11px] text-ink-400 hover:text-ink-100"
+              aria-label="Close cost panel"
+              className="text-[11px] text-ink-400 hover:text-ink-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-kerf-300 rounded"
             >
               Close
             </button>
@@ -719,7 +813,8 @@ export default function JewelryCostPanel({ projectId, onClose }) {
             <select
               value={metal}
               onChange={(e) => { setMetal(e.target.value); setApiResult(null) }}
-              className="w-full bg-ink-900 border border-ink-700 rounded px-2 py-1 text-xs text-ink-100 focus:outline-none focus:border-kerf-400"
+              aria-label="Select metal alloy"
+              className="w-full h-9 bg-ink-900 border border-ink-800 rounded px-2 py-1 text-xs text-ink-100 focus:outline-none focus:border-kerf-300 focus-visible:ring-1 focus-visible:ring-kerf-300"
             >
               {Object.entries(METAL_GROUPS).map(([group, opts]) => (
                 <optgroup key={group} label={group}>
@@ -780,9 +875,10 @@ export default function JewelryCostPanel({ projectId, onClose }) {
                 <button
                   type="button"
                   onClick={handleStoneAdd}
-                  className="inline-flex items-center gap-1 text-[11px] text-kerf-300 hover:text-kerf-200"
+                  aria-label="Add gemstone to quote"
+                  className="inline-flex items-center gap-1 text-[11px] text-kerf-300 hover:text-kerf-200 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-kerf-300 rounded"
                 >
-                  <Plus size={11} /> Add stone
+                  <Plus size={11} aria-hidden="true" /> Add stone
                 </button>
               </div>
               {stones.length > 0 ? (
@@ -830,7 +926,8 @@ export default function JewelryCostPanel({ projectId, onClose }) {
                 <select
                   value={settingType}
                   onChange={(e) => { setSettingType(e.target.value); setApiResult(null) }}
-                  className="w-full bg-ink-900 border border-ink-700 rounded px-2 py-1 text-xs text-ink-100 focus:outline-none focus:border-kerf-400"
+                  aria-label="Select setting type"
+                  className="w-full h-9 bg-ink-900 border border-ink-800 rounded px-2 py-1 text-xs text-ink-100 focus:outline-none focus:border-kerf-300 focus-visible:ring-1 focus-visible:ring-kerf-300"
                 >
                   {SETTING_TYPES.map((s) => (
                     <option key={s.key} value={s.key}>{s.label} (${s.fee}/stone default)</option>
@@ -849,7 +946,8 @@ export default function JewelryCostPanel({ projectId, onClose }) {
                 <select
                   value={finishingType}
                   onChange={(e) => { setFinishingType(e.target.value); setApiResult(null) }}
-                  className="w-full bg-ink-900 border border-ink-700 rounded px-2 py-1 text-xs text-ink-100 focus:outline-none focus:border-kerf-400"
+                  aria-label="Select finishing type"
+                  className="w-full h-9 bg-ink-900 border border-ink-800 rounded px-2 py-1 text-xs text-ink-100 focus:outline-none focus:border-kerf-300 focus-visible:ring-1 focus-visible:ring-kerf-300"
                 >
                   {FINISHING_TYPES.map((f) => (
                     <option key={f.key} value={f.key}>{f.label}</option>
@@ -877,20 +975,23 @@ export default function JewelryCostPanel({ projectId, onClose }) {
             type="button"
             onClick={handleCalculate}
             disabled={loading || !volumeMm3}
-            className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md bg-kerf-300 text-ink-950 text-xs font-medium hover:bg-kerf-200 disabled:opacity-40 disabled:cursor-not-allowed"
+            aria-label={loading ? 'Calculating…' : mode === 'full_quote' ? 'Generate full quote' : 'Calculate casting cost'}
+            className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md bg-kerf-300 text-ink-950 text-xs font-medium hover:bg-kerf-200 disabled:opacity-40 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-kerf-300 focus-visible:ring-offset-2 focus-visible:ring-offset-ink-950"
           >
             {loading ? (
-              <RefreshCw size={11} className="animate-spin" />
+              <RefreshCw size={11} className="animate-spin" aria-hidden="true" />
             ) : (
-              <Scale size={11} />
+              <Scale size={11} aria-hidden="true" />
             )}
             {loading ? 'Calculating…' : mode === 'full_quote' ? 'Quote' : 'Calculate'}
           </button>
           <button
             type="button"
             onClick={() => setShowCompare((v) => !v)}
+            aria-pressed={showCompare}
+            aria-label="Toggle multi-metal comparison table"
             title="Toggle multi-metal comparison"
-            className={`px-2.5 py-1.5 rounded-md border text-xs ${showCompare ? 'border-kerf-400 text-kerf-300 bg-kerf-400/10' : 'border-ink-700 text-ink-400 hover:border-ink-500'}`}
+            className={`px-2.5 py-1.5 rounded-md border text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-kerf-300 focus-visible:ring-offset-2 focus-visible:ring-offset-ink-950 ${showCompare ? 'border-kerf-400 text-kerf-300 bg-kerf-400/10' : 'border-ink-700 text-ink-400 hover:border-ink-500'}`}
           >
             Compare
           </button>
@@ -985,7 +1086,7 @@ export default function JewelryCostPanel({ projectId, onClose }) {
                       {estimate.markup_pct > 0 && (
                         <CostRow label={`Markup (${fmt(estimate.markup_pct, 0)}%)`} value={estimate.markup_amount} />
                       )}
-                      <CostRow label="Total" value={estimate.total} accent />
+                      <CostRow label="Total" value={estimate.total} total />
                     </>
                   ) : (
                     /* Legacy casting_cost breakdown */
@@ -993,7 +1094,7 @@ export default function JewelryCostPanel({ projectId, onClose }) {
                       <CostRow label="Metal material" value={estimate.metal_cost} />
                       <CostRow label="Labor" value={estimate.labor} />
                       <CostRow label="Finishing" value={estimate.finishing} />
-                      <CostRow label="Total" value={estimate.total_cost} accent />
+                      <CostRow label="Total" value={estimate.total_cost} total />
                     </>
                   )}
                 </div>

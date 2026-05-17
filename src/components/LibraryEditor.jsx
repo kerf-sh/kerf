@@ -92,7 +92,8 @@ export default function LibraryEditor() {
     <div className="h-full flex flex-col bg-ink-950 text-ink-100 min-h-0">
       <Header part={currentPart} onOpenBOM={() => navigate(`/projects/${projectId}/bom`)} />
 
-      <div className="flex-1 grid min-h-0" style={{ gridTemplateColumns: '320px 1fr 340px' }}>
+      {/* Three-column layout: md+ uses fixed widths, sm collapses to single column */}
+      <div className="flex-1 min-h-0 grid grid-cols-1 md:grid-cols-[320px_1fr_340px]">
         {/* Left: metadata form */}
         <aside className="border-r border-ink-800 overflow-y-auto min-h-0">
           <MetadataForm
@@ -163,7 +164,7 @@ function Header({ part, onOpenBOM }) {
         <button
           type="button"
           onClick={onOpenBOM}
-          className="text-[11px] text-ink-400 hover:text-kerf-300 inline-flex items-center gap-1"
+          className="text-[11px] text-ink-400 hover:text-kerf-300 inline-flex items-center gap-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-kerf-300/70 rounded"
           title="Open Bill of Materials"
         >
           <Layers size={11} />
@@ -581,7 +582,7 @@ function PhotosPanel({ projectId, fileId, photos, onChange }) {
           No photos yet — add a product shot.
         </div>
       ) : (
-        <div className="grid grid-cols-3 gap-2">
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
           {photos.map((p) => (
             <PhotoTile
               key={p.storage_key}
@@ -659,8 +660,9 @@ function PhotoTile({ photo, onEnlarge, onSetPrimary, onRemove, disabled }) {
         type="button"
         onClick={() => setMenuOpen((v) => !v)}
         disabled={disabled}
-        className="absolute top-1 right-1 p-0.5 rounded bg-ink-950/70 backdrop-blur text-ink-200 hover:text-kerf-300 opacity-0 group-hover:opacity-100 transition-opacity disabled:opacity-50"
+        className="absolute top-1 right-1 p-0.5 rounded bg-ink-950/70 backdrop-blur text-ink-200 hover:text-kerf-300 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-kerf-300/70"
         aria-label="Photo actions"
+        aria-expanded={menuOpen}
       >
         <MoreHorizontal size={11} />
       </button>
@@ -726,14 +728,17 @@ function PhotoLightbox({ photo, onClose }) {
 
   return (
     <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Photo lightbox"
       className="fixed inset-0 z-[80] flex items-center justify-center bg-ink-950/80 backdrop-blur-sm p-8"
       onMouseDown={(e) => { if (e.target === e.currentTarget) onClose() }}
     >
       <button
         type="button"
         onClick={onClose}
-        className="absolute top-4 right-4 p-1.5 rounded-md text-ink-300 hover:text-ink-100 hover:bg-ink-800/80"
-        aria-label="Close"
+        className="absolute top-4 right-4 p-1.5 rounded-md text-ink-300 hover:text-ink-100 hover:bg-ink-800/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-kerf-300/70"
+        aria-label="Close lightbox"
       >
         <X size={18} />
       </button>
@@ -852,7 +857,7 @@ function DistributorsPanel({ distributors, onChange, projectId, fileId, onRefres
           No distributors. Add a Digi-Key / Mouser / LCSC URL.
         </div>
       ) : (
-        <ul className="space-y-2">
+        <ul role="list" className="space-y-2">
           {distributors.map((d, i) => (
             <DistributorRow
               key={`${d.name}::${d.sku || ''}::${i}`}
@@ -881,7 +886,7 @@ function DistributorRow({ row, onChange, onRemove }) {
   const [expanded, setExpanded] = useState(false)
   const fetchedAtRel = formatFetchedAt(row.fetched_at)
   return (
-    <li className="rounded border border-ink-800 bg-ink-900/50">
+    <li role="listitem" className="rounded border border-ink-800 bg-ink-900/50">
       <div className="flex items-center gap-1.5 px-2 py-1.5">
         <button
           type="button"
@@ -934,8 +939,9 @@ function DistributorRow({ row, onChange, onRemove }) {
         )}
         <button
           type="button"
+          aria-label="Remove distributor"
           onClick={onRemove}
-          className="p-1 rounded text-ink-500 hover:text-red-300"
+          className="p-1 rounded text-ink-500 hover:text-red-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/50"
           title="Remove"
         >
           <Trash2 size={10} />
@@ -1092,13 +1098,13 @@ function WhereUsedPanel({ files, currentFileId, onOpen }) {
           Not yet referenced from any assembly.
         </div>
       ) : (
-        <ul className="space-y-1">
+        <ul role="list" className="space-y-1">
           {refs.map(({ file, count }) => (
-            <li key={file.id}>
+            <li key={file.id} role="listitem">
               <button
                 type="button"
                 onClick={() => onOpen(file.id)}
-                className="w-full text-left px-2 py-1.5 rounded hover:bg-ink-900 group flex items-center justify-between gap-2"
+                className="w-full text-left px-2 py-1.5 rounded hover:bg-ink-900 group flex items-center justify-between gap-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-kerf-300/70"
               >
                 <span className="text-[11px] text-ink-200 group-hover:text-kerf-300 truncate">
                   {file.name}

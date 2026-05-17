@@ -521,7 +521,7 @@ export default function AssemblyEditor({
         <button
           type="button"
           onClick={startInsert}
-          className="inline-flex items-center gap-1 px-2 py-1 rounded bg-kerf-300 text-ink-950 text-[11px] font-medium hover:bg-kerf-200"
+          className="inline-flex items-center gap-1 px-2 py-1 rounded bg-kerf-300 text-ink-950 text-[11px] font-medium hover:bg-kerf-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-kerf-300/70"
           title="Add component"
         >
           <Plus size={11} />
@@ -545,7 +545,7 @@ export default function AssemblyEditor({
             </div>
           </div>
         ) : (
-          <ul className="px-2 py-2 space-y-1.5">
+          <ul role="list" className="px-2 py-2 space-y-1.5">
             {rows.map((row, idx) => (
               <ComponentRow
                 key={`${row.id}-${idx}`}
@@ -704,6 +704,9 @@ function InsertObjectsModal({ modal, eligibleFiles, allFiles, onPickFile, onCanc
       onClick={onCancel}
     >
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Insert Objects"
         className="w-full max-w-md bg-ink-900 border border-ink-700 rounded-xl shadow-2xl flex flex-col max-h-[80vh]"
         onClick={(e) => e.stopPropagation()}
       >
@@ -711,9 +714,9 @@ function InsertObjectsModal({ modal, eligibleFiles, allFiles, onPickFile, onCanc
           <h2 className="text-base font-semibold text-ink-100">Insert Objects</h2>
           <button
             type="button"
+            aria-label="Close"
             onClick={onCancel}
-            className="p-1 rounded hover:bg-ink-800 text-ink-300 hover:text-ink-100"
-            title="Close"
+            className="p-1 rounded hover:bg-ink-800 text-ink-300 hover:text-ink-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-kerf-300/70"
           >
             <X size={16} />
           </button>
@@ -757,9 +760,9 @@ function InsertObjectsModal({ modal, eligibleFiles, allFiles, onPickFile, onCanc
                   <button type="button" onClick={selectNone} className="text-ink-400 hover:text-kerf-300">none</button>
                 </div>
               </div>
-              <ul className="space-y-0.5">
+              <ul role="list" className="space-y-0.5">
                 {objectIds.map((oid) => (
-                  <li key={oid}>
+                  <li key={oid} role="listitem">
                     <label className="flex items-center gap-2 px-2 py-1 rounded hover:bg-ink-850 cursor-pointer">
                       <input
                         type="checkbox"
@@ -849,6 +852,7 @@ function ComponentRow({
 
   return (
     <li
+      role="listitem"
       onClick={onSelect}
       onDragOver={onDragOver}
       onDrop={onDrop}
@@ -862,10 +866,14 @@ function ComponentRow({
       <div className="flex items-center gap-2 px-2 py-1.5">
         <span
           draggable
+          onPointerDown={(e) => { if (e.button === 0) { e.currentTarget.setPointerCapture(e.pointerId); onDragStart() } }}
+          onPointerUp={() => onDragEnd()}
           onDragStart={onDragStart}
           onDragEnd={onDragEnd}
-          className="cursor-grab active:cursor-grabbing text-ink-500 hover:text-ink-300"
-          title="Drag to reorder"
+          role="button"
+          aria-label="Drag to reorder"
+          tabIndex={0}
+          className="cursor-grab active:cursor-grabbing touch-none text-ink-500 hover:text-ink-300 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-kerf-300/60 rounded"
           onClick={(e) => e.stopPropagation()}
         >
           <GripVertical size={12} />
@@ -909,16 +917,18 @@ function ComponentRow({
         <span className="flex-1" />
         <button
           type="button"
+          aria-label={row.visible ? 'Hide component' : 'Show component'}
           onClick={(e) => { e.stopPropagation(); onPatch({ visible: !row.visible }) }}
-          className={`p-1 rounded hover:bg-ink-800 ${row.visible ? 'text-ink-300' : 'text-ink-500'}`}
+          className={`p-1 rounded hover:bg-ink-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-kerf-300/70 ${row.visible ? 'text-ink-300' : 'text-ink-500'}`}
           title={row.visible ? 'Hide' : 'Show'}
         >
           {row.visible ? <Eye size={11} /> : <EyeOff size={11} />}
         </button>
         <button
           type="button"
+          aria-label="Color override"
           onClick={(e) => { e.stopPropagation(); setShowColor((v) => !v) }}
-          className="w-5 h-5 rounded border border-ink-700 hover:border-kerf-300 flex-shrink-0"
+          className="w-5 h-5 rounded border border-ink-700 hover:border-kerf-300 flex-shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-kerf-300/70"
           style={{ backgroundColor: row.color
             ? `rgb(${Math.round(row.color[0] * 255)},${Math.round(row.color[1] * 255)},${Math.round(row.color[2] * 255)})`
             : 'transparent' }}
@@ -926,8 +936,9 @@ function ComponentRow({
         />
         <button
           type="button"
+          aria-label="Delete component"
           onClick={(e) => { e.stopPropagation(); onDelete() }}
-          className="p-1 rounded hover:bg-red-900/30 text-ink-500 hover:text-red-300"
+          className="p-1 rounded hover:bg-red-900/30 text-ink-500 hover:text-red-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/50"
           title="Delete component"
         >
           <Trash2 size={11} />
