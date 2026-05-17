@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useParams, Navigate } from 'react-router-dom'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import rehypeHighlight from 'rehype-highlight'
+import CodeBlock, { InlineCode } from '../../components/CodeBlock.jsx'
 import {
   ArrowLeft,
   ArrowRight,
@@ -153,7 +153,6 @@ function ArticleBody({ entry, prev, next, userGroup }) {
         <div className="docs-prose">
           <ReactMarkdown
             remarkPlugins={[remarkGfm]}
-            rehypePlugins={[rehypeHighlight]}
             components={mdComponents}
           >
             {trimmedBody}
@@ -466,31 +465,19 @@ const mdComponents = {
       {children}
     </blockquote>
   ),
-  code: ({ inline, className, children, ...props }) => {
-    if (inline) {
-      return (
-        <code
-          className="font-mono text-[0.875em] bg-ink-900 text-ink-100 border border-ink-800 rounded px-1 py-0.5"
-          {...props}
-        >
-          {children}
-        </code>
-      )
+  code: ({ className, children }) => {
+    // In react-markdown v10, block code always has a className like "language-X".
+    // Inline code has no className (or no language- prefix).
+    const isBlock = /\blanguage-/.test(className || '')
+    if (!isBlock) {
+      return <InlineCode>{children}</InlineCode>
     }
-    return (
-      <code className={clsx('font-mono text-[13px] text-ink-100', className)} {...props}>
-        {children}
-      </code>
-    )
+    const language = (className || '').replace(/^.*\blanguage-([^\s]+).*$/, '$1')
+    const source = typeof children === 'string' ? children.replace(/\n$/, '') : String(children ?? '')
+    return <CodeBlock language={language}>{source}</CodeBlock>
   },
-  pre: ({ children, ...props }) => (
-    <pre
-      className="my-5 rounded-lg bg-ink-900 border border-ink-800 px-4 py-3 overflow-x-auto text-[13px] leading-[1.6] text-ink-100"
-      {...props}
-    >
-      {children}
-    </pre>
-  ),
+  // pre is a no-op wrapper since CodeBlock renders its own <pre>.
+  pre: ({ children }) => <>{children}</>,
   hr: (props) => <hr className="my-8 border-ink-800" {...props} />,
   table: ({ children, ...props }) => (
     <div className="my-5 overflow-x-auto rounded-lg border border-ink-800">
