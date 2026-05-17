@@ -102,7 +102,63 @@
     </script>
   </head>
   <body>
-    <div id="root"></div>
+    <style>
+      html, body { background: #0a0a0a; color: #facc15; }
+      #root:empty::before {
+        content: "";
+        position: fixed;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        background: #0a0a0a;
+        z-index: 0;
+      }
+      .kerf-boot {
+        position: fixed;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        background: #0a0a0a;
+        z-index: 9999;
+        color: #facc15;
+      }
+      .kerf-boot__svg { width: 96px; height: 96px; color: #facc15; }
+      .kerf-boot__svg polygon {
+        fill: none;
+        stroke: currentColor;
+        stroke-width: 4;
+        stroke-linejoin: round;
+        animation: kerf-boot-pulse 1.2s ease-in-out infinite;
+      }
+      .kerf-boot__svg polygon:nth-child(2) { animation-delay: 0.4s; }
+      .kerf-boot__svg polygon:nth-child(3) { animation-delay: 0.8s; }
+      @keyframes kerf-boot-pulse {
+        0%, 100% { fill-opacity: 0; stroke-opacity: 0.35; }
+        50%      { fill-opacity: 0.25; stroke-opacity: 1; }
+      }
+      .kerf-boot__label {
+        margin-top: 1.25rem;
+        font: 500 0.875rem/1.25rem ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        letter-spacing: 0.02em;
+        opacity: 0.7;
+      }
+      .kerf-boot__inner { display: flex; flex-direction: column; align-items: center; }
+      @media (prefers-reduced-motion: reduce) {
+        .kerf-boot__svg polygon { animation: none; fill-opacity: 0.2; stroke-opacity: 1; }
+      }
+    </style>
+    <div id="root">
+      <div class="kerf-boot" role="status" aria-live="polite" aria-label="Loading Kerf">
+        <div class="kerf-boot__inner">
+          <svg class="kerf-boot__svg" viewBox="0 0 100 100" aria-hidden="true">
+            <polygon points="50,10 90,80 10,80" />
+            <polygon points="30,80 70,80 50,46" />
+            <polygon points="50,46 70,80 30,80" />
+          </svg>
+          <div class="kerf-boot__label">Loading Kerf…</div>
+        </div>
+      </div>
+    </div>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>
