@@ -12,6 +12,54 @@ The authoritative source for what's shipped vs in-flight is
 See `🔮 planned` rows in [ROADMAP.md](./ROADMAP.md). The v0.2 milestone
 focus is in [docs/plans/v0.2-milestone.md](./docs/plans/v0.2-milestone.md).
 
+### 2026-05-17 (later) — Compare hub matrices, scroll-to-top, CFD foundation, FEM ref-values
+
+Same date as the geometry-kernel step-change below; a second wave of
+landings followed in the same window. Captured here as a sibling section
+so the kernel + earlier-day entries stay self-contained.
+
+- **Compare hub redesign with per-category feature matrices** —
+  `src/routes/compare/index.jsx` + `src/routes/compare/CategoryMatrix.jsx`
+  now render Mechanical / Electronic / BIM / Jewelry & NURBS / DCC
+  matrices plus per-CAD cards (5 mech + 2 each electronic / BIM /
+  jewelry / DCC + 1 drafting). 14 head-to-head comparison routes live
+  under `/compare/` (Altium, Autocad, Blender, Civil3d, Freecad, Fusion,
+  Inventor, KiCad, MatrixGold, Max3ds, Onshape, Revit, Rhino,
+  Solidworks).
+- **5 new compare pages wired** — Solidworks / Autocad / Civil3d /
+  Inventor / Max3ds (`3736e98` + `5282b3f`), each lazy-loaded via
+  `src/App.jsx`.
+- **Scroll-to-top on route change** — `src/components/ScrollToTop.jsx`
+  wired in `src/App.jsx` (no more landing on `/compare` mid-scroll).
+- **Roadmap link in public Header** — `NAV_LINKS` in
+  `src/components/Header.jsx` now exposes `/roadmap` alongside Docs and
+  Compare.
+- **Blender/Cycles render architecture surfaced** — ROADMAP G-7 +
+  Roadmap.jsx + Landing.jsx now name the backend-Cycles + browser-path-
+  tracer split; T-106 epic split into T-106a..f in `tasks.md` (scene
+  translator + materials mapping, Cycles worker, hero-render UX,
+  pricing meter, self-host docker, in-browser
+  `three-gpu-pathtracer` fallback).
+- **Footer + h-scroll defensive guard** — `body { max-width: 100vw }` +
+  `overflow-x: clip` on html / body / `#root` in `src/index.css`
+  (`bba65ff` / `b2d2689`); Landing.jsx hero wrapper now clips
+  defensively for Safari/WebKit.
+- **CFD foundation (2-D laminar scope)** — `packages/kerf-fem/src/
+  kerf_fem/cfd_potential.py` (potential flow, `Cp(θ) = 1 − 4 sin²θ`
+  analytic oracle) + `cfd_navier_stokes.py` (lid-driven cavity,
+  Ghia Re=100 reference); 61 hermetic CFD tests in
+  `packages/kerf-fem/tests/test_cfd.py`. T-101 stays 🚧 in flight (full
+  CfdOF parity = turbulence k-ε / k-ω SST, 3-D unstructured meshing,
+  OpenFOAM bridge).
+- **FEM reference-value suite** — `packages/kerf-fem/src/kerf_fem/
+  pressure_load.py` + 43-test `test_fem_refvalues.py` with citable
+  Roark / Blevins / Incropera oracles; 42 green; one ASTM E1049
+  rainflow test skipped — real bug flagged in
+  `fatigue_fem._rainflow`, tracked under T-100.
+- **Test count** — full repo collects **24 134 tests** via
+  `pytest --collect-only -q -p no:cacheprovider --no-header` (verified
+  this session, +232 over the previous 23 902 baseline).
+
 ### 2026-05-17 — Geometry kernel step-change + ship-gate landed
 
 Pure-Python B-rep/NURBS kernel jumped from *Rhino-width construction
