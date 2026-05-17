@@ -173,7 +173,7 @@ function Hero() {
             >
               <li className="flex items-center gap-1.5">
                 <span className="w-1 h-1 rounded-full bg-ink-500" />
-                620 kernel tests · analytic-oracle verified
+                ~23,959 tests green · 0 failing
               </li>
               <li className="flex items-center gap-1.5">
                 <span className="w-1 h-1 rounded-full bg-ink-500" />
@@ -867,58 +867,58 @@ function FactCard({ icon: Icon, title, body }) {
 // (3×3 on lg). The full list lives in /roadmap and ROADMAP.md.
 const SHIPPED = [
   {
-    title: 'FreeCAD Tier 1 import',
+    title: 'FreeCAD Tier 2 import',
     domain: 'Imports',
-    body: '.FCStd → .feature + .sketch + .assembly. Pure-Python parser, BRep-lifted geometry, PartDesign metadata captured, multi-Body → assembly with placement transforms.',
+    body: 'Sketcher constraints + Spreadsheet → .equations. TechDraw drawings → .drawing. Materials library. Completes the FreeCAD design round-trip after Tier 1 (PartDesign).',
     docHref: '/docs/imports',
   },
   {
-    title: 'NURBS booleans v1',
+    title: 'IFC import (Tier 1 + 2)',
+    domain: 'Architecture',
+    body: '.ifc → .bim DSL: walls / slabs / openings / spaces / levels. Tier 2: families + schedules + views. Bidirectional round-trip with existing IFC4 export.',
+    docHref: '/docs/bim-format',
+  },
+  {
+    title: 'NURBS Phase 4 — trim, matchSrf, G3 viz',
     domain: 'Mechanical',
-    body: 'feature_to_solid cap-then-boolean + feature_boolean (cut/fuse/common) on solids. 7-task scope shipped end-to-end; sets up Phase 4 surface-direct.',
+    body: 'Trim-by-curve (C2) + matchSrf G1/G2 (C3) + curvature-comb G3 visualisation (C4). Closes out the NURBS Phase 4 surface-depth roadmap.',
     docHref: '/docs/feature-format',
   },
   {
-    title: 'NURBS Phase 4 — surface booleans (C1)',
+    title: 'SubD with edge creases',
     domain: 'Mechanical',
-    body: 'feature_surface_boolean Python tool + opSurfaceBoolean worker handler behind a binding probe. First 3 of 10 Capability-1 tasks landed.',
+    body: 'Catmull-Clark SubD with per-edge crease weights [0..1]. Smooth / crease / corner vertex classification. Hard-edge control without leaving SubD mode.',
     docHref: '/docs/feature-format',
   },
   {
-    title: 'Persistent face naming',
-    domain: 'Mechanical',
-    body: 'Sketch-anchored primary (Pad-A.TopCap) + topo-hash fallback. Dual-write target_face_name alongside legacy face_id — survives upstream sketch edits.',
-    docHref: '/docs/feature-format',
-  },
-  {
-    title: '5-axis CAM v1',
+    title: '3D-print G-code slicing',
     domain: 'CAM',
-    body: 'Constant-tilt finishing (UV iso-curves + per-point surface normal + tilt-about-tangent ball-end math) and 3+2 indexed (rotate STL to drive-face Z).',
+    body: 'Mesh → printable G-code via CuraEngine subprocess. Perimeters, infill, supports, retraction. kerf-slicing plugin; AGPLv3 extra isolated at subprocess boundary.',
     docHref: '/docs/capabilities',
   },
   {
-    title: 'Wiring + harness diagrams',
-    domain: 'Electronics',
-    body: 'New .wiring file kind. WireViz YAML → SVG. Per-plugin kerf-wiring package, /run-wireviz pyworker route, opt-in GPLv3 extra.',
-    docHref: '/docs/electronics',
-  },
-  {
-    title: 'Sketch → JSCAD workflow',
-    domain: 'Mechanical',
-    body: 'extrude_sketch_to_jscad LLM tool, viewport surfaces sketch-import errors, reactive re-eval when an imported .sketch changes. Mesh-side analog of .feature.',
-    docHref: '/docs/sketch-to-jscad',
-  },
-  {
-    title: 'kerf-sdk Python SDK',
+    title: 'SDK: Rust + Go + Lua',
     domain: 'Scripting',
-    body: 'pip install kerf-sdk. JSON-RPC over /v1/rpc, API-token auth, namespaced wrappers for files / equations / configurations / revisions / docs.',
+    body: 'kerf-sdk-rs / kerf-sdk-go / kerf-sdk-lua. Same JSON-RPC wire format as Python + TS. Targets embedded scripting in existing CAD plugin ecosystems.',
     docHref: '/docs/v1-rpc',
   },
   {
-    title: 'Revit-parity authoring',
-    domain: 'Architecture',
-    body: 'Families, schedules, views, sheets, categories, phasing, view filters, stairs, railings, MEP, curtain walls. Full BIM toolchain on top of IFC4.',
-    docHref: '/docs/bim-format',
+    title: 'PLC structured text (.plc.st)',
+    domain: 'Electronics',
+    body: 'IEC 61131-3 Structured Text editor + offline MATIEC lint. Companion to .circuit.tsx — describe ladder logic alongside the PCB it controls.',
+    docHref: '/docs/electronics',
+  },
+  {
+    title: 'Quad remesher',
+    domain: 'Mechanical',
+    body: 'Quad-dominant remeshing via Instant Meshes. Distinct from the triangle mesh.remesh op — produces structured quads for SubD prep and FEM meshing.',
+    docHref: '/docs/capabilities',
+  },
+  {
+    title: 'Persistent face naming — complete',
+    domain: 'Mechanical',
+    body: 'All 7 tasks shipped: face-name emission, role taxonomy, boolean carry-over, pattern propagation, mate-ref migration, resolveFaceRef name-first fallback, DB backfill.',
+    docHref: '/docs/feature-format',
   },
 ]
 
@@ -1002,24 +1002,34 @@ function RecentlyShipped() {
 
 const ROADMAP = [
   {
-    title: 'NURBS Phase 4 — surface-direct',
-    body: 'Robust surface booleans (Capability 1, in flight — 3/10 tasks shipped). Trim-by-curve, matchSrf, G3 continuity follow.',
+    title: 'FEM / CFD depth',
+    body: 'Nonlinear static, explicit dynamics, acoustics, fatigue already in; Navier-Stokes + heat transfer in progress. Target: CalculiX / Z88 / Mystran scope.',
     status: 'in_flight',
   },
   {
-    title: 'Slicing — cross-section + layered + 3D-print',
-    body: 'feature_section wraps BRepAlgoAPI_Section; CNC layered milling; AGPLv3 slicer subprocess for FDM/SLA G-code.',
-    status: 'planned',
+    title: 'Interactive diff-pair routing',
+    body: 'Diff-pair data layer shipped. In progress: push-and-shove UI, real-time impedance check, live length-delta display during routing.',
+    status: 'in_flight',
   },
   {
-    title: 'Quad remesher (Rhino parity)',
-    body: 'feature_quad_remesh wraps Instant Meshes — quad-dominant remeshing, distinct from the triangle mesh.remesh op. SubD/FEM prep.',
-    status: 'planned',
+    title: 'Broader ECAD import',
+    body: 'Allegro / PADS / gEDA / Eagle → .circuit.tsx parsers. KiCad Tier 1 + 2 already landed; each legacy format gets its own parser.',
+    status: 'next',
   },
   {
-    title: 'PLC structured text (.plc.st)',
-    body: 'IEC 61131-3 Structured Text editor + offline MATIEC lint; optional OpenPLC sim. Companion to .circuit.tsx on the electronics persona.',
-    status: 'planned',
+    title: 'Full joint system + direct edit',
+    body: 'Gear / pin-slot / rack-pinion joints (cam-follower already shipped). Direct face-push edits that insert into the parametric DAG without breaking the feature tree.',
+    status: 'next',
+  },
+  {
+    title: 'Render: caustics + dispersion',
+    body: 'Photon-mapped caustics for glass / gem renders. Wavelength-based dispersion for diamond and coloured-stone previews.',
+    status: 'next',
+  },
+  {
+    title: 'BIM family library + structural grid',
+    body: 'Walls / slabs / stairs / MEP already ship. Next: parametric family library, structural grid, site + earthwork, and material catalogue.',
+    status: 'next',
   },
 ]
 
@@ -1056,20 +1066,26 @@ function RoadmapGlimpse() {
           </div>
         </div>
 
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
           {ROADMAP.map((r) => {
             const isInFlight = r.status === 'in_flight'
+            const isNext = r.status === 'next'
             const pillCls = isInFlight
               ? 'bg-kerf-300/10 border border-kerf-300/30 text-kerf-300'
-              : 'bg-ink-900 border border-ink-800 text-ink-400'
+              : isNext
+                ? 'bg-cyan-edge/10 border border-cyan-edge/30 text-cyan-300'
+                : 'bg-ink-900 border border-ink-800 text-ink-400'
             return (
               <div
                 key={r.title}
+                aria-label={r.title}
                 className={
                   'rounded-xl border border-dashed bg-ink-900/30 p-4 transition-colors ' +
                   (isInFlight
                     ? 'border-kerf-300/30 hover:bg-ink-900/50'
-                    : 'border-ink-700 hover:border-kerf-300/30 hover:bg-ink-900/50')
+                    : isNext
+                      ? 'border-cyan-edge/30 hover:bg-ink-900/50'
+                      : 'border-ink-700 hover:border-kerf-300/30 hover:bg-ink-900/50')
                 }
               >
                 <span
@@ -1078,8 +1094,8 @@ function RoadmapGlimpse() {
                     pillCls
                   }
                 >
-                  <span aria-hidden>{isInFlight ? '●' : '○'}</span>
-                  {isInFlight ? 'in flight' : 'planned'}
+                  <span aria-hidden>{isInFlight ? '●' : isNext ? '◐' : '○'}</span>
+                  {isInFlight ? 'in flight' : isNext ? 'up next' : 'planned'}
                 </span>
                 <h3 className="font-display text-sm font-semibold tracking-tight text-ink-100 mb-1">
                   {r.title}
