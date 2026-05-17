@@ -24,11 +24,13 @@ It is **never**:
 
 Concretely:
 
-- Every CAD operation, sketcher, OCCT kernel op, assembly/mate, drawing,
-  electronics/PCB, FEM, CAM, slicing, topology-optimization tool, LLM
-  agent tool, file storage, version history, and the **parts library
-  capability** is present and fully functional in the MIT self-hosted
-  install.
+- Every CAD operation, sketcher, OCCT kernel op, the pure-Python B-rep
+  kernel (`kerf-cad-core/geom/` — valid topology, booleans, fillets,
+  closest-point, SSI, parametric feature DAG, persistent face naming),
+  assembly/mate, drawing, electronics/PCB, FEM, CAM, slicing,
+  topology-optimization tool, LLM agent tool, file storage, version
+  history, and the **parts library capability** is present and fully
+  functional in the MIT self-hosted install.
 - The cloud bundle adds: usage metering + three-bucket billing
   (Paystack), the hosted Workshop (public multi-user project sharing),
   hosted git + GitHub sync, the operator-run distributor sync, hosted
