@@ -1,6 +1,43 @@
-# Render Tools
+# kerf-render — render plugin: Blender Cycles + browser path tracer
 
-LLM tools for producing render-quality output via Blender Cycles. A `.render` file is a
+`kerf-render` provides render-quality image output from Kerf geometry. It registers LLM tools for creating and running `.render` scene files, backed by a Blender Cycles worker on the pyworker sidecar. A browser-side path tracer (T-106 roadmap) is the planned complement for real-time preview renders.
+
+Depends on `cad-core`. Provides `render.image` (always declared; returns a clear error if Blender is absent from PATH).
+
+---
+
+## Plugin registration
+
+```python
+# kerf_render/plugin.py
+async def register(app, ctx) -> PluginManifest:
+    from kerf_render.routes import router
+    app.include_router(render_router, tags=["render"])
+    _register_tools(ctx, provides)    # walks kerf_render.tools.TOOLS list
+    return PluginManifest(
+        name="render",
+        version="0.1.0",
+        provides=["render.image"],
+        depends=["cad-core"],
+    )
+```
+
+Tools are loaded by convention from `kerf_render.tools.TOOLS` — a list of `(name, spec, handler)` triples.
+
+---
+
+## Architecture: Cycles backend vs. browser path tracer (T-106)
+
+| Path | Status | Use case |
+|---|---|---|
+| Blender Cycles (headless) | Shipped | Production renders, EXR output, high sample counts |
+| Browser path tracer (T-106a–f) | Roadmap | Real-time preview, no sidecar required |
+
+The T-106 browser path tracer work items (T-106a: WebGPU ray march scaffold, T-106b: BVH build, T-106c: PBR shading, T-106d: denoiser, T-106e: HDRI env map, T-106f: progressive display) are tracked in `tasks.md`. Until T-106 lands, `run_render` dispatches exclusively to the Cycles backend.
+
+---
+
+## LLM tools for producing render-quality output via Blender Cycles. A `.render` file is a
 JSON scene description referencing existing geometry (feature, mesh, STEP). The pyworker
 executes Blender headless and returns a PNG or EXR image.
 
