@@ -3,7 +3,7 @@ import { Link, useParams, Navigate } from 'react-router-dom'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import rehypeHighlight from 'rehype-highlight'
-import { ArrowLeft, ArrowRight, ExternalLink, Pencil } from 'lucide-react'
+import { ArrowLeft, ArrowRight, ExternalLink, Menu, Pencil } from 'lucide-react'
 import clsx from 'clsx'
 import Header from '../../components/Header.jsx'
 import Sidebar from './Sidebar.jsx'
@@ -44,13 +44,30 @@ export default function DocsArticle() {
 }
 
 function ArticleShell({ children }) {
+  const [drawerOpen, setDrawerOpen] = useState(false)
+
   return (
     <div className="min-h-screen bg-ink-950 text-ink-100">
       <Header />
       <div className="flex">
-        <Sidebar />
-        <main className="flex-1 min-w-0 flex">
-          {children}
+        <Sidebar drawerOpen={drawerOpen} onDrawerClose={() => setDrawerOpen(false)} />
+        <main className="flex-1 min-w-0 flex flex-col">
+          {/* Mobile docs header bar — hamburger toggle, only visible < lg */}
+          <div className="lg:hidden flex items-center gap-3 px-4 py-3 border-b border-ink-800">
+            <button
+              type="button"
+              onClick={() => setDrawerOpen(true)}
+              aria-label="Open navigation"
+              aria-expanded={drawerOpen}
+              className="p-1.5 rounded-md text-ink-400 hover:text-ink-100 hover:bg-ink-800 transition-colors"
+            >
+              <Menu className="w-5 h-5" />
+            </button>
+            <span className="text-sm text-ink-400 font-mono">Docs</span>
+          </div>
+          <div className="flex flex-1 min-w-0">
+            {children}
+          </div>
         </main>
       </div>
     </div>

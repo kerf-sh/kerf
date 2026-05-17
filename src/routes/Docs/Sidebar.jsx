@@ -12,44 +12,114 @@ import { search } from './searchIndex.js'
 //
 // The search dropdown floats over the article list when there's a query;
 // pressing Esc clears the query and returns focus to the input.
+//
+// On < lg the sidebar becomes a slide-in drawer. Pass `drawerOpen` and
+// `onDrawerClose` from the page-level component that owns the hamburger toggle.
 
-export default function Sidebar() {
+export default function Sidebar({ drawerOpen = false, onDrawerClose }) {
   const { byGroup, status, index } = useDocs()
   const inputRef = useRef(null)
+  const drawerRef = useRef(null)
   const [query, setQuery] = useState('')
   const location = useLocation()
   const activeSlug = location.pathname.startsWith('/docs/')
     ? location.pathname.slice('/docs/'.length).split('/')[0]
     : null
 
-  // Global keyboard: "/" focuses search if not already typing into a field.
+  // Auto-close the drawer on route changes (article navigation on mobile).
+  useEffect(() => {
+    onDrawerClose?.()
+  }, [location.pathname]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Close on Esc; also handle the "/" search shortcut.
   useEffect(() => {
     function onKey(e) {
-      if (e.key === '/' && !isTextTarget(e.target)) {
+      if (e.key === 'Escape') {
+        if (drawerOpen) {
+          onDrawerClose?.()
+          return
+        }
+        if (document.activeElement === inputRef.current) {
+          setQuery('')
+          inputRef.current?.blur()
+        }
+      } else if (e.key === '/' && !isTextTarget(e.target)) {
         e.preventDefault()
         inputRef.current?.focus()
         inputRef.current?.select()
-      } else if (e.key === 'Escape' && document.activeElement === inputRef.current) {
-        setQuery('')
-        inputRef.current?.blur()
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [])
+  }, [drawerOpen, onDrawerClose])
+
+  // Focus trap when drawer is open on mobile.
+  useEffect(() => {
+    if (!drawerOpen || !drawerRef.current) return
+    const FOCUSABLE =
+      'a[href], button:not([disabled]), input, textarea, select, [tabindex]:not([tabindex="-1"])'
+    const nodes = Array.from(drawerRef.current.querySelectorAll(FOCUSABLE))
+    if (!nodes.length) return
+
+    // Move focus to the first focusable element inside the drawer.
+    nodes[0].focus()
+
+    function trapFocus(e) {
+      if (e.key !== 'Tab') return
+      const first = nodes[0]
+      const last = nodes[nodes.length - 1]
+      if (e.shiftKey) {
+        if (document.activeElement === first) {
+          e.preventDefault()
+          last.focus()
+        }
+      } else {
+        if (document.activeElement === last) {
+          e.preventDefault()
+          first.focus()
+        }
+      }
+    }
+    document.addEventListener('keydown', trapFocus)
+    return () => document.removeEventListener('keydown', trapFocus)
+  }, [drawerOpen])
+
+  // Prevent body scroll while drawer is open.
+  useEffect(() => {
+    if (drawerOpen) {
+      document.body.style.overflow = 'hidden'
+    } else {
+      document.body.style.overflow = ''
+    }
+    return () => { document.body.style.overflow = '' }
+  }, [drawerOpen])
 
   const results = useMemo(() => {
     if (!query.trim() || !index) return []
     return search(query, index, 8)
   }, [query, index])
 
-  return (
-    <aside className="sticky top-0 h-screen w-[280px] shrink-0 border-r border-ink-800 bg-ink-950 flex flex-col">
+  const sidebarContent = (
+    <>
       {/* Header / search */}
-      <div className="px-4 pt-5 pb-3 border-b border-ink-800">
-        <Link to="/docs" className="block mb-4 text-ink-100 font-display font-semibold tracking-tight">
+      <div className="px-4 pt-5 pb-3 border-b border-ink-800 flex items-center gap-3">
+        <Link to="/docs" className="flex-1 text-ink-100 font-display font-semibold tracking-tight">
           Docs
         </Link>
+        {/* Close button — only shown in drawer mode (< lg) */}
+        {onDrawerClose && (
+          <button
+            type="button"
+            onClick={onDrawerClose}
+            className="lg:hidden p-1.5 -mr-1 rounded-md text-ink-400 hover:text-ink-100 hover:bg-ink-800 transition-colors"
+            aria-label="Close navigation"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        )}
+      </div>
+
+      <div className="px-4 pt-3 pb-3">
         <div className="relative">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-400" />
           <input
@@ -85,7 +155,7 @@ export default function Sidebar() {
       </div>
 
       {/* Results dropdown OR groups */}
-      <div className="flex-1 overflow-y-auto py-3">
+      <div className="flex-1 overflow-y-auto py-1">
         {query.trim() && (
           <SearchResults results={results} query={query} onClick={() => setQuery('')} />
         )}
@@ -150,7 +220,44 @@ export default function Sidebar() {
           <ExternalLink className="w-3 h-3" />
         </a>
       </div>
-    </aside>
+    </>
+  )
+
+  return (
+    <>
+      {/* ── Desktop sidebar (≥ lg) — always visible, sticky column ── */}
+      <aside className="hidden lg:flex sticky top-0 h-screen w-[280px] shrink-0 border-r border-ink-800 bg-ink-950 flex-col">
+        {sidebarContent}
+      </aside>
+
+      {/* ── Mobile drawer (< lg) — slide-in panel + backdrop ── */}
+      <>
+        {/* Backdrop */}
+        <div
+          className={clsx(
+            'lg:hidden fixed inset-0 z-30 bg-black/40 transition-opacity duration-200',
+            drawerOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none',
+          )}
+          aria-hidden="true"
+          onClick={onDrawerClose}
+        />
+
+        {/* Drawer panel */}
+        <aside
+          ref={drawerRef}
+          role="dialog"
+          aria-modal="true"
+          aria-label="Docs navigation"
+          className={clsx(
+            'lg:hidden fixed inset-y-0 left-0 z-40 w-72 bg-ink-900 flex flex-col',
+            'transition-transform duration-200 ease-in-out',
+            drawerOpen ? 'translate-x-0' : '-translate-x-full',
+          )}
+        >
+          {sidebarContent}
+        </aside>
+      </>
+    </>
   )
 }
 

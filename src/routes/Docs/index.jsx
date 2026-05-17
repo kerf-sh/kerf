@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import {
   Search,
   ArrowRight,
+  Menu,
   Sparkles,
   Box,
   PenTool,
@@ -83,6 +84,7 @@ const POPULAR_TILES = [
 export default function DocsHome() {
   const { status, load, recent, byGroup, index } = useDocs()
   const [query, setQuery] = useState('')
+  const [drawerOpen, setDrawerOpen] = useState(false)
   const heroInput = useRef(null)
 
   useEffect(() => { load() }, [load])
@@ -104,9 +106,23 @@ export default function DocsHome() {
     <div className="min-h-screen bg-ink-950 text-ink-100">
       <Header />
       <div className="flex">
-        <Sidebar />
+        <Sidebar drawerOpen={drawerOpen} onDrawerClose={() => setDrawerOpen(false)} />
 
         <main className="flex-1 min-w-0">
+          {/* Mobile docs header bar — hamburger toggle, only visible < lg */}
+          <div className="lg:hidden flex items-center gap-3 px-4 py-3 border-b border-ink-800">
+            <button
+              type="button"
+              onClick={() => setDrawerOpen(true)}
+              aria-label="Open navigation"
+              aria-expanded={drawerOpen}
+              className="p-1.5 rounded-md text-ink-400 hover:text-ink-100 hover:bg-ink-800 transition-colors"
+            >
+              <Menu className="w-5 h-5" />
+            </button>
+            <span className="text-sm text-ink-400 font-mono">Docs</span>
+          </div>
+
           {/* Hero */}
           <section className="relative px-8 lg:px-16 pt-16 pb-10 border-b border-ink-800 overflow-hidden">
             <HeroBackdrop />
