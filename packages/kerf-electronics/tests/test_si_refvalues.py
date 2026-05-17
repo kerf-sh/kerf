@@ -83,12 +83,17 @@ class TestMicrostripZ0RefValues:
     def test_high_er_rogers_microstrip(self):
         """
         Microstrip on Rogers RO4003C (er = 3.55).
-        W = 0.22 mm, H = 0.203 mm, T = 0.035 mm: published Z0 ≈ 50 Ω.
-        Source: Rogers Corp application note RO4003C datasheet impedance tables.
-        Tolerance: ±5 Ω.
+        W = 0.44 mm, H = 0.203 mm (8 mil core), T = 0.035 mm: published Z0 ≈ 50 Ω.
+        Source: Rogers Corp RO4003C datasheet impedance table (8-mil core, 1-oz Cu).
+        Hand-calc (Hammerstad-Jensen, Pozar §2.3):
+            dW = T/pi*(1+ln(2H/T)) ≈ 0.0384 mm  →  We ≈ 0.478 mm
+            We/H ≈ 2.36  (wide-trace regime)
+            er_eff = (3.55+1)/2 + (3.55-1)/2*(1+12/2.36)^-0.5 ≈ 2.79
+            Z0 = 120π / (sqrt(2.79)*(2.36+1.393+0.667*ln(2.36+1.444))) ≈ 48.6 Ω
+        Tolerance: ±5 Ω (IPC-2141A ±2% stated accuracy).
         """
-        z0 = microstrip_z0(W=0.22, H=0.203, T=0.035, er=3.55)
-        assert 45.0 <= z0 <= 60.0, f"Expected ~50 Ω for RO4003C, got {z0:.2f} Ω"
+        z0 = microstrip_z0(W=0.44, H=0.203, T=0.035, er=3.55)
+        assert 45.0 <= z0 <= 55.0, f"Expected ~50 Ω for RO4003C, got {z0:.2f} Ω"
 
     def test_z0_increases_with_narrower_width(self):
         """

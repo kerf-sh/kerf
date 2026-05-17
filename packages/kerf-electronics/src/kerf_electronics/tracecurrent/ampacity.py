@@ -676,7 +676,7 @@ def plane_sheet_resistance(
 
     result: Dict[str, Any] = {
         "ok": True,
-        "sheet_resistance_ohm_sq": round(rs, 9),
+        "sheet_resistance_ohm_sq": round(rs, 11),
         "thickness_mm": round(t_cu_m * 1e3, 5),
         "copper_oz": float(copper_oz),
         "temp_c": float(temp_c),
