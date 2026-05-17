@@ -246,4 +246,4 @@ seat depths, prong lengths).
 
 ---
 
-See also: [parametric.md](./parametric.md) · [drawings.md](./drawings.md) · [llm-tools.md](./llm-tools.md)
+See also: [parametric.md](./parametric.md) · [drawings.md](./drawings.md) · [llm-tools.md](./llm-tools.md) · [render-pipeline.md](./render-pipeline.md)

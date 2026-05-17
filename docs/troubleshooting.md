@@ -344,4 +344,108 @@ POST   /api/projects/{pid}/files/{fid}/tessellate
 
 ---
 
+---
+
+## Horizontal scroll appears on some pages
+
+**Symptom**
+
+A horizontal scrollbar appears on the landing page or domain pages, creating
+a visible content overflow.
+
+**Root cause**
+
+Certain Three.js canvas elements, wide images, or absolutely-positioned
+overlays can exceed `100vw` before CSS containment is applied.
+
+**Fix (already landed)**
+
+`src/index.css` includes a three-layer defensive h-scroll guard that works
+around Safari/WebKit edge cases:
+
+```css
+html, body { overflow-x: hidden; max-width: 100%; }
+#root       { overflow-x: clip;  }
+```
+
+If you add a new full-bleed section and horizontal scroll reappears, make sure
+the element has `max-width: 100%` or is inside a container with
+`overflow-x: hidden`. Do not remove the root guard.
+
+---
+
+## Page does not scroll to top after navigation
+
+**Symptom**
+
+Navigating from one route to another (e.g. from `/docs` to `/pricing`) leaves
+the scroll position at the bottom of the previous page.
+
+**Root cause**
+
+React Router does not restore scroll position on navigation by default.
+
+**Fix (already landed)**
+
+`src/components/ScrollToTop.jsx` is mounted once in `App.jsx`. It calls
+`window.scrollTo({ top: 0, left: 0, behavior: 'instant' })` on every
+`location.pathname` change. If the component is accidentally removed or its
+`useEffect` dependency array is changed, navigation will stop scrolling to top.
+
+---
+
+## Blank screen on initial load (before React mounts)
+
+**Symptom**
+
+A white/blank screen for several hundred milliseconds before any content
+appears, more noticeable on slow connections.
+
+**Root cause**
+
+The SPA's initial JavaScript bundle must parse and execute before React can
+render. If the bundle is large or the device is slow, this gap is visible.
+
+**Fix (already landed)**
+
+`index.html` includes a pre-React-mount loader (commit `c8409bf`) that renders
+a lightweight spinner from raw HTML/CSS before the JS bundle loads. The spinner
+is removed automatically when React mounts. If the loader disappears before
+routing resolves, check that the `Suspense` boundary in `App.jsx` wraps all
+lazy routes — `<Suspense fallback={<RouteFallback />}>` is the Kerf-Loader-
+backed fallback used for route-level code splitting.
+
+---
+
+## `npm run migrate:cloud` / `npm run migrate:all` not found
+
+**Symptom**
+
+```
+npm error Missing script: "migrate:cloud"
+```
+
+**Root cause**
+
+These script names were referenced in older docs but were never added to
+`package.json`. The migration runner is a single unified script.
+
+**Fix**
+
+Use:
+
+```sh
+npm run migrate          # runs python3 -m kerf_core.db.migrations.runner
+```
+
+For cloud migrations (when `kerf-billing` / `kerf-cloud` packages add their
+own SQL), set `KERF_CLOUD=1` in the environment and run `npm run migrate` —
+the runner discovers all installed migration sources automatically:
+
+```sh
+KERF_CLOUD=1 npm run migrate
+```
+
+---
+
 See also: [contributing.md](./contributing.md) · [architecture.md](./architecture.md) · [getting-started.md](./getting-started.md)

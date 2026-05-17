@@ -370,6 +370,7 @@ Equivalent to `python -m kerf_core` or `uvicorn kerf_core.app:create_app`.
 - **API + data model** — this document, plus per-kind schemas in each
   plugin's `llm_docs/`.
 - **LLM tool surface** — [llm-tools.md](./llm-tools.md).
+- **Render pipeline** — [render-pipeline.md](./render-pipeline.md).
 - **Cloud operator guide** — [cloud-operator.md](./cloud-operator.md).
 - **Roadmap + philosophy** — [ROADMAP.md](../ROADMAP.md).
 

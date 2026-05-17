@@ -85,19 +85,19 @@ The split is enforced at install time, not build time:
 
 ## npm scripts
 
-| Script                   | What it does                                           |
-|--------------------------|--------------------------------------------------------|
-| `npm run dev`            | Vite (:5173) + kerf-server (:8080)                     |
-| `npm run init`           | Copy `kerf.example.toml` → `kerf.toml` (idempotent)    |
-| `npm run migrate`        | Apply pending OSS migrations (kerf-server --migrate)    |
-| `npm run migrate:cloud`  | Apply cloud migrations (requires `KERF_CLOUD=1`)       |
-| `npm run migrate:all`    | OSS then cloud                                         |
-| `npm run migrate:reset`  | Drop schema + re-apply migrations                      |
-| `npm run build`          | OSS build (vite + persona-scoped wheel)                |
-| `npm run build:web`      | Frontend bundle only                                    |
-| `npm run build:cloud`    | Build with cloud plugins                                |
-| `npm run start`          | Run `kerf-server` against current build                |
-| `npm run lint`           | ESLint                                                 |
+| Script                   | What it does                                                          |
+|--------------------------|-----------------------------------------------------------------------|
+| `npm run dev`            | Vite (:5173) + kerf-server (:8080), both with hot reload              |
+| `npm run init`           | Copy `kerf.example.toml` → `kerf.toml` (idempotent)                  |
+| `npm run migrate`        | Apply pending migrations via `python3 -m kerf_core.db.migrations.runner` |
+| `npm run migrate:reset`  | Drop schema + re-apply all migrations from scratch                    |
+| `npm run build`          | Alias for `build:web` — compiles the Vite SPA into `dist/`            |
+| `npm run build:web`      | Frontend bundle only (runs `build-docs-manifest.mjs` first)           |
+| `npm run build:cloud`    | Build with `VITE_CLOUD=1` for the hosted cloud frontend               |
+| `npm run start`          | Run `kerf-server` serving the pre-built `dist/` on `:8080`            |
+| `npm run lint`           | ESLint                                                                |
+| `npm run test`           | Vitest unit tests                                                     |
+| `npm run test:e2e`       | Playwright end-to-end tests                                           |
 
 ## Config
 

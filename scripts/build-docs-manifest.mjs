@@ -94,6 +94,7 @@ const SLUG_TO_GROUP = {
 
   // Reference
   'architecture':        'reference',
+  'render-pipeline':     'reference',
   'llm-tools':           'reference',
   'llm-tool-authoring':  'reference',
   'api-reference':       'reference',

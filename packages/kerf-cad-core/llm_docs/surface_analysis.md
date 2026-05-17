@@ -1,6 +1,12 @@
 # Surface Analysis — `geom/surface_analysis.py`
 
-Pure-Python surface analysis suite for `NurbsSurface` objects. Provides Rhino-parity curvature, draft, deviation, continuity, and area functions.
+Pure-Python surface analysis suite for `NurbsSurface` objects. Provides
+Rhino-parity curvature, draft, deviation, continuity, and area functions.
+
+The single-point analytic functions use `surface_derivatives` from `nurbs.py`
+(GK-02: analytic tensor SKL, rational-correct). Curvature results are accurate
+to approximately 1e-6 against analytic sphere, cylinder, and torus reference
+values.
 
 ---
 
@@ -22,7 +28,8 @@ None of the grid functions raise; all return `{"ok": False, "reason": str}` on f
 
 ## Single-point analytic functions
 
-These use the analytic `surface_derivatives` from `nurbs.py` and the correct Cox-de Boor `_basis_fns` (see note below). Accurate to approximately 1e-6 for analytic primitives (sphere, cylinder, torus).
+These call `surface_derivatives` from `nurbs.py` (GK-02). For analytic
+primitives (sphere, cylinder, torus) results are accurate to approximately 1e-6.
 
 ```python
 mean_curvature(surf, u, v) -> float
@@ -35,9 +42,13 @@ zebra_stripe(surf, u, v, n_stripes, view_dir) -> float    # [0, 1]
 
 ---
 
-## Correct basis function evaluator
+## Internal `_basis_fns` evaluator
 
-`surface_analysis.py` maintains its own `_basis_fns` implementing the triangular Cox-de Boor table algorithm. This was necessary because `nurbs.py`'s `basis_functions` had a silent defect (only `N[0]` was computed correctly for degree > 1). The `_basis_fns` copy ensures analytic curvature results are accurate to ~1e-6 against sphere/cylinder/torus reference values.
+`surface_analysis.py` retains its own `_basis_fns` (correct triangular
+Cox-de Boor table algorithm) as a belt-and-braces cross-check. The
+module's surface evaluation now calls `nurbs.surface_evaluate` (GK-01
+unified evaluator) for the main compute path; `_basis_fns` is used only
+for cross-checking in tests.
 
 ---
 
@@ -63,7 +74,7 @@ draft = draft_angle_analysis(my_surface, pull_dir=[0,0,1],
 if not draft["ok"]:
     print("Undercut detected:", draft["undercut_regions"])
 
-# Single-point
+# Single-point (analytic, accurate to ~1e-6 for sphere/cyl/torus)
 k1, k2 = principal_curvatures(my_surface, u=0.5, v=0.5)
 
 # Area and centroid
@@ -75,7 +86,10 @@ print(geom["area"], geom["centroid"])
 
 ## References
 
-- Piegl & Tiller, *The NURBS Book*, 2nd ed., Springer 1997 — §6.1 surface derivatives.
-- do Carmo, M.P., *Differential Geometry of Curves and Surfaces*, Prentice-Hall 1976 — §3.3–3.4 first/second fundamental forms, Gaussian/mean curvature.
-- Goldman, R., "Curvature formulas for implicit curves and surfaces", CAGD 22(7) 2005.
-
+- Piegl, L. & Tiller, W., *The NURBS Book*, 2nd ed., Springer 1997 — §6.1
+  surface derivatives (the GK-02 analytic path).
+- do Carmo, M.P., *Differential Geometry of Curves and Surfaces*,
+  Prentice-Hall 1976 — §3.3–3.4 first/second fundamental forms,
+  Gaussian/mean curvature.
+- Goldman, R., "Curvature formulas for implicit curves and surfaces",
+  *CAGD* 22(7) 2005.
