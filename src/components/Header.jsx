@@ -7,6 +7,7 @@ import Button from './Button.jsx'
 const NAV_LINKS = [
   { label: 'Domains', to: '/domains' },
   { label: 'Compare', to: '/compare' },
+  { label: 'Roadmap', to: '/roadmap' },
   { label: 'Docs', to: '/docs' },
 ]
 

@@ -342,10 +342,10 @@ const ITEMS = [
     area: 'Mechanical',
   },
   {
-    title: 'Render: caustics + dispersion',
-    body: 'Current renderer: ACES tonemap, HDRI environment, bloom. Next: photon-mapped caustics for glass/gem renders and wavelength-based dispersion for diamond / coloured-stone renders.',
+    title: 'Render: caustics + dispersion (T-106a..f)',
+    body: 'Today: ACES tonemap, HDRI environment, bloom — PBR-grade output for product shots. Next: a two-tier render path. Backend (cloud) — a headless Blender Cycles worker with spectral dispersion + caustics for hero / catalog output, metered against credits. Browser (free / offline) — a progressive in-browser path tracer for previews and self-hosted users without a GPU box. A self-host docker image lets you run the worker on your own GPU.',
     status: 'next',
-    area: 'Mechanical',
+    area: 'Jewelry / Render',
   },
 
   /* ── 🔮 planned ────────────────────────────────────────────────── */

@@ -469,7 +469,7 @@ evaluators today.
 | G-4 | **Broader ECAD import** — Allegro / PADS / gEDA / Eagle v10 (today only KiCad-oriented) | Altium / Cadence | T-103 | 🔴 not started |
 | G-5 | **Kernel G3 / NURBS Phase 4 trim-by-curve + class-A leading** — G3 curvature combs partially shipped (#100); imprint + leading still to go | Alias / ICEM Surf | T-104 | 🚧 in flight |
 | G-6 | **SubD authoring with creases + edit workflow** — `subd.py` + quad-remesh shipped; no creation / edit / crease workflow | Rhino 8 SubD | T-105 | 🔴 not started |
-| G-7 | **Render: caustics + dispersion** — PBR + HDRI + bloom shipped this session; no caustic transport / gem-dispersion ray-trace | Cycles / V-Ray / KeyShot / Enscape | T-106 | 🔴 not started |
+| G-7 | **Render: caustics + dispersion** — PBR + HDRI + bloom shipped this session; T-106 split into T-106a..f: backend Blender Cycles (spectral dispersion + caustics) for hero output + in-browser `three-gpu-pathtracer` for free preview / offline. Self-host docker worker + GPU-second metering into `kerf_paid` | Cycles / V-Ray / KeyShot / Enscape | T-106 (a..f) | 🔴 not started |
 | G-8 | **Direct + parametric history coexistence** — Kerf is feature-tree primary; limited direct editing alongside | Fusion / Inventor / Onshape | T-107 | 🔴 not started |
 | G-9 | **Full joint system** — rigid / revolute / slider / cam / gear / pin-slot; `kerf-mates` ships a constraint solver but fewer joint types | Inventor / SolidWorks / Onshape | T-108 | 🔴 not started |
 | G-10 | **BIM parametric family system** — no native family-authoring UX yet (Tier-2 family *import* shipped) | Revit | T-109 | 🔴 not started |

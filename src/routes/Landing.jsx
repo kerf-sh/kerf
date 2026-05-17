@@ -1023,7 +1023,7 @@ const ROADMAP = [
   },
   {
     title: 'Render: caustics + dispersion',
-    body: 'Photon-mapped caustics for glass / gem renders. Wavelength-based dispersion for diamond and coloured-stone previews.',
+    body: 'Two-tier render path: a backend Blender Cycles worker for hero / catalog output (spectral dispersion, caustics — metered) and a progressive in-browser path tracer for free previews and offline self-host. Self-host docker image bundled.',
     status: 'next',
   },
   {
