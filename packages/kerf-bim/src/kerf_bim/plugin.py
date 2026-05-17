@@ -83,3 +83,4 @@ def _register_tools(ctx, provides: list) -> None:
     # Text DSL and Revit-parity are structural — always declare
     provides.append("bim.text-dsl")
     provides.append("bim.revit-parity")
+    provides.append("bim.site-toposolid")
