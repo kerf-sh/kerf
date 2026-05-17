@@ -118,7 +118,7 @@ const PAGES = {
     title: 'Kerf vs Civil 3D — civil infrastructure design compared',
     description:
       'Civil 3D owns corridor modelling and pipe networks. See where Kerf ' +
-      "complements with civil-engineering calc modules (hydrology / geotech / pavement / surveying).",
+      'complements with civil-engineering calc modules (hydrology, geotech, surveying).',
     slug: 'civil3d',
     product: 'Civil 3D',
   },
