@@ -107,6 +107,10 @@ def _register_tools(ctx, provides: list) -> None:
         "kerf_imports.dxf_writer",
         "kerf_imports.qif_reader",
         "kerf_imports.ibis_reader",
+        "kerf_imports.eagle_reader",
+        "kerf_imports.pads_reader",
+        "kerf_imports.geda_reader",
+        "kerf_imports.allegro_reader",
     ]
 
     for module_path in tool_modules:
