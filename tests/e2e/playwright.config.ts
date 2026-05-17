@@ -60,10 +60,19 @@ export default defineConfig({
   webServer: [
     {
       // Backend: kerf-server on :8081
+      // NOTE: kerf_core.config.Settings has no env prefix, so it reads the
+      // UNPREFIXED names (LOCAL_MODE / DATABASE_URL / CORS_ORIGIN). The
+      // KERF_* duplicates are kept for any deploy path that consumes them.
+      // CORS_ORIGIN must be the Vite e2e origin (:5174) — the browser calls
+      // the API cross-origin (VITE_API_URL=http://localhost:8081), and the
+      // default cors_origin is :5173, which would block /auth/bootstrap-local
+      // and leave every local-mode spec stuck on the sign-in page.
       command:
-        'KERF_PORT=8081 KERF_LOCAL_MODE=true ' +
+        'KERF_PORT=8081 KERF_LOCAL_MODE=true LOCAL_MODE=true ' +
+        'CORS_ORIGIN=http://localhost:5174 ' +
         (process.env.DATABASE_URL
-          ? `KERF_DATABASE_URL=${process.env.DATABASE_URL} `
+          ? `KERF_DATABASE_URL=${process.env.DATABASE_URL} ` +
+            `DATABASE_URL=${process.env.DATABASE_URL} `
           : '') +
         'python -m kerf_core --port 8081',
       url: 'http://localhost:8081/health',

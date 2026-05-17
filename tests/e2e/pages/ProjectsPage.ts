@@ -26,7 +26,11 @@ export class ProjectsPage {
   constructor(page: Page) {
     this.page = page
 
-    this.newProjectButton = page.getByRole('button', { name: 'New project' })
+    // The Projects page exposes two "New project" buttons (header toolbar +
+    // empty-state CTA). Either opens the same modal; take the first.
+    this.newProjectButton = page
+      .getByRole('button', { name: 'New project' })
+      .first()
 
     // The modal is keyed by title text
     this.modal = page.getByRole('dialog')
@@ -45,6 +49,18 @@ export class ProjectsPage {
     // Wait until the page has either loaded projects or shown the empty state.
     // The spinner is absent and either EmptyState or at least one h3 is visible.
     await this.page.waitForSelector('h1', { state: 'visible' })
+  }
+
+  /**
+   * Wait for the projects list view to be ready. Robust against the
+   * client-side redirect to /w/:slug/projects — asserting on a UI signal
+   * instead of the URL avoids the SPA "waitForURL until load" hang (there
+   * is no document load event on a pushState navigation).
+   */
+  async waitForList() {
+    await expect(
+      this.page.getByRole('heading', { name: 'Projects' }),
+    ).toBeVisible({ timeout: 20_000 })
   }
 
   /** Open the new project modal. */

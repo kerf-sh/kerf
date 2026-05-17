@@ -277,7 +277,7 @@ class UpdateMeRequest(BaseModel):
 
 
 @router.patch("/me")
-async def update_me(request: Request, payload: dict = Depends(require_auth)):
+async def update_me(req: UpdateMeRequest, payload: dict = Depends(require_auth)):
     user_id = payload.get("sub")
     pool = await get_pool_required()
     async with pool.acquire() as conn:
@@ -526,7 +526,7 @@ class CreateWorkspaceRequest(BaseModel):
 
 
 @router.post("/workspaces")
-async def create_workspace(request: Request, payload: dict = Depends(require_auth)):
+async def create_workspace(req: CreateWorkspaceRequest, payload: dict = Depends(require_auth)):
     user_id = payload.get("sub")
 
     name = req.name.strip()
@@ -553,7 +553,7 @@ async def create_workspace(request: Request, payload: dict = Depends(require_aut
 
 
 @router.get("/workspaces/{slug}")
-async def get_workspace(request: Request, payload: dict = Depends(require_auth)):
+async def get_workspace(slug: str, request: Request, payload: dict = Depends(require_auth)):
     user_id = payload.get("sub")
 
     pool = await get_pool_required()
@@ -589,7 +589,7 @@ class UpdateWorkspaceRequest(BaseModel):
 
 
 @router.patch("/workspaces/{slug}")
-async def update_workspace(request: Request, payload: dict = Depends(require_auth)):
+async def update_workspace(slug: str, req: UpdateWorkspaceRequest, payload: dict = Depends(require_auth)):
     user_id = payload.get("sub")
 
     pool = await get_pool_required()
@@ -628,7 +628,7 @@ async def update_workspace(request: Request, payload: dict = Depends(require_aut
 
 
 @router.delete("/workspaces/{slug}")
-async def delete_workspace(request: Request, payload: dict = Depends(require_auth)):
+async def delete_workspace(slug: str, request: Request, payload: dict = Depends(require_auth)):
     user_id = payload.get("sub")
 
     pool = await get_pool_required()
@@ -681,7 +681,7 @@ async def serve_workspace_avatar(request: Request, id: str):
 
 
 @router.post("/workspaces/{slug}/avatar")
-async def upload_workspace_avatar(request: Request, payload: dict = Depends(require_auth)):
+async def upload_workspace_avatar(slug: str, request: Request, payload: dict = Depends(require_auth)):
     user_id = payload.get("sub")
 
     pool = await get_pool_required()
@@ -698,7 +698,7 @@ async def upload_workspace_avatar(request: Request, payload: dict = Depends(requ
 
 
 @router.delete("/workspaces/{slug}/avatar")
-async def delete_workspace_avatar(request: Request, payload: dict = Depends(require_auth)):
+async def delete_workspace_avatar(slug: str, request: Request, payload: dict = Depends(require_auth)):
     user_id = payload.get("sub")
 
     pool = await get_pool_required()
@@ -720,7 +720,7 @@ class InviteMemberRequest(BaseModel):
 
 
 @router.post("/workspaces/{slug}/members")
-async def invite_workspace_member(request: Request, payload: dict = Depends(require_auth)):
+async def invite_workspace_member(slug: str, req: InviteMemberRequest, payload: dict = Depends(require_auth)):
     user_id = payload.get("sub")
 
     pool = await get_pool_required()
@@ -753,7 +753,7 @@ class ChangeRoleRequest(BaseModel):
 
 
 @router.patch("/workspaces/{slug}/members/{member_id}")
-async def change_workspace_member_role(request: Request, payload: dict = Depends(require_auth)):
+async def change_workspace_member_role(slug: str, member_id: str, req: ChangeRoleRequest, payload: dict = Depends(require_auth)):
     user_id = payload.get("sub")
 
     pool = await get_pool_required()
@@ -783,7 +783,7 @@ async def change_workspace_member_role(request: Request, payload: dict = Depends
 
 
 @router.delete("/workspaces/{slug}/members/{member_id}")
-async def remove_workspace_member(request: Request, payload: dict = Depends(require_auth)):
+async def remove_workspace_member(slug: str, member_id: str, request: Request, payload: dict = Depends(require_auth)):
     user_id = payload.get("sub")
 
     pool = await get_pool_required()
@@ -815,6 +815,10 @@ async def remove_workspace_member(request: Request, payload: dict = Depends(requ
 @router.get("/projects")
 async def list_projects(request: Request, payload: dict = Depends(require_auth)):
     user_id = payload.get("sub")
+
+    workspace_id = request.query_params.get("workspace_id")
+    workspace_slug = request.query_params.get("workspace_slug")
+    tag = request.query_params.getlist("tag") or None
 
     pool = await get_pool_required()
     async with pool.acquire() as conn:
@@ -883,7 +887,7 @@ export default function ({ primitives, transforms, booleans }) {
 
 
 @router.post("/projects")
-async def create_project(request: Request, payload: dict = Depends(require_auth)):
+async def create_project(req: CreateProjectRequest, payload: dict = Depends(require_auth)):
     user_id = payload.get("sub")
 
     name = req.name.strip()
@@ -944,7 +948,7 @@ async def create_project(request: Request, payload: dict = Depends(require_auth)
 
 
 @router.get("/projects/{pid}")
-async def get_project(request: Request, payload: dict = Depends(require_auth)):
+async def get_project(pid: str, request: Request, payload: dict = Depends(require_auth)):
     user_id = payload.get("sub")
 
     pool = await get_pool_required()
@@ -975,7 +979,7 @@ class UpdateProjectRequest(BaseModel):
 
 
 @router.patch("/projects/{pid}")
-async def update_project(request: Request, payload: dict = Depends(require_auth)):
+async def update_project(pid: str, req: UpdateProjectRequest, payload: dict = Depends(require_auth)):
     user_id = payload.get("sub")
 
     pool = await get_pool_required()
@@ -1015,7 +1019,7 @@ async def update_project(request: Request, payload: dict = Depends(require_auth)
 
 
 @router.delete("/projects/{pid}")
-async def delete_project(request: Request, payload: dict = Depends(require_auth)):
+async def delete_project(pid: str, request: Request, payload: dict = Depends(require_auth)):
     user_id = payload.get("sub")
 
     pool = await get_pool_required()
@@ -1273,7 +1277,7 @@ async def get_bom(pid: str, request: Request, payload: dict = Depends(require_au
 
 
 @router.get("/projects/{pid}/files")
-async def list_files(request: Request, payload: dict = Depends(require_auth)):
+async def list_files(pid: str, request: Request, payload: dict = Depends(require_auth)):
     user_id = payload.get("sub")
 
     pool = await get_pool_required()
@@ -1320,7 +1324,7 @@ class CreateFileRequest(BaseModel):
 
 
 @router.post("/projects/{pid}/files")
-async def create_file(request: Request, payload: dict = Depends(require_auth)):
+async def create_file(pid: str, req: CreateFileRequest, payload: dict = Depends(require_auth)):
     user_id = payload.get("sub")
 
     pool = await get_pool_required()
@@ -1353,7 +1357,7 @@ async def create_file(request: Request, payload: dict = Depends(require_auth)):
 
 
 @router.get("/projects/{pid}/files/{fid}")
-async def get_file(request: Request, payload: dict = Depends(require_auth)):
+async def get_file(pid: str, fid: str, request: Request, payload: dict = Depends(require_auth)):
     user_id = payload.get("sub")
 
     pool = await get_pool_required()
@@ -1395,7 +1399,7 @@ class UpdateFileRequest(BaseModel):
 
 
 @router.patch("/projects/{pid}/files/{fid}")
-async def update_file(request: Request, payload: dict = Depends(require_auth)):
+async def update_file(pid: str, fid: str, req: UpdateFileRequest, payload: dict = Depends(require_auth)):
     user_id = payload.get("sub")
 
     pool = await get_pool_required()
@@ -1426,7 +1430,7 @@ async def update_file(request: Request, payload: dict = Depends(require_auth)):
 
 
 @router.delete("/projects/{pid}/files/{fid}")
-async def delete_file(request: Request, payload: dict = Depends(require_auth)):
+async def delete_file(pid: str, fid: str, request: Request, payload: dict = Depends(require_auth)):
     user_id = payload.get("sub")
 
     pool = await get_pool_required()
@@ -1444,7 +1448,7 @@ async def delete_file(request: Request, payload: dict = Depends(require_auth)):
 
 
 @router.get("/projects/{pid}/files/{fid}/download")
-async def download_file(request: Request, payload: dict = Depends(require_auth)):
+async def download_file(pid: str, fid: str, request: Request, payload: dict = Depends(require_auth)):
     user_id = payload.get("sub")
 
     pool = await get_pool_required()
@@ -1483,7 +1487,7 @@ async def download_file(request: Request, payload: dict = Depends(require_auth))
 
 
 @router.post("/projects/{pid}/files/{fid}/tessellate")
-async def tessellate(request: Request, payload: dict = Depends(require_auth)):
+async def tessellate(pid: str, fid: str, request: Request, payload: dict = Depends(require_auth)):
     user_id = payload.get("sub")
 
     pool = await get_pool_required()
@@ -1507,7 +1511,7 @@ async def tessellate(request: Request, payload: dict = Depends(require_auth)):
 
 
 @router.delete("/projects/{pid}/files/{fid}/tessellate")
-async def purge_tessellation(request: Request, payload: dict = Depends(require_auth)):
+async def purge_tessellation(pid: str, fid: str, request: Request, payload: dict = Depends(require_auth)):
     user_id = payload.get("sub")
 
     pool = await get_pool_required()
@@ -1759,7 +1763,7 @@ async def cam_job_status(pid: str, fid: str, request: Request, payload: dict = D
 
 
 @router.post("/projects/{pid}/files/{fid}/sim")
-async def run_sim(request: Request, payload: dict = Depends(require_auth)):
+async def run_sim(pid: str, fid: str, request: Request, payload: dict = Depends(require_auth)):
     user_id = payload.get("sub")
 
     pool = await get_pool_required()
@@ -1787,7 +1791,7 @@ async def run_sim(request: Request, payload: dict = Depends(require_auth)):
 
 
 @router.get("/projects/{pid}/files/{fid}/sim/status")
-async def sim_job_status(request: Request, payload: dict = Depends(require_auth)):
+async def sim_job_status(pid: str, fid: str, request: Request, payload: dict = Depends(require_auth)):
     user_id = payload.get("sub")
 
     pool = await get_pool_required()
@@ -2148,7 +2152,7 @@ async def get_file_diff(
 
 
 @router.post("/projects/{pid}/assets")
-async def upload_asset(request: Request, payload: dict = Depends(require_auth)):
+async def upload_asset(pid: str, request: Request, payload: dict = Depends(require_auth)):
     user_id = payload.get("sub")
 
     pool = await get_pool_required()
@@ -2165,7 +2169,7 @@ async def upload_asset(request: Request, payload: dict = Depends(require_auth)):
 
 
 @router.get("/projects/{pid}/threads")
-async def list_threads(request: Request, payload: dict = Depends(require_auth)):
+async def list_threads(pid: str, request: Request, payload: dict = Depends(require_auth)):
     user_id = payload.get("sub")
 
     pool = await get_pool_required()
@@ -2192,7 +2196,7 @@ class CreateThreadRequest(BaseModel):
 
 
 @router.post("/projects/{pid}/threads")
-async def create_thread(request: Request, payload: dict = Depends(require_auth)):
+async def create_thread(pid: str, req: CreateThreadRequest, payload: dict = Depends(require_auth)):
     user_id = payload.get("sub")
 
     pool = await get_pool_required()
@@ -2217,7 +2221,7 @@ async def create_thread(request: Request, payload: dict = Depends(require_auth))
 
 
 @router.patch("/projects/{pid}/threads/{tid}")
-async def update_thread(request: Request, payload: dict = Depends(require_auth)):
+async def update_thread(pid: str, tid: str, request: Request, payload: dict = Depends(require_auth)):
     user_id = payload.get("sub")
 
     pool = await get_pool_required()
@@ -2234,7 +2238,7 @@ async def update_thread(request: Request, payload: dict = Depends(require_auth))
 
 
 @router.delete("/projects/{pid}/threads/{tid}")
-async def delete_thread(request: Request, payload: dict = Depends(require_auth)):
+async def delete_thread(pid: str, tid: str, request: Request, payload: dict = Depends(require_auth)):
     user_id = payload.get("sub")
 
     pool = await get_pool_required()
@@ -2252,7 +2256,7 @@ async def delete_thread(request: Request, payload: dict = Depends(require_auth))
 
 
 @router.get("/projects/{pid}/threads/{tid}/messages")
-async def list_messages(request: Request, payload: dict = Depends(require_auth)):
+async def list_messages(pid: str, tid: str, request: Request, payload: dict = Depends(require_auth)):
     user_id = payload.get("sub")
 
     pool = await get_pool_required()
@@ -2706,7 +2710,7 @@ async def post_message(pid: str, tid: str, req: PostMessageRequest, payload: dic
 
 
 @router.post("/projects/{pid}/share/links")
-async def create_share_link(request: Request, payload: dict = Depends(require_auth)):
+async def create_share_link(pid: str, request: Request, payload: dict = Depends(require_auth)):
     user_id = payload.get("sub")
 
     pool = await get_pool_required()
@@ -2732,7 +2736,7 @@ async def create_share_link(request: Request, payload: dict = Depends(require_au
 
 
 @router.get("/projects/{pid}/share/links")
-async def list_share_links(request: Request, payload: dict = Depends(require_auth)):
+async def list_share_links(pid: str, request: Request, payload: dict = Depends(require_auth)):
     user_id = payload.get("sub")
 
     pool = await get_pool_required()
@@ -2753,7 +2757,7 @@ async def list_share_links(request: Request, payload: dict = Depends(require_aut
 
 
 @router.delete("/projects/{pid}/share/links/{lid}")
-async def delete_share_link(request: Request, payload: dict = Depends(require_auth)):
+async def delete_share_link(pid: str, lid: str, request: Request, payload: dict = Depends(require_auth)):
     user_id = payload.get("sub")
 
     pool = await get_pool_required()
@@ -2771,7 +2775,7 @@ async def delete_share_link(request: Request, payload: dict = Depends(require_au
 
 
 @router.get("/projects/{pid}/members")
-async def list_members(request: Request, payload: dict = Depends(require_auth)):
+async def list_members(pid: str, request: Request, payload: dict = Depends(require_auth)):
     user_id = payload.get("sub")
 
     pool = await get_pool_required()
@@ -2789,7 +2793,7 @@ async def list_members(request: Request, payload: dict = Depends(require_auth)):
 
 
 @router.post("/projects/{pid}/members")
-async def add_member(request: Request, payload: dict = Depends(require_auth)):
+async def add_member(pid: str, req: InviteMemberRequest, payload: dict = Depends(require_auth)):
     user_id = payload.get("sub")
 
     pool = await get_pool_required()
@@ -2811,7 +2815,7 @@ async def add_member(request: Request, payload: dict = Depends(require_auth)):
 
 
 @router.patch("/projects/{pid}/members/{uid}")
-async def update_member(request: Request, payload: dict = Depends(require_auth)):
+async def update_member(pid: str, uid: str, req: ChangeRoleRequest, payload: dict = Depends(require_auth)):
     user_id = payload.get("sub")
 
     pool = await get_pool_required()
@@ -2829,7 +2833,7 @@ async def update_member(request: Request, payload: dict = Depends(require_auth))
 
 
 @router.delete("/projects/{pid}/members/{uid}")
-async def remove_member(request: Request, payload: dict = Depends(require_auth)):
+async def remove_member(pid: str, uid: str, request: Request, payload: dict = Depends(require_auth)):
     user_id = payload.get("sub")
 
     pool = await get_pool_required()
@@ -2847,7 +2851,7 @@ async def remove_member(request: Request, payload: dict = Depends(require_auth))
 
 
 @router.get("/projects/{pid}/files/{fid}/revisions")
-async def list_revisions(request: Request, payload: dict = Depends(require_auth)):
+async def list_revisions(pid: str, fid: str, request: Request, payload: dict = Depends(require_auth)):
     user_id = payload.get("sub")
 
     pool = await get_pool_required()
@@ -2879,7 +2883,7 @@ async def list_revisions(request: Request, payload: dict = Depends(require_auth)
 
 
 @router.get("/projects/{pid}/files/{fid}/revisions/{rid}")
-async def get_revision(request: Request, payload: dict = Depends(require_auth)):
+async def get_revision(pid: str, fid: str, rid: str, request: Request, payload: dict = Depends(require_auth)):
     user_id = payload.get("sub")
 
     pool = await get_pool_required()
@@ -2955,7 +2959,7 @@ async def get_revision_content(pid: str, fid: str, rid: str, request: Request, p
 
 
 @router.post("/projects/{pid}/files/{fid}/revisions/{rid}/restore")
-async def restore_revision(request: Request, payload: dict = Depends(require_auth)):
+async def restore_revision(pid: str, fid: str, rid: str, request: Request, payload: dict = Depends(require_auth)):
     user_id = payload.get("sub")
 
     pool = await get_pool_required()
