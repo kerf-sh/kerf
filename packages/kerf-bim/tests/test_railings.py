@@ -1,5 +1,5 @@
 """
-Tests for railings.py — pure logic, no database required.
+Tests for kerf_bim/tools/railings.py — pure logic, no database required.
 
 Uses importlib to load the module directly, bypassing the package init chain.
 """
@@ -12,27 +12,26 @@ import asyncio
 import math
 
 
-def _load_module(name: str, rel_path: str):
-    base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    full_path = os.path.join(base, rel_path)
-    spec = importlib.util.spec_from_file_location(name, full_path)
+def _load_module(name: str, path: str):
+    spec = importlib.util.spec_from_file_location(name, path)
     mod = importlib.util.module_from_spec(spec)
     sys.modules[name] = mod
     spec.loader.exec_module(mod)
     return mod
 
 
-_base = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))), "backend")
-_tools_dir = os.path.join(_base, "tools")
-_plugin_tools = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src", "kerf_bim", "tools")
+# Ensure canonical registry + context packages are importable before the
+# module under test imports them.
+from kerf_chat.tools.registry import ToolSpec, register, ok_payload, err_payload  # noqa: E402
+from kerf_core.utils.context import ProjectCtx  # noqa: E402
 
-if "tools.registry" not in sys.modules:
-    _load_module("tools.registry", os.path.join(_tools_dir, "registry.py"))
-if "tools.context" not in sys.modules:
-    _load_module("tools.context", os.path.join(_tools_dir, "context.py"))
+_plugin_tools = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    "src", "kerf_bim", "tools",
+)
 
 _railings_mod = _load_module(
-    "tools.railings",
+    "kerf_bim.tools.railings",
     os.path.join(_plugin_tools, "railings.py"),
 )
 
@@ -45,8 +44,6 @@ run_create_railing = _railings_mod.run_create_railing
 run_railing_from_stair = _railings_mod.run_railing_from_stair
 run_set_baluster_spacing = _railings_mod.run_set_baluster_spacing
 run_validate_railing = _railings_mod.run_validate_railing
-
-ProjectCtx = sys.modules["tools.context"].ProjectCtx
 
 
 # ── fake ctx ───────────────────────────────────────────────────────────────────

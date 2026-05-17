@@ -47,16 +47,45 @@ for _stub_name in [
         sys.modules[_stub_name] = _stub
 
 _chat_reg = sys.modules["kerf_chat.tools.registry"]
+_ctx_mod = sys.modules["kerf_core.utils.context"]
+
+# Capture pre-existing state so the fixture teardown can restore it.
+_SENTINEL = object()
+_saved_chat_reg: dict = {
+    k: getattr(_chat_reg, k, _SENTINEL)
+    for k in ("ToolSpec", "register", "ok_payload", "err_payload")
+}
+_saved_ProjectCtx = getattr(_ctx_mod, "ProjectCtx", _SENTINEL)
+
+# Install stubs so that site.py can be imported without the real heavy deps.
 _chat_reg.ToolSpec = type("ToolSpec", (), {"__init__": lambda self, **kw: None})
 _chat_reg.register = lambda *a, **kw: (lambda fn: fn)
 _chat_reg.ok_payload = lambda v: v
 _chat_reg.err_payload = lambda msg, code: {"error": msg, "code": code}
-sys.modules["kerf_core.utils.context"].ProjectCtx = object
+_ctx_mod.ProjectCtx = object
 
 _spec = importlib.util.spec_from_file_location("kerf_bim.site", _SITE_PATH)
 _site = importlib.util.module_from_spec(_spec)
 sys.modules["kerf_bim.site"] = _site
 _spec.loader.exec_module(_site)
+
+# site.py is fully loaded — restore stub attributes immediately so that
+# other test modules collected in the same session are not poisoned.
+for _attr, _val in _saved_chat_reg.items():
+    if _val is _SENTINEL:
+        try:
+            delattr(_chat_reg, _attr)
+        except AttributeError:
+            pass
+    else:
+        setattr(_chat_reg, _attr, _val)
+if _saved_ProjectCtx is _SENTINEL:
+    try:
+        delattr(_ctx_mod, "ProjectCtx")
+    except AttributeError:
+        pass
+else:
+    _ctx_mod.ProjectCtx = _saved_ProjectCtx
 
 Toposolid = _site.Toposolid
 BuildingPad = _site.BuildingPad

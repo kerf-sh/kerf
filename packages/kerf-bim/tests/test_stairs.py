@@ -1,5 +1,5 @@
 """
-Tests for stairs.py — pure logic, no database required.
+Tests for kerf_bim/tools/stairs.py — pure logic, no database required.
 
 Uses importlib to load the module directly, bypassing the package init chain.
 """
@@ -9,30 +9,28 @@ import os
 import sys
 import uuid
 import asyncio
-import types
 
 
-def _load_module(name: str, rel_path: str):
-    base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    full_path = os.path.join(base, rel_path)
-    spec = importlib.util.spec_from_file_location(name, full_path)
+def _load_module(name: str, path: str):
+    spec = importlib.util.spec_from_file_location(name, path)
     mod = importlib.util.module_from_spec(spec)
     sys.modules[name] = mod
     spec.loader.exec_module(mod)
     return mod
 
 
-_base = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))), "backend")
-_tools_dir = os.path.join(_base, "tools")
-_plugin_tools = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src", "kerf_bim", "tools")
+# Ensure canonical registry + context packages are importable as stubs before
+# the module under test imports them.
+from kerf_chat.tools.registry import ToolSpec, register, ok_payload, err_payload  # noqa: E402
+from kerf_core.utils.context import ProjectCtx  # noqa: E402
 
-if "tools.registry" not in sys.modules:
-    _load_module("tools.registry", os.path.join(_tools_dir, "registry.py"))
-if "tools.context" not in sys.modules:
-    _load_module("tools.context", os.path.join(_tools_dir, "context.py"))
+_plugin_tools = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    "src", "kerf_bim", "tools",
+)
 
 _stairs_mod = _load_module(
-    "tools.stairs",
+    "kerf_bim.tools.stairs",
     os.path.join(_plugin_tools, "stairs.py"),
 )
 
@@ -42,8 +40,6 @@ run_create_stair = _stairs_mod.run_create_stair
 run_add_stair_flight = _stairs_mod.run_add_stair_flight
 run_add_stair_landing = _stairs_mod.run_add_stair_landing
 run_validate_stair = _stairs_mod.run_validate_stair
-
-ProjectCtx = sys.modules["tools.context"].ProjectCtx
 
 
 # ── fake ctx ───────────────────────────────────────────────────────────────────

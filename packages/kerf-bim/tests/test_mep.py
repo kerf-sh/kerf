@@ -1,4 +1,4 @@
-"""Tests for backend/tools/mep.py — MEP routing logic."""
+"""Tests for kerf_bim/tools/mep.py — MEP routing logic."""
 
 import importlib.util
 import json
@@ -14,20 +14,9 @@ _spec = importlib.util.spec_from_file_location("tools.mep", _mep_path)
 _mep = importlib.util.module_from_spec(_spec)
 sys.modules.setdefault("tools.mep", _mep)
 
-# Stub out dependencies so we can import without a live DB
-import types
-
-for mod_name in ["tools.registry", "tools.context"]:
-    if mod_name not in sys.modules:
-        stub = types.ModuleType(mod_name)
-        if mod_name == "tools.registry":
-            stub.ToolSpec = type("ToolSpec", (), {"__init__": lambda self, **kw: None})
-            stub.register = lambda *a, **kw: (lambda fn: fn)
-            stub.ok_payload = lambda v: json.dumps(v)
-            stub.err_payload = lambda msg, code: json.dumps({"error": msg, "code": code})
-        if mod_name == "tools.context":
-            stub.ProjectCtx = object
-        sys.modules[mod_name] = stub
+# Ensure canonical packages are importable before the module under test uses them.
+import kerf_chat.tools.registry  # noqa: F401
+import kerf_core.utils.context   # noqa: F401
 
 _spec.loader.exec_module(_mep)
 
