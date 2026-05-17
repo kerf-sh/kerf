@@ -454,7 +454,7 @@ export default function SchematicView({
       onPointerUp={onMouseUp}
       onPointerCancel={onMouseUp}
       onPointerLeave={onMouseUp}
-      className="relative w-full h-full overflow-hidden bg-ink-950"
+      className="relative flex-1 min-w-0 h-full overflow-hidden bg-ink-950"
       style={{ touchAction: 'none', cursor: draggingRef.current ? 'grabbing' : 'grab' }}
     >
       <svg
@@ -512,30 +512,36 @@ export default function SchematicView({
       )}
 
       {/* Probe authoring toolbar (top-left). Probe button + V/I mode switch. */}
-      <div className="absolute top-2 left-2 flex items-stretch gap-0 rounded-md bg-ink-900/90 border border-ink-800 backdrop-blur shadow-lg overflow-hidden">
+      <div className="absolute top-2 left-2 flex items-stretch gap-0 rounded-md bg-ink-900/90 border border-ink-800 backdrop-blur shadow-lg overflow-hidden" role="toolbar" aria-label="Schematic probe tools">
         <button
           type="button"
+          aria-label={probeMode ? `Probe mode active (${probeKind === 'I' ? 'current' : 'voltage'}). Click to cancel.` : `Add ${probeKind === 'I' ? 'current' : 'voltage'} probe`}
+          aria-pressed={probeMode}
           onClick={() => setProbeMode((v) => !v)}
           title={probeMode ? `Probe mode active (${probeKind}). Click to cancel.` : `Add ${probeKind === 'I' ? 'current' : 'voltage'} probe`}
-          className={`flex items-center gap-1.5 px-2 py-1.5 text-[11px] ${probeMode ? 'bg-kerf-300/15 text-kerf-300' : 'text-ink-300 hover:bg-ink-800 hover:text-kerf-300'}`}
+          className={`flex items-center gap-1.5 px-2 py-1.5 text-[11px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-kerf-300 min-h-[2.25rem] ${probeMode ? 'bg-kerf-300/15 text-kerf-300' : 'text-ink-300 hover:bg-ink-800 hover:text-kerf-300'}`}
         >
           <Activity size={13} />
           <span>Probe</span>
         </button>
-        <div className="flex flex-col border-l border-ink-800 select-none" onClick={(e) => e.stopPropagation()}>
+        <div className="flex flex-col border-l border-ink-800 select-none" onClick={(e) => e.stopPropagation()} role="group" aria-label="Probe type">
           <button
             type="button"
+            aria-label="Voltage probe — click a port on the schematic"
+            aria-pressed={probeKind === 'V'}
             onClick={(e) => { e.stopPropagation(); setProbeKind('V') }}
             title="Voltage probe (port)"
-            className={`px-1.5 leading-none font-mono text-[9px] flex-1 ${probeKind === 'V' ? 'bg-kerf-300/20 text-kerf-300' : 'text-ink-500 hover:text-ink-300'}`}
+            className={`px-1.5 leading-none font-mono text-[9px] flex-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-kerf-300 min-h-[1.125rem] ${probeKind === 'V' ? 'bg-kerf-300/20 text-kerf-300' : 'text-ink-500 hover:text-ink-300'}`}
           >
             V
           </button>
           <button
             type="button"
+            aria-label="Current probe — click a component on the schematic"
+            aria-pressed={probeKind === 'I'}
             onClick={(e) => { e.stopPropagation(); setProbeKind('I') }}
             title="Current probe (component)"
-            className={`px-1.5 leading-none font-mono text-[9px] flex-1 border-t border-ink-800 ${probeKind === 'I' ? 'bg-kerf-300/20 text-kerf-300' : 'text-ink-500 hover:text-ink-300'}`}
+            className={`px-1.5 leading-none font-mono text-[9px] flex-1 border-t border-ink-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-kerf-300 min-h-[1.125rem] ${probeKind === 'I' ? 'bg-kerf-300/20 text-kerf-300' : 'text-ink-500 hover:text-ink-300'}`}
           >
             I
           </button>
@@ -550,20 +556,22 @@ export default function SchematicView({
       )}
 
       {/* Toolbar */}
-      <div className="absolute top-2 right-2 flex items-center gap-1 rounded-md bg-ink-900/90 border border-ink-800 backdrop-blur p-1 shadow-lg">
+      <div className="absolute top-2 right-2 flex items-center gap-1 rounded-md bg-ink-900/90 border border-ink-800 backdrop-blur p-1 shadow-lg" role="toolbar" aria-label="Schematic view controls">
         <button
           type="button"
           onClick={handleFit}
+          aria-label="Fit schematic to viewport"
           title="Fit to schematic"
-          className="p-1.5 rounded hover:bg-ink-800 text-ink-300 hover:text-kerf-300"
+          className="p-1.5 rounded hover:bg-ink-800 text-ink-300 hover:text-kerf-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-kerf-300 min-h-[2rem] min-w-[2rem] flex items-center justify-center"
         >
           <Maximize2 size={13} />
         </button>
         <button
           type="button"
           onClick={handleReset}
+          aria-label="Reset schematic view to 1:1"
           title="Reset 1:1"
-          className="p-1.5 rounded hover:bg-ink-800 text-ink-300 hover:text-kerf-300"
+          className="p-1.5 rounded hover:bg-ink-800 text-ink-300 hover:text-kerf-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-kerf-300 min-h-[2rem] min-w-[2rem] flex items-center justify-center"
         >
           <RotateCcw size={13} />
         </button>
@@ -571,6 +579,10 @@ export default function SchematicView({
           {Math.round(view.scale * 100)}%
         </span>
       </div>
+
+      {/* Hierarchical sheet tabs — overflow-x-auto keeps scrolling within this
+          element, not the page. Only rendered when there are named sheets to navigate. */}
+      <div className="absolute bottom-0 left-0 right-0 overflow-x-auto border-t border-ink-800/60 bg-ink-950/80 backdrop-blur hidden" aria-label="Schematic sheets" />
     </div>
   )
 }

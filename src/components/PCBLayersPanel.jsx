@@ -61,9 +61,10 @@ function currentCopperCount(layers) {
 
 // ─── LayerRow ─────────────────────────────────────────────────────────────────
 
-function LayerRow({ layer, isSolo, onToggle, onColorChange, onDragStart, onDragOver, onDrop, isDragOver }) {
+function LayerRow({ layer, isSolo, onToggle, onColorChange, onPointerDragStart, onPointerDragOver, onPointerDrop, isDragOver }) {
   const [showPicker, setShowPicker] = useState(false)
   const pickerRef = useRef(null)
+  const dragHandleRef = useRef(null)
 
   const handleEye = useCallback((evt) => {
     onToggle(layer.name, evt.altKey ? 'solo' : 'toggle')
@@ -74,35 +75,58 @@ function LayerRow({ layer, isSolo, onToggle, onColorChange, onDragStart, onDragO
     const close = (e) => {
       if (pickerRef.current && !pickerRef.current.contains(e.target)) setShowPicker(false)
     }
-    document.addEventListener('mousedown', close)
-    return () => document.removeEventListener('mousedown', close)
+    document.addEventListener('pointerdown', close)
+    return () => document.removeEventListener('pointerdown', close)
   }, [showPicker])
+
+  // Pointer-Events drag on the grip handle
+  const handleGripPointerDown = useCallback((e) => {
+    e.stopPropagation()
+    dragHandleRef.current?.setPointerCapture?.(e.pointerId)
+    onPointerDragStart(layer.name)
+  }, [layer.name, onPointerDragStart])
 
   return (
     <div
-      draggable
-      onDragStart={(e) => onDragStart(e, layer.name)}
-      onDragOver={(e) => { e.preventDefault(); onDragOver(e, layer.name) }}
-      onDrop={(e) => onDrop(e, layer.name)}
+      role="listitem"
+      onPointerMove={(e) => { if (e.buttons === 1) onPointerDragOver(layer.name) }}
+      onPointerUp={(e) => { onPointerDrop(layer.name) }}
       className={[
-        'group flex items-center gap-1.5 px-2 py-1 rounded select-none',
+        'group flex items-center gap-1.5 px-2 py-1.5 rounded select-none min-h-[2.75rem]',
         isDragOver
           ? 'bg-kerf-300/10 border border-kerf-300/40'
           : 'hover:bg-ink-800/50',
         !layer.visible ? 'opacity-50' : '',
       ].join(' ')}
     >
-      {/* Drag handle */}
-      <span className="cursor-grab text-ink-600 hover:text-ink-400 active:cursor-grabbing flex-shrink-0">
+      {/* Drag handle — Pointer Events only */}
+      <span
+        ref={dragHandleRef}
+        role="button"
+        tabIndex={0}
+        aria-label={`Drag to reorder ${layer.name} layer`}
+        onPointerDown={handleGripPointerDown}
+        onKeyDown={(e) => {
+          // Keyboard reorder: up/down arrows. The parent list handles the move.
+          if (e.key === 'ArrowUp') { e.preventDefault(); onPointerDragStart(layer.name); onPointerDrop('__prev__') }
+          if (e.key === 'ArrowDown') { e.preventDefault(); onPointerDragStart(layer.name); onPointerDrop('__next__') }
+        }}
+        className="cursor-grab text-ink-600 hover:text-ink-400 active:cursor-grabbing flex-shrink-0 touch-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-kerf-300 rounded"
+        style={{ touchAction: 'none' }}
+      >
         <GripVertical size={11} />
       </span>
 
       {/* Visibility toggle — alt-click = solo */}
       <button
         type="button"
+        aria-label={layer.visible
+          ? (isSolo ? `${layer.name} is soloed — click to unsolo, alt-click to hide` : `Hide ${layer.name} layer — alt-click to solo`)
+          : `Show ${layer.name} layer`}
+        aria-pressed={layer.visible}
         onClick={handleEye}
         title={layer.visible ? 'Hide layer (alt-click to solo)' : 'Show layer'}
-        className="flex-shrink-0 p-0.5 rounded hover:bg-ink-700"
+        className="flex-shrink-0 p-1.5 rounded hover:bg-ink-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-kerf-300 min-h-[2rem] min-w-[2rem] flex items-center justify-center"
       >
         {layer.visible
           ? <Eye size={12} className={isSolo ? 'text-kerf-300' : 'text-ink-300'} />
@@ -113,15 +137,17 @@ function LayerRow({ layer, isSolo, onToggle, onColorChange, onDragStart, onDragO
       <div className="relative flex-shrink-0" ref={pickerRef}>
         <button
           type="button"
+          aria-label={`${layer.name} layer color: ${layer.color} — click to change`}
           onClick={() => setShowPicker((v) => !v)}
           title="Change layer color"
-          className="w-4 h-4 rounded-sm border border-ink-600 cursor-pointer hover:ring-1 hover:ring-kerf-300/50"
+          className="w-5 h-5 rounded-sm border border-ink-600 cursor-pointer hover:ring-1 hover:ring-kerf-300/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-kerf-300"
           style={{ backgroundColor: layer.color }}
         />
         {showPicker && (
           <input
             type="color"
             value={layer.color}
+            aria-label={`Color picker for ${layer.name} layer`}
             onChange={(e) => { onColorChange(layer.name, e.target.value); setShowPicker(false) }}
             className="absolute top-6 left-0 z-20 cursor-pointer"
             style={{ width: '2rem', height: '2rem', padding: 0, border: 'none', opacity: 0, position: 'absolute' }}
@@ -155,19 +181,26 @@ function LayerCountModal({ current, onConfirm, onClose }) {
       <div className="bg-ink-900 border border-ink-700 rounded-xl shadow-2xl p-5 w-72">
         <div className="flex items-center justify-between mb-4">
           <span className="text-sm font-semibold text-ink-100">Set Copper Layer Count</span>
-          <button type="button" onClick={onClose} className="p-1 rounded hover:bg-ink-800 text-ink-500 hover:text-ink-300">
+          <button
+            type="button"
+            aria-label="Close layer count dialog"
+            onClick={onClose}
+            className="p-1.5 rounded hover:bg-ink-800 text-ink-500 hover:text-ink-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-kerf-300 min-h-[2rem] min-w-[2rem] flex items-center justify-center"
+          >
             <X size={14} />
           </button>
         </div>
 
-        <div className="grid grid-cols-5 gap-1.5 mb-5">
+        <div className="grid grid-cols-5 gap-1.5 mb-5" role="group" aria-label="Copper layer count">
           {VALID_COPPER_COUNTS.map((n) => (
             <button
               key={n}
               type="button"
+              aria-pressed={selected === n}
+              aria-label={`${n} copper layers`}
               onClick={() => setSelected(n)}
               className={[
-                'py-1.5 rounded text-[11px] font-bold border',
+                'py-2 rounded text-[11px] font-bold border min-h-[2.5rem] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-kerf-300',
                 selected === n
                   ? 'bg-kerf-300/20 text-kerf-300 border-kerf-300/50'
                   : 'text-ink-400 border-ink-700 hover:border-ink-500 hover:text-ink-200',
@@ -186,14 +219,14 @@ function LayerCountModal({ current, onConfirm, onClose }) {
           <button
             type="button"
             onClick={onClose}
-            className="px-3 py-1.5 rounded text-[11px] text-ink-400 hover:text-ink-200 border border-ink-700 hover:border-ink-500"
+            className="px-3 py-1.5 rounded text-[11px] text-ink-400 hover:text-ink-200 border border-ink-700 hover:border-ink-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-kerf-300 min-h-[2.25rem]"
           >
             Cancel
           </button>
           <button
             type="button"
             onClick={() => onConfirm(selected)}
-            className="px-3 py-1.5 rounded text-[11px] font-medium bg-kerf-300 text-ink-950 hover:bg-kerf-200"
+            className="px-3 py-1.5 rounded text-[11px] font-medium bg-kerf-300 text-ink-950 hover:bg-kerf-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-kerf-300 min-h-[2.25rem]"
           >
             Apply
           </button>
@@ -267,28 +300,35 @@ export default function PCBLayersPanel({ board, onBoardChange }) {
     updateLayers((prev) => applyTheme(prev, t))
   }, [updateLayers])
 
-  // Drag-to-reorder
-  const handleDragStart = useCallback((e, name) => {
+  // Pointer-Events drag-to-reorder — replaces HTML5 DnD so it works on touch.
+  const handlePointerDragStart = useCallback((name) => {
     setDraggedName(name)
-    e.dataTransfer.effectAllowed = 'move'
   }, [])
 
-  const handleDragOver = useCallback((e, name) => {
-    e.preventDefault()
+  const handlePointerDragOver = useCallback((name) => {
+    if (!draggedName || draggedName === name) return
     setDragOverName(name)
-  }, [])
+  }, [draggedName])
 
-  const handleDrop = useCallback((e, targetName) => {
-    e.preventDefault()
-    if (!draggedName || draggedName === targetName) {
-      setDraggedName(null); setDragOverName(null); return
+  const handlePointerDrop = useCallback((targetName) => {
+    if (!draggedName) return
+    if (targetName === '__prev__' || targetName === '__next__') {
+      // Keyboard reorder: move one position up/down
+      updateLayers((prev) => {
+        const fromIdx = prev.findIndex((l) => l.name === draggedName)
+        if (fromIdx === -1) return prev
+        const toIdx = targetName === '__prev__' ? fromIdx - 1 : fromIdx + 1
+        if (toIdx < 0 || toIdx >= prev.length) return prev
+        return reorderLayer(prev, fromIdx, toIdx)
+      })
+    } else if (draggedName !== targetName) {
+      updateLayers((prev) => {
+        const fromIdx = prev.findIndex((l) => l.name === draggedName)
+        const toIdx   = prev.findIndex((l) => l.name === targetName)
+        if (fromIdx === -1 || toIdx === -1) return prev
+        return reorderLayer(prev, fromIdx, toIdx)
+      })
     }
-    updateLayers((prev) => {
-      const fromIdx = prev.findIndex((l) => l.name === draggedName)
-      const toIdx   = prev.findIndex((l) => l.name === targetName)
-      if (fromIdx === -1 || toIdx === -1) return prev
-      return reorderLayer(prev, fromIdx, toIdx)
-    })
     setDraggedName(null); setDragOverName(null)
   }, [draggedName, updateLayers])
 
@@ -307,8 +347,9 @@ export default function PCBLayersPanel({ board, onBoardChange }) {
         <div className="flex items-center justify-between px-3 py-2 border-b border-ink-800 flex-shrink-0">
           <button
             type="button"
+            aria-expanded={!collapsed}
             onClick={() => setCollapsed((v) => !v)}
-            className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-ink-400 hover:text-ink-200"
+            className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-ink-400 hover:text-ink-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-kerf-300 rounded"
           >
             {collapsed ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
             <Layers size={12} />
@@ -318,6 +359,7 @@ export default function PCBLayersPanel({ board, onBoardChange }) {
           {/* Theme dropdown */}
           <select
             value={theme}
+            aria-label="Layer color theme"
             onChange={(e) => handleTheme(e.target.value)}
             className="text-[10px] bg-ink-800 border border-ink-700 text-ink-300 rounded px-1.5 py-0.5 cursor-pointer hover:border-ink-600 focus:outline-none focus:border-kerf-300/50"
           >
@@ -331,6 +373,7 @@ export default function PCBLayersPanel({ board, onBoardChange }) {
           <>
             {/* Layer list */}
             <div className="flex-1 overflow-auto py-1 min-h-0">
+              <ul role="list" className="list-none m-0 p-0">
               {layers.map((layer) => (
                 <LayerRow
                   key={layer.name}
@@ -338,20 +381,22 @@ export default function PCBLayersPanel({ board, onBoardChange }) {
                   isSolo={soloLayer === layer.name}
                   onToggle={handleToggle}
                   onColorChange={handleColorChange}
-                  onDragStart={handleDragStart}
-                  onDragOver={handleDragOver}
-                  onDrop={handleDrop}
+                  onPointerDragStart={handlePointerDragStart}
+                  onPointerDragOver={handlePointerDragOver}
+                  onPointerDrop={handlePointerDrop}
                   isDragOver={dragOverName === layer.name && draggedName !== layer.name}
                 />
               ))}
+              </ul>
             </div>
 
             {/* Footer */}
             <div className="border-t border-ink-800 px-2 py-2 flex-shrink-0">
               <button
                 type="button"
+                aria-label={`Add inner copper layer — current count: ${copperCount}`}
                 onClick={() => setShowModal(true)}
-                className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded text-[11px] text-ink-400 border border-ink-700 hover:border-kerf-300/40 hover:text-kerf-300 hover:bg-kerf-300/5"
+                className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded text-[11px] text-ink-400 border border-ink-700 hover:border-kerf-300/40 hover:text-kerf-300 hover:bg-kerf-300/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-kerf-300"
               >
                 <Plus size={11} />
                 Add inner layer

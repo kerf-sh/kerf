@@ -178,7 +178,7 @@ export default function CircuitComponentsPanel({
         </span>
       </div>
 
-      <div className="flex-1 overflow-auto py-1 min-h-0">
+      <div className="flex-1 overflow-auto py-1 min-h-0 max-h-[60vh] md:max-h-none">
         {empty ? (
           <div className="px-3 py-6 text-xs text-ink-500 text-center">
             <HelpCircle size={16} className="mx-auto mb-2 text-ink-700" />
@@ -192,57 +192,64 @@ export default function CircuitComponentsPanel({
               open={openComponents}
               onToggle={() => setOpenComponents((v) => !v)}
             >
-              {components.map((c) => {
-                const active = selectedRefdes === c.refdes
-                const mappedFileId = mappings[c.refdes] || null
-                const mappedName = mappedFileId ? (partNamesByFileId[mappedFileId] || '(linked)') : null
-                return (
-                  <div
-                    key={c.refdes}
-                    className={`group w-full flex items-center gap-1 px-2 py-[3px] rounded-sm select-none ${
-                      active
-                        ? 'bg-kerf-300/15 text-kerf-100'
-                        : 'hover:bg-ink-800 text-ink-200'
-                    }`}
-                  >
-                    <button
-                      type="button"
-                      onClick={() => onSelectRefdes?.(active ? null : c.refdes)}
-                      className="flex-1 flex items-baseline gap-1.5 text-left min-w-0"
-                    >
-                      <span className="text-xs font-mono w-10 truncate text-kerf-300/90">{c.refdes}</span>
-                      <span className="flex-1 text-xs truncate">{c.value || <span className="text-ink-600">—</span>}</span>
-                      {c.footprint && (
-                        <span className="text-[10px] font-mono text-ink-500 truncate max-w-[6rem]">
-                          {c.footprint}
-                        </span>
-                      )}
-                    </button>
-                    {mappedName && (
-                      <button
-                        type="button"
-                        title={`Linked to Library: ${mappedName} — click to unlink`}
-                        onClick={(e) => { e.stopPropagation(); setCircuitLibraryMapping(c.refdes, null) }}
-                        className="text-[10px] inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-kerf-300/10 border border-kerf-300/30 text-kerf-200 hover:bg-kerf-300/20 max-w-[8rem] truncate"
+              <ul role="list" className="list-none m-0 p-0">
+                {components.map((c) => {
+                  const active = selectedRefdes === c.refdes
+                  const mappedFileId = mappings[c.refdes] || null
+                  const mappedName = mappedFileId ? (partNamesByFileId[mappedFileId] || '(linked)') : null
+                  return (
+                    <li key={c.refdes} role="listitem">
+                      <div
+                        className={`group w-full flex items-center gap-1 px-2 py-2 rounded-sm select-none min-h-[2.75rem] ${
+                          active
+                            ? 'bg-kerf-300/15 text-kerf-100'
+                            : 'hover:bg-ink-800 text-ink-200'
+                        }`}
                       >
-                        <Link2 size={10} className="flex-shrink-0" />
-                        <span className="truncate">{mappedName}</span>
-                      </button>
-                    )}
-                    {!mappedName && (
-                      <button
-                        type="button"
-                        title="Link to a Library part"
-                        onClick={(e) => { e.stopPropagation(); setPickFor(c.refdes) }}
-                        className="opacity-0 group-hover:opacity-100 transition-opacity text-[10px] inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-ink-400 hover:bg-ink-800 hover:text-kerf-300"
-                      >
-                        <Link2Off size={10} />
-                        Link
-                      </button>
-                    )}
-                  </div>
-                )
-              })}
+                        <button
+                          type="button"
+                          aria-label={`${active ? 'Deselect' : 'Select'} component ${c.refdes}${c.value ? `, value ${c.value}` : ''}`}
+                          aria-pressed={active}
+                          onClick={() => onSelectRefdes?.(active ? null : c.refdes)}
+                          className="flex-1 flex items-baseline gap-1.5 text-left min-w-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-kerf-300"
+                        >
+                          <span className="text-xs font-mono w-10 truncate text-kerf-300/90">{c.refdes}</span>
+                          <span className="flex-1 text-xs truncate">{c.value || <span className="text-ink-600">—</span>}</span>
+                          {c.footprint && (
+                            <span className="text-[10px] font-mono text-ink-500 truncate max-w-[6rem]">
+                              {c.footprint}
+                            </span>
+                          )}
+                        </button>
+                        {mappedName && (
+                          <button
+                            type="button"
+                            aria-label={`Linked to library part ${mappedName} — click to unlink`}
+                            title={`Linked to Library: ${mappedName} — click to unlink`}
+                            onClick={(e) => { e.stopPropagation(); setCircuitLibraryMapping(c.refdes, null) }}
+                            className="text-[10px] inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-kerf-300/10 border border-kerf-300/30 text-kerf-200 hover:bg-kerf-300/20 max-w-[8rem] truncate focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-kerf-300"
+                          >
+                            <Link2 size={10} className="flex-shrink-0" />
+                            <span className="truncate">{mappedName}</span>
+                          </button>
+                        )}
+                        {!mappedName && (
+                          <button
+                            type="button"
+                            aria-label={`Link ${c.refdes} to a library part`}
+                            title="Link to a Library part"
+                            onClick={(e) => { e.stopPropagation(); setPickFor(c.refdes) }}
+                            className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity text-[10px] inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-ink-400 hover:bg-ink-800 hover:text-kerf-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-kerf-300"
+                          >
+                            <Link2Off size={10} />
+                            Link
+                          </button>
+                        )}
+                      </div>
+                    </li>
+                  )
+                })}
+              </ul>
             </Section>
             <Section
               icon={CircuitBoard}
@@ -250,26 +257,31 @@ export default function CircuitComponentsPanel({
               open={openNets}
               onToggle={() => setOpenNets((v) => !v)}
             >
-              {nets.map((n) => {
-                const active = selectedNet === n.name
-                return (
-                  <button
-                    key={n.name}
-                    type="button"
-                    onClick={() => onSelectNet?.(active ? null : n.name)}
-                    className={`group w-full flex items-baseline gap-1.5 px-2 py-[3px] text-left rounded-sm select-none ${
-                      active
-                        ? 'bg-kerf-300/15 text-kerf-100'
-                        : 'hover:bg-ink-800 text-ink-200'
-                    }`}
-                  >
-                    <span className="flex-1 text-xs font-mono truncate">{n.name}</span>
-                    <span className="text-[10px] font-mono text-ink-500 tabular-nums">
-                      {n.pins} pin{n.pins === 1 ? '' : 's'}
-                    </span>
-                  </button>
-                )
-              })}
+              <ul role="list" className="list-none m-0 p-0">
+                {nets.map((n) => {
+                  const active = selectedNet === n.name
+                  return (
+                    <li key={n.name} role="listitem">
+                      <button
+                        type="button"
+                        aria-label={`${active ? 'Deselect' : 'Select'} net ${n.name}, ${n.pins} pin${n.pins === 1 ? '' : 's'}`}
+                        aria-pressed={active}
+                        onClick={() => onSelectNet?.(active ? null : n.name)}
+                        className={`group w-full flex items-baseline gap-1.5 px-2 py-2 text-left rounded-sm select-none min-h-[2.75rem] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-kerf-300 ${
+                          active
+                            ? 'bg-kerf-300/15 text-kerf-100'
+                            : 'hover:bg-ink-800 text-ink-200'
+                        }`}
+                      >
+                        <span className="flex-1 text-xs font-mono truncate max-w-[8rem]">{n.name}</span>
+                        <span className="text-[10px] font-mono text-ink-500 tabular-nums">
+                          {n.pins} pin{n.pins === 1 ? '' : 's'}
+                        </span>
+                      </button>
+                    </li>
+                  )
+                })}
+              </ul>
             </Section>
           </>
         )}
@@ -297,8 +309,9 @@ function Section({ icon: Icon, title, open, onToggle, children }) {
     <div className="mb-1">
       <button
         type="button"
+        aria-expanded={open}
         onClick={onToggle}
-        className="w-full flex items-center gap-1.5 px-2 py-1 text-[10px] uppercase tracking-wider text-ink-500 hover:text-ink-300"
+        className="w-full flex items-center gap-1.5 px-2 py-1.5 text-[10px] uppercase tracking-wider text-ink-500 hover:text-ink-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-kerf-300 min-h-[2rem]"
       >
         {open ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
         <Icon size={11} />

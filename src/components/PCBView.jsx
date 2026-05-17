@@ -27,7 +27,7 @@
 
 import { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
 import { snapshotSvg } from '../lib/snapshotHelpers.js'
-import { Maximize2, RotateCcw, AlertTriangle, Layers, Eye, EyeOff, Zap, Loader, CheckCircle, ShieldAlert, X, Package } from 'lucide-react'
+import { Maximize2, RotateCcw, AlertTriangle, Layers, Eye, EyeOff, Zap, Loader, CheckCircle, ShieldAlert, X, Package, ChevronDown } from 'lucide-react'
 import { convertCircuitJsonToPcbSvg } from 'circuit-to-svg'
 import { runDRC } from '../lib/pcbDRC.js'
 import { orthogonalSnap, corner45 } from '../lib/pcbRouting.js'
@@ -413,6 +413,20 @@ export default function PCBView({ circuitJson, highlightRefdes = null, onSelectR
     return () => window.removeEventListener('keydown', onKey)
   }, [activeTool, routeInProgress])
 
+  // Layer controls popover state (shown as dropdown on < md screens)
+  const [layerPopoverOpen, setLayerPopoverOpen] = useState(false)
+  const layerPopoverRef = useRef(null)
+  useEffect(() => {
+    if (!layerPopoverOpen) return
+    const close = (e) => {
+      if (layerPopoverRef.current && !layerPopoverRef.current.contains(e.target)) {
+        setLayerPopoverOpen(false)
+      }
+    }
+    document.addEventListener('pointerdown', close)
+    return () => document.removeEventListener('pointerdown', close)
+  }, [layerPopoverOpen])
+
   const hasContent = (topParsed.innerHTML || '').length > 0 || (bottomParsed.innerHTML || '').length > 0
 
   return (
@@ -424,7 +438,7 @@ export default function PCBView({ circuitJson, highlightRefdes = null, onSelectR
       onPointerUp={onMouseUp}
       onPointerCancel={onMouseUp}
       onPointerLeave={onMouseUp}
-      className="relative w-full h-full overflow-hidden bg-ink-950"
+      className="relative flex-1 min-w-0 h-full overflow-hidden bg-ink-950"
       style={{ touchAction: 'none', cursor: draggingRef.current ? 'grabbing' : 'grab' }}
     >
       <svg
@@ -528,73 +542,103 @@ export default function PCBView({ circuitJson, highlightRefdes = null, onSelectR
         </div>
       )}
 
-      {/* Layer toggle bar (top-left) */}
-      <div className="absolute top-2 left-2 flex items-center gap-1 rounded-md bg-ink-900/90 border border-ink-800 backdrop-blur p-1 shadow-lg">
-        <Layers size={13} className="ml-1 text-ink-400" />
-        {LAYER_MODES.map((m) => (
+      {/* Layer toggle bar (top-left) — full row on md+, popover trigger on small screens */}
+      <div ref={layerPopoverRef} className="absolute top-2 left-2 z-30">
+        {/* Mobile trigger: shown below md */}
+        <div className="flex items-center gap-1 md:hidden">
           <button
-            key={m.id}
             type="button"
-            onClick={() => setLayerMode(m.id)}
-            className={`px-2 py-1 text-[10px] font-semibold uppercase tracking-wider rounded ${
-              layerMode === m.id
-                ? 'bg-kerf-300 text-ink-950'
-                : 'text-ink-300 hover:text-kerf-300 hover:bg-ink-800'
-            }`}
-            title={`Show ${m.label.toLowerCase()} layer`}
-            style={{
-              borderLeft: layerMode === m.id ? `2px solid ${m.color}` : 'none',
-            }}
+            aria-label="Toggle layer controls"
+            aria-expanded={layerPopoverOpen}
+            onClick={() => setLayerPopoverOpen((v) => !v)}
+            className="flex items-center gap-1 px-2 py-1.5 rounded-md bg-ink-900/90 border border-ink-800 backdrop-blur shadow-lg text-ink-300 hover:text-kerf-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-kerf-300"
           >
-            {m.label}
+            <Layers size={13} />
+            <span className="text-[10px] font-semibold">{LAYER_MODES.find((m) => m.id === layerMode)?.label ?? 'Top'}</span>
+            <ChevronDown size={11} className={`transition-transform ${layerPopoverOpen ? 'rotate-180' : ''}`} />
           </button>
-        ))}
-        <span className="mx-1 h-4 w-px bg-ink-800" />
-        <button
-          type="button"
-          onClick={() => setShowSilkscreen((s) => !s)}
-          className={`p-1.5 rounded ${
-            showSilkscreen
-              ? 'bg-kerf-300/20 text-kerf-300'
-              : 'text-ink-500 hover:text-ink-300 hover:bg-ink-800'
-          }`}
-          title="Toggle silkscreen + ref designators"
+        </div>
+
+        {/* Desktop bar (md+) + mobile popover (when open) */}
+        <div
+          className={[
+            'rounded-md bg-ink-900/90 border border-ink-800 backdrop-blur p-1 shadow-lg',
+            'flex items-center gap-1',
+            layerPopoverOpen
+              ? 'absolute top-9 left-0 flex-col items-stretch gap-1.5 min-w-[9rem] py-2 px-1.5'
+              : 'hidden md:flex',
+          ].join(' ')}
         >
-          {showSilkscreen ? <Eye size={12} /> : <EyeOff size={12} />}
-        </button>
-        <span className="text-[10px] text-ink-500">Silk</span>
-        <button
-          type="button"
-          onClick={() => setShowDrills((s) => !s)}
-          className={`p-1.5 rounded ${
-            showDrills
-              ? 'bg-kerf-300/20 text-kerf-300'
-              : 'text-ink-500 hover:text-ink-300 hover:bg-ink-800'
-          }`}
-          title="Toggle drill holes"
-        >
-          {showDrills ? <Eye size={12} /> : <EyeOff size={12} />}
-        </button>
-        <span className="text-[10px] text-ink-500">Drill</span>
-        <span className="mx-1 h-4 w-px bg-ink-800" />
-        <button
-          type="button"
-          onClick={() => setShowDRC((s) => !s)}
-          className={`p-1.5 rounded flex items-center gap-1 ${
-            showDRC
-              ? drcResult.errors.length > 0
-                ? 'bg-red-900/40 text-red-300'
-                : 'bg-kerf-300/20 text-kerf-300'
-              : 'text-ink-500 hover:text-ink-300 hover:bg-ink-800'
-          }`}
-          title={`Toggle DRC overlay${drcResult.errors.length > 0 ? ` (${drcResult.errors.length} error${drcResult.errors.length > 1 ? 's' : ''})` : ''}`}
-        >
-          <ShieldAlert size={12} />
-          {showDRC && drcResult.errors.length > 0 && (
-            <span className="text-[9px] font-bold">{drcResult.errors.length}</span>
-          )}
-        </button>
-        <span className="text-[10px] text-ink-500">DRC</span>
+          <Layers size={13} className="ml-1 text-ink-400 hidden md:block" />
+          {LAYER_MODES.map((m) => (
+            <button
+              key={m.id}
+              type="button"
+              aria-label={`Show ${m.label.toLowerCase()} PCB layer`}
+              aria-pressed={layerMode === m.id}
+              onClick={() => { setLayerMode(m.id); setLayerPopoverOpen(false) }}
+              className={`px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wider rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-kerf-300 min-h-[2rem] ${
+                layerMode === m.id
+                  ? 'bg-kerf-300 text-ink-950'
+                  : 'text-ink-300 hover:text-kerf-300 hover:bg-ink-800'
+              }`}
+              style={{
+                borderLeft: layerMode === m.id ? `2px solid ${m.color}` : 'none',
+              }}
+            >
+              {m.label}
+            </button>
+          ))}
+          <span className="mx-1 h-4 w-px bg-ink-800 hidden md:block" />
+          <button
+            type="button"
+            aria-label={showSilkscreen ? 'Hide silkscreen and ref designators' : 'Show silkscreen and ref designators'}
+            aria-pressed={showSilkscreen}
+            onClick={() => setShowSilkscreen((s) => !s)}
+            className={`p-1.5 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-kerf-300 min-h-[2rem] min-w-[2rem] flex items-center justify-center ${
+              showSilkscreen
+                ? 'bg-kerf-300/20 text-kerf-300'
+                : 'text-ink-500 hover:text-ink-300 hover:bg-ink-800'
+            }`}
+          >
+            {showSilkscreen ? <Eye size={12} /> : <EyeOff size={12} />}
+          </button>
+          <span className="text-[10px] text-ink-500 hidden md:inline">Silk</span>
+          <button
+            type="button"
+            aria-label={showDrills ? 'Hide drill holes' : 'Show drill holes'}
+            aria-pressed={showDrills}
+            onClick={() => setShowDrills((s) => !s)}
+            className={`p-1.5 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-kerf-300 min-h-[2rem] min-w-[2rem] flex items-center justify-center ${
+              showDrills
+                ? 'bg-kerf-300/20 text-kerf-300'
+                : 'text-ink-500 hover:text-ink-300 hover:bg-ink-800'
+            }`}
+          >
+            {showDrills ? <Eye size={12} /> : <EyeOff size={12} />}
+          </button>
+          <span className="text-[10px] text-ink-500 hidden md:inline">Drill</span>
+          <span className="mx-1 h-4 w-px bg-ink-800 hidden md:block" />
+          <button
+            type="button"
+            aria-label={`Toggle DRC overlay${drcResult.errors.length > 0 ? ` — ${drcResult.errors.length} error${drcResult.errors.length > 1 ? 's' : ''}` : ''}`}
+            aria-pressed={showDRC}
+            onClick={() => setShowDRC((s) => !s)}
+            className={`p-1.5 rounded flex items-center gap-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-kerf-300 min-h-[2rem] ${
+              showDRC
+                ? drcResult.errors.length > 0
+                  ? 'bg-red-900/40 text-red-300'
+                  : 'bg-kerf-300/20 text-kerf-300'
+                : 'text-ink-500 hover:text-ink-300 hover:bg-ink-800'
+            }`}
+          >
+            <ShieldAlert size={12} />
+            {showDRC && drcResult.errors.length > 0 && (
+              <span className="text-[9px] font-bold">{drcResult.errors.length}</span>
+            )}
+          </button>
+          <span className="text-[10px] text-ink-500 hidden md:inline">DRC</span>
+        </div>
       </div>
 
       {/* DRC overlay — markers projected into SVG space via inverse transform */}
@@ -622,24 +666,27 @@ export default function PCBView({ circuitJson, highlightRefdes = null, onSelectR
       )}
 
       {/* Route + Pour tool panel (below layer bar, left side) */}
-      <div className="absolute top-12 left-2 flex flex-col gap-0.5 rounded-md bg-ink-900/90 border border-ink-800 backdrop-blur p-1 shadow-lg">
+      <div className="absolute top-12 left-2 flex flex-col gap-0.5 rounded-md bg-ink-900/90 border border-ink-800 backdrop-blur p-1 shadow-lg" role="toolbar" aria-label="PCB drawing tools">
         {/* Route tool button */}
         <button
           type="button"
+          aria-label="Route traces manually — click to place vertices, Enter to finish, Esc to cancel"
+          aria-pressed={activeTool === 'route'}
           onClick={() => { setActiveTool(t => t === 'route' ? null : 'route'); setRouteInProgress(null) }}
-          className={`px-2 py-1 text-[10px] font-semibold uppercase tracking-wider rounded ${
+          className={`px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wider rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-kerf-300 min-h-[2rem] ${
             activeTool === 'route' ? 'bg-kerf-300 text-ink-950' : 'text-ink-300 hover:text-kerf-300 hover:bg-ink-800'
           }`}
-          title="Route traces manually (click to place vertices, Enter/double-click to finish, Esc to cancel)"
         >Route</button>
         {activeTool === 'route' && (
-          <div className="flex flex-col gap-0.5 mt-0.5 border-t border-ink-700 pt-0.5">
+          <div className="flex flex-col gap-0.5 mt-0.5 border-t border-ink-700 pt-0.5" role="group" aria-label="Route angle mode">
             {[['orthogonal', '90°'], ['45', '45°'], ['free', 'Free']].map(([m, label]) => (
               <button
                 key={m}
                 type="button"
+                aria-label={`Route mode: ${label}`}
+                aria-pressed={routeMode === m}
                 onClick={() => { setRouteMode(m); if (typeof localStorage !== 'undefined') localStorage.setItem('pcb_route_mode', m) }}
-                className={`px-2 py-0.5 text-[9px] rounded ${
+                className={`px-2 py-1 text-[9px] rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-kerf-300 min-h-[1.75rem] ${
                   routeMode === m ? 'bg-kerf-300/30 text-kerf-300 font-semibold' : 'text-ink-400 hover:text-kerf-300'
                 }`}
               >{label}</button>
@@ -649,11 +696,12 @@ export default function PCBView({ circuitJson, highlightRefdes = null, onSelectR
         {/* Pour tool button */}
         <button
           type="button"
+          aria-label="Draw copper pour zone — click vertices, close by clicking near first vertex"
+          aria-pressed={activeTool === 'pour'}
           onClick={() => { setActiveTool(t => t === 'pour' ? null : 'pour'); setPourInProgress(null) }}
-          className={`px-2 py-1 text-[10px] font-semibold uppercase tracking-wider rounded ${
+          className={`px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wider rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-kerf-300 min-h-[2rem] ${
             activeTool === 'pour' ? 'bg-amber-400 text-ink-950' : 'text-ink-300 hover:text-ink-100 hover:bg-ink-800'
           }`}
-          title="Draw copper pour zone (click vertices, close by clicking near first vertex)"
         >Pour</button>
       </div>
 
@@ -694,7 +742,7 @@ export default function PCBView({ circuitJson, highlightRefdes = null, onSelectR
       )}
 
       {/* View toolbar (top-right) */}
-      <div className="absolute top-2 right-2 flex items-center gap-1 rounded-md bg-ink-900/90 border border-ink-800 backdrop-blur p-1 shadow-lg">
+      <div className="absolute top-2 right-2 flex items-center gap-1 rounded-md bg-ink-900/90 border border-ink-800 backdrop-blur p-1 shadow-lg" role="toolbar" aria-label="PCB view controls">
         {/* DRC status chip — always visible; click opens/closes the drawer */}
         <DRCStatusChip
           errors={drcResult.errors}
@@ -708,6 +756,12 @@ export default function PCBView({ circuitJson, highlightRefdes = null, onSelectR
           <>
             <button
               type="button"
+              aria-label={
+                autorouteStatus === 'running' ? 'Autorouting in progress…' :
+                autorouteStatus === 'done'    ? 'Autoroute complete — click to re-run' :
+                autorouteStatus === 'error'   ? 'Autoroute failed — click to retry' :
+                'Autoroute PCB traces via FreeRouting'
+              }
               onClick={onAutoroute}
               disabled={autorouteStatus === 'running'}
               title={
@@ -716,7 +770,7 @@ export default function PCBView({ circuitJson, highlightRefdes = null, onSelectR
                 autorouteStatus === 'error'   ? 'Autoroute failed — click to retry' :
                 'Autoroute PCB traces via FreeRouting'
               }
-              className={`flex items-center gap-1 px-2 py-1 rounded text-[10px] font-semibold uppercase tracking-wider transition-colors ${
+              className={`flex items-center gap-1 px-2 py-1 rounded text-[10px] font-semibold uppercase tracking-wider transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-kerf-300 ${
                 autorouteStatus === 'running'
                   ? 'bg-ink-800 text-ink-500 cursor-not-allowed'
                   : autorouteStatus === 'done'
@@ -746,9 +800,10 @@ export default function PCBView({ circuitJson, highlightRefdes = null, onSelectR
           <>
             <button
               type="button"
+              aria-label="Export fabrication package — Gerbers, drill, pick and place, BOM, IPC-2581"
               onClick={onExportFab}
               title="Export fabrication package (Gerbers + drill + P&P + BOM + IPC-2581)"
-              className="flex items-center gap-1 px-2 py-1 rounded text-[10px] font-semibold uppercase tracking-wider transition-colors bg-kerf-300/20 text-kerf-300 hover:bg-kerf-300/30 border border-kerf-300/30"
+              className="flex items-center gap-1 px-2 py-1 rounded text-[10px] font-semibold uppercase tracking-wider transition-colors bg-kerf-300/20 text-kerf-300 hover:bg-kerf-300/30 border border-kerf-300/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-kerf-300"
             >
               <Package size={11} />
               Export Fab
@@ -758,17 +813,19 @@ export default function PCBView({ circuitJson, highlightRefdes = null, onSelectR
         )}
         <button
           type="button"
+          aria-label="Fit PCB to viewport"
           onClick={handleFit}
           title="Fit to board"
-          className="p-1.5 rounded hover:bg-ink-800 text-ink-300 hover:text-kerf-300"
+          className="p-1.5 rounded hover:bg-ink-800 text-ink-300 hover:text-kerf-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-kerf-300 min-h-[2rem] min-w-[2rem] flex items-center justify-center"
         >
           <Maximize2 size={13} />
         </button>
         <button
           type="button"
+          aria-label="Reset PCB view to 1:1"
           onClick={handleReset}
           title="Reset 1:1"
-          className="p-1.5 rounded hover:bg-ink-800 text-ink-300 hover:text-kerf-300"
+          className="p-1.5 rounded hover:bg-ink-800 text-ink-300 hover:text-kerf-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-kerf-300 min-h-[2rem] min-w-[2rem] flex items-center justify-center"
         >
           <RotateCcw size={13} />
         </button>
@@ -842,7 +899,7 @@ function DRCOverlay({ errors, warnings, view, viewBox, onTooltip }) {
               width: 14,
               height: 14,
             }}
-            onMouseEnter={(e) => onTooltip?.({
+            onMouseEnter={() => onTooltip?.({
               screenX: sx,
               screenY: sy,
               kind: m.kind,
@@ -885,9 +942,11 @@ function DRCStatusChip({ errors, warnings, open, onToggle }) {
   return (
     <button
       type="button"
+      aria-label={open ? 'Close DRC panel' : `Open DRC issue list — ${label}`}
+      aria-expanded={open}
       onClick={onToggle}
       title={open ? 'Close DRC panel' : 'Open DRC issue list'}
-      className={`flex items-center gap-1.5 px-2 py-1 rounded text-[10px] font-semibold border transition-colors ${chipClass} ${open ? 'ring-1 ring-current' : ''}`}
+      className={`flex items-center gap-1.5 px-2 py-1 rounded text-[10px] font-semibold border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-kerf-300 ${chipClass} ${open ? 'ring-1 ring-current' : ''}`}
     >
       <ShieldAlert size={11} />
       <span>{label}</span>
@@ -921,9 +980,9 @@ function DRCDrawer({ errors, warnings, onFocus, onClose }) {
           )}
           <button
             type="button"
+            aria-label="Close DRC results panel"
             onClick={onClose}
-            className="p-0.5 rounded hover:bg-ink-800 text-ink-500 hover:text-ink-300"
-            title="Close"
+            className="p-1.5 rounded hover:bg-ink-800 text-ink-500 hover:text-ink-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-kerf-300 min-h-[2rem] min-w-[2rem] flex items-center justify-center"
           >
             <X size={12} />
           </button>
@@ -937,32 +996,35 @@ function DRCDrawer({ errors, warnings, onFocus, onClose }) {
             No DRC violations found
           </div>
         ) : (
-          all.map((item, i) => (
-            <button
-              key={i}
-              type="button"
-              onClick={() => onFocus(item.x, item.y)}
-              className="w-full text-left px-3 py-2 hover:bg-ink-800 flex items-start gap-2 group border-b border-ink-800/50 last:border-b-0"
-              title="Click to pan to this issue"
-            >
-              <span
-                className={`mt-0.5 flex-shrink-0 w-1.5 h-1.5 rounded-full ${item.isError ? 'bg-red-400' : 'bg-amber-400'}`}
-              />
-              <div className="min-w-0">
-                <div className={`text-[10px] font-semibold font-mono ${item.isError ? 'text-red-400' : 'text-amber-400'}`}>
-                  {item.kind}
-                </div>
-                <div className="text-[11px] text-ink-300 leading-snug break-words">
-                  {item.message}
-                </div>
-                {item.x != null && (
-                  <div className="text-[9px] font-mono text-ink-600 mt-0.5">
-                    ({item.x.toFixed(2)}, {item.y.toFixed(2)}) mm
+          <ul role="list" className="list-none m-0 p-0">
+            {all.map((item, i) => (
+              <li key={i} role="listitem">
+                <button
+                  type="button"
+                  aria-label={`${item.isError ? 'Error' : 'Warning'}: ${item.kind} — ${item.message}. Click to pan to location.`}
+                  onClick={() => onFocus(item.x, item.y)}
+                  className="w-full text-left px-3 py-2 hover:bg-ink-800 flex items-start gap-2 group border-b border-ink-800/50 last:border-b-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-kerf-300 min-h-[2.75rem]"
+                >
+                  <span
+                    className={`mt-0.5 flex-shrink-0 w-1.5 h-1.5 rounded-full ${item.isError ? 'bg-red-400' : 'bg-amber-400'}`}
+                  />
+                  <div className="min-w-0">
+                    <div className={`text-[10px] font-semibold font-mono ${item.isError ? 'text-red-400' : 'text-amber-400'}`}>
+                      {item.kind}
+                    </div>
+                    <div className="text-[11px] text-ink-300 leading-snug break-words">
+                      {item.message}
+                    </div>
+                    {item.x != null && (
+                      <div className="text-[9px] font-mono text-ink-600 mt-0.5">
+                        ({item.x.toFixed(2)}, {item.y.toFixed(2)}) mm
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
-            </button>
-          ))
+                </button>
+              </li>
+            ))}
+          </ul>
         )}
       </div>
     </div>

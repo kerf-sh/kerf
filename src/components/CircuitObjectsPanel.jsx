@@ -283,7 +283,7 @@ export default function CircuitObjectsPanel({ circuitJson }) {
         </div>
       </div>
 
-      <div className="flex-1 overflow-auto py-1 min-h-0">
+      <div className="flex-1 overflow-auto py-1 min-h-0 max-h-[60vh] md:max-h-none">
         {empty ? (
           <div className="px-3 py-6 text-xs text-ink-500 text-center">
             <HelpCircle size={16} className="mx-auto mb-2 text-ink-700" />
@@ -298,70 +298,77 @@ export default function CircuitObjectsPanel({ circuitJson }) {
               open={openComponents}
               onToggle={() => setOpenComponents((v) => !v)}
             >
-              {components.map((c) => {
-                const mappedName = c.mappedLibraryRef
-                  ? partDisplayName(partFilesById.get(c.mappedLibraryRef), c.mappedLibraryRef)
-                  : null
-                const isSelected = selectedCircuitComponentId === c.id
-                return (
-                  <div
-                    key={c.id}
-                    ref={(node) => {
-                      // Track each rendered row by source_component_id for
-                      // scrollIntoView. Drop the entry on unmount so stale
-                      // nodes don't leak across recompiles.
-                      if (node) rowRefs.current.set(c.id, node)
-                      else rowRefs.current.delete(c.id)
-                    }}
-                    role="button"
-                    tabIndex={0}
-                    onClick={() => selectCircuitComponent(c.id)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault()
-                        selectCircuitComponent(c.id)
-                      }
-                    }}
-                    className={
-                      'group w-full flex items-center gap-1.5 px-2 py-[3px] rounded-sm select-none cursor-pointer text-ink-200 ' +
-                      (isSelected
-                        ? 'bg-kerf-300/10 border-l-2 border-kerf-300'
-                        : 'border-l-2 border-transparent hover:bg-ink-800')
-                    }
-                  >
-                    <span className="text-xs font-mono w-12 truncate text-kerf-300/90">{c.refdes}</span>
-                    <span className="flex-1 text-xs truncate">
-                      {c.value || <span className="text-ink-600">—</span>}
-                    </span>
-                    {c.ftype && (
-                      <span className="text-[10px] font-mono text-ink-500 truncate max-w-[7rem]">
-                        {c.ftype}
-                      </span>
-                    )}
-                    {mappedName ? (
-                      <button
-                        type="button"
-                        title={`Linked to Library: ${mappedName} — click to unlink`}
-                        onClick={(e) => { e.stopPropagation(); setCircuitLibraryMapping(c.refdes, null) }}
-                        className="text-[10px] inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-kerf-300/10 border border-kerf-300/30 text-kerf-200 hover:bg-kerf-300/20 max-w-[8rem] truncate"
+              <ul role="list" className="list-none m-0 p-0">
+                {components.map((c) => {
+                  const mappedName = c.mappedLibraryRef
+                    ? partDisplayName(partFilesById.get(c.mappedLibraryRef), c.mappedLibraryRef)
+                    : null
+                  const isSelected = selectedCircuitComponentId === c.id
+                  return (
+                    <li key={c.id} role="listitem">
+                      <div
+                        ref={(node) => {
+                          // Track each rendered row by source_component_id for
+                          // scrollIntoView. Drop the entry on unmount so stale
+                          // nodes don't leak across recompiles.
+                          if (node) rowRefs.current.set(c.id, node)
+                          else rowRefs.current.delete(c.id)
+                        }}
+                        role="button"
+                        tabIndex={0}
+                        aria-label={`Component ${c.refdes}${c.value ? `, value ${c.value}` : ''}${c.ftype ? `, type ${c.ftype}` : ''}`}
+                        aria-pressed={isSelected}
+                        onClick={() => selectCircuitComponent(c.id)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault()
+                            selectCircuitComponent(c.id)
+                          }
+                        }}
+                        className={
+                          'group w-full flex items-center gap-1.5 px-2 py-2 rounded-sm select-none cursor-pointer text-ink-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-kerf-300 min-h-[2.75rem] ' +
+                          (isSelected
+                            ? 'bg-kerf-300/10 border-l-2 border-kerf-300'
+                            : 'border-l-2 border-transparent hover:bg-ink-800')
+                        }
                       >
-                        <Link2 size={10} className="flex-shrink-0" />
-                        <span className="truncate">{mappedName}</span>
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        title="Link to a Library part"
-                        onClick={(e) => { e.stopPropagation(); setPickFor(c.refdes) }}
-                        className="opacity-0 group-hover:opacity-100 transition-opacity text-[10px] inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-ink-400 hover:bg-ink-800 hover:text-kerf-300"
-                      >
-                        <Library size={10} />
-                        Link
-                      </button>
-                    )}
-                  </div>
-                )
-              })}
+                        <span className="text-xs font-mono w-12 truncate text-kerf-300/90">{c.refdes}</span>
+                        <span className="flex-1 text-xs truncate">
+                          {c.value || <span className="text-ink-600">—</span>}
+                        </span>
+                        {c.ftype && (
+                          <span className="text-[10px] font-mono text-ink-500 truncate max-w-[7rem]">
+                            {c.ftype}
+                          </span>
+                        )}
+                        {mappedName ? (
+                          <button
+                            type="button"
+                            aria-label={`Linked to library part ${mappedName} — click to unlink`}
+                            title={`Linked to Library: ${mappedName} — click to unlink`}
+                            onClick={(e) => { e.stopPropagation(); setCircuitLibraryMapping(c.refdes, null) }}
+                            className="text-[10px] inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-kerf-300/10 border border-kerf-300/30 text-kerf-200 hover:bg-kerf-300/20 max-w-[8rem] truncate focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-kerf-300"
+                          >
+                            <Link2 size={10} className="flex-shrink-0" />
+                            <span className="truncate">{mappedName}</span>
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            aria-label={`Link ${c.refdes} to a library part`}
+                            title="Link to a Library part"
+                            onClick={(e) => { e.stopPropagation(); setPickFor(c.refdes) }}
+                            className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity text-[10px] inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-ink-400 hover:bg-ink-800 hover:text-kerf-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-kerf-300"
+                          >
+                            <Library size={10} />
+                            Link
+                          </button>
+                        )}
+                      </div>
+                    </li>
+                  )
+                })}
+              </ul>
             </Section>
             <Section
               icon={CircuitBoard}
@@ -370,17 +377,20 @@ export default function CircuitObjectsPanel({ circuitJson }) {
               open={openNets}
               onToggle={() => setOpenNets((v) => !v)}
             >
-              {nets.map((n) => (
-                <div
-                  key={n.id}
-                  className="group w-full flex items-baseline gap-1.5 px-2 py-[3px] rounded-sm select-none hover:bg-ink-800 text-ink-200"
-                >
-                  <span className="flex-1 text-xs font-mono truncate">{n.label}</span>
-                  <span className="text-[10px] font-mono text-ink-500 tabular-nums">
-                    {n.portCount} port{n.portCount === 1 ? '' : 's'}
-                  </span>
-                </div>
-              ))}
+              <ul role="list" className="list-none m-0 p-0">
+                {nets.map((n) => (
+                  <li key={n.id} role="listitem">
+                    <div
+                      className="group w-full flex items-baseline gap-1.5 px-2 py-2 rounded-sm select-none hover:bg-ink-800 text-ink-200 min-h-[2.75rem]"
+                    >
+                      <span className="flex-1 text-xs font-mono truncate max-w-[8rem]">{n.label}</span>
+                      <span className="text-[10px] font-mono text-ink-500 tabular-nums">
+                        {n.portCount} port{n.portCount === 1 ? '' : 's'}
+                      </span>
+                    </div>
+                  </li>
+                ))}
+              </ul>
             </Section>
             <ErcTab
               ercResult={ercResult}
@@ -414,8 +424,9 @@ function Section({ icon: Icon, title, count, open, onToggle, children }) {
     <div className="mb-1">
       <button
         type="button"
+        aria-expanded={open}
         onClick={onToggle}
-        className="w-full flex items-center gap-1.5 px-2 py-1 text-[10px] uppercase tracking-wider text-ink-500 hover:text-ink-300"
+        className="w-full flex items-center gap-1.5 px-2 py-1.5 text-[10px] uppercase tracking-wider text-ink-500 hover:text-ink-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-kerf-300 min-h-[2rem]"
       >
         {open ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
         <Icon size={11} />
@@ -440,8 +451,9 @@ function ErcTab({ ercResult, open, onToggle, onSelectComponent }) {
     <div className="mb-1 border-t border-ink-800/60 pt-0.5">
       <button
         type="button"
+        aria-expanded={open}
         onClick={onToggle}
-        className="w-full flex items-center gap-1.5 px-2 py-1 text-[10px] uppercase tracking-wider text-ink-500 hover:text-ink-300"
+        className="w-full flex items-center gap-1.5 px-2 py-1.5 text-[10px] uppercase tracking-wider text-ink-500 hover:text-ink-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-kerf-300 min-h-[2rem]"
       >
         {open ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
         <ShieldAlert size={11} />
@@ -461,24 +473,26 @@ function ErcTab({ ercResult, open, onToggle, onSelectComponent }) {
               No ERC violations
             </div>
           ) : (
-            <>
+            <ul role="list" className="list-none m-0 p-0">
               {errors.map((err, i) => (
-                <ErcItem
-                  key={`e-${i}`}
-                  item={err}
-                  isError
-                  onSelectComponent={onSelectComponent}
-                />
+                <li key={`e-${i}`} role="listitem">
+                  <ErcItem
+                    item={err}
+                    isError
+                    onSelectComponent={onSelectComponent}
+                  />
+                </li>
               ))}
               {warnings.map((warn, i) => (
-                <ErcItem
-                  key={`w-${i}`}
-                  item={warn}
-                  isError={false}
-                  onSelectComponent={onSelectComponent}
-                />
+                <li key={`w-${i}`} role="listitem">
+                  <ErcItem
+                    item={warn}
+                    isError={false}
+                    onSelectComponent={onSelectComponent}
+                  />
+                </li>
               ))}
-            </>
+            </ul>
           )}
         </div>
       )}
@@ -492,6 +506,7 @@ function ErcItem({ item, isError, onSelectComponent }) {
     <div
       role={hasTarget ? 'button' : undefined}
       tabIndex={hasTarget ? 0 : undefined}
+      aria-label={hasTarget ? `${isError ? 'Error' : 'Warning'}: ${item.kind} — ${item.message}. Click to highlight component.` : undefined}
       onClick={() => {
         if (item.component_id && onSelectComponent) onSelectComponent(item.component_id)
       }}
@@ -501,7 +516,7 @@ function ErcItem({ item, isError, onSelectComponent }) {
           onSelectComponent(item.component_id)
         }
       }}
-      className={`flex items-start gap-1.5 px-2 py-[3px] rounded-sm text-ink-200 ${
+      className={`flex items-start gap-1.5 px-2 py-2 rounded-sm text-ink-200 min-h-[2.75rem] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-kerf-300 ${
         hasTarget ? 'cursor-pointer hover:bg-ink-800' : ''
       }`}
       title={hasTarget ? 'Click to highlight component' : undefined}
