@@ -89,7 +89,7 @@ importance, sits at P3: it is engine-gated, not low-value.
 |---|---|---|---|
 | **Mechanical engineer** | Parametric solid part / assembly + a dimensioned, GD&T-toleranced drawing + STEP | 🚧 partial | Strong core (OCCT features, sketcher, assemblies+mates, tolerance stack-up, linear/modal/thermal FEM, 3/5-axis CAM, TechDraw-flavored drawings *with* GD&T frames). Sheet metal flange/unfold/flat-pattern shipped; weldments + GD&T-from-model callouts shipped. **General DXF writer shipped** (T-7; DWG via ODA external). Remaining gap: **bend table** (T-4). |
 | **Electronic engineer** | A *manufacturable* PCB: schematic → routed board → **fab package** | ✅ can manufacture | KiCad-class design (ERC, hier-schematic, net classes, shove router, autoroute/freerouting DSN, length tuning, via stitching, SPICE, RF, copper pour, imports KiCad libs) + **Gerber RS-274X, Excellon drill, pick-and-place, fab BOM, IPC-2581, ODB++ zip bundle** (`kerf_electronics.fab`) + 3D board STEP export for MCAD-ECAD co-design. |
-| **Architect** | Coordinated building model → IFC + construction-doc drawings | 🚧 partial | `.bim` text-DSL → IFC4 (walls/slabs/spaces/levels/site, MEP, stairs/railings, curtain wall, schedules/views/sheets) + IFC import **Tier 1 + Tier 2** (openings/MEP/families/schedules) + parametric family editor shipped. **General DXF writer shipped** (T-7; DWG via ODA external). Missing: construction-doc detailing. |
+| **Architect** | Coordinated building model → IFC + construction-doc drawings | 🚧 partial | `.bim` text-DSL → IFC4 (walls/slabs/spaces/levels/site, MEP, stairs/railings, curtain wall, schedules/views/sheets) + IFC import **Tier 1 + Tier 2** (openings/MEP/families/schedules) + first-pass parametric family editor shipped. **General DXF writer shipped** (T-7; DWG via ODA external). Honest gaps vs Revit: **no native family-authoring UX** (T-109), no shipped family library (T-110), only basic wall / door / window / slab parametrics (T-111), basic stairs / ramps (T-112), early structural grid + framing (T-113), basic site / toposolid (T-114), no render-appearance BIM material catalogue (T-115); construction-doc detailing still pending. |
 | **Civil engineer** | Survey/terrain → alignment/corridor → grading + plan-and-profile sheets | 🔴 cannot | Essentially **nothing** civil-specific. Needs *distinct engines* (geospatial CRS, TIN/terrain, alignment/corridor solver, hydraulics, earthwork, LandXML/IFC-4.3-infra) — not feature-adds on the B-rep kernel. In the roadmap at **P3** with each engine named honestly — highest raw societal importance (water/sanitation/roads, esp. developing world); engine-gated, hence P3 not low-value. |
 | **Drafter** | Multi-sheet 2D production drawing, exchanged as DWG/DXF | 🚧 partial | TechDraw-flavored drawings shipped (multi-sheet, dimensions, GD&T frames, section hatching, leaders/balloons, centerlines). **DXF reader + DWG bridge + general DXF writer all shipped** (`kerf_imports.dxf`, `dwg/bridge.py`, `kerf_imports.dxf_writer`; R12 + R2004). DWG output via ODA external (`dwg_note()`). Remaining gap: construction-doc detailing. |
 | **Jewelry CAD designer** | Rendered/printable ring or setting with stones placed and metal-weight/cost | ✅ can render | Full toolkit shipped and wired: `kerf_cad_core.jewelry.{gemstones,gem_seat,settings,ring,metal_cost}` — 7 cuts, prong/bezel/channel/pavé/channel/pavé, US/UK/EU/JP sizer + 7 shank profiles, casting-cost, FeatureView inspectors, PBR gem/metal viewport materials, casting/STL production export, preset/template library, findings, chain/bracelet. OCCT JS worker `op*` handlers fully wired (`opGemstone`/`opGemSeat`/`opJewelryProngHead`/`opJewelryBezel`/`opJewelryChannel`/`opJewelryPave`/`opRingShank`). |
@@ -220,7 +220,7 @@ promoted to near-term P0/P1.
 |---|---|---|---|
 | **Implicit / function-rep (F-rep / SDF) modeling** | nTopology, ImplicitCAD | Field-driven lattices / TPMS / gradient materials. Geometry expressed as a math function is the *ideal* LLM substrate — no topology bookkeeping, infinitely composable, verifiable by sampling the field. Verified absent (no SDF/implicit/TPMS module). | 🔴 not started |
 | **Generative / topology / multi-objective optimization (production-grade)** | Fusion Generative, nTop, OptiStruct | Manufacturing-constrained, multi-load-case, multi-objective, lattice-infill optimization. The LLM frames the objective + constraints in text and reads back a verified result. Verified: basic single-objective SIMP topo-opt shipped (`packages/kerf-topo`, FEniCSx); manufacturing constraints / multi-load / multi-objective / lattice-infill **not** — the deep, production-grade version is unbuilt. | 🚧 in flight |
-| **Simulation pillar** *(user priority — emphasized)* | Abaqus, LS-DYNA, nCode, OpenFOAM / Ansys, Adams | Nonlinear FEA, explicit dynamics / crash, fatigue & durability, CFD, low/high-frequency EM, acoustics, multibody dynamics, coupled multiphysics. Physics is governing equations + boundary conditions = text; the LLM sets up the study and self-checks results. **Verified split:** `packages/kerf-fem` analysis enum is *exactly* `linear_static \| modal \| thermal` (+ bonded contact) → that slice ✅ shipped; **everything else — nonlinear, explicit/crash, fatigue, CFD, EM, acoustics, multibody, coupled multiphysics — is 🔴 not started.** | 🚧 in flight |
+| **Simulation pillar** *(user priority — emphasized)* | Abaqus, LS-DYNA, nCode, OpenFOAM / Ansys, Adams | Nonlinear FEA, explicit dynamics / crash, fatigue & durability, CFD, low/high-frequency EM, acoustics, multibody dynamics, coupled multiphysics. Physics is governing equations + boundary conditions = text; the LLM sets up the study and self-checks results. **Verified split:** `packages/kerf-fem` analysis enum was `linear_static \| modal \| thermal` (+ bonded contact) — that slice ✅ shipped. A **parallel FEM-hardening stream** is currently in flight to match CalculiX / Z88 / Mystran depth (T-100); seed modules for `nonlinear`, `explicit`, `acoustics_fem`, `em_field`, `em_highfreq`, and `fatigue_fem` are present in `packages/kerf-fem/src/kerf_fem/` but not yet wired through the public analysis enum. **CFD** is also in flight — `cfd_potential.py` (potential flow) + a heat-transfer / NS path; full CfdOF-class depth (turbulence models, 3-D meshing, OpenFOAM bridge) tracked at T-101. **Crash / multibody / coupled multiphysics still 🔴 not started.** | 🚧 in flight |
 | **1D system simulation** | Modelica, Amesim, Simulink | Lumped-parameter thermal / hydraulic / electrical / control networks. Modelica is *text* — a declarative equation-based language — making this exceptionally AI-native. Verified absent. | 🔴 not started |
 | **Manufacturing process simulation** | Moldflow, MAGMASOFT, AutoForm, Vericut | Mold-flow, casting solidification, stamping / forming, AM residual stress, machining (toolpath) verification, weld distortion. Closes the loop between design intent and a producible part the LLM can reason about. Verified absent. | 🔴 not started |
 | **Automatic Feature Recognition (AFR)** | (re-parameterize imported "dumb" STEP into editable features) | Critical AI enabler: turns any imported boundary-rep solid into an editable parametric feature tree, so the LLM can edit *any* model — not just ones authored in Kerf. Verified absent (no feature-recognition module). | 🔴 not started |
@@ -338,6 +338,37 @@ Quick map of what is in `packages/kerf-cad-core/src/kerf_cad_core/geom/`:
   mesh → NURBS autosurface to a deviation tolerance; 2D region boolean
   on planar loops (sketch-driven solids without OCCT round-trip).
 
+### Render output
+
+- **PBR hero / share-card pipeline** ✅ — `captureHeroShot`
+  (`src/lib/heroShot.js`) at 2048×2048 4× supersample, ACES tonemap,
+  PMREM-pre-filtered RoomEnvironment HDRI, `UnrealBloomPass`; wired
+  into `src/components/Renderer.jsx` so Workshop covers, share-cards,
+  and the primary 3D viewport share one production-grade lighting path.
+- **Blender Cycles offline path** ✅ — render-quality output for jewelry
+  via the existing `kerf-render` worker.
+- **Honest gaps** — **caustics + dispersion solver** (T-106) is 🔴 not
+  started; we have PBR + HDRI + bloom but no Cycles / V-Ray / Enscape /
+  KeyShot-class caustic transport or gem-dispersion ray-trace.
+
+### Frontend / UX
+
+- **Pre-React boot loader** ✅ — Kerf-branded SVG triangles loader
+  injected in `index.html` paints immediately, then transitions cleanly
+  into the first React route. Backed by `src/components/Loader.jsx` +
+  `src/components/RouteFallback.jsx` so route-level Suspense fallbacks
+  share the same visual language. Vitest smoke coverage.
+- **Docs viewer redesign** ✅ — grouped sidebar (domains + workflows +
+  cloud + reference + develop), breadcrumbs, TOC, audit-filter,
+  internal-planning-artifact filtering. `scripts/build-docs-manifest.mjs`
+  emits the grouped taxonomy into `public/docs-manifest.json`.
+- **Comparison pages** ✅ — `src/routes/compare/` ships **9** head-to-head
+  pages: Altium, Blender, Freecad, Fusion, KiCad, MatrixGold, Onshape,
+  Revit, Rhino. Freecad / KiCad / Rhino / Revit / Fusion were deepened;
+  Altium / MatrixGold / Blender / Onshape are new.
+- **Touch + responsive polish** ✅ — Renderer + Gumball touch gestures,
+  Editor responsive layout, top-bar overflow, Docs mobile drawer.
+
 ### Mechanical / CAD
 - **OCCT `.feature` Phase 2/3** ✅ — Pad/Pocket/Revolve/Hole/Fillet/Chamfer/
   Shell/Sweep1-2/Loft/Push-Pull/RotateFace/Linear-Polar-Mirror patterns;
@@ -418,6 +449,36 @@ Quick map of what is in `packages/kerf-cad-core/src/kerf_cad_core/geom/`:
   **FreeCAD** ✅ (Tier 1+2) · **OpenSCAD** ✅ · **Rhino 3DM** ✅.
 - **LLM tool consolidation** ✅ — small fixed surface + `search_kerf_docs`
   over `packages/kerf-chat/llm_docs/`.
+
+---
+
+## §4.5 — Honest depth gaps tracked (2026-05-17)
+
+Concrete, near-term capability gaps surfaced from a head-to-head pass
+against the reference tool in each sector. Each line maps to a `T-NN` in
+[`tasks.md`](./tasks.md) so the loop can pull them; status here mirrors the
+task. These are **not new sectors** — they are depth gaps inside sectors
+already shipped or in-flight. Listed in roughly the order they convert
+evaluators today.
+
+| # | Gap | vs | T-NN | Status |
+|---|---|---|---|---|
+| G-1 | **FEM matching CalculiX / Z88 / Mystran depth** — nonlinear, explicit, acoustics, EM, fatigue beyond the verified linear-static+modal+thermal slice | CalculiX / Z88 / Mystran | T-100 | 🚧 in flight |
+| G-2 | **CFD (CfdOF-class)** — beyond `cfd_potential` to turbulence models, 3-D meshing, OpenFOAM bridge | CfdOF / OpenFOAM | T-101 | 🚧 in flight |
+| G-3 | **Interactive push-and-shove diff-pair tuning** — Kerf has length tuning only; KiCad has interactive push-and-shove | KiCad / Altium | T-102 | 🔴 not started |
+| G-4 | **Broader ECAD import** — Allegro / PADS / gEDA / Eagle v10 (today only KiCad-oriented) | Altium / Cadence | T-103 | 🔴 not started |
+| G-5 | **Kernel G3 / NURBS Phase 4 trim-by-curve + class-A leading** — G3 curvature combs partially shipped (#100); imprint + leading still to go | Alias / ICEM Surf | T-104 | 🚧 in flight |
+| G-6 | **SubD authoring with creases + edit workflow** — `subd.py` + quad-remesh shipped; no creation / edit / crease workflow | Rhino 8 SubD | T-105 | 🔴 not started |
+| G-7 | **Render: caustics + dispersion** — PBR + HDRI + bloom shipped this session; no caustic transport / gem-dispersion ray-trace | Cycles / V-Ray / KeyShot / Enscape | T-106 | 🔴 not started |
+| G-8 | **Direct + parametric history coexistence** — Kerf is feature-tree primary; limited direct editing alongside | Fusion / Inventor / Onshape | T-107 | 🔴 not started |
+| G-9 | **Full joint system** — rigid / revolute / slider / cam / gear / pin-slot; `kerf-mates` ships a constraint solver but fewer joint types | Inventor / SolidWorks / Onshape | T-108 | 🔴 not started |
+| G-10 | **BIM parametric family system** — no native family-authoring UX yet (Tier-2 family *import* shipped) | Revit | T-109 | 🔴 not started |
+| G-11 | **BIM family library** — no shipped curated catalog | Revit | T-110 | 🔴 not started |
+| G-12 | **BIM walls / doors / windows / slabs full parametric** — basic primitives only | Revit | T-111 | 🔴 not started |
+| G-13 | **BIM stairs / ramps full** — basic stairs only | Revit | T-112 | 🔴 not started |
+| G-14 | **BIM structural grid + framing** — early today (Revit Structure / Robot / Tekla class) | Revit Structure / Robot / Tekla | T-113 | 🔴 not started |
+| G-15 | **BIM site / earthwork (toposolids)** — basic only | Revit / Civil 3D | T-114 | 🔴 not started |
+| G-16 | **BIM material catalogue with render appearance** — PBR shipped, no BIM-bound material library | Revit / Enscape | T-115 | 🔴 not started |
 
 ---
 
