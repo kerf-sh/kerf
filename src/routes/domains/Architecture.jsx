@@ -637,7 +637,8 @@ function ComparisonSection() {
           </p>
         </div>
 
-        <div className="overflow-x-auto rounded-xl border border-ink-800">
+        <div className="overflow-x-auto -mx-6 sm:mx-0">
+          <div className="overflow-x-auto rounded-xl border border-ink-800">
           <table className="w-full min-w-[720px] text-sm border-collapse">
             <thead>
               <tr className="border-b border-ink-800 bg-ink-900/60">
@@ -692,6 +693,7 @@ function ComparisonSection() {
               ))}
             </tbody>
           </table>
+          </div>
         </div>
 
         <p className="mt-3 text-right text-[11px] text-ink-500 font-mono">

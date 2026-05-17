@@ -628,31 +628,33 @@ function ComparisonTable() {
           </p>
         </div>
 
-        <div className="rounded-2xl border border-ink-800 bg-ink-900/30 backdrop-blur overflow-x-auto">
-          <table className="w-full min-w-[680px] text-sm">
-            <thead>
-              <tr className="border-b border-ink-800">
-                <th className="text-left px-5 py-3 font-mono text-[10px] uppercase tracking-[0.18em] text-ink-400 w-48">
-                  Feature
-                </th>
-                {TOOLS.map((t) => (
-                  <th
-                    key={t.id}
-                    className={`text-center px-4 py-3 font-mono text-[10px] uppercase tracking-[0.18em] ${
-                      t.accent ? 'text-cyan-edge' : 'text-ink-400'
-                    }`}
-                  >
-                    {t.label}
+        <div className="overflow-x-auto -mx-6 sm:mx-0">
+          <div className="rounded-2xl border border-ink-800 bg-ink-900/30 backdrop-blur overflow-x-auto">
+            <table className="w-full min-w-[680px] text-sm">
+              <thead>
+                <tr className="border-b border-ink-800">
+                  <th className="text-left px-5 py-3 font-mono text-[10px] uppercase tracking-[0.18em] text-ink-400 w-48">
+                    Feature
                   </th>
+                  {TOOLS.map((t) => (
+                    <th
+                      key={t.id}
+                      className={`text-center px-4 py-3 font-mono text-[10px] uppercase tracking-[0.18em] ${
+                        t.accent ? 'text-cyan-edge' : 'text-ink-400'
+                      }`}
+                    >
+                      {t.label}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-ink-900">
+                {COMPARISON_ROWS.map((row) => (
+                  <CompRow key={row.feature} row={row} />
                 ))}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-ink-900">
-              {COMPARISON_ROWS.map((row) => (
-                <CompRow key={row.feature} row={row} />
-              ))}
-            </tbody>
-          </table>
+              </tbody>
+            </table>
+          </div>
         </div>
 
         <p className="mt-3 text-xs text-ink-500 font-mono text-right">

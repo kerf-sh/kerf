@@ -490,7 +490,8 @@ function ComparisonTable() {
           </p>
         </div>
 
-        <div className="overflow-x-auto rounded-2xl border border-ink-800 bg-ink-900/40 backdrop-blur">
+        <div className="overflow-x-auto -mx-6 sm:mx-0">
+          <div className="overflow-x-auto rounded-2xl border border-ink-800 bg-ink-900/40 backdrop-blur">
           <table className="w-full border-collapse min-w-[640px]">
             <thead>
               <tr className="border-b border-ink-800 bg-ink-900/60">
@@ -532,6 +533,7 @@ function ComparisonTable() {
               ))}
             </tbody>
           </table>
+          </div>
         </div>
 
         <p className="mt-4 text-[11px] text-ink-500 font-mono">

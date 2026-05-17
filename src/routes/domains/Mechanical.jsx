@@ -579,7 +579,8 @@ function ComparisonTable() {
         </div>
 
         {/* Comparison table — horizontally scrollable on small screens */}
-        <div className="rounded-2xl border border-ink-800 bg-ink-900/30 overflow-x-auto">
+        <div className="overflow-x-auto -mx-6 sm:mx-0">
+          <div className="rounded-2xl border border-ink-800 bg-ink-900/30 overflow-x-auto">
           <table className="w-full min-w-[640px] text-sm border-collapse">
             <thead>
               <tr className="border-b border-ink-800 bg-ink-900/60">
@@ -633,6 +634,7 @@ function ComparisonTable() {
               ))}
             </tbody>
           </table>
+          </div>
         </div>
 
         <div className="mt-4 flex flex-wrap items-center gap-4 text-[11px] text-ink-500 font-mono">
