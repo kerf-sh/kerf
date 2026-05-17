@@ -30,6 +30,7 @@
     "@monaco-editor/react": "^4.6.0",
     "@salusoft89/planegcs": "^1.1.7",
     "@tscircuit/core": "^0.0.1231",
+    "@tscircuit/footprinter": "^0.0.351",
     "circuit-json": "^0.0.423",
     "circuit-to-svg": "^0.0.345",
     "clsx": "^2.1.1",

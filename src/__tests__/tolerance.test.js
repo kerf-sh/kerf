@@ -110,11 +110,11 @@ it('handles IT grades', () => {
 
   describe('IT_GRADES', () => {
     it('contains expected keys', () => {
-      expect(IT_GRADES.IT6).toBe(0.003)
-      expect(IT_GRADES.IT7).toBe(0.005)
-      expect(IT_GRADES.IT8).toBe(0.007)
-      expect(IT_GRADES.IT12).toBe(0.050)
-      expect(IT_GRADES.IT16).toBe(0.315)
+      expect(IT_GRADES.IT6).toBe(0.006)
+      expect(IT_GRADES.IT7).toBe(0.010)
+      expect(IT_GRADES.IT8).toBe(0.014)
+      expect(IT_GRADES.IT12).toBe(0.100)
+      expect(IT_GRADES.IT16).toBe(0.630)
     })
   })
 

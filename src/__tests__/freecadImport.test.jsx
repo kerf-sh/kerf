@@ -60,14 +60,25 @@ describe('isFCStdFile', () => {
   })
 })
 
-// ---- 2. api.importFreecadProject stub (T7 pending) ----------------------------
+// ---- 2. api.importFreecadProject — real endpoint contract --------------------
+//
+// FreeCAD import shipped (T7/T-142): importFreecadProject now POSTs to
+// /api/projects/:id/imports/freecad with { file_blob_id, import_folder,
+// mode }. These tests pin that wire contract (the FreeCADImportDialog
+// depends on the URL, method, and body shape — and on the opts defaults).
 
-describe('api.importFreecadProject stub', () => {
+describe('api.importFreecadProject — real endpoint', () => {
   let api
+  let lastFetch
 
   beforeEach(async () => {
     vi.resetModules()
-    globalThis.fetch = vi.fn()
+    lastFetch = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ created_file: { id: 'f1' }, stats: {} }),
+    }))
+    globalThis.fetch = lastFetch
     const mod = await import('../lib/api.js')
     api = mod.api
   })
@@ -77,63 +88,53 @@ describe('api.importFreecadProject stub', () => {
     delete globalThis.fetch
   })
 
-  it('always rejects (never resolves)', async () => {
-    await expect(api.importFreecadProject('proj-1', 'blob-1')).rejects.toThrow()
+  function fetchCall() {
+    expect(lastFetch).toHaveBeenCalledTimes(1)
+    const [url, init] = lastFetch.mock.calls[0]
+    return { url, init, body: JSON.parse(init.body) }
+  }
+
+  it('POSTs to the project freecad-import endpoint', async () => {
+    await api.importFreecadProject('proj-1', 'blob-1')
+    const { url, init } = fetchCall()
+    expect(url).toContain('/api/projects/proj-1/imports/freecad')
+    expect(init.method).toBe('POST')
   })
 
-  it('rejects with FREECAD_T7_PENDING code', async () => {
-    const err = await api.importFreecadProject('proj-1', 'blob-1').catch((e) => e)
-    expect(err.code).toBe('FREECAD_T7_PENDING')
+  it('sends file_blob_id and the documented opts defaults', async () => {
+    await api.importFreecadProject('proj-1', 'blob-1')
+    const { body } = fetchCall()
+    expect(body).toEqual({
+      file_blob_id: 'blob-1',
+      import_folder: '/freecad_import',
+      mode: 'project',
+    })
   })
 
-  it('error message mentions T7', async () => {
-    const err = await api.importFreecadProject('proj-1', 'blob-1').catch((e) => e)
-    expect(err.message).toMatch(/T7/)
+  it('honours importFolder / mode overrides from opts', async () => {
+    await api.importFreecadProject('proj-1', 'blob-1', {
+      importFolder: '/custom',
+      mode: 'assembly',
+    })
+    const { body } = fetchCall()
+    expect(body.import_folder).toBe('/custom')
+    expect(body.mode).toBe('assembly')
   })
 
-  it('error message mentions import_freecad_project', async () => {
-    const err = await api.importFreecadProject('proj-1', 'blob-1').catch((e) => e)
-    expect(err.message).toMatch(/import_freecad_project/)
+  it('resolves with the parsed JSON response', async () => {
+    const res = await api.importFreecadProject('proj-1', 'blob-1')
+    expect(res).toEqual({ created_file: { id: 'f1' }, stats: {} })
   })
 
-  it('does not call fetch (is a pure stub — no HTTP request)', async () => {
-    await api.importFreecadProject('proj-1', 'blob-1').catch(() => {})
-    expect(globalThis.fetch).not.toHaveBeenCalled()
-  })
-
-  it('accepts optional opts argument without throwing', async () => {
-    const err = await api
-      .importFreecadProject('proj-1', 'blob-1', { importFolder: '/custom', mode: 'project' })
-      .catch((e) => e)
-    expect(err.code).toBe('FREECAD_T7_PENDING')
-  })
-})
-
-// ---- 3. T7 hook contract -------------------------------------------------------
-
-describe('T7 hook contract', () => {
-  // Documents exactly which identifier T7 must replace in api.js.
-  // The real implementation should be:
-  //   importFreecadProject: (projectId, fileBlobId, opts = {}) =>
-  //     request(`/api/projects/${projectId}/imports/freecad`, {
-  //       method: 'POST',
-  //       body: {
-  //         file_blob_id: fileBlobId,
-  //         import_folder: opts.importFolder ?? '/freecad_import',
-  //         mode: opts.mode ?? 'project',
-  //       },
-  //     }),
-  //
-  // FreeCADImportDialog checks error.code === 'FREECAD_T7_PENDING' to
-  // show an honest "awaiting T7" message instead of a generic error.
-
-  it('FREECAD_T7_PENDING sentinel code is stable (changing it breaks the dialog)', async () => {
-    vi.resetModules()
-    globalThis.fetch = vi.fn()
-    const { api: freshApi } = await import('../lib/api.js')
-    const err = await freshApi.importFreecadProject('any', 'any').catch((e) => e)
-    // This specific string is checked in FreeCADImportDialog.
-    expect(err.code).toBe('FREECAD_T7_PENDING')
-    delete globalThis.fetch
+  it('rejects when the server returns a non-OK status', async () => {
+    globalThis.fetch = vi.fn(async () => ({
+      ok: false,
+      status: 422,
+      statusText: 'Unprocessable',
+      text: async () => JSON.stringify({ error: 'bad fcstd' }),
+    }))
+    await expect(
+      api.importFreecadProject('proj-1', 'blob-1'),
+    ).rejects.toThrow(/bad fcstd/)
   })
 })

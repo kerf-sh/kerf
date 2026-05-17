@@ -255,8 +255,10 @@ describe('automotive.meta.js — twitter card', () => {
 /* -------------------------------------------------------------------------- */
 
 describe('App.jsx — automotive route', () => {
-  it('imports Automotive component', () => {
-    expect(APP_SRC).toMatch(/import Automotive/)
+  it('imports Automotive component (lazy-loaded)', () => {
+    expect(APP_SRC).toMatch(
+      /Automotive\s*=\s*lazy\(\(\)\s*=>\s*import\('\.\/routes\/domains\/Automotive\.jsx'\)\)/,
+    )
   })
 
   it('registers /domains/automotive route', () => {

@@ -1,4 +1,5 @@
 import { defineConfig, loadEnv } from 'vite'
+import { configDefaults } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import pkg from './package.json' with { type: 'json' }
@@ -14,6 +15,12 @@ export default defineConfig(({ mode }) => {
     plugins: [react(), tailwindcss()],
     define: {
       __APP_VERSION__: JSON.stringify(pkg.version),
+    },
+    // Vitest unit tests only. The Playwright e2e specs under tests/e2e/
+    // use @playwright/test (their own runner via `npm run test:e2e`) and
+    // must not be collected here, or vitest errors on `test.describe`.
+    test: {
+      exclude: [...configDefaults.exclude, 'tests/e2e/**'],
     },
     server: {
       port: 5173,

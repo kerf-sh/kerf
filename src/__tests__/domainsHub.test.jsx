@@ -198,7 +198,9 @@ describe('Domains hub module', () => {
 
 describe('Domains hub wiring', () => {
   it('App.jsx registers the /domains route to DomainsHub', () => {
-    expect(APP_SRC).toMatch(/import DomainsHub from '\.\/routes\/domains\/index\.jsx'/)
+    expect(APP_SRC).toMatch(
+      /DomainsHub\s*=\s*lazy\(\(\)\s*=>\s*import\('\.\/routes\/domains\/index\.jsx'\)\)/,
+    )
     expect(APP_SRC).toMatch(/<Route path="\/domains" element=\{<DomainsHub \/>\} \/>/)
   })
 
