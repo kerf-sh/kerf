@@ -34,6 +34,7 @@ from kerf_cad_core.marine.hull import (
     hull_from_offsets,
     fairing_report,
     hydrostatics,
+    faired_hull_surface,
 )
 
 # ---------------------------------------------------------------------------
@@ -246,6 +247,94 @@ async def run_marine_hydrostatics(ctx: ProjectCtx, args: bytes) -> str:
     design_wl = a.get("design_waterline")  # may be None
 
     result = hydrostatics(offsets, design_waterline=design_wl)
+    if not result.get("ok"):
+        return json.dumps(result)
+    return ok_payload(result)
+
+
+# ---------------------------------------------------------------------------
+# Tool: marine_hull_fair_surface
+# ---------------------------------------------------------------------------
+
+_fair_surface_spec = ToolSpec(
+    name="marine_hull_fair_surface",
+    description=(
+        "Build a faired NURBS hull surface from a table of half-breadths and "
+        "attach curvature-comb analysis.\n"
+        "\n"
+        "Fairing workflow:\n"
+        "  1. Fit a natural cubic spline (minimum bending energy) through each\n"
+        "     station's waterline → half-breadth profile and re-evaluate it at\n"
+        "     the original waterline positions (transverse fairing).\n"
+        "  2. Repeat across stations at each waterline (longitudinal fairing).\n"
+        "  3. Repeat for `fairing_passes` iterations (default 1; 2 passes for\n"
+        "     high-curvature hulls).\n"
+        "  4. Build a degree-3 × degree-3 NURBS surface from the faired grid.\n"
+        "  5. Sample principal curvatures (k1/k2, mean H, Gaussian K) on a UV\n"
+        "     grid via GeomLProp_SLProps-equivalent Python code, producing a\n"
+        "     `curvature_combs` payload consumed by `CurvatureCombOverlay.jsx`.\n"
+        "\n"
+        "Returns:\n"
+        "  nurbs_surface    — degree/knot/control-point data for the faired surface\n"
+        "  curvature_combs  — sampled k1/k2/H/K + sample points for the viewport\n"
+        "  fairness_metrics — monotonicity, batten energy improvement, roughness\n"
+        "\n"
+        "Use marine_fairing_report to inspect the raw (unfaired) offsets first.\n"
+        "Errors returned as {ok: false, errors: [...]}. Never raises."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "offsets": _OFFSETS_SCHEMA,
+            "uv_density": {
+                "type": "number",
+                "description": (
+                    "UV grid step for curvature-comb sampling as a fraction of "
+                    "the parameter range (default 0.1 → ~10×10 grid). "
+                    "Range: 0.01–0.5."
+                ),
+            },
+            "scale_factor": {
+                "type": "number",
+                "description": (
+                    "Comb line length multiplier (default 10). "
+                    "Increase for nearly-flat surfaces; decrease for high-curvature ones."
+                ),
+            },
+            "fairing_passes": {
+                "type": "integer",
+                "description": (
+                    "Number of transverse + longitudinal fairing iterations "
+                    "(default 1). Use 2–3 for irregular or high-curvature hulls."
+                ),
+            },
+        },
+        "required": ["offsets"],
+    },
+)
+
+
+@register(_fair_surface_spec, write=False)
+async def run_marine_hull_fair_surface(ctx: ProjectCtx, args: bytes) -> str:
+    try:
+        a = json.loads(args)
+    except Exception as exc:
+        return err_payload(f"invalid args JSON: {exc}", "BAD_ARGS")
+
+    offsets = a.get("offsets")
+    if offsets is None:
+        return json.dumps({"ok": False, "errors": ["'offsets' field is required"]})
+
+    uv_density = a.get("uv_density", 0.1)
+    scale_factor = a.get("scale_factor", 10.0)
+    fairing_passes = a.get("fairing_passes", 1)
+
+    result = faired_hull_surface(
+        offsets,
+        uv_density=uv_density,
+        scale_factor=scale_factor,
+        fairing_passes=fairing_passes,
+    )
     if not result.get("ok"):
         return json.dumps(result)
     return ok_payload(result)

@@ -28,6 +28,7 @@ from kerf_cad_core.marine.hull import (
     hull_from_offsets,
     fairing_report,
     hydrostatics,
+    faired_hull_surface,
 )
 
 __all__ = [
@@ -36,4 +37,5 @@ __all__ = [
     "hull_from_offsets",
     "fairing_report",
     "hydrostatics",
+    "faired_hull_surface",
 ]

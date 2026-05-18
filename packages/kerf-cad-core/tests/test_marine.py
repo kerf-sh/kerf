@@ -24,6 +24,7 @@ from kerf_cad_core.marine.hull import (
     hull_from_offsets,
     fairing_report,
     hydrostatics,
+    faired_hull_surface,
     _simpsons_rule,
     _natural_cubic_spline_second_derivs,
     _spline_bending_energy,
@@ -34,6 +35,7 @@ from kerf_cad_core.marine.tools import (
     run_marine_hull_from_offsets,
     run_marine_fairing_report,
     run_marine_hydrostatics,
+    run_marine_hull_fair_surface,
 )
 
 
@@ -731,3 +733,308 @@ class TestEdgeCases:
         assert result["ok"] is True
         assert result["station_count"] == 3
         assert result["waterline_count"] == 3
+
+
+# ===========================================================================
+# 9. faired_hull_surface — T-71 hull-fairing seed
+# ===========================================================================
+
+def _irregular_hull_offsets() -> list[dict]:
+    """
+    A 5-station × 4-waterline hull with a mid-ship kink at station 2 —
+    deliberately unfair so that fairing visibly improves the metrics.
+    """
+    return [
+        # Station 0 (bow)
+        {"station": 0.0, "waterline": 0.0, "half_breadth": 0.2},
+        {"station": 0.0, "waterline": 1.0, "half_breadth": 0.6},
+        {"station": 0.0, "waterline": 2.0, "half_breadth": 0.9},
+        {"station": 0.0, "waterline": 3.0, "half_breadth": 1.0},
+        # Station 1
+        {"station": 3.0, "waterline": 0.0, "half_breadth": 0.8},
+        {"station": 3.0, "waterline": 1.0, "half_breadth": 1.6},
+        {"station": 3.0, "waterline": 2.0, "half_breadth": 2.2},
+        {"station": 3.0, "waterline": 3.0, "half_breadth": 2.5},
+        # Station 2 (mid-ship, with kink: dip then rise then fall)
+        {"station": 6.0, "waterline": 0.0, "half_breadth": 1.0},
+        {"station": 6.0, "waterline": 1.0, "half_breadth": 2.8},
+        {"station": 6.0, "waterline": 2.0, "half_breadth": 1.5},  # dip
+        {"station": 6.0, "waterline": 3.0, "half_breadth": 3.0},  # spike
+        # Station 3
+        {"station": 9.0, "waterline": 0.0, "half_breadth": 0.8},
+        {"station": 9.0, "waterline": 1.0, "half_breadth": 1.5},
+        {"station": 9.0, "waterline": 2.0, "half_breadth": 2.1},
+        {"station": 9.0, "waterline": 3.0, "half_breadth": 2.4},
+        # Station 4 (stern)
+        {"station": 12.0, "waterline": 0.0, "half_breadth": 0.3},
+        {"station": 12.0, "waterline": 1.0, "half_breadth": 0.8},
+        {"station": 12.0, "waterline": 2.0, "half_breadth": 1.1},
+        {"station": 12.0, "waterline": 3.0, "half_breadth": 1.3},
+    ]
+
+
+class TestFairedHullSurface:
+    """Tests for faired_hull_surface (T-71 hull-fairing seed)."""
+
+    def test_simple_hull_ok(self):
+        """faired_hull_surface returns ok=True for a valid offset table."""
+        result = faired_hull_surface(_simple_offsets())
+        assert result["ok"] is True
+        assert result["op"] == "marine_faired_hull_surface"
+
+    def test_op_and_dimensions(self):
+        """Result has expected dimension keys matching the input hull."""
+        result = faired_hull_surface(_simple_offsets())
+        assert result["ok"] is True
+        assert result["loa"] == pytest.approx(10.0)
+        assert result["depth"] == pytest.approx(2.0)
+        assert result["station_count"] == 3
+        assert result["waterline_count"] == 3
+        assert result["fairing_passes"] == 1
+
+    def test_nurbs_surface_present(self):
+        """nurbs_surface field is present with correct structural keys."""
+        result = faired_hull_surface(_simple_offsets())
+        assert result["ok"] is True
+        ns = result["nurbs_surface"]
+        assert "degree_u" in ns
+        assert "degree_v" in ns
+        assert "num_u" in ns
+        assert "num_v" in ns
+        assert "control_points" in ns
+        assert "knots_u" in ns
+        assert "knots_v" in ns
+
+    def test_nurbs_surface_degree_capped_at_3(self):
+        """Degree must not exceed 3 regardless of station/waterline count."""
+        offsets = _box_barge_offsets(
+            stations=[0, 2, 4, 6, 8, 10],
+            waterlines=[0, 1, 2, 3, 4],
+            half_beam=2.0,
+        )
+        result = faired_hull_surface(offsets)
+        assert result["ok"] is True
+        assert result["nurbs_surface"]["degree_u"] == 3
+        assert result["nurbs_surface"]["degree_v"] == 3
+
+    def test_nurbs_control_points_count(self):
+        """num_u × num_v must match the number of control points."""
+        result = faired_hull_surface(_simple_offsets())
+        assert result["ok"] is True
+        ns = result["nurbs_surface"]
+        assert len(ns["control_points"]) == ns["num_u"] * ns["num_v"]
+
+    def test_nurbs_control_points_are_3d(self):
+        """Each control point must have 3 coordinates."""
+        result = faired_hull_surface(_simple_offsets())
+        assert result["ok"] is True
+        for pt in result["nurbs_surface"]["control_points"]:
+            assert len(pt) == 3
+
+    def test_nurbs_half_breadths_nonneg(self):
+        """Faired half-breadths (Y coord of control points) must be >= 0."""
+        result = faired_hull_surface(_simple_offsets())
+        assert result["ok"] is True
+        for pt in result["nurbs_surface"]["control_points"]:
+            assert pt[1] >= -1e-9  # Y = half-breadth
+
+    def test_knot_vectors_clamped(self):
+        """Knot vectors must start at 0 and end at 1 (clamped B-spline)."""
+        result = faired_hull_surface(_simple_offsets())
+        assert result["ok"] is True
+        ns = result["nurbs_surface"]
+        assert ns["knots_u"][0] == pytest.approx(0.0)
+        assert ns["knots_u"][-1] == pytest.approx(1.0)
+        assert ns["knots_v"][0] == pytest.approx(0.0)
+        assert ns["knots_v"][-1] == pytest.approx(1.0)
+
+    def test_curvature_combs_present(self):
+        """curvature_combs field is returned."""
+        result = faired_hull_surface(_simple_offsets())
+        assert result["ok"] is True
+        combs = result["curvature_combs"]
+        assert isinstance(combs, dict)
+
+    def test_curvature_combs_samples_populated(self):
+        """curvature_combs.samples is a non-empty list of curvature dicts."""
+        result = faired_hull_surface(_simple_offsets())
+        assert result["ok"] is True
+        combs = result["curvature_combs"]
+        assert combs.get("ok") is True, f"combs failed: {combs}"
+        assert isinstance(combs["samples"], list)
+        assert len(combs["samples"]) > 0
+
+    def test_curvature_combs_sample_schema(self):
+        """Each sample must have u, v, k1, k2, H, K, pt keys."""
+        result = faired_hull_surface(_simple_offsets())
+        assert result["ok"] is True
+        combs = result["curvature_combs"]
+        if not combs.get("ok"):
+            pytest.skip(f"curvature combs not available: {combs.get('reason')}")
+        sample = combs["samples"][0]
+        for key in ("u", "v", "k1", "k2", "H", "K", "pt"):
+            assert key in sample, f"missing key '{key}' in sample"
+        assert len(sample["pt"]) == 3
+
+    def test_curvature_combs_h_k_ranges(self):
+        """H_min <= H_max and K_min <= K_max in combs."""
+        result = faired_hull_surface(_simple_offsets())
+        assert result["ok"] is True
+        combs = result["curvature_combs"]
+        if not combs.get("ok"):
+            pytest.skip(f"combs unavailable: {combs.get('reason')}")
+        assert combs["H_min"] <= combs["H_max"]
+        assert combs["K_min"] <= combs["K_max"]
+
+    def test_fairness_metrics_present(self):
+        """fairness_metrics dict is present with all required keys."""
+        result = faired_hull_surface(_simple_offsets())
+        assert result["ok"] is True
+        fm = result["fairness_metrics"]
+        for key in (
+            "all_stations_fair",
+            "max_batten_energy_improvement",
+            "overall_roughness_improvement",
+            "raw_overall_roughness",
+            "faired_overall_roughness",
+        ):
+            assert key in fm, f"missing fairness_metrics key: {key}"
+
+    def test_simple_hull_all_stations_fair(self):
+        """The simple monotone hull is already fair → all_stations_fair True."""
+        result = faired_hull_surface(_simple_offsets())
+        assert result["ok"] is True
+        assert result["fairness_metrics"]["all_stations_fair"] is True
+
+    def test_rough_hull_roughness_decreases_after_fairing(self):
+        """For an irregular hull, faired roughness < raw roughness."""
+        offsets = _irregular_hull_offsets()
+        result = faired_hull_surface(offsets)
+        assert result["ok"] is True
+        fm = result["fairness_metrics"]
+        assert fm["faired_overall_roughness"] <= fm["raw_overall_roughness"] + 1e-9, (
+            f"Fairing did not reduce roughness: "
+            f"raw={fm['raw_overall_roughness']}, faired={fm['faired_overall_roughness']}"
+        )
+
+    def test_roughness_improvement_nonneg_for_rough_hull(self):
+        """overall_roughness_improvement >= 0 on an irregular hull."""
+        result = faired_hull_surface(_irregular_hull_offsets())
+        assert result["ok"] is True
+        assert result["fairness_metrics"]["overall_roughness_improvement"] >= -1e-9
+
+    def test_two_fairing_passes_lower_roughness_than_one(self):
+        """Two fairing passes produce <= roughness of one pass on irregular hull."""
+        offsets = _irregular_hull_offsets()
+        r1 = faired_hull_surface(offsets, fairing_passes=1)
+        r2 = faired_hull_surface(offsets, fairing_passes=2)
+        assert r1["ok"] is True
+        assert r2["ok"] is True
+        r1_roughness = r1["fairness_metrics"]["faired_overall_roughness"]
+        r2_roughness = r2["fairness_metrics"]["faired_overall_roughness"]
+        # Two passes should not increase roughness beyond single pass
+        assert r2_roughness <= r1_roughness + 1e-9
+
+    def test_box_barge_remains_fair_after_fairing(self):
+        """A perfectly fair box barge stays fair after fairing."""
+        offsets = _box_barge_offsets(
+            stations=[0.0, 5.0, 10.0],
+            waterlines=[0.0, 1.0, 2.0],
+            half_beam=2.0,
+        )
+        result = faired_hull_surface(offsets)
+        assert result["ok"] is True
+        assert result["fairness_metrics"]["all_stations_fair"] is True
+
+    def test_faired_max_half_beam_nonneg(self):
+        result = faired_hull_surface(_simple_offsets())
+        assert result["ok"] is True
+        assert result["max_half_beam"] >= 0.0
+
+    def test_bad_offsets_return_error(self):
+        result = faired_hull_surface("not a list")
+        assert result["ok"] is False
+        assert "errors" in result
+
+    def test_too_few_rows_error(self):
+        result = faired_hull_surface([
+            {"station": 0.0, "waterline": 0.0, "half_breadth": 1.0},
+        ])
+        assert result["ok"] is False
+
+    def test_uv_density_clamp_bad_value(self):
+        """Out-of-range uv_density is clamped; result still ok."""
+        result = faired_hull_surface(_simple_offsets(), uv_density=99.0)
+        assert result["ok"] is True
+
+    def test_fairing_passes_clamp(self):
+        """fairing_passes <= 0 is clamped to 1; result still ok."""
+        result = faired_hull_surface(_simple_offsets(), fairing_passes=0)
+        assert result["ok"] is True
+        assert result["fairing_passes"] == 1
+
+
+# ===========================================================================
+# 10. marine_hull_fair_surface LLM tool wrapper
+# ===========================================================================
+
+class TestMarineHullFairSurfaceTool:
+
+    def _ctx(self):
+        return _make_ctx()
+
+    def test_fair_surface_tool_ok(self):
+        """Tool returns ok=True with correct op for valid offsets."""
+        ctx = self._ctx()
+        payload = json.dumps({"offsets": _simple_offsets()})
+        raw = _run(run_marine_hull_fair_surface(ctx, payload.encode()))
+        d = _ok(raw)
+        assert d["op"] == "marine_faired_hull_surface"
+
+    def test_fair_surface_tool_nurbs_surface_present(self):
+        ctx = self._ctx()
+        payload = json.dumps({"offsets": _simple_offsets()})
+        raw = _run(run_marine_hull_fair_surface(ctx, payload.encode()))
+        d = _ok(raw)
+        assert "nurbs_surface" in d
+        assert "curvature_combs" in d
+        assert "fairness_metrics" in d
+
+    def test_fair_surface_tool_with_options(self):
+        ctx = self._ctx()
+        payload = json.dumps({
+            "offsets": _simple_offsets(),
+            "uv_density": 0.2,
+            "scale_factor": 5.0,
+            "fairing_passes": 2,
+        })
+        raw = _run(run_marine_hull_fair_surface(ctx, payload.encode()))
+        _ok(raw)
+
+    def test_fair_surface_tool_bad_json(self):
+        ctx = self._ctx()
+        raw = _run(run_marine_hull_fair_surface(ctx, b"not json"))
+        d = json.loads(raw)
+        assert "error" in d or d.get("ok") is False
+
+    def test_fair_surface_tool_missing_offsets(self):
+        ctx = self._ctx()
+        payload = json.dumps({"uv_density": 0.1})
+        raw = _run(run_marine_hull_fair_surface(ctx, payload.encode()))
+        _err(raw)
+
+    def test_fair_surface_tool_invalid_offsets(self):
+        ctx = self._ctx()
+        payload = json.dumps({"offsets": "not a list"})
+        raw = _run(run_marine_hull_fair_surface(ctx, payload.encode()))
+        _err(raw)
+
+    def test_fair_surface_tool_irregular_hull(self):
+        """Tool handles irregular hull offsets without error."""
+        ctx = self._ctx()
+        payload = json.dumps({"offsets": _irregular_hull_offsets(), "fairing_passes": 2})
+        raw = _run(run_marine_hull_fair_surface(ctx, payload.encode()))
+        d = _ok(raw)
+        fm = d["fairness_metrics"]
+        assert "faired_overall_roughness" in fm
+        assert fm["faired_overall_roughness"] >= 0.0

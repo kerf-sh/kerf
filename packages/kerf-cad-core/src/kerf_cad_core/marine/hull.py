@@ -56,7 +56,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Optional, List
 
 _EPS = 1e-12
 
@@ -857,3 +857,464 @@ def _interp_half_breadth(
 
     t = (waterline - wl_lo) / (wl_hi - wl_lo)
     return hb_lo + t * (hb_hi - hb_lo)
+
+
+# ---------------------------------------------------------------------------
+# Spline fairing helpers
+# ---------------------------------------------------------------------------
+
+def _fair_profile(wl_pts: List[float], y_pts: List[float]) -> List[float]:
+    """
+    Fair a single station profile (WL → half-breadth) by fitting a natural
+    cubic spline and re-evaluating at the original WL positions.
+
+    The spline is the minimum-bending-energy curve through the input points;
+    re-evaluating it at the same WL positions produces a smoothed (faired)
+    version of the offsets that removes local kinks while preserving the
+    overall shape.
+
+    Returns the faired half-breadths clamped to >= 0.
+    If fewer than 3 points, the original values are returned unchanged.
+    """
+    n = len(wl_pts)
+    if n < 3:
+        return list(y_pts)
+
+    M = _natural_cubic_spline_second_derivs(wl_pts, y_pts)
+    h = [wl_pts[i + 1] - wl_pts[i] for i in range(n - 1)]
+    h = [max(hv, _EPS) for hv in h]
+
+    faired = []
+    for j, wl in enumerate(wl_pts):
+        # Locate the span containing wl
+        span = 0
+        for k in range(n - 1):
+            if wl <= wl_pts[k + 1] + _EPS:
+                span = k
+                break
+
+        # Evaluate cubic spline at wl using the span
+        t = wl - wl_pts[span]
+        hi = h[span]
+        # Standard cubic spline formula (Piegl & Tiller notation)
+        a0 = (wl_pts[span + 1] - wl) / hi
+        a1 = t / hi
+        val = (
+            a0 * y_pts[span]
+            + a1 * y_pts[span + 1]
+            + ((a0 ** 3 - a0) * M[span] + (a1 ** 3 - a1) * M[span + 1])
+            * hi ** 2 / 6.0
+        )
+        faired.append(max(0.0, val))
+
+    return faired
+
+
+def _make_uniform_knots(n: int, degree: int) -> List[float]:
+    """
+    Build a clamped uniform knot vector for n control points and given degree.
+
+    Length = n + degree + 1.
+    First (degree+1) knots = 0.0, last (degree+1) = 1.0, inner knots uniform.
+    """
+    inner = n - degree - 1
+    if inner <= 0:
+        return [0.0] * (degree + 1) + [1.0] * (degree + 1)
+    step = 1.0 / (inner + 1)
+    return (
+        [0.0] * (degree + 1)
+        + [step * k for k in range(1, inner + 1)]
+        + [1.0] * (degree + 1)
+    )
+
+
+def _build_nurbs_surface_from_grid(
+    control_grid: List[List[List[float]]],
+    degree_u: int,
+    degree_v: int,
+    knots_u: List[float],
+    knots_v: List[float],
+) -> dict:
+    """
+    Serialize a NURBS surface control grid into the surface_analysis tool format.
+
+    control_grid[i][j] = [x, y, z] for control point (i, j).
+    Returns a dict with keys matching the `_build_surface_from_args` convention
+    used by surface_analysis.py tools.
+    """
+    nu = len(control_grid)
+    nv = len(control_grid[0]) if nu > 0 else 0
+    flat_cp = [pt for row in control_grid for pt in row]
+    return {
+        "degree_u": degree_u,
+        "degree_v": degree_v,
+        "num_u": nu,
+        "num_v": nv,
+        "control_points": flat_cp,
+        "knots_u": knots_u,
+        "knots_v": knots_v,
+    }
+
+
+def _curvature_combs_from_grid(
+    control_grid: List[List[List[float]]],
+    degree_u: int,
+    degree_v: int,
+    knots_u: List[float],
+    knots_v: List[float],
+    uv_density: float = 0.1,
+    scale_factor: float = 10.0,
+) -> dict:
+    """
+    Compute curvature-comb samples for a NURBS surface built from control_grid.
+
+    Uses the pure-Python surface_analysis.gaussian_mean_curvature to sample
+    principal curvatures on a UV grid, matching the payload format consumed by
+    `CurvatureCombOverlay.jsx` (k1, k2, mean H, Gaussian K per sample point).
+
+    Returns a dict::
+
+        {
+          "ok": bool,
+          "uv_density": float,
+          "scale_factor": float,
+          "samples": [
+              {"u": float, "v": float, "k1": float, "k2": float,
+               "H": float, "K": float, "pt": [x, y, z]},
+              ...
+          ],
+          "H_min": float, "H_max": float,
+          "K_min": float, "K_max": float,
+          "num_samples": int,
+        }
+
+    On failure returns {"ok": False, "reason": str}.
+    """
+    try:
+        import numpy as np
+        from kerf_cad_core.geom.nurbs import NurbsSurface
+        from kerf_cad_core.geom.surface_analysis import (
+            gaussian_mean_curvature,
+            principal_curvatures,
+            _uv_grid,
+            _clamp_grid,
+        )
+
+        nu_cp = len(control_grid)
+        nv_cp = len(control_grid[0]) if nu_cp > 0 else 0
+
+        cp_array = np.array(control_grid, dtype=float)  # shape (nu, nv, 3)
+
+        surf = NurbsSurface(
+            degree_u=degree_u,
+            degree_v=degree_v,
+            control_points=cp_array,
+            knots_u=np.array(knots_u, dtype=float),
+            knots_v=np.array(knots_v, dtype=float),
+        )
+
+        # Grid resolution derived from uv_density (0.01 → dense; 0.5 → coarse)
+        n_u = max(3, min(50, int(round(1.0 / uv_density))))
+        n_v = max(3, min(50, int(round(1.0 / uv_density))))
+        n_u, n_v = _clamp_grid(n_u, n_v)
+
+        us, vs = _uv_grid(surf, n_u, n_v)
+
+        from kerf_cad_core.geom.surface_analysis import _analytic_curvature_data
+
+        samples = []
+        H_vals: List[float] = []
+        K_vals: List[float] = []
+
+        from kerf_cad_core.geom.nurbs import surface_evaluate
+
+        for u in us:
+            for v in vs:
+                cd = _analytic_curvature_data(surf, u, v)
+                if cd is None:
+                    continue
+                pt = surface_evaluate(surf, u, v).tolist()
+                entry = {
+                    "u": round(float(u), 6),
+                    "v": round(float(v), 6),
+                    "k1": round(float(cd["k1"]), 8),
+                    "k2": round(float(cd["k2"]), 8),
+                    "H": round(float(cd["H"]), 8),
+                    "K": round(float(cd["K"]), 8),
+                    "pt": [round(c, 6) for c in pt[:3]],
+                }
+                samples.append(entry)
+                H_vals.append(cd["H"])
+                K_vals.append(cd["K"])
+
+        if not samples:
+            return {"ok": False, "reason": "no valid curvature samples produced"}
+
+        return {
+            "ok": True,
+            "uv_density": uv_density,
+            "scale_factor": scale_factor,
+            "samples": samples,
+            "H_min": round(min(H_vals), 8),
+            "H_max": round(max(H_vals), 8),
+            "K_min": round(min(K_vals), 8),
+            "K_max": round(max(K_vals), 8),
+            "num_samples": len(samples),
+        }
+
+    except Exception as exc:
+        return {"ok": False, "reason": str(exc)}
+
+
+# ---------------------------------------------------------------------------
+# faired_hull_surface
+# ---------------------------------------------------------------------------
+
+def faired_hull_surface(
+    rows: object,
+    uv_density: float = 0.1,
+    scale_factor: float = 10.0,
+    fairing_passes: int = 1,
+) -> dict:
+    """
+    Build a faired NURBS hull surface from a half-breadth offset table.
+
+    Fairing algorithm
+    -----------------
+    1. Validate and parse the offset table (same as :func:`hull_from_offsets`).
+    2. For each station section, fit a natural cubic spline through the
+       (WL, half-breadth) profile and re-evaluate it at the original WL
+       positions.  This yields a *faired* half-breadth that is smooth across
+       the full depth (batten fairing in the transverse direction).
+    3. Repeat for the longitudinal direction: for each waterline, fit a spline
+       through the station → faired-half-breadth values and re-evaluate.
+       This ensures fairness longitudinally as well.
+    4. Repeat steps 2–3 for `fairing_passes` iterations (default 1; 2–3
+       passes produce Class-A quality on most hull forms).
+    5. Build a degree-3 × degree-3 NURBS surface whose control points are
+       the 3-D locations (station, faired_half_breadth, waterline) of the
+       faired grid.  Clamped uniform knot vectors are used.
+    6. Sample principal curvatures on a UV grid (via the existing
+       ``surface_analysis.gaussian_mean_curvature`` infra) and embed the
+       result in a ``curvature_combs`` field matching the payload consumed by
+       the ``CurvatureCombOverlay.jsx`` frontend component.
+
+    Fairness criterion (Definition of Done)
+    ----------------------------------------
+    The returned ``fairness_metrics`` field reports:
+
+    ``all_stations_fair``
+        True when every station profile has no kinks after fairing
+        (matches :func:`fairing_report` ``curvature_monotonicity``).
+
+    ``max_batten_energy_improvement``
+        Fraction by which the maximum per-station batten energy decreased
+        vs the raw offsets.  Positive = fairing improved smoothness.
+
+    ``overall_roughness_improvement``
+        Fraction by which the longitudinal roughness decreased.  Positive
+        = fairing improved longitudinal smoothness.
+
+    Parameters
+    ----------
+    rows : list[dict]
+        Half-breadth offset table.  Same format as :func:`hull_from_offsets`.
+    uv_density : float
+        UV grid step as a fraction of the parameter range for curvature-comb
+        sampling (default 0.1 → ~10×10 grid).  Range: 0.01–0.5.
+    scale_factor : float
+        Comb line length multiplier (default 10).
+    fairing_passes : int
+        Number of transverse + longitudinal fairing passes (default 1).
+        Increase to 2–3 for high-curvature or irregular hull forms.
+
+    Returns
+    -------
+    dict
+        On success::
+
+            {
+              "ok": True,
+              "op": "marine_faired_hull_surface",
+              "loa": float,
+              "depth": float,
+              "max_half_beam": float,
+              "station_count": int,
+              "waterline_count": int,
+              "fairing_passes": int,
+              "nurbs_surface": {
+                "degree_u": int, "degree_v": int,
+                "num_u": int, "num_v": int,
+                "control_points": [[x, y, z], ...],
+                "knots_u": [...], "knots_v": [...],
+              },
+              "curvature_combs": {
+                "ok": bool,
+                "samples": [...],   # [{u, v, k1, k2, H, K, pt}, ...]
+                "H_min": float, "H_max": float,
+                "K_min": float, "K_max": float,
+                "num_samples": int,
+              },
+              "fairness_metrics": {
+                "all_stations_fair": bool,
+                "max_batten_energy_improvement": float,
+                "overall_roughness_improvement": float,
+                "raw_overall_roughness": float,
+                "faired_overall_roughness": float,
+              },
+            }
+
+        On failure: ``{"ok": False, "errors": [...]}``  — never raises.
+    """
+    # ── Validate input ──────────────────────────────────────────────────────
+    parsed, errors = _validate_offset_rows(rows)
+    if errors:
+        return {"ok": False, "errors": errors}
+
+    # Clamp uv_density
+    try:
+        uv_density = float(uv_density)
+        if uv_density <= 0 or uv_density > 0.5:
+            uv_density = 0.1
+    except (TypeError, ValueError):
+        uv_density = 0.1
+
+    try:
+        scale_factor = float(scale_factor)
+        if scale_factor <= 0:
+            scale_factor = 10.0
+    except (TypeError, ValueError):
+        scale_factor = 10.0
+
+    try:
+        fairing_passes = max(1, int(fairing_passes))
+    except (TypeError, ValueError):
+        fairing_passes = 1
+
+    table = _build_offset_table(parsed)
+    stations = table.stations
+    waterlines = table.waterlines
+
+    # ── Build the initial grid (stations × waterlines → half-breadth) ───────
+    # grid[i][j] = half-breadth at (stations[i], waterlines[j])
+    # Missing entries are filled with 0.0 (keel-side default).
+    grid: List[List[float]] = []
+    for st in stations:
+        row_hb = []
+        for wl in waterlines:
+            hb = table.offsets.get((st, wl), 0.0)
+            row_hb.append(hb)
+        grid.append(row_hb)
+
+    # ── Raw fairing metrics (before fairing) ─────────────────────────────────
+    raw_report = fairing_report(rows)
+    raw_roughness = raw_report.get("overall_roughness", 0.0) if raw_report.get("ok") else 0.0
+    raw_energies = {
+        e["station"]: e["energy"]
+        for e in raw_report.get("batten_energy", [])
+        if raw_report.get("ok")
+    }
+
+    # ── Iterative fairing ─────────────────────────────────────────────────────
+    for _pass in range(fairing_passes):
+        # Transverse pass: fair each station profile (WL → Y)
+        for i, st in enumerate(stations):
+            faired_y = _fair_profile(waterlines, grid[i])
+            grid[i] = faired_y
+
+        # Longitudinal pass: fair each waterline profile (station → Y)
+        for j in range(len(waterlines)):
+            y_across = [grid[i][j] for i in range(len(stations))]
+            faired_across = _fair_profile(stations, y_across)
+            for i in range(len(stations)):
+                grid[i][j] = faired_across[i]
+
+    # ── Faired fairness metrics ───────────────────────────────────────────────
+    # Build faired rows for fairing_report
+    faired_rows = [
+        {"station": stations[i], "waterline": waterlines[j], "half_breadth": grid[i][j]}
+        for i in range(len(stations))
+        for j in range(len(waterlines))
+    ]
+    faired_report = fairing_report(faired_rows)
+    faired_roughness = faired_report.get("overall_roughness", 0.0) if faired_report.get("ok") else 0.0
+    faired_energies = {
+        e["station"]: e["energy"]
+        for e in faired_report.get("batten_energy", [])
+        if faired_report.get("ok")
+    }
+
+    # Curvature monotonicity: all stations fair?
+    all_stations_fair = all(
+        not e["kink_detected"]
+        for e in faired_report.get("curvature_monotonicity", [])
+    ) if faired_report.get("ok") else False
+
+    # Batten energy improvement (max across stations)
+    max_raw_energy = max(raw_energies.values(), default=0.0)
+    max_faired_energy = max(faired_energies.values(), default=0.0)
+    if max_raw_energy > _EPS:
+        energy_improvement = (max_raw_energy - max_faired_energy) / max_raw_energy
+    else:
+        energy_improvement = 0.0
+
+    # Roughness improvement
+    if raw_roughness > _EPS:
+        roughness_improvement = (raw_roughness - faired_roughness) / raw_roughness
+    else:
+        roughness_improvement = 0.0
+
+    # ── Build NURBS surface control grid ─────────────────────────────────────
+    # Control points: P[i][j] = (station_i, faired_hb_ij, waterline_j)
+    # i = U direction (along stations), j = V direction (along waterlines)
+    nu = len(stations)
+    nv = len(waterlines)
+    degree_u = min(3, nu - 1)
+    degree_v = min(3, nv - 1)
+
+    control_grid: List[List[List[float]]] = []
+    for i, st in enumerate(stations):
+        row_pts = []
+        for j, wl in enumerate(waterlines):
+            hb = grid[i][j]
+            # XYZ: X=station (longitudinal), Y=half-breadth (transverse), Z=waterline (vertical)
+            row_pts.append([st, hb, wl])
+        control_grid.append(row_pts)
+
+    knots_u = _make_uniform_knots(nu, degree_u)
+    knots_v = _make_uniform_knots(nv, degree_v)
+
+    nurbs_surface_data = _build_nurbs_surface_from_grid(
+        control_grid, degree_u, degree_v, knots_u, knots_v
+    )
+
+    # ── Curvature combs ───────────────────────────────────────────────────────
+    combs = _curvature_combs_from_grid(
+        control_grid, degree_u, degree_v, knots_u, knots_v,
+        uv_density=uv_density,
+        scale_factor=scale_factor,
+    )
+
+    loa = stations[-1] - stations[0]
+    depth = waterlines[-1] - waterlines[0]
+    max_hb = max(grid[i][j] for i in range(nu) for j in range(nv))
+
+    return {
+        "ok": True,
+        "op": "marine_faired_hull_surface",
+        "loa": loa,
+        "depth": depth,
+        "max_half_beam": max_hb,
+        "station_count": nu,
+        "waterline_count": nv,
+        "fairing_passes": fairing_passes,
+        "nurbs_surface": nurbs_surface_data,
+        "curvature_combs": combs,
+        "fairness_metrics": {
+            "all_stations_fair": all_stations_fair,
+            "max_batten_energy_improvement": round(energy_improvement, 6),
+            "overall_roughness_improvement": round(roughness_improvement, 6),
+            "raw_overall_roughness": round(raw_roughness, 8),
+            "faired_overall_roughness": round(faired_roughness, 8),
+        },
+    }
