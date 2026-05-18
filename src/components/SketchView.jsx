@@ -30,7 +30,7 @@ import {
   addPoint, addLine, addCircle, addArc, addEllipse, addBspline, addBezier,
   addConstraint, addExternalCurve,
   setPointXY, toggleConstruction, toggleConstructionMany, setConstraintValue,
-  deleteEntities, deleteConstraint, snapTarget, ensurePointAt,
+  deleteEntities, deleteConstraint, snapTarget, ensurePointAt, isEntityReferenced,
   trimAt, extendTo, filletCorner,
   mirrorEntities, linearPattern, polarPattern,
 } from '../lib/sketchEdit.js'
@@ -241,6 +241,23 @@ export default function SketchView({
     onChange?.(next)
     triggerSolve(next)
   }, [onChange, triggerSolve])
+
+  // Cancel an in-progress multi-click tool (Esc / draft-strip Esc). The
+  // bug: aborting a half-drawn line cleared the rubber-band but left the
+  // orphaned first point in the sketch AND kept the tool armed, so it
+  // didn't actually "stop making line". Prune any pending point that no
+  // other entity/constraint references (a point the user snapped onto is
+  // referenced → kept), reset the draft, and return to the select tool.
+  const cancelPending = useCallback((pts) => {
+    const ids = (pts || []).map((p) => p?.id).filter(Boolean)
+    const orphans = ids.filter((id) => !isEntityReferenced(sketch, id))
+    if (orphans.length) commit(deleteEntities(sketch, orphans))
+    setPendingPoints([])
+    lineDraftRef.current = { ...INITIAL_LINE_DRAFT }
+    bumpLineDraft()
+    setSelection([])
+    setTool('select')
+  }, [sketch, commit, bumpLineDraft, INITIAL_LINE_DRAFT])
 
   // ---- Coord conversion ----
   const screenToWorld = useCallback((sx, sy) => {
@@ -1125,7 +1142,7 @@ export default function SketchView({
       }
       if (e.key === 'Escape') {
         e.preventDefault()
-        setPendingPoints([]); setTool('select'); setSelection([])
+        cancelPending(pendingPoints)
         setFilletPrompt(null); setPatternPrompt(null); setDimensionPrompt(null)
         setExtendState(null)
         return
@@ -1135,7 +1152,7 @@ export default function SketchView({
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [applyConstraint, onDelete, selection, sketch])
+  }, [applyConstraint, onDelete, selection, sketch, pendingPoints, tool, construction, commit, cancelPending])
 
   // ---- Drag-on-dimension to edit value -----------------------------------
   // Click-and-hold on a dimension's label, drag right/up to increase, left/
@@ -1324,17 +1341,7 @@ export default function SketchView({
               const t = projectLineDraft(start, hover, lineDraftRef.current) || hover
               handleToolClick(t, null)
             }}
-            onCancel={() => {
-              // Drop pending state; keep the start point on disk (it's a real
-              // ensurePointAt output and may already be referenced).
-              setPendingPoints([])
-              lineDraftRef.current = {
-                length: '', angle: '',
-                lockLength: false, lockAngle: false,
-                snapTarget: null, focus: 'length',
-              }
-              bumpLineDraft()
-            }}
+            onCancel={() => cancelPending(pendingPoints)}
           />
         )}
 

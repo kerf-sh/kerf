@@ -153,7 +153,7 @@ export function deleteConstraint(sketch, constraintId) {
 }
 
 // Helpful: list of entity ids referenced by a constraint.
-function constraintRefs(c) {
+export function constraintRefs(c) {
   switch (c.type) {
     case 'coincident': return [c.a, c.b]
     case 'horizontal':
@@ -183,6 +183,25 @@ function constraintRefs(c) {
     case 'bezier_g1': return [c.p0, c.p1, c.p2].filter(Boolean)
     default: return []
   }
+}
+
+// True if `id` is used by any OTHER entity (line/arc/circle/spline) or
+// any constraint. Used to decide whether a pending point left behind by
+// an aborted multi-click tool is a prunable orphan (vs. an existing
+// point the user snapped onto, which other geometry may depend on).
+export function isEntityReferenced(sketch, id) {
+  if (!id) return false
+  for (const e of sketch?.entities || []) {
+    if (e.id === id) continue
+    if (e.p1 === id || e.p2 === id) return true
+    if (e.center === id || e.start === id || e.end === id) return true
+    if (Array.isArray(e.controls) && e.controls.includes(id)) return true
+    if (Array.isArray(e.control_points) && e.control_points.includes(id)) return true
+  }
+  for (const c of sketch?.constraints || []) {
+    if (constraintRefs(c).includes(id)) return true
+  }
+  return false
 }
 
 // ---------- snapping helpers ----------
