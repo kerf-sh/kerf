@@ -10,13 +10,14 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import {
   AlertCircle, ArrowDownToLine, ArrowUpFromLine, Check, ChevronDown,
   GitBranch, GitCommit, GitMerge, Github, Link2, Loader2, MoreVertical,
-  Plus, RefreshCw, Trash2, X,
+  Plus, RefreshCw, Settings, Trash2, X,
 } from 'lucide-react'
 import Button from '../components/Button.jsx'
 import { useAuth } from '../store/auth.js'
 import { useWorkspace } from '../store/workspace.js'
 import { ApiError } from '../lib/api.js'
 import { git, githubOAuth } from './api.js'
+import GitProviderSettings from './GitProviderSettings.jsx'
 import CommitDialog from './CommitDialog.jsx'
 import MergeDialog from './MergeDialog.jsx'
 import DiffViewer from './DiffViewer.jsx'
@@ -582,6 +583,7 @@ export function GitPanel({ projectId, onClose }) {
   const [showCommit, setShowCommit] = useState(false)
   const [showMerge, setShowMerge] = useState(false)
   const [showConnect, setShowConnect] = useState(false)
+  const [showSettings, setShowSettings] = useState(false)
   const [diffSha, setDiffSha] = useState(null)
   const [busy, setBusy] = useState(null) // 'push' | 'pull' | 'newBranch'
 
@@ -644,6 +646,17 @@ export function GitPanel({ projectId, onClose }) {
 
   const empty = repoState === 'absent'
 
+  // Settings overlay: covers the full panel when open, preserving T-148 graph
+  // beneath so nothing is unmounted and no state is lost.
+  if (showSettings) {
+    return (
+      <GitProviderSettings
+        projectId={projectId}
+        onClose={() => setShowSettings(false)}
+      />
+    )
+  }
+
   return (
     <div className="h-full bg-ink-900 flex flex-col">
       {/* Header */}
@@ -660,6 +673,14 @@ export function GitPanel({ projectId, onClose }) {
             title="Refresh"
           >
             <RefreshCw size={12} className={loading ? 'animate-spin' : ''} />
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowSettings(true)}
+            className="p-1 rounded text-ink-400 hover:text-ink-100 hover:bg-ink-800"
+            title="Git settings"
+          >
+            <Settings size={13} />
           </button>
           <button
             type="button"

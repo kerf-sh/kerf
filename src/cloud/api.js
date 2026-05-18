@@ -468,6 +468,36 @@ export const git = {
   // DELETE /repo — tear down the repo and clear the link.
   deleteRepo: (projectId) =>
     request(`/api/projects/${projectId}/git/repo`, { method: 'DELETE' }),
+
+  // ---- T-146 provider mirror endpoints ----
+
+  // GET /git/providers
+  // → { providers: [{ id, name, label, icon_url? }] }
+  // Only returns providers the server has env-credentials for.
+  listProviders: () =>
+    request('/api/git/providers'),
+
+  // GET /projects/:pid/git/provider/status
+  // → { connected, provider_id?, remote_url?, kerf_git_retained, note, last_sync_at? }
+  providerStatus: (projectId) =>
+    request(`/api/projects/${encodeURIComponent(projectId)}/git/provider/status`),
+
+  // POST /projects/:pid/git/provider/connect
+  // body: { provider_id, remote_url }
+  // → { connected: true, provider_id, remote_url, kerf_git_retained, note }
+  providerConnect: (projectId, providerId, remoteUrl) =>
+    request(
+      `/api/projects/${encodeURIComponent(projectId)}/git/provider/connect`,
+      { method: 'POST', body: { provider_id: providerId, remote_url: remoteUrl } },
+    ),
+
+  // POST /projects/:pid/git/provider/disconnect
+  // → { connected: false, kerf_git_retained: true, note }
+  providerDisconnect: (projectId) =>
+    request(
+      `/api/projects/${encodeURIComponent(projectId)}/git/provider/disconnect`,
+      { method: 'POST' },
+    ),
 }
 
 // GitHub OAuth — top-level (not project-scoped). The start URL is meant to
