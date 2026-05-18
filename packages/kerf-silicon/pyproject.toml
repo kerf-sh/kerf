@@ -1,0 +1,19 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "kerf-silicon"
+version = "0.1.0"
+license = { text = "MIT" }
+classifiers = ["License :: OSI Approved :: MIT License"]
+description = "Silicon / VLSI design plugin for Kerf (VHDL simulation, synthesis, layout)"
+requires-python = ">=3.11"
+dependencies = []
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/kerf_silicon"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
