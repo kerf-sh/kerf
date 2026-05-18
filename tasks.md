@@ -3668,7 +3668,7 @@ User-direction 2026-05-18: "look at Blender and other CADs, I want variety of re
 ### T-209 Render-style presets — Realistic / Cel / Wireframe / Hidden-line / Sketch / Blueprint
 - **Tier:** A
 - **Priority:** P1
-- **Status:** 🔴 not started
+- **Status:** ✅ shipped
 - **Scope:** non-photorealistic render (NPR) modes. Six presets:
   1. **Realistic** — current PBR pipeline (default)
   2. **Cel-shaded** — quantised lambert + outline pass
