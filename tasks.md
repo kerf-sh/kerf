@@ -3271,7 +3271,7 @@ must be in place".
   is lost — this is the floor under every subsequent trust message we
   send about the L2/L3 rings.
 - **Priority:** P1
-- **Status:** 🔴 not started
+- **Status:** ✅ shipped
 - **Scope:** introduce `src/lib/localStash.js` wrapping IndexedDB
   (object store keyed by `workspaceId+filePath` → `{bytes, mtime,
   flushedToL2: boolean}`). Editor hooks (Monaco onChange, sketcher
@@ -3298,7 +3298,7 @@ must be in place".
   (idle + interval) gives users a predictable "your work is saved"
   signal and stops accidental write storms during fast-drag edits.
 - **Priority:** P1
-- **Status:** 🔴 not started
+- **Status:** ✅ shipped
 - **Scope:** introduce `src/lib/autosaveScheduler.js` — exposes
   `markDirty(workspaceId, filePath)` + a shared scheduler that flushes
   to L2 (the existing `POST /workspaces/{id}/files/{path}` revision
@@ -3325,7 +3325,7 @@ must be in place".
   ◯ marker, the safety-net squashes silent autosave commits every N
   minutes of dirty L2 with the ◌ marker.
 - **Priority:** P1
-- **Status:** 🔴 not started
+- **Status:** ✅ shipped
 - **Scope:** backend — extend `packages/kerf-core/src/kerf_core/
   storage/materialize.py` with `auto_commit_if_idle(workspace_id, *,
   idle_minutes=15)` that finds the last `cloud_git_commits` row for
@@ -3365,7 +3365,7 @@ must be in place".
   right) + an explicit **Accept yours / Accept theirs** button per
   file. This ticket adds both surfaces.
 - **Priority:** P1
-- **Status:** 🔴 not started
+- **Status:** ✅ shipped
 - **Scope:** backend — `GET /workspaces/{id}/git/commits/{sha}/diff`
   returns a JSON manifest: per-file `{path, kind, change:
   added|modified|deleted, text_diff?: unified, oid_old?, oid_new?,
@@ -3403,7 +3403,7 @@ must be in place".
   of the toolbar dot, the graph markers (◯ vs ◌), and the banner —
   converts the architecture into a trust message.
 - **Priority:** P1
-- **Status:** 🔴 not started
+- **Status:** ✅ shipped
 - **Scope:** add `public/docs/saving-your-work.md` (or wherever the
   existing docs viewer reads from — check `public/docs-manifest.json`)
   with the 3-ring explanation, the dot states, the graph markers,
@@ -3431,7 +3431,7 @@ must be in place".
   / `app_secret` / `host`) are not wired in the deploy doc — they're
   ops, not code.
 - **Priority:** P1
-- **Status:** 🔴 not started
+- **Status:** ✅ shipped
 - **Scope:** introduce `packages/kerf-cloud/src/kerf_cloud/git_gc.py`
   with `repack_project(workspace_id)` that calls pygit2 / `git repack
   -ad` against the S3-backed repo (use the T-125 `S3GitStorer.
