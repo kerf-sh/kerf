@@ -24,6 +24,8 @@ async def register(app: FastAPI, ctx) -> PluginManifest:
     from kerf_api.routes_git_diff import router as git_diff_router
     app.include_router(git_diff_router, prefix="/api", tags=["git-diff"])
     app.include_router(atopile_router, tags=["atopile"])
+    from kerf_api.routes_plc_sim import router as plc_sim_router
+    app.include_router(plc_sim_router, prefix="/api", tags=["plc-sim"])
 
     _register_tools(ctx)
 
