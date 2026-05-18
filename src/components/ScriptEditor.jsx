@@ -10,8 +10,9 @@
 //   - editContent path (writable editor; changes persist via saveFile)
 //   - Monaco language mode based on file extension (typescript | python)
 
+import { useState } from 'react'
 import Editor from '@monaco-editor/react'
-import { Code, Terminal } from 'lucide-react'
+import { Code, Terminal, Info } from 'lucide-react'
 
 const MONACO_OPTIONS = {
   readOnly: false,
@@ -44,6 +45,9 @@ export default function ScriptEditor({ content, fileName, file, onChange }) {
   const ext = scriptExtension(file)
   const lang = languageFor(ext)
   const isPython = ext === 'py'
+  // Collapsed by default — the "how it runs" blurb is reference, not
+  // something the user needs every time. Saves vertical space.
+  const [showInfo, setShowInfo] = useState(false)
 
   return (
     <div className="h-full flex flex-col bg-ink-950 text-ink-100 min-h-0">
@@ -58,8 +62,19 @@ export default function ScriptEditor({ content, fileName, file, onChange }) {
         <span className="ml-2 text-[10px] uppercase tracking-wider text-kerf-300 border border-kerf-300/40 rounded px-1.5 py-0.5">
           .script.{isPython ? 'py' : 'ts'}
         </span>
+        <button
+          type="button"
+          onClick={() => setShowInfo((v) => !v)}
+          aria-expanded={showInfo}
+          title={showInfo ? 'Hide how scripts run' : 'How scripts run (Kerf SDK)'}
+          className="ml-auto inline-flex items-center gap-1 text-[10px] text-ink-400 hover:text-kerf-300 border border-ink-700 hover:border-ink-600 rounded px-1.5 py-0.5 transition-colors shrink-0"
+        >
+          <Info size={11} />
+          {showInfo ? 'Hide' : 'How it runs'}
+        </button>
       </div>
 
+      {showInfo && (
       <div className="px-4 py-3 border-b border-ink-800 bg-ink-900/40 flex-shrink-0">
         <div className="flex items-start gap-2 text-[11px] text-ink-300">
           <Terminal size={12} className="text-kerf-300 shrink-0 mt-0.5" />
@@ -82,6 +97,7 @@ export default function ScriptEditor({ content, fileName, file, onChange }) {
           </div>
         </div>
       </div>
+      )}
 
       <div className="flex-1 min-h-0">
         <Editor
