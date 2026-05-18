@@ -992,7 +992,7 @@ Template:
   render in the library, so the high-margin niche has a populated catalog
   too.
 - **Priority:** P1
-- **Status:** 🔴 not started
+- **Status:** ✅ shipped (integrated this session)
 - **Scope:** Verify (and fix as needed) that jewelry parts generated via
   the toolkit render correctly as library parts now that the jewelry worker
   ops are wired (T-20…T-24) — a render-path / library-integration check,
