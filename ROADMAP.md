@@ -208,14 +208,18 @@ Each is a solver-class or platform-class project; none blocks P0/P1.
 - Nesting / cut-optimization (laser / waterjet / plasma / sheet).
 - GD&T / PMI model-based-definition + homologation documentation (shares the
   P1-3 "GD&T-from-model" gap).
-- **Ladder logic / PLC programming** (IEC 61131-3 Ladder Diagram) 🔴 —
-  complements the already-shipped structured-text PLC support
-  (`.plc.st`); rounds out the automation / electronics domain with the
-  ladder-diagram representation alongside structured text.
-- **Embedded / firmware programming + integrated toolchains** 🔴 —
-  Arduino (`.uno`), C / C++, broader programming-language support, and an
-  integrated compiler / toolchain set (board + toolchain management, build
-  / flash). PlatformIO is the reference model. Builds directly on the P0-6
+- **Ladder logic + full PLC tooling** (IEC 61131-3) 🔴 — adds the
+  ladder-diagram (LD) editor/representation alongside the already-shipped
+  structured-text support (`.plc.st`), plus the surrounding PLC toolchain
+  (lint, IEC-compliant export, rung authoring) so the automation / OT /
+  electronics domain is covered end-to-end, not ST-only.
+- **Embedded / firmware programming + integrated build toolchain** 🔴 —
+  Arduino (`.ino` / `.uno`), C / C++ / `.h`, broader programming-language
+  support, and an integrated **compile + flash** pipeline: GCC-class
+  cross-compilers (`avr-gcc`, `arm-none-eabi-gcc`, ESP/xtensa), board +
+  toolchain management, build/upload/serial-monitor. **PlatformIO is the
+  reference model** (and the likely build backend, invoked as a subprocess
+  with graceful degrade when absent). Builds directly on the P0-6
   broadened text/code file support once per-language depth is needed.
 
 ### P3 — long-tail verticals & distinct-engine domains
