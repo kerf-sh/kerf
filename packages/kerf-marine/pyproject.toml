@@ -1,0 +1,23 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "kerf-marine"
+version = "0.1.0"
+license = { text = "MIT" }
+classifiers = ["License :: OSI Approved :: MIT License"]
+description = "Marine / naval architecture plugin for Kerf — hydrostatics, stability, hull-section integration"
+requires-python = ">=3.11"
+dependencies = [
+    "numpy",
+]
+
+[project.entry-points."kerf.plugins"]
+marine = "kerf_marine.plugin:register"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/kerf_marine"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
