@@ -129,7 +129,9 @@ class ProviderRegistry:
 def _build_default_registry(settings: Any) -> ProviderRegistry:
     """Return a registry pre-populated with all built-in providers."""
     from kerf_cloud.git_providers.github import GitHubProvider
+    from kerf_cloud.git_providers.gitlab import GitLabProvider
 
     reg = ProviderRegistry(settings)
     reg.register(GitHubProvider)
+    reg.register(GitLabProvider)
     return reg

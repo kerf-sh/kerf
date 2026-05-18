@@ -53,6 +53,9 @@ def _unconfigured_settings_no_id():
     s.cloud_github_app_id = ""
     s.github_private_key_pem = _PRIVATE_KEY_PEM
     s.cloud_github_app_slug = "kerf-app"
+    # GitLab also unconfigured so the default registry returns empty.
+    s.cloud_gitlab_app_id = ""
+    s.cloud_gitlab_app_secret = ""
     return s
 
 
@@ -61,6 +64,9 @@ def _unconfigured_settings_no_key():
     s.cloud_github_app_id = "3727956"
     s.github_private_key_pem = ""
     s.cloud_github_app_slug = "kerf-app"
+    # GitLab also unconfigured.
+    s.cloud_gitlab_app_id = ""
+    s.cloud_gitlab_app_secret = ""
     return s
 
 
@@ -543,3 +549,406 @@ class TestBuildDefaultRegistry:
 
         reg = _build_default_registry(_unconfigured_settings_no_id())
         assert reg.available_names() == []
+
+
+# ---------------------------------------------------------------------------
+# GitLabProvider helpers
+# ---------------------------------------------------------------------------
+
+
+def _gitlab_configured_settings():
+    s = MagicMock()
+    s.cloud_gitlab_app_id = "gitlab-app-id-12345"
+    s.cloud_gitlab_app_secret = "gitlab-app-secret-xyz"
+    s.cloud_gitlab_host = ""  # default: https://gitlab.com
+    return s
+
+
+def _gitlab_unconfigured_settings_no_id():
+    s = MagicMock()
+    s.cloud_gitlab_app_id = ""
+    s.cloud_gitlab_app_secret = "gitlab-app-secret-xyz"
+    s.cloud_gitlab_host = ""
+    return s
+
+
+def _gitlab_unconfigured_settings_no_secret():
+    s = MagicMock()
+    s.cloud_gitlab_app_id = "gitlab-app-id-12345"
+    s.cloud_gitlab_app_secret = ""
+    s.cloud_gitlab_host = ""
+    return s
+
+
+# ---------------------------------------------------------------------------
+# GitLabProvider.is_configured
+# ---------------------------------------------------------------------------
+
+
+class TestGitLabProviderIsConfigured:
+    def test_returns_true_when_both_present(self):
+        from kerf_cloud.git_providers.gitlab import GitLabProvider
+
+        assert GitLabProvider.is_configured(_gitlab_configured_settings()) is True
+
+    def test_returns_false_when_app_id_missing(self):
+        from kerf_cloud.git_providers.gitlab import GitLabProvider
+
+        assert GitLabProvider.is_configured(_gitlab_unconfigured_settings_no_id()) is False
+
+    def test_returns_false_when_secret_missing(self):
+        from kerf_cloud.git_providers.gitlab import GitLabProvider
+
+        assert GitLabProvider.is_configured(_gitlab_unconfigured_settings_no_secret()) is False
+
+    def test_returns_false_when_both_missing(self):
+        from kerf_cloud.git_providers.gitlab import GitLabProvider
+
+        s = MagicMock()
+        s.cloud_gitlab_app_id = ""
+        s.cloud_gitlab_app_secret = ""
+        assert GitLabProvider.is_configured(s) is False
+
+
+# ---------------------------------------------------------------------------
+# GitLabProvider.name
+# ---------------------------------------------------------------------------
+
+
+class TestGitLabProviderName:
+    def test_name_is_gitlab(self):
+        from kerf_cloud.git_providers.gitlab import GitLabProvider
+
+        p = GitLabProvider(_gitlab_configured_settings())
+        assert p.name == "gitlab"
+
+
+# ---------------------------------------------------------------------------
+# GitLabProvider.connect
+# ---------------------------------------------------------------------------
+
+
+class TestGitLabProviderConnect:
+    @pytest.mark.asyncio
+    async def test_connect_returns_correct_shape(self):
+        from kerf_cloud.git_providers.gitlab import GitLabProvider
+
+        p = GitLabProvider(_gitlab_configured_settings())
+        result = await p.connect(
+            "proj-gl-1",
+            gitlab_namespace="acme",
+            gitlab_project="my-design",
+        )
+
+        assert result["provider"] == "gitlab"
+        assert result["project_id"] == "proj-gl-1"
+        assert result["gitlab_namespace"] == "acme"
+        assert result["gitlab_project"] == "my-design"
+        assert "acme/my-design.git" in result["remote_url"]
+        assert "gitlab.com" in result["remote_url"]
+        # persistence note must be present (deferred migration)
+        assert "persistence_note" in result
+
+    @pytest.mark.asyncio
+    async def test_connect_uses_custom_host(self):
+        from kerf_cloud.git_providers.gitlab import GitLabProvider
+
+        p = GitLabProvider(_gitlab_configured_settings())
+        result = await p.connect(
+            "proj-gl-2",
+            gitlab_namespace="corp",
+            gitlab_project="widget",
+            gitlab_host="https://gitlab.internal.corp",
+        )
+
+        assert "gitlab.internal.corp" in result["remote_url"]
+        assert result["gitlab_host"] == "https://gitlab.internal.corp"
+
+    @pytest.mark.asyncio
+    async def test_connect_raises_on_missing_namespace(self):
+        from kerf_cloud.git_providers.gitlab import GitLabProvider
+
+        p = GitLabProvider(_gitlab_configured_settings())
+        with pytest.raises(ValueError, match="gitlab_namespace"):
+            await p.connect("proj-gl-1", gitlab_project="my-design")
+
+    @pytest.mark.asyncio
+    async def test_connect_raises_on_missing_project(self):
+        from kerf_cloud.git_providers.gitlab import GitLabProvider
+
+        p = GitLabProvider(_gitlab_configured_settings())
+        with pytest.raises(ValueError, match="gitlab_project"):
+            await p.connect("proj-gl-1", gitlab_namespace="acme")
+
+
+# ---------------------------------------------------------------------------
+# GitLabProvider.disconnect
+# ---------------------------------------------------------------------------
+
+
+class TestGitLabProviderDisconnect:
+    @pytest.mark.asyncio
+    async def test_disconnect_completes_without_error(self):
+        from kerf_cloud.git_providers.gitlab import GitLabProvider
+
+        # disconnect is a no-op until persistence columns land; must not raise
+        p = GitLabProvider(_gitlab_configured_settings())
+        await p.disconnect("proj-gl-1")
+
+    @pytest.mark.asyncio
+    async def test_disconnect_without_pool_does_not_raise(self):
+        from kerf_cloud.git_providers.gitlab import GitLabProvider
+
+        p = GitLabProvider(_gitlab_configured_settings(), pool=None)
+        await p.disconnect("proj-gl-1")  # should complete gracefully
+
+
+# ---------------------------------------------------------------------------
+# GitLabProvider.push
+# ---------------------------------------------------------------------------
+
+
+class TestGitLabProviderPush:
+    @pytest.mark.asyncio
+    async def test_push_returns_correct_shape(self):
+        from kerf_cloud.git_providers.gitlab import GitLabProvider
+
+        p = GitLabProvider(_gitlab_configured_settings())
+        result = await p.push(
+            "proj-gl-3",
+            gitlab_access_token="glpat-test-push-token",
+            gitlab_namespace="acme",
+            gitlab_project="my-design",
+        )
+
+        assert result["provider"] == "gitlab"
+        assert result["project_id"] == "proj-gl-3"
+        assert result["status"] == "token_acquired"
+        assert "acme/my-design.git" in result["remote_url"]
+        # authenticated URL must embed the token but not equal the public URL
+        assert "glpat-test-push-token" in result["authenticated_remote_url"]
+        assert "oauth2" in result["authenticated_remote_url"]
+        assert result["remote_url"] != result["authenticated_remote_url"]
+
+    @pytest.mark.asyncio
+    async def test_push_embeds_token_in_https_url(self):
+        from kerf_cloud.git_providers.gitlab import GitLabProvider
+
+        p = GitLabProvider(_gitlab_configured_settings())
+        result = await p.push(
+            "proj-gl-3",
+            gitlab_access_token="mytoken",
+            gitlab_namespace="ns",
+            gitlab_project="proj",
+        )
+
+        auth_url = result["authenticated_remote_url"]
+        assert auth_url.startswith("https://oauth2:mytoken@")
+
+    @pytest.mark.asyncio
+    async def test_push_raises_on_missing_token(self):
+        from kerf_cloud.git_providers.gitlab import GitLabProvider
+
+        p = GitLabProvider(_gitlab_configured_settings())
+        with pytest.raises(ValueError, match="gitlab_access_token"):
+            await p.push(
+                "proj-gl-3",
+                gitlab_namespace="acme",
+                gitlab_project="my-design",
+            )
+
+    @pytest.mark.asyncio
+    async def test_push_raises_on_missing_namespace(self):
+        from kerf_cloud.git_providers.gitlab import GitLabProvider
+
+        p = GitLabProvider(_gitlab_configured_settings())
+        with pytest.raises(ValueError):
+            await p.push(
+                "proj-gl-3",
+                gitlab_access_token="tok",
+                gitlab_project="my-design",
+            )
+
+    @pytest.mark.asyncio
+    async def test_push_uses_custom_host(self):
+        from kerf_cloud.git_providers.gitlab import GitLabProvider
+
+        p = GitLabProvider(_gitlab_configured_settings())
+        result = await p.push(
+            "proj-gl-4",
+            gitlab_access_token="tok",
+            gitlab_namespace="corp",
+            gitlab_project="widget",
+            gitlab_host="https://gitlab.internal.corp",
+        )
+
+        assert "gitlab.internal.corp" in result["remote_url"]
+        assert "gitlab.internal.corp" in result["authenticated_remote_url"]
+
+
+# ---------------------------------------------------------------------------
+# GitLabProvider.pull
+# ---------------------------------------------------------------------------
+
+
+class TestGitLabProviderPull:
+    @pytest.mark.asyncio
+    async def test_pull_returns_correct_shape(self):
+        from kerf_cloud.git_providers.gitlab import GitLabProvider
+
+        p = GitLabProvider(_gitlab_configured_settings())
+        result = await p.pull(
+            "proj-gl-5",
+            gitlab_access_token="glpat-test-pull-token",
+            gitlab_namespace="acme",
+            gitlab_project="my-design",
+        )
+
+        assert result["provider"] == "gitlab"
+        assert result["project_id"] == "proj-gl-5"
+        assert result["status"] == "token_acquired"
+        assert "glpat-test-pull-token" in result["authenticated_remote_url"]
+
+    @pytest.mark.asyncio
+    async def test_pull_raises_on_missing_kwargs(self):
+        from kerf_cloud.git_providers.gitlab import GitLabProvider
+
+        p = GitLabProvider(_gitlab_configured_settings())
+        with pytest.raises(ValueError):
+            await p.pull("proj-gl-5")  # no token / namespace / project
+
+
+# ---------------------------------------------------------------------------
+# GitLabProvider.status
+# ---------------------------------------------------------------------------
+
+
+class TestGitLabProviderStatus:
+    @pytest.mark.asyncio
+    async def test_status_returns_disconnected_no_token(self):
+        from kerf_cloud.git_providers.gitlab import GitLabProvider
+
+        p = GitLabProvider(_gitlab_configured_settings())
+        result = await p.status("proj-gl-6")
+
+        assert result["provider"] == "gitlab"
+        assert result["connected"] is False
+        assert "persistence_pending" in result.get("reason", "")
+
+    @pytest.mark.asyncio
+    async def test_status_with_valid_token_includes_user(self):
+        from kerf_cloud.git_providers.gitlab import GitLabProvider
+        from unittest.mock import patch, AsyncMock
+
+        fake_user = {"username": "acmebot", "id": 42}
+
+        p = GitLabProvider(_gitlab_configured_settings())
+
+        async def _fake_verify(token):
+            assert token == "glpat-valid"
+            return fake_user
+
+        with patch.object(p, "_verify_token", _fake_verify):
+            result = await p.status("proj-gl-6", gitlab_access_token="glpat-valid")
+
+        assert result["provider"] == "gitlab"
+        assert result["token_valid"] is True
+        assert result["gitlab_user"] == "acmebot"
+
+    @pytest.mark.asyncio
+    async def test_status_with_invalid_token_marks_token_invalid(self):
+        from kerf_cloud.git_providers.gitlab import GitLabProvider
+        from unittest.mock import patch
+
+        p = GitLabProvider(_gitlab_configured_settings())
+
+        async def _bad_verify(token):
+            raise ValueError("GitLab token validation failed: HTTP 401")
+
+        with patch.object(p, "_verify_token", _bad_verify):
+            result = await p.status("proj-gl-6", gitlab_access_token="bad-token")
+
+        assert result["provider"] == "gitlab"
+        assert result["token_valid"] is False
+        assert "token_error" in result
+
+
+# ---------------------------------------------------------------------------
+# GitLabProvider in ProviderRegistry
+# ---------------------------------------------------------------------------
+
+
+class TestGitLabProviderInRegistry:
+    def test_gitlab_appears_in_available_names_when_configured(self):
+        from kerf_cloud.git_providers.registry import ProviderRegistry
+        from kerf_cloud.git_providers.gitlab import GitLabProvider
+
+        reg = ProviderRegistry(_gitlab_configured_settings())
+        reg.register(GitLabProvider)
+
+        assert "gitlab" in reg.available_names()
+
+    def test_gitlab_absent_from_available_names_when_unconfigured(self):
+        from kerf_cloud.git_providers.registry import ProviderRegistry
+        from kerf_cloud.git_providers.gitlab import GitLabProvider
+
+        reg = ProviderRegistry(_gitlab_unconfigured_settings_no_id())
+        reg.register(GitLabProvider)
+
+        assert "gitlab" not in reg.available_names()
+
+    def test_get_gitlab_returns_instance_when_configured(self):
+        from kerf_cloud.git_providers.registry import ProviderRegistry
+        from kerf_cloud.git_providers.gitlab import GitLabProvider
+
+        reg = ProviderRegistry(_gitlab_configured_settings())
+        reg.register(GitLabProvider)
+
+        provider = reg.get("gitlab")
+        assert provider is not None
+        assert provider.name == "gitlab"
+        assert isinstance(provider, GitLabProvider)
+
+    def test_get_gitlab_returns_none_when_unconfigured(self):
+        from kerf_cloud.git_providers.registry import ProviderRegistry
+        from kerf_cloud.git_providers.gitlab import GitLabProvider
+
+        reg = ProviderRegistry(_gitlab_unconfigured_settings_no_secret())
+        reg.register(GitLabProvider)
+
+        assert reg.get("gitlab") is None
+
+    def test_github_and_gitlab_coexist_when_both_configured(self):
+        from kerf_cloud.git_providers.registry import ProviderRegistry
+        from kerf_cloud.git_providers.github import GitHubProvider
+        from kerf_cloud.git_providers.gitlab import GitLabProvider
+
+        # Build a settings mock that has both sets of credentials.
+        s = MagicMock()
+        s.cloud_github_app_id = "3727956"
+        s.cloud_github_app_slug = "kerf-app"
+        s.github_private_key_pem = _PRIVATE_KEY_PEM
+        s.cloud_gitlab_app_id = "gitlab-app-id"
+        s.cloud_gitlab_app_secret = "gitlab-app-secret"
+        s.cloud_gitlab_host = ""
+
+        reg = ProviderRegistry(s)
+        reg.register(GitHubProvider)
+        reg.register(GitLabProvider)
+
+        names = reg.available_names()
+        assert "github" in names
+        assert "gitlab" in names
+
+    def test_default_registry_contains_gitlab_when_configured(self):
+        from kerf_cloud.git_providers.registry import _build_default_registry
+
+        reg = _build_default_registry(_gitlab_configured_settings())
+        assert "gitlab" in reg.available_names()
+
+    def test_default_registry_gitlab_absent_when_unconfigured(self):
+        from kerf_cloud.git_providers.registry import _build_default_registry
+
+        reg = _build_default_registry(_gitlab_unconfigured_settings_no_id())
+        # github is also unconfigured in this settings mock, so should be empty
+        assert "gitlab" not in reg.available_names()

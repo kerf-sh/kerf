@@ -88,6 +88,14 @@ class Settings(BaseSettings):
     cloud_github_app_slug: str = ""
     cloud_github_private_key_b64: str = ""
 
+    # GitLab OAuth App fields (repo-mirror flow via GitLabProvider).
+    # Leave empty to disable; GitLabProvider.is_configured() gates on these.
+    # cloud_gitlab_host: override when using a self-hosted GitLab instance;
+    #   defaults to https://gitlab.com when empty.
+    cloud_gitlab_app_id: str = ""
+    cloud_gitlab_app_secret: str = ""
+    cloud_gitlab_host: str = ""
+
     @property
     def github_private_key_pem(self) -> str:
         """Decode the base64 private key. Returns '' if unset."""
