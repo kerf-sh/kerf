@@ -28,12 +28,15 @@ _billing_handlers = None
 
 
 def _get_pool():
+    # Was `from db.connection import get_pool` (pre-monorepo module that
+    # no longer exists → ModuleNotFoundError → every /api/billing/* 500)
+    # AND loop.run_until_complete() inside the running request loop
+    # (would crash even if the import resolved). The canonical pool is a
+    # module singleton set at app startup; read it synchronously.
     global _pool
     if _pool is None:
-        import asyncio
-        from db.connection import get_pool
-        loop = asyncio.get_event_loop()
-        _pool = loop.run_until_complete(get_pool())
+        from kerf_core.db.connection import get_pool
+        _pool = get_pool()
     return _pool
 
 
