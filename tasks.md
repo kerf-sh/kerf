@@ -2555,3 +2555,18 @@ frontend tasks (T-147/T-148) serialize behind other frontend work.
   clean. UI/geometry change — needs user dev verification.
 - **Depends-on:** T-36
 
+### T-154 Coordinated DB reset — activate accumulated baseline edits
+- **Tier:** A
+- **Priority:** P0
+- **Status:** 🔴 not started
+- **Scope:** parent-owned, SOLO (run only when NO agent uses the shared
+  DB). Several baseline migration edits are committed but not applied to
+  the live local DB (idempotent-by-filename): T-130 added `'firmware'`
+  to `0001` `files_kind_check`; collect any other flagged baseline edits
+  from in-flight agents. DROP SCHEMA + recreate + re-run runner → assert
+  ALL migrations applied, 0 back-stamped; verify the new file-kind(s) +
+  any added objects exist; run the affected suites green. Recurring
+  loop maintenance task — re-open whenever new flagged baseline edits
+  accumulate.
+- **Depends-on:** (whenever DB is free of agents)
+
