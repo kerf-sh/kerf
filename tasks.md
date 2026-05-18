@@ -3540,7 +3540,7 @@ User-requested 2026-05-18 — improve tscircuit editing (wires, placement, ratsn
 - **Tier:** B
 - **Money/reach rationale:** atopile's value compounds when components resolve to real parts on real distributors. Bridge into the existing distributor surface (T-49 family) so an `.ato` module declaring `R1 = Resistor(value=10k)` resolves to a real JLCPCB / DigiKey part with footprint.
 - **Priority:** P1
-- **Status:** 🔴 not started
+- **Status:** ✅ shipped
 - **Scope:** extend `packages/kerf-electronics/src/kerf_electronics/atopile/library.py` (NEW) — given an atopile `Component(...)` declaration, query the existing distributor catalogue (kerf-cloud or local cache), return the best-match `mfr_part + footprint + datasheet_url`. Bind into the T-195 compiler so the emitted Circuit JSON carries real distributor refs.
 - **Target files/packages:** `packages/kerf-electronics/src/kerf_electronics/atopile/library.py`, `packages/kerf-electronics/tests/test_atopile_library.py`.
 - **Definition of Done:** voltage-divider with `value=10k, package=0603` resolves to a real JLCPCB part (mocked in tests via fixture); fallback to "unresolved" warning when no match; pytest green.
