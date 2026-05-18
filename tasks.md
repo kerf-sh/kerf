@@ -1325,7 +1325,7 @@ Tier A (single persona unlock), render / SubD / direct-edit → Tier B
   than a bare surface — the deliverable a jewelry/automotive user
   actually consumes (filleted/blended Class-A body, not a loose patch).
 - **Priority:** P1
-- **Status:** 🔴 not started
+- **Status:** ✅ shipped
 - **Scope:** Trim the two support surfaces back to the G3 blend's seam
   curves and sew blend+supports into a `validate_body`-clean `Body`,
   following the **already-landed** GK-26 (`fillet_solid.py`) +
@@ -1381,7 +1381,7 @@ Tier A (single persona unlock), render / SubD / direct-edit → Tier B
   WASM round-trip), with the OCCT worker correctly retained as the
   fallback for everything else — the testability + decoupling win.
 - **Priority:** P1
-- **Status:** 🔴 not started
+- **Status:** ✅ shipped
 - **Scope:** Harden the **side-selection heuristic** (area / point-in-
   region, mirroring `boolean.py` region classification) and the
   validation contract that the existing `surfacing.feature_trim_by_
@@ -2837,7 +2837,7 @@ graceful degrade when the binary is absent (same pattern as CuraEngine).
 - **Tier:** A
 - **Money/reach rationale:** CalculiX is the reference nonlinear / contact solver for mechanical simulation depth (G-1 gap). The bridge lets Kerf hand off a complex nonlinear case to CalculiX when FEniCSx/internal is insufficient.
 - **Priority:** P2
-- **Status:** 🔴 not started
+- **Status:** ✅ shipped
 - **Scope:** A `calculix_bridge.py` module that translates a `KeRFJob` to CalculiX `.inp` format, invokes the `ccx` binary as a subprocess, parses the `.frd` result file, and maps results back to the Kerf result schema. Graceful sentinel when `ccx` is absent. Reference tests: a Hertzian contact case (two spheres) — peak pressure vs analytic Hertz formula; a nonlinear plasticity case — tip deflection vs analytic result. Mock the subprocess call for hermetic CI.
 - **Target files/packages:** `packages/kerf-fem/src/kerf_fem/calculix_bridge.py` (new), `packages/kerf-fem/tests/test_calculix_bridge.py` (mocked).
 - **Definition of Done:** bridge translates a fixture job to `.inp`, parses `.frd` result; mock-subprocess test green; real-binary path documented; sentinel when absent; Hertz contact reference test green (with real binary in manual test, mocked in CI).
@@ -2847,7 +2847,7 @@ graceful degrade when the binary is absent (same pattern as CuraEngine).
 - **Tier:** A
 - **Money/reach rationale:** Z88Aurora is the reference for free/open-source linear + modal + nonlinear FEM (G-1 gap). A Z88 bridge gives Kerf a validated secondary solver for cross-checking results.
 - **Priority:** P2
-- **Status:** 🔴 not started
+- **Status:** ✅ shipped
 - **Scope:** A `z88_bridge.py` module that translates a `KeRFJob` to Z88 format (`.z88i1`/`.z88i2`), invokes the `z88r` binary as subprocess, parses the output, maps back. Graceful sentinel when absent. Reference test: a simply-supported beam modal (first natural frequency vs analytic Euler-Bernoulli). Mock the subprocess for hermetic CI.
 - **Target files/packages:** `packages/kerf-fem/src/kerf_fem/z88_bridge.py` (new), `packages/kerf-fem/tests/test_z88_bridge.py` (mocked).
 - **Definition of Done:** bridge translates job → Z88 format, parses result; mock test green; sentinel when absent; modal reference frequency matches analytic to 1%.
@@ -2857,7 +2857,7 @@ graceful degrade when the binary is absent (same pattern as CuraEngine).
 - **Tier:** A
 - **Money/reach rationale:** Mystran is the open-source Nastran-class solver for modal and aeroelastic analysis — a key gap for aerospace + automotive NVH. Bridge lets Kerf delegate complex aeroelastic cases.
 - **Priority:** P2
-- **Status:** 🔴 not started
+- **Status:** ✅ shipped
 - **Scope:** A `mystran_bridge.py` module that translates a `KeRFJob` to Nastran-format BDF (Mystran accepts standard Nastran BDF), invokes the `mystran` binary as subprocess, parses the `.F06` output, maps results back. Graceful sentinel when absent. Reference test: a cantilever plate first-mode frequency vs analytic thin-plate formula.
 - **Target files/packages:** `packages/kerf-fem/src/kerf_fem/mystran_bridge.py` (new), `packages/kerf-fem/tests/test_mystran_bridge.py` (mocked).
 - **Definition of Done:** BDF translation correct for a fixture job; mock test green; sentinel when absent; first-mode reference frequency matches to 2%.
@@ -2885,7 +2885,7 @@ with analytic oracles.
 - **Tier:** A
 - **Money/reach rationale:** Turbulence modelling is the single biggest gap between the landed 2-D laminar foundation and CfdOF-class capability. Channel flow is the canonical k-ε validation case.
 - **Priority:** P2
-- **Status:** 🔴 not started
+- **Status:** ✅ shipped
 - **Scope:** Implement the standard two-equation k-ε model (`cfd_ke.py`) with wall functions. Reference test: fully-developed turbulent channel flow (Re=10 000) — mean velocity profile vs the law-of-the-wall (u+ vs y+ in log region, slope κ=0.41, B=5.5) to within 5%. Pure Python + NumPy; no external solver. Analytic oracle only.
 - **Target files/packages:** `packages/kerf-fem/src/kerf_fem/cfd_ke.py` (new), `packages/kerf-fem/tests/test_cfd.py` (extend).
 - **Definition of Done:** log-law region of the velocity profile matches the analytic wall law to 5%; y+ placement is in the log-layer; pytest analytic oracle; hermetic (no external binary).
@@ -2895,7 +2895,7 @@ with analytic oracles.
 - **Tier:** A
 - **Money/reach rationale:** k-ω SST is the industry-standard model for adverse pressure gradients (airfoils, external aero). Backward-facing step (Driver & Seegmiller) is the canonical SST reference case.
 - **Priority:** P2
-- **Status:** 🔴 not started
+- **Status:** ✅ shipped
 - **Scope:** Implement the k-ω SST model (`cfd_kw_sst.py`) blending k-ω near-wall and k-ε in freestream. Reference test: backward-facing step reattachment length — computed vs experimental Driver & Seegmiller data (reattachment at ~7h step heights ± 15%). Analytic-oracle approximation based on the published correlation.
 - **Target files/packages:** `packages/kerf-fem/src/kerf_fem/cfd_kw_sst.py` (new), `packages/kerf-fem/tests/test_cfd.py` (extend).
 - **Definition of Done:** reattachment length within 15% of the Driver & Seegmiller reference; wall shear stress sign change at the correct location; pytest; no external binary.
@@ -2905,7 +2905,7 @@ with analytic oracles.
 - **Tier:** A
 - **Money/reach rationale:** 3-D meshing is the prerequisite for any real-world CFD case (all practical flows are 3-D). Without a 3-D mesh, the solver depth above cannot be applied to real geometry.
 - **Priority:** P2
-- **Status:** 🔴 not started
+- **Status:** ✅ shipped
 - **Scope:** A `mesh3d.py` module that generates a structured hex or unstructured tet mesh around a simple geometry (box, sphere, cylinder) using a pure-Python Delaunay tet algorithm (or a thin wrapper around the `tetgen` binary with graceful degrade when absent). Output: a `Mesh3D` dataclass (vertices, elements, boundary-face tags). Reference test: tet mesh of a unit sphere — element count, minimum quality metric (Jacobian > 0 for all elements), and boundary face normals point outward.
 - **Target files/packages:** `packages/kerf-fem/src/kerf_fem/mesh3d.py` (new), `packages/kerf-fem/tests/test_mesh3d.py` (new).
 - **Definition of Done:** unit sphere produces a valid tet mesh with no inverted elements; boundary normals point outward; Jacobian > 0 everywhere; tetgen-absent → graceful sentinel; pytest.
@@ -2915,7 +2915,7 @@ with analytic oracles.
 - **Tier:** A
 - **Money/reach rationale:** OpenFOAM is the reference open-source CFD solver for serious 3-D turbulent flows (automotive aerodynamics, building wind load, duct flow). Bridging it gives Kerf CfdOF-class capability for those use-cases.
 - **Priority:** P2
-- **Status:** 🔴 not started
+- **Status:** ✅ shipped
 - **Scope:** `openfoam_bridge.py` — translate a `CFDJob` (geometry + boundary conditions + turbulence model + solver settings) to an OpenFOAM case directory structure (constant/, system/, 0/), invoke `blockMesh` + `simpleFoam` (or `rhoPimpleFoam`) as subprocesses, parse the `postProcessing/` result files, map back to the Kerf result schema. Graceful sentinel when the `simpleFoam` binary is absent. Mock the subprocess for hermetic CI. Reference test: lid-driven cavity at Re=1000 with the OpenFOAM path — compare u-velocity profile vs Ghia Re=1000 data (same oracle as the existing `cfd_navier_stokes.py` test but via the OF bridge).
 - **Target files/packages:** `packages/kerf-fem/src/kerf_fem/openfoam_bridge.py` (new), `packages/kerf-fem/tests/test_openfoam_bridge.py` (mocked subprocess).
 - **Definition of Done:** case directory written correctly; mock-subprocess test green; sentinel when absent; lid-driven cavity reference velocity profile matches to 5% with real binary in a manual test; pytest.
@@ -2925,7 +2925,7 @@ with analytic oracles.
 - **Tier:** A
 - **Money/reach rationale:** Same rationale as T-100h — the CFD solver depth is invisible to the LLM until properly surfaced.
 - **Priority:** P2
-- **Status:** 🔴 not started
+- **Status:** ✅ shipped
 - **Scope:** Extend the `run_cfd` LLM tool (or add one if absent) to accept `turbulence_model` (`ke` / `kw_sst` / `laminar`) and `solver` (`internal` / `openfoam`). Publish CFD capability tags in `GET /health/capabilities`. Add an `explain_cfd_result` LLM tool that summarises Cp, drag coefficient, wall shear stress in plain language. Update `packages/kerf-fem/llm_docs/cfd.md`.
 - **Target files/packages:** `packages/kerf-fem/src/kerf_fem/tools.py` (extend or add `run_cfd`), `packages/kerf-fem/llm_docs/cfd.md`, health endpoint, `packages/kerf-fem/tests/` (dispatch tests).
 - **Definition of Done:** `run_cfd` routes to k-ε, k-ω SST, and OpenFOAM paths; `/health/capabilities` lists CFD types; `explain_cfd_result` readable summary; doc updated; dispatch tests green; pytest.
@@ -2935,7 +2935,7 @@ with analytic oracles.
 - **Tier:** A
 - **Money/reach rationale:** Thermal-CFD (electronics cooling, HVAC duct, building natural ventilation) is the most common CFD use-case outside aero. Adds heat transfer to the turbulent solver chain, covering electronics + architecture personas in addition to mechanical + automotive.
 - **Priority:** P2
-- **Status:** 🔴 not started
+- **Status:** ✅ shipped
 - **Scope:** Extend `cfd_navier_stokes.py` (or add `cfd_heat.py`) with the energy equation and buoyancy forcing (Boussinesq approximation). Reference test: differentially-heated vertical cavity (de Vahl Davis benchmark, Ra=10^4) — Nusselt number on the hot wall vs the published de Vahl Davis value (Nu≈2.243 ± 0.005). Pure Python; analytic oracle; no external binary.
 - **Target files/packages:** `packages/kerf-fem/src/kerf_fem/cfd_heat.py` (new or extend), `packages/kerf-fem/tests/test_cfd.py` (extend).
 - **Definition of Done:** de Vahl Davis Nu on hot wall within 2% of the published reference; temperature field has correct hot/cold wall gradient; pytest analytic oracle; hermetic.
@@ -3072,7 +3072,7 @@ sector. Establishes the foothold; deeper depth tasks follow in the same T-NN ser
 - **Tier:** B
 - **Money/reach rationale:** Packaging design (folding carton, corrugated box) is a very large design workforce (retail, FMCG). Dieline is a flat-pattern problem — close to Kerf's sheet-metal unfold strength (T-2/T-3 shipped).
 - **Priority:** P3
-- **Status:** 🔴 not started
+- **Status:** ✅ shipped
 - **Scope:** Seed `packages/kerf-packaging/` with: a `Dieline` data model (panel + fold + cut + score lines on a 2D flat layout); parametric dieline generators for ECMA standard boxes (C-series RSC, A-series tray, B-series display); a `dieline_to_dxf` export reusing the shipped DXF writer (T-7); a `fold_dieline` 3D preview that sweeps panels along fold lines into a 3D carton shape. Reference test: ECMA C02 RSC box dimensions match standard; fold produces a closed 3D carton; DXF export round-trips.
 - **Target files/packages:** `packages/kerf-packaging/src/kerf_packaging/` (new — `dieline.py`, `ecma_generators.py`, `fold.py`, `tools.py`), `packages/kerf-packaging/tests/`, `packages/kerf-packaging/llm_docs/packaging.md`, migration for `dieline` kind.
 - **Definition of Done:** ECMA C02 generator produces correct panel dimensions; fold preview is a closed 3D shape; DXF round-trips; pytest.
@@ -3092,7 +3092,7 @@ sector. Establishes the foothold; deeper depth tasks follow in the same T-NN ser
 - **Tier:** B
 - **Money/reach rationale:** Woodworking / furniture design is a very large maker + small-business workforce (education, hobbyist, furniture makers). Cut list is the key deliverable. Close to Kerf's sheet-metal + nesting strength.
 - **Priority:** P3
-- **Status:** 🔴 not started
+- **Status:** ✅ shipped
 - **Scope:** Seed `packages/kerf-woodworking/` with: a `WoodJoint` data model (mortise-and-tenon, dovetail, box joint, biscuit, pocket-screw, dowel — parametric per joint type); a `furniture_cutlist` tool that enumerates all solid parts into a cut list (species, thickness, width, length, qty, grain direction) from an assembly; a `joinery_feature` op that adds the correct geometry to mating parts; a `flat_pack_dieline` path for flat-pack furniture (reuse T-3 flat pattern + T-53 nesting). Reference test: a 4-leg table cut list has the correct part count + dimensions; mortise-and-tenon joint geometry is valid (tenon fits mortise with correct clearance).
 - **Target files/packages:** `packages/kerf-woodworking/src/kerf_woodworking/` (new — `joints.py`, `cutlist.py`, `tools.py`), tests, llm_docs, migration for `woodwork` kind.
 - **Definition of Done:** table cut list correct; M&T joint geometry passes clearance check; flat-pack path produces a DXF; pytest.
@@ -3581,7 +3581,7 @@ User-direction 2026-05-18: ship the "two authoring styles, one fabrication targe
 ### T-201 atopile → tscircuit JSX one-way converter
 - **Tier:** B
 - **Priority:** P1
-- **Status:** 🔴 not started
+- **Status:** ✅ shipped
 - **Scope:** Walk an atopile AST (T-194) and emit a `.tsx` source string usable in the tscircuit JSX editor. One-way only — reverse is intentionally NOT shipped (JSX side effects). Useful for "I prototyped visually, let me put it in version control as `.ato`" (wait — that's the wrong direction; the value is "I wrote it as `.ato` and want a quick visual sketch as `.tsx`"). Pure Python.
 - **Target files/packages:** `packages/kerf-electronics/src/kerf_electronics/atopile/to_tscircuit.py` (NEW), `packages/kerf-electronics/tests/test_atopile_to_tscircuit.py` (NEW).
 - **Definition of Done:** voltage_divider.ato → a `.tsx` source string that, when parsed by `@tscircuit/core` (or by our own validator), produces the same Circuit JSON as the atopile compiler does; pytest oracles against the 4 fixtures from T-194; `npm run build` clean.
