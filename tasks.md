@@ -2573,7 +2573,7 @@ frontend tasks (T-147/T-148) serialize behind other frontend work.
 ### T-155 Nesting layout view (T-53 follow-up, frontend)
 - **Tier:** B
 - **Priority:** P2
-- **Status:** 🔴 not started
+- **Status:** ✅ shipped this session (component; needs dev verify + FileTree `nest`-kind wiring follow-on)
 - **Scope:** SVG/canvas layout view rendering the T-53 nest result
   (sheet + placed parts + utilization). Frontend; deferred from T-53
   (out of that task's Python-package scope).
