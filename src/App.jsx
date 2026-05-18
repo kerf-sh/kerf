@@ -28,6 +28,8 @@ const DocsHome = lazy(() => import('./routes/Docs/index.jsx'))
 const DocsArticle = lazy(() => import('./routes/Docs/Article.jsx'))
 const Login = lazy(() => import('./routes/Login.jsx'))
 const Signup = lazy(() => import('./routes/Signup.jsx'))
+const ForgotPassword = lazy(() => import('./routes/ForgotPassword.jsx'))
+const ResetPassword = lazy(() => import('./routes/ResetPassword.jsx'))
 const AuthCallback = lazy(() => import('./routes/AuthCallback.jsx'))
 const Projects = lazy(() => import('./routes/Projects.jsx'))
 const Editor = lazy(() => import('./routes/Editor.jsx'))
@@ -165,6 +167,8 @@ export default function App() {
         path="/signup"
         element={localShortcut ? <Navigate to="/projects" replace /> : <Signup />}
       />
+      <Route path="/forgot-password" element={<ForgotPassword />} />
+      <Route path="/reset-password" element={<ResetPassword />} />
       <Route path="/auth/callback" element={<AuthCallback />} />
       {cloudEnabled && <Route path="/pricing" element={<Pricing />} />}
       <Route path="/roadmap" element={<Roadmap />} />

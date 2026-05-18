@@ -80,6 +80,12 @@ export const api = {
     request('/auth/register', { method: 'POST', body: { email, password, name }, auth: false }),
   login: (email, password) =>
     request('/auth/login', { method: 'POST', body: { email, password }, auth: false }),
+  forgotPassword: (email) =>
+    request('/auth/forgot-password', { method: 'POST', body: { email }, auth: false }),
+  resetPassword: (token, password) =>
+    request('/auth/reset-password', { method: 'POST', body: { token, password }, auth: false }),
+  requestVerification: () =>
+    request('/auth/request-verification', { method: 'POST', body: {} }),
   googleAuthUrl: () => `${API_URL}/auth/google/start`,
   githubAuthUrl: () => `${API_URL}/auth/github/login/start`,
   refresh: () => refreshAccessToken(),

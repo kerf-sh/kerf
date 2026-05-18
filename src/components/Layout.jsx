@@ -153,6 +153,46 @@ function UserMenu({ user, onLogout, currentWorkspaceSlug, cloudEnabled }) {
   )
 }
 
+function UnverifiedBanner({ user }) {
+  const [state, setState] = useState('idle') // idle | sending | sent | error
+  // Soft gate: only nudge; never block. Hidden once verified or for
+  // OAuth accounts (which arrive verified / have no password to reset).
+  if (!user || user.email_verified !== false) return null
+
+  const resend = async () => {
+    if (state === 'sending') return
+    setState('sending')
+    try {
+      await api.requestVerification()
+      setState('sent')
+    } catch {
+      setState('error')
+    }
+  }
+
+  return (
+    <div className="bg-amber-500/10 border-b border-amber-500/25 text-amber-200/90">
+      <div className="mx-auto max-w-7xl px-6 py-2 flex items-center gap-3 text-xs">
+        <span className="flex-1">
+          Please verify your email to secure your account.
+          {state === 'sent' && ' Verification email sent — check your inbox.'}
+          {state === 'error' && ' Could not resend just now — try again shortly.'}
+        </span>
+        {state !== 'sent' && (
+          <button
+            type="button"
+            onClick={resend}
+            disabled={state === 'sending'}
+            className="font-medium text-amber-100 hover:text-white underline underline-offset-2 disabled:opacity-50"
+          >
+            {state === 'sending' ? 'Sending…' : 'Resend email'}
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
+
 export default function Layout({ children, wide = false, padded = true }) {
   const navigate = useNavigate()
   const user = useAuth((s) => s.user)
@@ -262,6 +302,8 @@ export default function Layout({ children, wide = false, padded = true }) {
           </div>
         </div>
       </header>
+
+      <UnverifiedBanner user={user} />
 
       <main
         className={clsx(
