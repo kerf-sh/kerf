@@ -3222,7 +3222,7 @@ sector. Establishes the foothold; deeper depth tasks follow in the same T-NN ser
 - **Tier:** B
 - **Money/reach rationale:** HVAC duct fabrication (sheet-metal ductwork for commercial buildings) bridges the BIM (T-113/T-114) and sheet-metal (T-1..T-4) substrates. Large fabrication workforce; duct fitting geometry is rule-native.
 - **Priority:** P3
-- **Status:** 🔴 not started
+- **Status:** ✅ shipped
 - **Scope:** Seed `packages/kerf-hvac/` with: a `DuctSystem` data model (rectangular/round/oval ducts, fittings — elbow, reducer, tee, cap, flex connector); a `duct_sizing` LLM tool (velocity method: select duct size for a target airflow + max velocity, citing ASHRAE duct-design guidelines); a `duct_flat_pattern` that generates the sheet-metal flat pattern for standard fittings (rectangular elbow, reducer) reusing the T-2/T-3 unfold path; a `pressure_loss` calculator (major friction loss + minor losses for fittings via ASHRAE HVAC Fundamentals coefficients). Reference tests: pressure drop for a straight rectangular duct matches Darcy-Weisbach formula; reducer flat pattern has the correct developed length.
 - **Target files/packages:** `packages/kerf-hvac/src/kerf_hvac/` (new — `duct.py`, `sizing.py`, `flat_pattern.py`, `pressure.py`, `tools.py`), tests, llm_docs, migration for `duct` kind.
 - **Definition of Done:** Darcy-Weisbach pressure drop matches to 1%; reducer flat pattern has correct developed length (analytic); duct sizing for a fixture flow produces a valid dimension; pytest analytic oracles.
