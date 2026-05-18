@@ -33,6 +33,7 @@ import { attachDfmOverlay, detachDfmOverlay, refreshDfm } from '../lib/dfmOverla
 import { renderHeroSet as _renderHeroSet } from '../lib/heroRender.js'
 import { captureHeroShot as _captureHeroShot } from '../lib/heroShot.js'
 import HeroRenderPanel from './HeroRenderPanel.jsx'
+import { applyDocLightsToScene } from '../lib/applyDocLightsToScene.js'
 
 const PALETTE = [0xc9a96b, 0x6b9bc9, 0xc96b89, 0x89c96b, 0xc9b86b, 0x9b6bc9]
 const HIGHLIGHT_EMISSIVE = 0x4d3c00 // kerf yellow tint
@@ -167,6 +168,10 @@ function Renderer({
   // Hero Render: project ID forwarded to HeroRenderPanel for the gallery tab
   // and render job submission.
   projectId = null,
+  // doc.lights[] — when non-empty the caller's lighting rig overrides the
+  // built-in 3-point studio rig.  Pass the array from a .render document to
+  // preview how user-defined lights look in the viewport.
+  docLights = null,
 }, ref) {
   const mountRef = useRef(null)
   const stateRef = useRef(null) // holds three.js objects across renders
@@ -681,6 +686,8 @@ function Renderer({
       contactShadowPlane,
       grid,
       axes,
+      // Handles for lights spawned from docLights — disposed on each update.
+      docLightHandles: [],
     }
 
     return () => {
@@ -692,6 +699,11 @@ function Renderer({
       renderer.domElement.removeEventListener('pointerup', onPointerUp)
       renderer.domElement.removeEventListener('pointercancel', onPointerCancel)
       disposeAll(stateRef.current)
+      // Dispose any doc-lights spawned from docLights prop.
+      for (const light of (stateRef.current?.docLightHandles ?? [])) {
+        stateRef.current?.scene?.remove(light)
+        light.dispose?.()
+      }
       try { composer.dispose?.() } catch { /* older three lacks dispose */ }
       try { bloomPass.dispose?.() } catch {}
       try { renderPass.dispose?.() } catch {}
@@ -1041,6 +1053,30 @@ function Renderer({
       if (s.fill) s.fill.intensity = 0.8
     }
   }, [daylight])
+
+  // ----- doc.lights[] override -----
+  // When the caller passes a non-empty docLights array (from a .render file),
+  // the built-in 3-point studio rig is hidden and the doc lights are spawned
+  // in its place.  When docLights is empty or absent the default rig is
+  // restored.  The scene-centre target is taken from controls.target so the
+  // directional lights always aim at the current orbit pivot.
+  useEffect(() => {
+    const s = stateRef.current
+    if (!s) return
+    const hasDocLights = Array.isArray(docLights) && docLights.length > 0
+    // Show/hide the default rig.
+    if (s.ambient) s.ambient.visible = !hasDocLights
+    if (s.key)     s.key.visible     = !hasDocLights
+    if (s.fill)    s.fill.visible    = !hasDocLights
+    // Spawn (or clear) the doc lights.
+    const target = s.controls
+      ? [s.controls.target.x, s.controls.target.y, s.controls.target.z]
+      : [0, 0, 0]
+    s.docLightHandles = applyDocLightsToScene(s.scene, docLights ?? [], {
+      target,
+      prevHandles: s.docLightHandles ?? [],
+    })
+  }, [docLights])
 
   // ----- Selection overlays + leader line -----
   useEffect(() => {
