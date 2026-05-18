@@ -2353,7 +2353,27 @@ async def list_messages(pid: str, tid: str, request: Request, payload: dict = De
             "SELECT * FROM chat_messages WHERE thread_id = $1 ORDER BY created_at ASC",
             tid,
         )
-        return [dict(row) for row in rows]
+
+        # part_refs / tool_calls are jsonb. asyncpg returns jsonb as a
+        # raw string (no global JSON codec is registered — many handlers
+        # json.loads it explicitly), so returning dict(row) verbatim
+        # ships e.g. part_refs:"[]" and the client does "[]".map(...) →
+        # "part_refs.map is not a function". Decode here so the API
+        # contract is always arrays.
+        def _msg(row):
+            m = dict(row)
+            for k in ("part_refs", "tool_calls"):
+                v = m.get(k)
+                if isinstance(v, (str, bytes)):
+                    try:
+                        m[k] = json.loads(v) if v else []
+                    except (ValueError, TypeError):
+                        m[k] = []
+                elif v is None:
+                    m[k] = []
+            return m
+
+        return [_msg(row) for row in rows]
 
 
 class PostMessageRequest(BaseModel):

@@ -529,7 +529,7 @@ function MessageBlock({ message, modelLookup }) {
           )}
         </div>
       )}
-      {message.part_refs && message.part_refs.length > 0 && (
+      {Array.isArray(message.part_refs) && message.part_refs.length > 0 && (
         <div className="flex flex-wrap gap-1 max-w-[88%]">
           {message.part_refs.map((r, i) => (
             <PartChip key={i} partId={r.part_id} fileName={r.label} />
