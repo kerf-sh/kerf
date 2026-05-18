@@ -3804,7 +3804,7 @@ User-direction 2026-05-18: "look at open-source ladder logic with nice UI/UX, st
 ### T-222 Structured Text (ST) parser + editor support
 - **Tier:** A
 - **Priority:** P1
-- **Status:** 🔴 not started
+- **Status:** ✅ shipped
 - **Scope:** pure-Python ST parser per IEC 61131-3: VAR/VAR_INPUT/VAR_OUTPUT declarations, IF/THEN/ELSE, FOR/WHILE/REPEAT loops, CASE statements, function calls, expressions with the IEC type system (BOOL, INT, REAL, TIME, …). Monaco editor mode for `.st` and ST POUs inside a `.plc` PLCopen project. AST round-trips through T-220's writer.
 - **Target files/packages:** `packages/kerf-plc/src/kerf_plc/st/__init__.py` (NEW), `packages/kerf-plc/src/kerf_plc/st/parser.py` (NEW), `packages/kerf-plc/src/kerf_plc/st/ast.py` (NEW), `packages/kerf-plc/src/kerf_plc/st/lexer.py` (NEW), `packages/kerf-plc/tests/test_st_parser.py` (NEW), `src/lib/stMonacoLanguage.js` (NEW frontend Monaco mode), `src/lib/stMonacoLanguage.test.js` (NEW).
 - **Definition of Done:** the OpenPLC stock `blinker.st` parses to a non-empty AST; round-trip via T-220's writer preserves variable order + statement count; Monaco tokens cover the IEC 61131-3 reserved-word set; pytest + vitest oracles; `npm run build` clean.
