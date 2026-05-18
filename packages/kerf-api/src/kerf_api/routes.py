@@ -889,6 +889,52 @@ export default function ({ primitives, transforms, booleans }) {
 """
 
 
+DEFAULT_CIRCUIT = '''import { Circuit } from "tscircuit"
+
+// Kerf: default export is a JSX element OR a Circuit instance. The editor
+// renders the schematic, PCB, and 3D views in their respective tabs.
+export default (
+  <board width="20mm" height="20mm">
+    <resistor name="R1" resistance="10k" footprint="0402" pcbX={-5} pcbY={0} schX={-3} />
+    <resistor name="R2" resistance="10k" footprint="0402" pcbX={0}  pcbY={0} schX={0}  />
+    <resistor name="R3" resistance="10k" footprint="0402" pcbX={5}  pcbY={0} schX={3}  />
+    <trace from=".R1 .pin2" to=".R2 .pin1" />
+    <trace from=".R2 .pin2" to=".R3 .pin1" />
+  </board>
+)
+'''
+
+DEFAULT_DRAWING = '''{
+  "frame": {
+    "size": "A3",
+    "orientation": "landscape",
+    "title": "Untitled Drawing"
+  },
+  "views": [],
+  "dimensions": [],
+  "annotations": []
+}'''
+
+DEFAULT_STARTER = "jscad"
+
+# Project starter catalog: starter id -> (filename, file kind, seed content).
+# One coherent scaffold per project type, mirrored on the frontend by
+# src/lib/projectTags.js STARTER_OPTIONS (kept in lockstep — see
+# tests/test_project_starters.py). 2D/feature kinds whose canonical seed is
+# computed by a JS serializer (sketch/part) are intentionally NOT project
+# starters; those are created in-project via the FileTree "+ New" menu with
+# their exact seeds. "blank" seeds nothing. Every kind here must be in the
+# FILE_KINDS allow-list.
+STARTER_SEEDS: dict[str, tuple[str, str, str]] = {
+    "jscad":    ("main.jscad",        "script",   default_jscad),
+    "assembly": ("main.assembly",     "assembly", '{"components":[]}'),
+    "feature":  ("main.feature",      "feature",  '{"features":[]}'),
+    "drawing":  ("main.drawing",      "drawing",  DEFAULT_DRAWING),
+    "circuit":  ("main.circuit.tsx",  "circuit",  DEFAULT_CIRCUIT),
+    "blank":    ("",                  "file",     ""),
+}
+
+
 @router.post("/projects")
 async def create_project(req: CreateProjectRequest, payload: dict = Depends(require_auth)):
     user_id = payload.get("sub")
@@ -914,17 +960,10 @@ async def create_project(req: CreateProjectRequest, payload: dict = Depends(requ
 
         tags = list(set(t.strip() for t in req.tags if t.strip()))
 
-        starter = req.starter.strip() if req.starter else "jscad"
-        starter_content = ""
-        starter_kind = "file"
-        if starter == "jscad":
-            starter_content = default_jscad
-            starter_kind = "script"
-        elif starter == "blank":
-            starter_content = ""
-        elif starter == "circuit":
-            starter_content = ""
-            starter_kind = "circuit"
+        starter = req.starter.strip() if req.starter else DEFAULT_STARTER
+        starter_name, starter_kind, starter_content = STARTER_SEEDS.get(
+            starter, STARTER_SEEDS[DEFAULT_STARTER]
+        )
 
         # ── Default visibility: cloud paid → private, cloud free → public,
         #    self-hosted → private (Workshop concept doesn't exist there).
@@ -941,8 +980,8 @@ async def create_project(req: CreateProjectRequest, payload: dict = Depends(requ
         async with conn.transaction():
             project = await projects_queries.create_project(conn, ws_id, name, req.description, default_visibility, tags)
 
-            if starter_content:
-                await files_queries.create_file(conn, project["id"], starter, starter_kind, None, starter_content)
+            if starter_name and starter_content:
+                await files_queries.create_file(conn, project["id"], starter_name, starter_kind, None, starter_content)
 
         return {
             **project,

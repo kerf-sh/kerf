@@ -38,6 +38,7 @@ export const TAG_PRESETS = [
   {
     id: 'mechanical',
     label: 'Mechanical',
+    blurb: 'Brackets, enclosures & machine parts — parametric solids.',
     icon: Box,
     accent: 'text-kerf-300',
     badgeBg: 'bg-kerf-300/10 text-kerf-200 border-kerf-300/30',
@@ -47,6 +48,7 @@ export const TAG_PRESETS = [
   {
     id: 'electronics',
     label: 'Electronics',
+    blurb: 'Schematics & PCBs from code (tscircuit).',
     icon: CircuitBoard,
     accent: 'text-cyan-edge',
     badgeBg: 'bg-cyan-edge/10 text-cyan-edge border-cyan-edge/30',
@@ -56,24 +58,27 @@ export const TAG_PRESETS = [
   {
     id: 'architecture',
     label: 'Architecture',
+    blurb: 'Floor plans, sections & building models.',
     icon: Building2,
     accent: 'text-amber-300',
     badgeBg: 'bg-amber-300/10 text-amber-200 border-amber-300/30',
-    suggestStarter: 'jscad',
+    suggestStarter: 'drawing',
     suggestKinds: ['file', 'folder', 'sketch', 'drawing'],
   },
   {
     id: 'jewelry',
     label: 'Jewelry',
+    blurb: 'Rings, settings & gemstones — cast-ready.',
     icon: Gem,
     accent: 'text-pink-300',
     badgeBg: 'bg-pink-300/10 text-pink-200 border-pink-300/30',
-    suggestStarter: 'jscad',
+    suggestStarter: 'feature',
     suggestKinds: ['file', 'folder', 'sketch', 'feature'],
   },
   {
     id: 'pcb',
     label: 'PCB',
+    blurb: 'Board layout, routing & fab outputs.',
     icon: Cpu,
     accent: 'text-cyan-edge',
     badgeBg: 'bg-cyan-edge/10 text-cyan-edge border-cyan-edge/30',
@@ -83,44 +88,66 @@ export const TAG_PRESETS = [
   {
     id: 'robotics',
     label: 'Robotics',
+    blurb: 'Multi-part assemblies, joints & mechanisms.',
     icon: Bot,
     accent: 'text-emerald-300',
     badgeBg: 'bg-emerald-300/10 text-emerald-200 border-emerald-300/30',
-    suggestStarter: 'jscad',
+    suggestStarter: 'assembly',
     suggestKinds: ['file', 'folder', 'assembly', 'circuit', 'feature'],
   },
   {
     id: 'drone',
     label: 'Drone',
+    blurb: 'Airframe + electronics in one assembly.',
     icon: Plane,
     accent: 'text-sky-300',
     badgeBg: 'bg-sky-300/10 text-sky-200 border-sky-300/30',
-    suggestStarter: 'jscad',
+    suggestStarter: 'assembly',
     suggestKinds: ['file', 'folder', 'assembly', 'circuit', 'drawing'],
   },
   {
     id: 'lighting',
     label: 'Lighting',
+    blurb: 'Fixtures + driver circuits.',
     icon: Lightbulb,
     accent: 'text-yellow-300',
     badgeBg: 'bg-yellow-300/10 text-yellow-200 border-yellow-300/30',
-    suggestStarter: 'jscad',
+    suggestStarter: 'circuit',
     suggestKinds: ['file', 'folder', 'circuit', 'drawing'],
   },
 ]
 
 // STARTER_OPTIONS is the dropdown contents for the create dialog's starter
-// picker. Mirrors backend/routes/projects.py's starter_for function.
+// picker. MUST mirror the backend STARTER_SEEDS catalog in
+// packages/kerf-api/src/kerf_api/routes.py (ids + seeded filenames) —
+// kept in lockstep by tests/test_project_starters.py. Sketch/part are
+// deliberately not project starters (their canonical seed is computed by
+// a JS serializer); create those in-project via the "+ New" menu.
 export const STARTER_OPTIONS = [
   {
     id: 'jscad',
     label: 'JSCAD',
-    hint: 'main.jscad code starter',
+    hint: 'main.jscad — parametric code model',
+  },
+  {
+    id: 'assembly',
+    label: 'Assembly',
+    hint: 'main.assembly — multi-part assembly',
+  },
+  {
+    id: 'feature',
+    label: 'Feature model',
+    hint: 'main.feature — feature-tree solid',
+  },
+  {
+    id: 'drawing',
+    label: 'Drawing',
+    hint: 'main.drawing — 2D sheet',
   },
   {
     id: 'circuit',
     label: 'Circuit',
-    hint: 'main.circuit.tsx tscircuit starter',
+    hint: 'main.circuit.tsx — tscircuit board',
   },
   {
     id: 'blank',

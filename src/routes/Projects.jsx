@@ -4,6 +4,7 @@ import { useWorkspaces } from '../store/workspaces.js'
 import {
   AlertCircle,
   Box,
+  ChevronDown,
   Globe,
   Lock,
   MoreHorizontal,
@@ -233,21 +234,63 @@ function StarterField({ value, onChange }) {
   )
 }
 
+// DomainGrid — the friendly "what are you designing?" picker. Each card is
+// a project domain (TAG_PRESETS, surfaced via tagSuggestionsFor) with an
+// icon + one-line blurb so a newcomer from any field knows what to pick.
+// Selecting a card sets it as the project's primary tag; the starter file
+// auto-follows via suggestStarterFor. Responsive: 2 cols on phones, 3 on
+// larger screens.
+function DomainGrid({ presets, selected, onSelect }) {
+  return (
+    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+      {presets.map((p) => {
+        const Icon = p.icon || Tag
+        const active = p.id === selected
+        return (
+          <button
+            key={p.id}
+            type="button"
+            onClick={() => onSelect(p.id)}
+            aria-pressed={active}
+            title={p.blurb}
+            className={clsx(
+              'flex flex-col items-start gap-1 rounded-xl border p-3 text-left transition-colors min-h-[76px]',
+              active
+                ? 'border-kerf-300/60 bg-kerf-300/10 ring-1 ring-kerf-300/40'
+                : 'border-ink-800 bg-ink-950/30 hover:border-ink-600 hover:bg-ink-800/40',
+            )}
+          >
+            <span
+              className={clsx(
+                'inline-flex items-center gap-1.5 text-[13px] font-medium',
+                active ? 'text-kerf-100' : 'text-ink-100',
+              )}
+            >
+              <Icon size={14} className={active ? 'text-kerf-300' : p.accent} />
+              {p.label}
+            </span>
+            <span className="text-[11px] leading-snug text-ink-400">{p.blurb}</span>
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
 function NewProjectModalBody({ onClose, onCreated, workspaceId }) {
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
   const [tags, setTags] = useState([])
   const [starter, setStarter] = useState(DEFAULT_STARTER)
-  // Tracks whether the user has explicitly touched the starter dropdown.
-  // While this is false, tag changes auto-pick a sensible starter; once
-  // the user commits to a value, we leave their choice alone.
+  // While false, the chosen domain auto-picks a sensible starter; once the
+  // user overrides it under "More options" we leave their choice alone.
   const [starterTouched, setStarterTouched] = useState(false)
+  const [showMore, setShowMore] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState(null)
   const inputRef = useRef(null)
 
-  // Visibility default hint — cloud only.  We lazily fetch billing/me to
-  // determine if the user is on a paid plan.  Self-hosted: cloudEnabled=false,
+  // Visibility default hint — cloud only. Self-hosted: cloudEnabled=false,
   // so this block is skipped entirely (no billing concept there).
   const { cloudEnabled } = useCloudConfig()
   const [isPaid, setIsPaid] = useState(null) // null = loading/unknown
@@ -273,12 +316,21 @@ function NewProjectModalBody({ onClose, onCreated, workspaceId }) {
     return () => clearTimeout(t)
   }, [])
 
-  // Auto-pick starter from tags until the user overrides it.
+  // Auto-pick starter from the chosen domain until the user overrides it.
   useEffect(() => {
     if (starterTouched) return
     const next = suggestStarterFor(tags)
     if (next !== starter) setStarter(next)
   }, [tags, starter, starterTouched])
+
+  const presets = tagSuggestionsFor(tags)
+  const primaryDomain = tags.find((t) => presetById(t)) || null
+  const selectedStarterOpt = STARTER_OPTIONS.find((s) => s.id === starter)
+
+  // Single primary domain keeps the casual flow one-click. Any free-text
+  // tags the user added under "More options" are preserved.
+  const selectDomain = (id) =>
+    setTags((prev) => [id, ...prev.filter((t) => t !== id && !presetById(t))])
 
   const onSubmit = async (e) => {
     e.preventDefault()
@@ -309,56 +361,91 @@ function NewProjectModalBody({ onClose, onCreated, workspaceId }) {
       open
       onClose={onClose}
       title="New project"
-      widthClass="max-w-lg"
+      widthClass="max-w-xl"
       footer={
         <>
           <Button variant="ghost" size="md" onClick={onClose} disabled={submitting}>
             Cancel
           </Button>
-          <Button
-            variant="primary"
-            size="md"
-            onClick={onSubmit}
-            disabled={submitting}
-          >
+          <Button variant="primary" size="md" onClick={onSubmit} disabled={submitting}>
             {submitting ? 'Creating…' : 'Create project'}
           </Button>
         </>
       }
     >
-      <form onSubmit={onSubmit} className="flex flex-col gap-4">
+      <form
+        onSubmit={onSubmit}
+        className="flex flex-col gap-5 max-h-[70vh] overflow-y-auto pr-1"
+      >
+        <p className="-mt-1 text-[13px] text-ink-400">
+          Name it, pick what you’re designing, and we’ll set up the right
+          starter file. You can change anything later.
+        </p>
+
         {error && (
           <div className="flex items-start gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-200">
             <AlertCircle size={14} className="mt-0.5 shrink-0" />
             <span>{error}</span>
           </div>
         )}
+
         <Input
           ref={inputRef}
-          label="Name"
+          label="Project name"
           name="name"
           required
-          placeholder="Robot bracket"
+          placeholder="e.g. Robot gripper, Sensor PCB, Engagement ring"
           value={name}
           onChange={(e) => setName(e.target.value)}
         />
-        <Textarea
-          label="Description"
-          name="description"
-          rows={3}
-          placeholder="Optional — what are you making?"
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-        />
-        <TagsField tags={tags} onChange={setTags} />
-        <StarterField
-          value={starter}
-          onChange={(v) => {
-            setStarter(v)
-            setStarterTouched(true)
-          }}
-        />
-        {/* Visibility default hint — only shown in cloud mode once billing is known */}
+
+        <div>
+          <label className="block text-[11px] font-mono uppercase tracking-wider text-ink-400 mb-2">
+            What are you designing?
+          </label>
+          <DomainGrid presets={presets} selected={primaryDomain} onSelect={selectDomain} />
+          <p className="mt-2 text-[11px] text-ink-500">
+            {primaryDomain
+              ? `Starts you with a ${selectedStarterOpt?.label || starter} file — ${selectedStarterOpt?.hint || 'editable in the project'}.`
+              : 'Pick a domain — or skip it and choose a starter under “More options”.'}
+          </p>
+        </div>
+
+        <div>
+          <button
+            type="button"
+            onClick={() => setShowMore((v) => !v)}
+            className="inline-flex items-center gap-1 text-[12px] text-ink-300 hover:text-ink-100 transition-colors"
+            aria-expanded={showMore}
+          >
+            <ChevronDown
+              size={14}
+              className={clsx('transition-transform', showMore && 'rotate-180')}
+            />
+            More options
+          </button>
+          {showMore && (
+            <div className="mt-3 flex flex-col gap-4 border-l border-ink-800 pl-3">
+              <Textarea
+                label="Description"
+                name="description"
+                rows={2}
+                placeholder="Optional — what are you making?"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+              />
+              <TagsField tags={tags} onChange={setTags} />
+              <StarterField
+                value={starter}
+                onChange={(v) => {
+                  setStarter(v)
+                  setStarterTouched(true)
+                }}
+              />
+            </div>
+          )}
+        </div>
+
         {cloudEnabled && isPaid === true && (
           <div className="flex items-center gap-2 rounded-lg border border-ink-700 bg-ink-800/60 px-3 py-2 text-xs text-ink-300">
             <Lock size={12} className="shrink-0 text-ink-400" />
@@ -371,7 +458,7 @@ function NewProjectModalBody({ onClose, onCreated, workspaceId }) {
             <span>Your projects are <span className="font-medium text-ink-100">public by default</span>. <span className="text-ink-400">Add credits for private projects.</span></span>
           </div>
         )}
-        {/* Submit button is handled in footer; hidden submit lets Enter work */}
+        {/* Submit handled in footer; hidden submit lets Enter work */}
         <button type="submit" className="hidden" />
       </form>
     </Modal>
