@@ -18,6 +18,7 @@
  * Drafting is a singleton (AutoCAD only) so it skips the matrix and shows
  * just the card.
  */
+import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import {
   ArrowRight,
@@ -46,6 +47,7 @@ import Header from '../../components/Header.jsx'
 import Footer from '../../components/Footer.jsx'
 import { FairnessNote, GOOD, WEAK, GAP, NA } from './Freecad.jsx'
 import CategoryMatrix from './CategoryMatrix.jsx'
+import { fetchCompareManifest } from '../../lib/compareManifest.js'
 
 /* -------------------------------------------------------------------------- */
 /* Cards — preserved from previous hub (visuals unchanged)                    */
@@ -290,6 +292,71 @@ const CARDS = [
     domainHref: '/domains/civil',
   },
 ]
+
+/* -------------------------------------------------------------------------- */
+/* Manifest-driven augmentation                                               */
+/*                                                                            */
+/* When compare-manifest.json is available (built from public/compare/*.md),  */
+/* new items found in the manifest are merged into the displayed card list.   */
+/* The inline CARDS array above is always kept as the hard-coded FALLBACK so  */
+/* the page works even before the manifest is built.                          */
+/*                                                                            */
+/* Icon lookup: since JSON cannot carry Lucide components, we map the `right` */
+/* field (competitor slug) to an icon. Unknown slugs get a generic Box icon.  */
+/* -------------------------------------------------------------------------- */
+
+const SLUG_TO_ICON = {
+  freecad:    Code2,
+  fusion:     Cloud,
+  solidworks: Cog,
+  onshape:    Cloud,
+  inventor:   Cog,
+  autocad:    PencilRuler,
+  kicad:      CircuitBoard,
+  altium:     CircuitBoard,
+  revit:      Building2,
+  civil3d:    Mountain,
+  rhino:      Gem,
+  matrixgold: Sparkles,
+  blender:    Box,
+  max3ds:     Film,
+}
+
+/** Map manifest category slug → display category string used in CATEGORY_SECTIONS */
+const MANIFEST_CATEGORY_TO_DISPLAY = {
+  'cad-mechanical': 'Mechanical',
+  'eda':            'Electronic',
+  'bim':            'BIM',
+  'jewelry-nurbs':  'Jewelry & NURBS',
+  'dcc':            'DCC',
+  'drafting':       'Drafting',
+}
+
+/**
+ * Merge manifest items into the base CARDS array.
+ * Items already covered by slug in CARDS are skipped (inline definition wins).
+ * New items get a display-category derived from the manifest's category field.
+ *
+ * @param {import('../../lib/compareManifest.js').CompareItem[]} manifestItems
+ * @returns {typeof CARDS}
+ */
+function mergeManifestCards(manifestItems) {
+  if (!manifestItems || manifestItems.length === 0) return CARDS
+  const existingSlugs = new Set(CARDS.map((c) => c.slug))
+  const extra = []
+  for (const item of manifestItems) {
+    if (existingSlugs.has(item.slug)) continue
+    extra.push({
+      slug:     item.slug,
+      icon:     SLUG_TO_ICON[item.right] ?? SLUG_TO_ICON[item.slug] ?? Box,
+      label:    item.competitor,
+      category: MANIFEST_CATEGORY_TO_DISPLAY[item.category] ?? item.category,
+      tagline:  item.hero_tagline,
+      blurb:    item.hero_tagline,
+    })
+  }
+  return extra.length === 0 ? CARDS : [...CARDS, ...extra]
+}
 
 /* -------------------------------------------------------------------------- */
 /* Category matrices                                                          */
@@ -1570,7 +1637,26 @@ function MatrixLegend() {
 /* Page                                                                       */
 /* -------------------------------------------------------------------------- */
 
+/**
+ * Whether to attempt loading cards from compare-manifest.json.
+ * Set to false to always use the inline CARDS fallback.
+ */
+const useMdManifest = true
+
 export default function CompareHub() {
+  // Start with the inline CARDS array as the safe default.
+  // If the manifest fetch succeeds and adds new items, they are merged in.
+  const [activeCards, setActiveCards] = useState(CARDS)
+
+  useEffect(() => {
+    if (!useMdManifest) return
+    fetchCompareManifest().then((manifest) => {
+      // mergeManifestCards returns the original CARDS reference if there is
+      // nothing to add, so no unnecessary re-render occurs.
+      setActiveCards(mergeManifestCards(manifest.items))
+    })
+  }, [])
+
   return (
     <div className="min-h-screen bg-ink-950 text-ink-100">
       <Header />
@@ -1599,7 +1685,7 @@ export default function CompareHub() {
 
         {/* Per-category sections */}
         {CATEGORY_SECTIONS.map((section) => {
-          const cards = CARDS.filter((c) => c.category === section.key)
+          const cards = activeCards.filter((c) => c.category === section.key)
           if (cards.length === 0) return null
           return (
             <section
