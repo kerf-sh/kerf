@@ -1,0 +1,69 @@
+CMOS 2-input NAND gate — 130nm process corner, transient simulation
+* =============================================================
+* Standard-cell NAND2: VDD=1.8V, W_p=1000nm, W_n=500nm, L=130nm
+*
+* Logic: out = ~(a AND b)
+*
+* Topology:
+*   PMOS Mp_a: source=vdd, gate=ina, drain=vout
+*   PMOS Mp_b: source=vdd, gate=inb, drain=vout  (parallel pull-up)
+*   NMOS Mn_a: drain=vout, gate=ina, source=mid  (series pull-down)
+*   NMOS Mn_b: drain=mid,  gate=inb, source=0    (series pull-down)
+*
+* Nodes: vdd, gnd(0), ina, inb, vout, mid
+* =============================================================
+
+* Supply
+Vdd vdd 0 DC 1.8
+
+* Input A: 0→1.8V period 20ns
+Va ina 0 PULSE(0 1.8 0.5n 0.1n 0.1n 9.9n 20n)
+
+* Input B: 0→1.8V period 40ns (slower — creates all 4 input combos)
+Vb inb 0 PULSE(0 1.8 0.5n 0.1n 0.1n 19.9n 40n)
+
+* PMOS pull-up network (parallel: either A=0 or B=0 pulls out HIGH)
+Mp_a vout ina vdd vdd PMOS_130N W=1000n L=130n
+Mp_b vout inb vdd vdd PMOS_130N W=1000n L=130n
+
+* NMOS pull-down network (series: both A=1 and B=1 pulls out LOW)
+Mn_a vout ina mid 0 NMOS_130N W=500n L=130n
+Mn_b mid  inb 0   0 NMOS_130N W=500n L=130n
+
+* Load capacitance
+Cload vout 0 10f
+
+* -------------------------------------------------------------------
+* MOSFET models — 130nm representative skeleton
+* (same as inverter.cir; replace with PDK for tape-out accuracy)
+* -------------------------------------------------------------------
+
+.MODEL NMOS_130N NMOS (
++ LEVEL=8
++ TOX=2.2e-9
++ VTH0=0.4
++ U0=400e-4
++ VSAT=1.0e5
++ CGSO=200e-12
++ CGDO=200e-12
++ CJ=1e-3
++ )
+
+.MODEL PMOS_130N PMOS (
++ LEVEL=8
++ TOX=2.2e-9
++ VTH0=-0.4
++ U0=100e-4
++ VSAT=8.0e4
++ CGSO=200e-12
++ CGDO=200e-12
++ CJ=1e-3
++ )
+
+* Transient: 10ps step, 80ns stop (covers two full B periods)
+.TRAN 10p 80n
+
+* Print time and all interesting nodes
+.PRINT TRAN V(ina) V(inb) V(vout)
+
+.end

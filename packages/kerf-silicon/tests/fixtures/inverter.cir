@@ -1,0 +1,58 @@
+CMOS Inverter — 130nm process corner, transient simulation
+* =============================================================
+* Simple CMOS inverter: VDD=1.8V, W_p=1000nm, W_n=500nm, L=130nm
+* Nodes: vdd, gnd(0), vin, vout
+* =============================================================
+
+* Supply voltage
+Vdd vdd 0 DC 1.8
+
+* Input pulse: 0→1.8V, period=20ns, rise/fall=100ps
+Vin vin 0 PULSE(0 1.8 1n 0.1n 0.1n 9.9n 20n)
+
+* PMOS pull-up: drain=vout, gate=vin, source=vdd, bulk=vdd
+* W=1000nm L=130nm
+Mp1 vout vin vdd vdd PMOS_130N W=1000n L=130n
+
+* NMOS pull-down: drain=vout, gate=vin, source=0, bulk=0
+* W=500nm L=130nm
+Mn1 vout vin 0 0 NMOS_130N W=500n L=130n
+
+* Load capacitance (fan-out estimate)
+Cload vout 0 10f
+
+* -------------------------------------------------------------------
+* Simple level MOSFET models (BSIM3v3 level 8 skeleton for 130nm)
+* These are representative placeholder models — replace with PDK
+* models (e.g. sky130A.lib.spice) for silicon-accurate simulation.
+* -------------------------------------------------------------------
+
+.MODEL NMOS_130N NMOS (
++ LEVEL=8
++ TOX=2.2e-9
++ VTH0=0.4
++ U0=400e-4
++ VSAT=1.0e5
++ CGSO=200e-12
++ CGDO=200e-12
++ CJ=1e-3
++ )
+
+.MODEL PMOS_130N PMOS (
++ LEVEL=8
++ TOX=2.2e-9
++ VTH0=-0.4
++ U0=100e-4
++ VSAT=8.0e4
++ CGSO=200e-12
++ CGDO=200e-12
++ CJ=1e-3
++ )
+
+* Transient analysis: 10ps step, 40ns stop
+.TRAN 10p 40n
+
+* Print time, input and output waveforms
+.PRINT TRAN V(vin) V(vout)
+
+.end
