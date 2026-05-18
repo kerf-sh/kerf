@@ -1278,7 +1278,7 @@ export default function Editor() {
           </button>
         )}
 
-        <ExportButton />
+        <ExportButton onCaptureHero={() => rendererRef.current?.captureHeroShot?.({})} />
 
         {cloudEnabled && w.project && (
           <>

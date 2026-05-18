@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { FileDown, ChevronDown } from 'lucide-react'
+import { FileDown, ChevronDown, Camera, Loader2 } from 'lucide-react'
 import { useWorkspace } from '../store/workspace.js'
 import { api } from '../lib/api.js'
 import { exportParts, downloadBlob, FORMATS, sanitizeFilename } from '../lib/exporters.js'
@@ -30,7 +30,7 @@ function isStepFile(file) {
 // Export the visible 3D parts of the currently-open file. Pulls everything
 // from the workspace store so the top bar can mount this with no props.
 // Hides itself when there are no parts (e.g. drawing/folder/empty file).
-export default function ExportButton() {
+export default function ExportButton({ onCaptureHero }) {
   const parts = useWorkspace((s) => s.parts)
   const hiddenIds = useWorkspace((s) => s.hiddenPartIds)
   const projectId = useWorkspace((s) => s.projectId)
@@ -39,6 +39,7 @@ export default function ExportButton() {
 
   const [open, setOpen] = useState(false)
   const [error, setError] = useState(null)
+  const [heroBusy, setHeroBusy] = useState(false)
   const wrapRef = useRef(null)
   useClickOutside(wrapRef, () => setOpen(false), open)
 
@@ -75,6 +76,24 @@ export default function ExportButton() {
       downloadBlob(blob, filename)
     } catch (err) {
       setError(err?.message || 'Export failed')
+    }
+  }
+
+  async function doCaptureHero() {
+    if (!onCaptureHero || heroBusy) return
+    setOpen(false)
+    setHeroBusy(true)
+    try {
+      const blob = await onCaptureHero()
+      if (blob) {
+        downloadBlob(blob, `kerf-hero-${Date.now()}.png`)
+      } else {
+        setError('Nothing to capture')
+      }
+    } catch (err) {
+      setError(err?.message || 'Hero capture failed')
+    } finally {
+      setHeroBusy(false)
     }
   }
 
@@ -141,6 +160,23 @@ export default function ExportButton() {
               </button>
             ))}
           </div>
+          {onCaptureHero && (
+            <div className="border-t border-ink-800 py-1">
+              <button
+                type="button"
+                onClick={doCaptureHero}
+                disabled={heroBusy}
+                title="Render a 2048×2048 marketing shot (bloom + ACES tonemap, no UI chrome) and download a PNG"
+                className="w-full flex items-center gap-2 px-3 py-1.5 text-left text-[12px] text-ink-100 hover:bg-ink-800 hover:text-kerf-300 disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:text-ink-100"
+              >
+                {heroBusy
+                  ? <Loader2 size={12} className="animate-spin text-ink-400" />
+                  : <Camera size={12} className="text-ink-400" />}
+                <span className="flex-1 truncate">{heroBusy ? 'Rendering…' : 'Capture hero image'}</span>
+                <span className="font-mono text-[10px] text-ink-500">.png</span>
+              </button>
+            </div>
+          )}
         </div>
       )}
 

@@ -184,7 +184,11 @@ function Renderer({
   const [hdriBackground, setHdriBackground] = useState(false)
   // Hero-shot capture in-flight flag so we can dim the chrome while the
   // upscale + blob encode is running.  Pure UX cue, no rendering effect.
-  const [heroBusy, setHeroBusy] = useState(false)
+  // Hero-shot capture in-flight flag. Set by doCaptureHeroShot; the
+  // capture entry point now lives in the top-bar Export dropdown
+  // (invoked via the imperative captureHeroShot() ref) rather than a
+  // floating viewport button.
+  const [, setHeroBusy] = useState(false)
   const modeRef = useRef(mode)
   const selectedFeaturesRef = useRef(selectedFeatures)
   const onPickFeatureRef = useRef(onPickFeature)
@@ -1395,31 +1399,6 @@ function Renderer({
           />
           <span className="text-[10px] font-mono text-ink-300 w-8 text-right">{exposure.toFixed(2)}</span>
         </div>
-        <button
-          type="button"
-          onClick={async () => {
-            const blob = await doCaptureHeroShot({})
-            if (blob && typeof URL !== 'undefined' && typeof URL.createObjectURL === 'function') {
-              const url = URL.createObjectURL(blob)
-              const a = document.createElement('a')
-              a.href = url
-              a.download = `kerf-hero-${Date.now()}.png`
-              document.body.appendChild(a)
-              a.click()
-              document.body.removeChild(a)
-              URL.revokeObjectURL(url)
-            }
-          }}
-          disabled={heroBusy}
-          title="Hero shot: render at 2048×2048 with bloom + ACES tonemap and download a PNG (no UI chrome)"
-          className={`px-2 py-1 rounded text-[11px] font-mono transition-colors ${
-            heroBusy
-              ? 'bg-ink-800 text-ink-500 border border-ink-700 cursor-wait'
-              : 'bg-ink-900/80 text-ink-300 border border-ink-700 hover:text-kerf-300 hover:border-kerf-300/50 backdrop-blur'
-          }`}
-        >
-          {heroBusy ? 'Rendering…' : 'Hero'}
-        </button>
         <button
           type="button"
           onClick={() => setBloomOn((v) => !v)}
