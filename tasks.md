@@ -3252,3 +3252,202 @@ sector. Establishes the foothold; deeper depth tasks follow in the same T-NN ser
   clean. UI change — needs user dev verification.
 - **Depends-on:** the sector seeds (T-165..T-181) landed
 
+## Save model + git polish (T-183 … T-188) — PRIORITY
+
+These tickets land the full "local autosave + actual git save" model
+plus the cloud-git polish gaps that are not yet ticketed. Three explicit
+rings of safety: **L1** browser IndexedDB stash (crash-proof), **L2**
+server `file_revisions` autosave (fine-grained undo), **L3**
+`cloud_git_commits` (deliberate + safety-net squash, mirrored to
+GitHub/GitLab). All P1 — user said "very important all the git stuff
+must be in place".
+
+### T-183 L1 — IndexedDB local stash (crash-proof working copy)
+- **Tier:** B
+- **Money/reach rationale:** localStorage's ~5–10 MB origin cap blows
+  out the first time anyone opens a non-trivial CAD project; IDB gives
+  us gigabytes of structured async storage. With L1 in place, the
+  user's tab can crash, lose power, or be closed mid-edit and nothing
+  is lost — this is the floor under every subsequent trust message we
+  send about the L2/L3 rings.
+- **Priority:** P1
+- **Status:** 🔴 not started
+- **Scope:** introduce `src/lib/localStash.js` wrapping IndexedDB
+  (object store keyed by `workspaceId+filePath` → `{bytes, mtime,
+  flushedToL2: boolean}`). Editor hooks (Monaco onChange, sketcher
+  commit, feature-tree edit) debounce-write to L1 (1–3 s). On app load
+  for a project, reconcile L1 against the server: anything with
+  `flushedToL2=false` is re-POSTed via the existing save endpoint, then
+  marked flushed. `beforeunload` guard fires ONLY when any IDB entry
+  has `flushedToL2=false` (the genuine "might be lost on close" case).
+  Add a Zustand selector `useDirtyL1Count()` for the toolbar dot.
+- **Target files/packages:** `src/lib/localStash.js` (new),
+  `src/stores/dirtyStore.js` (new), wire into `src/components/Editor*`
+  + sketcher save path + feature-tree commit, `src/main.jsx` for the
+  load-time reconcile + `beforeunload`. Vitest (fake-indexeddb).
+- **Definition of Done:** killing the dev tab mid-edit restores
+  on reload; `beforeunload` does not fire when L1 is clean even if
+  L3 has uncommitted L2 revisions; reconcile is idempotent; vitest
+  green; `npm run build` clean.
+- **Depends-on:** none
+
+### T-184 L2 — server autosave throttle dial-in + status surface
+- **Tier:** B
+- **Money/reach rationale:** the OSS `file_revisions` write path
+  already exists, but the cadence is ad-hoc per editor. Formalising it
+  (idle + interval) gives users a predictable "your work is saved"
+  signal and stops accidental write storms during fast-drag edits.
+- **Priority:** P1
+- **Status:** 🔴 not started
+- **Scope:** introduce `src/lib/autosaveScheduler.js` — exposes
+  `markDirty(workspaceId, filePath)` + a shared scheduler that flushes
+  to L2 (the existing `POST /workspaces/{id}/files/{path}` revision
+  endpoint) on idle (after 2 s of no edits) OR on a hard interval
+  (every 30 s while dirty). On success, flips the L1 entry to
+  `flushedToL2=true` so the `beforeunload` guard relaxes. Emits
+  `autosave-status` events the toolbar dot consumes: `dirty | saving |
+  saved | error`. Backend already supports it — no API change.
+- **Target files/packages:** `src/lib/autosaveScheduler.js` (new),
+  `src/components/AutosaveStatus.jsx` (new — the toolbar dot),
+  vitest + existing route tests cover the wire-up.
+- **Definition of Done:** edits flush within 2 s idle / 30 s active;
+  `file_revisions` rows appear at the right cadence; the dot reflects
+  the four states; vitest green.
+- **Depends-on:** T-183 (uses the L1 flushedToL2 flag)
+
+### T-185 L3 — auto-commit safety net + dirty-time warning
+- **Tier:** B
+- **Money/reach rationale:** the user said "warn users of unsaved
+  changes" — the right interpretation is **uncommitted** changes (L2
+  rows that haven't been squashed into a `cloud_git_commits` row).
+  This ticket makes git-saving the durable default without flooding
+  the commit graph: deliberate commits get the user's message and the
+  ◯ marker, the safety-net squashes silent autosave commits every N
+  minutes of dirty L2 with the ◌ marker.
+- **Priority:** P1
+- **Status:** 🔴 not started
+- **Scope:** backend — extend `packages/kerf-core/src/kerf_core/
+  storage/materialize.py` with `auto_commit_if_idle(workspace_id, *,
+  idle_minutes=15)` that finds the last `cloud_git_commits` row for
+  the workspace, checks whether any `file_revisions` rows exist after
+  it, and if `idle_minutes` have passed without a deliberate commit,
+  writes a squashed auto-commit (`message="autosave " +
+  iso_utc_now()`, `kind='autosave'`) using the existing
+  `materialize_and_commit()` path. Add a `kind` column to
+  `cloud_git_commits` (`enum('manual','autosave')`) — fold into
+  `0012_cloud_git.sql` baseline; NO alter-shim. Scheduler: a periodic
+  task (Postgres `LISTEN` or a 60-s poller in `kerf-server`). Frontend
+  — extend the git graph (T-148) to render ◯ vs ◌; add a gentle
+  banner that appears at 30 min uncommitted ("It's been a while — save
+  a version?") with a one-click Commit button.
+- **Target files/packages:** `packages/kerf-core/src/kerf_core/
+  storage/materialize.py`, `packages/kerf-cloud/src/kerf_cloud/
+  scheduler/auto_commit.py` (new), `packages/kerf-core/src/kerf_core/
+  db/migrations/0012_cloud_git.sql` (fold `kind` column), `src/
+  components/GitGraph.jsx`, `src/components/UncommittedBanner.jsx`
+  (new), `src/lib/dirtyTimer.js`. Pytest + vitest.
+- **Definition of Done:** with no deliberate commit, an autosave
+  appears at the configured interval; deliberate commits are
+  unaffected; graph distinguishes them; banner appears + dismisses
+  cleanly; baseline migration includes `kind`; pytest + vitest green;
+  `npm run build` clean.
+- **Depends-on:** T-184 (needs reliable L2 cadence to detect "dirty"),
+  T-148 (graph rendering)
+
+### T-186 L3 — PR-style file diff + large-file accept-yours/theirs UX
+- **Tier:** B
+- **Money/reach rationale:** T-148 ships the DAG but you cannot SEE
+  what changed in a commit. Without a review surface, "save to git" is
+  trust-fall. For text files (Python, ladder, gcode, SVG paths)
+  a per-file text diff is the obvious move. **For large binary files
+  (STEP, occt-stream, jewelry presets) a real diff is meaningless** —
+  the right UX is a 3D preview-side-by-side ("yours" left, "theirs"
+  right) + an explicit **Accept yours / Accept theirs** button per
+  file. This ticket adds both surfaces.
+- **Priority:** P1
+- **Status:** 🔴 not started
+- **Scope:** backend — `GET /workspaces/{id}/git/commits/{sha}/diff`
+  returns a JSON manifest: per-file `{path, kind, change:
+  added|modified|deleted, text_diff?: unified, oid_old?, oid_new?,
+  binary?: bool, preview_thumb_url?}`. Reuses the LFS pointer +
+  `read_path` hydrate (T-124) to get both sides. Frontend — a new
+  `src/components/CommitDiff.jsx` that hangs off the T-148 graph: on
+  click, opens a per-commit pane listing files; text files render via
+  the existing Monaco diff editor; **binary/large files render a
+  split-pane preview** (3D Renderer instances for STEP / occt-stream,
+  image thumbs for raster, "no preview available" for opaque blobs)
+  with a per-file **Accept yours · Accept theirs** action that POSTs
+  back a resolve-merge-conflict commit. No three-way text merge UI in
+  this ticket — explicit, file-level pick is the contract.
+- **Target files/packages:** `packages/kerf-api/src/kerf_api/
+  routes_git.py` (new diff endpoint + accept-resolve endpoint),
+  `packages/kerf-core/src/kerf_core/storage/diff.py` (new — classify
+  + unified-diff for textual, side-list for binary),
+  `src/components/CommitDiff.jsx`, `src/components/GitGraph.jsx`
+  (wire), `src/components/BinarySideBySide.jsx` (new), pytest +
+  vitest + an e2e walk through "open commit → see diff → accept
+  theirs on a STEP file → graph shows the resolve commit".
+- **Definition of Done:** opening any commit in the graph shows the
+  per-file list; text diffs render; binary files show side-by-side
+  previews with accept-yours/theirs that actually writes a resolve
+  commit; no `alter table` shims (diff is read-only); pytest + vitest
+  + e2e green.
+- **Depends-on:** T-148, T-124 (materialize/read_path), T-150 (oracle
+  used to keep both oids reachable)
+
+### T-187 L3 — onboarding doc: "your work is safe in three places"
+- **Tier:** B
+- **Money/reach rationale:** silent autosave is only trustworthy if
+  users believe in it. A single concise docs page explaining the L1
+  (IDB) / L2 (revisions) / L3 (git commits) model — with screenshots
+  of the toolbar dot, the graph markers (◯ vs ◌), and the banner —
+  converts the architecture into a trust message.
+- **Priority:** P1
+- **Status:** 🔴 not started
+- **Scope:** add `public/docs/saving-your-work.md` (or wherever the
+  existing docs viewer reads from — check `public/docs-manifest.json`)
+  with the 3-ring explanation, the dot states, the graph markers,
+  what `beforeunload` fires on, what the banner means, where
+  GitHub/GitLab sync (T-144/T-145) plugs in. Link from the empty
+  state of the Git panel + from Settings → Account. Docs viewer must
+  still render it (regenerate `docs-manifest.json` via existing
+  script — but DON'T commit `public/docs-manifest.json` per repo
+  rule).
+- **Target files/packages:** `public/docs/saving-your-work.md` (new),
+  link references in `src/components/GitPanel*`,
+  `src/routes/Settings*` (link only). Vitest.
+- **Definition of Done:** doc renders in the in-app viewer;
+  screenshots not required (user will dev-verify); navigation links
+  present; vitest green; `npm run build` clean.
+- **Depends-on:** T-183..T-186 (so the doc describes the real model)
+
+### T-188 Cloud-git ops polish — per-project packfile GC + GitLab env wiring guide
+- **Tier:** B
+- **Money/reach rationale:** the blob ledger GC (T-150) tracks LFS
+  blobs, but the per-project bare repos themselves accumulate loose
+  objects + packfiles under Tigris. Without periodic `git
+  repack`/`gc`, storage cost creeps linearly per project. Separately,
+  T-145 supports GitLab but production env vars (`cloud_gitlab_app_id`
+  / `app_secret` / `host`) are not wired in the deploy doc — they're
+  ops, not code.
+- **Priority:** P1
+- **Status:** 🔴 not started
+- **Scope:** introduce `packages/kerf-cloud/src/kerf_cloud/git_gc.py`
+  with `repack_project(workspace_id)` that calls pygit2 / `git repack
+  -ad` against the S3-backed repo (use the T-125 `S3GitStorer.
+  for_project` factory). Scheduler entry: run weekly per
+  recently-active project (cap concurrency at 2). Add a quota readout
+  CLI: `kerf admin repo-size <workspace>` reads packfile + LFS
+  blob sizes from the ledger. Docs: extend the self-host README with
+  the GitLab env-var section (`cloud_gitlab_app_id`,
+  `cloud_gitlab_app_secret`, `cloud_gitlab_host`) and the matching
+  GitHub variables.
+- **Target files/packages:** `packages/kerf-cloud/src/kerf_cloud/
+  git_gc.py` (new), `packages/kerf-cloud/src/kerf_cloud/scheduler/
+  git_gc_runner.py` (new), `packages/kerf-cli/src/kerf_cli/admin.py`
+  (extend), README/self-host docs.
+- **Definition of Done:** `repack_project()` reduces loose-object
+  count on a synthetic repo; scheduler entry registered; CLI prints
+  byte totals; pytest green; docs section added.
+- **Depends-on:** T-125, T-145, T-150
+
