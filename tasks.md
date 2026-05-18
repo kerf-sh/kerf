@@ -3563,7 +3563,7 @@ User-direction 2026-05-18: ship the "two authoring styles, one fabrication targe
 ### T-199 New-file dialog adds `.ato`; extension → editor routing
 - **Tier:** A
 - **Priority:** P1
-- **Status:** 🔴 not started
+- **Status:** ✅ shipped
 - **Scope:** Surface `.ato` as a first-class file-type in the new-file dialog alongside `.tsx` / `.py` / `.md`. Add a small extension-router (`.ato` → `<AtopileEditor>` from T-196; `.tsx` → the existing tscircuit/JSX editor; everything else falls through to the default Monaco editor). Frontend only.
 - **Target files/packages:** `src/components/NewFileDialog.jsx` (additive only; preserve existing options), `src/lib/editorRouter.js` (NEW pure-logic), `src/components/EditorHost.jsx` if present (one-line additive `if (ext==='ato')`), vitest.
 - **Definition of Done:** new-file dialog shows a labelled "Atopile (.ato)" choice and creates a `module Foo: ... end Foo;` skeleton; opening any `.ato` file routes to AtopileEditor; opening `.tsx` still goes to the tscircuit editor; vitest on the router; `npm run build` clean.
