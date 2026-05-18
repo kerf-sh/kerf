@@ -211,6 +211,26 @@ def workspace_to_response(ws: dict) -> dict:
     }
 
 
+def workspace_member_to_response(m: dict) -> dict:
+    """Serialize a workspace_members⋈users row for the members UI.
+
+    NOT user_to_response: these rows have `user_id` (not `id`) and no
+    account_role/is_system, so user_to_response raised KeyError → the
+    workspace-settings page 500'd. Shape matches WorkspaceMembers.jsx:
+    m.user_id, m.role, m.user.{name,email,avatar_url}.
+    """
+    return {
+        "user_id": str(m["user_id"]),
+        "role": m.get("role"),
+        "user": {
+            "id": str(m["user_id"]),
+            "name": m.get("name") or "",
+            "email": m.get("email") or "",
+            "avatar_url": m.get("avatar_url") or "",
+        },
+    }
+
+
 class MeResponse(BaseModel):
     id: str
     email: str
@@ -579,7 +599,7 @@ async def get_workspace(slug: str, request: Request, payload: dict = Depends(req
 
         return {
             **workspace_to_response(ws),
-            "members": [user_to_response(m) for m in members],
+            "members": [workspace_member_to_response(m) for m in members],
         }
 
 

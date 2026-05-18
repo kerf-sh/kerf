@@ -214,8 +214,9 @@ export default function Layout({ children, wide = false, padded = true }) {
             )}
           </div>
           <div className="flex items-center gap-3">
-            {/* Public top-nav: visitor-facing pages always available regardless
-                of auth / cloud state. */}
+            {/* In-app top-nav: Docs only here — Workshop/Library are in
+                the cloud nav below. Marketing pages (Compare/Roadmap/
+                Domains) are intentionally NOT shown to signed-in users. */}
             <nav
               className="hidden md:flex items-center gap-1 mr-1"
               aria-label="Primary"
@@ -225,18 +226,6 @@ export default function Layout({ children, wide = false, padded = true }) {
                 className="text-xs text-ink-300 hover:text-ink-100 px-2 py-1 rounded-md hover:bg-ink-800/80 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-kerf-300/50"
               >
                 Docs
-              </Link>
-              <Link
-                to="/compare"
-                className="text-xs text-ink-300 hover:text-ink-100 px-2 py-1 rounded-md hover:bg-ink-800/80 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-kerf-300/50"
-              >
-                Compare
-              </Link>
-              <Link
-                to="/roadmap"
-                className="text-xs text-ink-300 hover:text-ink-100 px-2 py-1 rounded-md hover:bg-ink-800/80 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-kerf-300/50"
-              >
-                Roadmap
               </Link>
             </nav>
             {/* Cloud top-nav: Workshop hosts the project showcase, Library
