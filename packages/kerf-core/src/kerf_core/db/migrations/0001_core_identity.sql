@@ -146,7 +146,7 @@ create index if not exists chat_messages_thread_id_idx on chat_messages(thread_i
 -- the lineage before the final constraint and are intentionally absent.
 alter table files drop constraint if exists files_kind_check;
 alter table files add constraint files_kind_check check (
-    kind in ('file','folder','assembly','step','drawing','sketch','part','feature','circuit','equations','material','simulation','script','step-ref','assembly_lock','canvas','schedule','view','sheet','duct','pipe','conduit','subd','mesh','render','section','cam_layered','tool','plc_st','plc_ld','quadmesh','print','gem','wiring','firmware','mold')
+    kind in ('file','folder','assembly','step','drawing','sketch','part','feature','circuit','equations','material','simulation','script','step-ref','assembly_lock','canvas','schedule','view','sheet','duct','pipe','conduit','subd','mesh','render','section','cam_layered','tool','plc_st','plc_ld','quadmesh','print','gem','wiring','firmware','mold','pid','optics','layup','dental')
 );
 
 -- ════════════ folded: 002_files_soft_delete_and_revisions.sql ════════════
@@ -211,3 +211,23 @@ alter table projects drop column if exists owner_id;
 delete from projects where workspace_id is null;
 alter table projects alter column workspace_id set not null;
 create index if not exists projects_workspace_id_idx on projects(workspace_id);
+
+-- ════════════ folded: dental_cases (T-171) ════════════
+-- The kerf-dental package needs a per-case anatomy / treatment record
+-- attached to a project. Folded into the kerf-core baseline per the
+-- clean-baseline rule (no package-local migrations on the shared DB).
+create table if not exists dental_cases (
+    id          uuid primary key default gen_random_uuid(),
+    project_id  uuid not null references projects(id) on delete cascade,
+    patient_ref text not null default '',
+    tooth_ids   text[] not null default '{}',
+    treatment   text not null default 'crown'
+        check (treatment in ('crown', 'aligner', 'guide', 'bridge', 'veneer', 'inlay')),
+    notes       text not null default '',
+    created_at  timestamptz not null default now(),
+    updated_at  timestamptz not null default now()
+);
+create index if not exists dental_cases_project_id_idx
+    on dental_cases(project_id);
+create index if not exists dental_cases_treatment_idx
+    on dental_cases(treatment);
