@@ -201,6 +201,70 @@ kerf-server library-import --manifest samples/libraries/adafruit-sensors.yaml
 
 ---
 
+---
+
+## Hero Render — GPU Cycles worker (T-106e)
+
+The Hero Render pipeline (viewport "Hero Render…" button) dispatches high-sample Blender Cycles render jobs to a dedicated worker. Two paths are available: the hosted Kerf Cloud worker (billed against kerf_paid credits) and a self-hosted worker running on your own GPU machine.
+
+### Option A — Self-hosted Docker worker (own GPU box)
+
+Build and run the containerised cycles worker against your local kerf-server:
+
+```sh
+# GPU build (CUDA; requires nvidia-container-toolkit)
+docker build \
+  -f packages/kerf-render/Dockerfile.cycles-worker \
+  --build-arg GPU=true \
+  -t kerf/cycles-worker:gpu .
+
+# CPU-only build (falls back to CPU rendering in Blender)
+docker build \
+  -f packages/kerf-render/Dockerfile.cycles-worker \
+  --build-arg GPU=false \
+  -t kerf/cycles-worker:cpu .
+
+# Run against a local kerf-server
+docker run --gpus all \
+  -e KERF_API_URL=http://host.docker.internal:8080 \
+  -e KERF_API_TOKEN=<your-api-token> \
+  kerf/cycles-worker:gpu
+```
+
+The container bundles Blender 4.1. For a CPU-only host, drop `--gpus all` and use the `:cpu` image.
+
+### Option B — BYO Blender (point to an existing install)
+
+If you already have Blender installed, set `KERF_BLENDER_PATH` and skip the Docker image entirely:
+
+```sh
+# macOS example
+export KERF_BLENDER_PATH="/Applications/Blender.app/Contents/MacOS/Blender"
+
+# Linux example
+export KERF_BLENDER_PATH="/opt/blender-4.1.1/blender"
+
+# Launch the worker directly (no Docker)
+python -m kerf_render.cycles_worker
+```
+
+`KERF_BLENDER_PATH` overrides the bundled `/opt/blender/blender` in both the Docker entrypoint and the bare Python worker. Leave it unset to use `blender` on `PATH`.
+
+### Browser fallback (free preview / offline)
+
+When the worker is unreachable (server returns 503 or the request fails), the viewport automatically falls back to an in-browser path-traced preview using `three-gpu-pathtracer`. This delivers caustics, dispersion, and SSS directly on the user's GPU via WebGL2 — no server required. The fallback banner reads "Rendering in browser (free preview)".
+
+### Worker environment variables
+
+| Variable | Default | Description |
+|---|---|---|
+| `KERF_BLENDER_PATH` | (empty — use `blender` on PATH or bundled) | Path to a user-supplied Blender binary |
+| `KERF_API_URL` | (empty — standalone / test mode) | Base URL of the Kerf API this worker reports to |
+| `KERF_API_TOKEN` | (empty) | Auth token for the Kerf API |
+| `KERF_WORKER_CONCURRENCY` | `1` | Parallel render jobs; GPU boxes typically use 1 |
+
+---
+
 ## Related pages
 
 - [cloud-features.md](./cloud-features.md) — self-host vs cloud comparison

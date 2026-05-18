@@ -32,6 +32,7 @@ import { recordTurntable as _recordTurntable } from '../lib/turntableRender.js'
 import { attachDfmOverlay, detachDfmOverlay, refreshDfm } from '../lib/dfmOverlay.js'
 import { renderHeroSet as _renderHeroSet } from '../lib/heroRender.js'
 import { captureHeroShot as _captureHeroShot } from '../lib/heroShot.js'
+import HeroRenderPanel from './HeroRenderPanel.jsx'
 
 const PALETTE = [0xc9a96b, 0x6b9bc9, 0xc96b89, 0x89c96b, 0xc9b86b, 0x9b6bc9]
 const HIGHLIGHT_EMISSIVE = 0x4d3c00 // kerf yellow tint
@@ -163,6 +164,9 @@ function Renderer({
   // planner can group identical parts into InstancedMesh objects.
   // Only used when KERF_INSTANCING is on. Non-assembly callers omit this.
   assemblyComponents = null,
+  // Hero Render: project ID forwarded to HeroRenderPanel for the gallery tab
+  // and render job submission.
+  projectId = null,
 }, ref) {
   const mountRef = useRef(null)
   const stateRef = useRef(null) // holds three.js objects across renders
@@ -189,6 +193,8 @@ function Renderer({
   // The render-controls dropdown (Daylight / Zebra / Bloom / HDRI bg)
   // replaces the old scattered floating toggle buttons.
   const [renderMenuOpen, setRenderMenuOpen] = useState(false)
+  // Hero Render panel — opened from the Render dropdown.
+  const [showHeroPanel, setShowHeroPanel] = useState(false)
   // Hero-shot capture in-flight flag so we can dim the chrome while the
   // upscale + blob encode is running.  Pure UX cue, no rendering effect.
   // Hero-shot capture in-flight flag. Set by doCaptureHeroShot; the
@@ -1463,10 +1469,31 @@ function Renderer({
                   </span>
                 </button>
               ))}
+              <div className="border-t border-ink-800 my-1" />
+              <button
+                type="button"
+                onClick={() => { setRenderMenuOpen(false); setShowHeroPanel(true) }}
+                className="w-full flex items-center gap-2.5 px-3 py-2 text-left hover:bg-ink-800"
+              >
+                <span className="grid place-items-center w-4 h-4 rounded border border-kerf-300/60 flex-shrink-0 text-kerf-300">
+                  ✦
+                </span>
+                <span className="flex-1 min-w-0">
+                  <span className="block text-[12px] text-kerf-300 font-semibold">Hero Render…</span>
+                  <span className="block text-[10px] text-ink-500">High-fidelity PNG + EXR export</span>
+                </span>
+              </button>
             </div>
           </>
         )}
       </div>
+      {showHeroPanel && (
+        <HeroRenderPanel
+          onClose={() => setShowHeroPanel(false)}
+          projectId={projectId}
+          rendererRef={stateRef}
+        />
+      )}
     </div>
   )
 }

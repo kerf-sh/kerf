@@ -69,3 +69,39 @@ CREATE TABLE IF NOT EXISTS render_jobs (
 
 CREATE INDEX IF NOT EXISTS render_jobs_user_id_idx ON render_jobs (user_id);
 CREATE INDEX IF NOT EXISTS render_jobs_status_idx  ON render_jobs (status);
+
+-- ════════════ folded: 066_render_billing.sql ════════════
+
+-- Render billing tables for the GPU-render credit meter (T-106d).
+--
+-- render_cache: cache-key deduplification so repeated identical renders
+--   cost zero credits (and zero GPU time).
+--
+-- render_free_quota: Studio-tier monthly entitlement (3 free Hero renders
+--   per calendar month).  One row per (user_id, month).
+--
+-- render_usage_events: append-only ledger of every render job, whether
+--   charged or not.  Used for COGS reconciliation and user billing history.
+--
+-- All tables are fully idempotent (CREATE IF NOT EXISTS / ON CONFLICT DO NOTHING).
+
+CREATE TABLE IF NOT EXISTS render_cache (
+    cache_key   text        PRIMARY KEY,
+    created_at  timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS render_free_quota (
+    user_id                 uuid    NOT NULL,
+    month                   text    NOT NULL,  -- 'YYYY-MM'
+    hero_renders_remaining  int     NOT NULL DEFAULT 3,
+    PRIMARY KEY (user_id, month)
+);
+
+CREATE TABLE IF NOT EXISTS render_usage_events (
+    job_id          uuid        PRIMARY KEY,
+    user_id         uuid,
+    preset          text        NOT NULL DEFAULT '',
+    gpu_seconds     float8      NOT NULL DEFAULT 0,
+    credits_charged float8      NOT NULL DEFAULT 0,
+    recorded_at     timestamptz NOT NULL DEFAULT now()
+);

@@ -32,6 +32,7 @@ These surfaces presuppose a hosted, multi-tenant server. They have no meaningful
 | Operator distributor sweep | Polls DigiKey / Mouser / LCSC with operator-owned credentials. Self-hosters can configure their own credentials and run the same sweep. |
 | Pre-computation workers (STEP pre-tessellation, pricing refresh) | Operator-side convenience. Self-host tessellates locally in-browser; STEP imports still work. |
 | Transactional email | System emails (welcome, password reset, billing receipts). Not meaningful for a single-user local install. |
+| Kerf Cloud GPU Cycles worker | Operator-run GPU farm metered against kerf_paid credits. Self-hosters run their own cycles-worker Docker image on their own GPU box, or point `KERF_BLENDER_PATH` at a local Blender install. The in-browser `three-gpu-pathtracer` fallback works on both — it requires no server at all. See [local-self-host.md §Hero Render](./local-self-host.md#hero-render--gpu-cycles-worker-t-106e). |
 
 ---
 
@@ -62,6 +63,8 @@ No matter which tier or whether you are on Kerf Cloud or self-hosting:
 | Usage metering / billing | No | Yes |
 | Pre-computation workers | Local fallback | Operator-run |
 | Transactional email | No | Yes |
+| Hero Render in-browser fallback (`three-gpu-pathtracer`) | Yes — no server needed | Yes — also available offline |
+| Hero Render Blender Cycles (server-side) | Yes — BYO Blender or self-hosted Docker worker | Yes — Kerf Cloud GPU farm (kerf_paid credits) |
 
 ---
 

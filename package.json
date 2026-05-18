@@ -50,6 +50,7 @@
     "sucrase": "^3.35.1",
     "svg2pdf.js": "^2.7.0",
     "three": "^0.160.0",
+    "three-gpu-pathtracer": "^0.0.24",
     "three-mesh-bvh": "^0.9.9",
     "tscircuit": "^0.0.1736",
     "zustand": "^5.0.2"
