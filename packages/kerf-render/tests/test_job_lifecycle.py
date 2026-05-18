@@ -88,12 +88,13 @@ class FakePool:
 # ---------------------------------------------------------------------------
 
 
-def test_migration_065_present_and_idempotent():
+def test_migration_render_jobs_present_and_idempotent():
+    """render_jobs lives in the consolidated baseline 0010_github_app_render.sql."""
     here = pathlib.Path(__file__).resolve()
     repo = here.parents[3]
     mig = (
         repo
-        / "packages/kerf-core/src/kerf_core/db/migrations/065_render_jobs.sql"
+        / "packages/kerf-core/src/kerf_core/db/migrations/0010_github_app_render.sql"
     )
     sql = mig.read_text()
     assert "CREATE TABLE IF NOT EXISTS render_jobs" in sql
