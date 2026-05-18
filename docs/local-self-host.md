@@ -265,6 +265,33 @@ When the worker is unreachable (server returns 503 or the request fails), the vi
 
 ---
 
+## GitLab & GitHub OAuth env vars
+
+The following environment variables enable the optional GitHub and GitLab
+sync providers (implemented in T-144/T-145). They are **not required** for a
+working self-hosted install — Kerf always retains git history internally and
+functions fully without any external provider configured. Set these only if you
+want users to be able to push/pull to their own GitHub repositories or a
+self-managed GitLab instance from within the Kerf UI.
+
+| Env var | Notes |
+|---|---|
+| `cloud_github_app_id` | GitHub App ID (from the App settings page on github.com) |
+| `cloud_github_app_secret` | GitHub App private key or client secret used for OAuth |
+| `cloud_github_webhook_secret` | Shared secret for validating incoming GitHub webhook payloads |
+| `cloud_gitlab_app_id` | GitLab OAuth application ID |
+| `cloud_gitlab_app_secret` | GitLab OAuth application secret |
+| `cloud_gitlab_host` | Base URL of the GitLab instance (defaults to `https://gitlab.com`); set this to your self-managed host, e.g. `https://gitlab.example.com`) |
+
+All six vars are consumed by the `kerf-cloud` plugin only when
+`KERF_CLOUD=1` (or `cloud_enabled = true` in `kerf.toml`) is set. Without
+them the sync UI is hidden; with them users see a "Connect to GitHub" /
+"Connect to GitLab" button in project settings. Kerf's internal git history
+(backed by the filesystem or S3) is always present regardless of whether these
+providers are configured.
+
+---
+
 ## Related pages
 
 - [cloud-features.md](./cloud-features.md) — self-host vs cloud comparison

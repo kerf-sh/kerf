@@ -213,6 +213,10 @@ def _build_parser() -> argparse.ArgumentParser:
     # ---- import ----
     _add_import_parser(sub)
 
+    # ---- admin ----
+    from kerf_cli.admin import add_admin_parser  # noqa: PLC0415
+    add_admin_parser(sub)
+
     return parser
 
 
