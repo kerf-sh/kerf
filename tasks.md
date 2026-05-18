@@ -3228,7 +3228,7 @@ sector. Establishes the foothold; deeper depth tasks follow in the same T-NN ser
 - **Definition of Done:** Darcy-Weisbach pressure drop matches to 1%; reducer flat pattern has correct developed length (analytic); duct sizing for a fixture flow produces a valid dimension; pytest analytic oracles.
 - **Depends-on:** T-3
 
-### T-182 Landing + Domains pages — surface the new sectors
+### T-182 Landing + Domains + Comparison matrix — surface the new sectors
 - **Tier:** B
 - **Money/reach rationale:** every new domain shipped this session
   (aerospace composites, dental, optics, horology, piping, packaging,
@@ -3241,11 +3241,14 @@ sector. Establishes the foothold; deeper depth tasks follow in the same T-NN ser
   and the Domains hub/pages (`src/routes/domains/`) in the SAME style as
   the existing domains (Mechanical/Electronics/Architecture/Jewelry/
   Automotive) — cards/links + per-domain blurbs as the existing pattern
-  dictates. Frontend only.
+  dictates. ALSO update the competitor comparison matrix/pages
+  (`src/routes/compare/`) so every new sector appears there too,
+  consistent with the existing rows. Frontend only.
 - **Target files/packages:** `src/routes/Landing.jsx`,
-  `src/routes/domains/` (+ `groupTaxonomy.js`/nav if needed), vitest.
-- **Definition of Done:** Landing + Domains list every shipped sector;
-  vitest on any pure helper; `npm run build` clean. UI change — needs
-  user dev verification.
+  `src/routes/domains/`, `src/routes/compare/`
+  (+ `groupTaxonomy.js`/nav if needed), vitest.
+- **Definition of Done:** Landing + Domains + the comparison matrix
+  list every shipped sector; vitest on any pure helper; `npm run build`
+  clean. UI change — needs user dev verification.
 - **Depends-on:** the sector seeds (T-165..T-181) landed
 
