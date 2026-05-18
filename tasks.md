@@ -2518,3 +2518,25 @@ frontend tasks (T-147/T-148) serialize behind other frontend work.
   `parent_shas`; a merge commit renders with a merge lane; schema reset
   clean, 0 back-stamped; tests green.
 - **Depends-on:** T-125, T-148
+
+### T-152 GitLab connection persistence (clean-baseline migration)
+- **Tier:** B
+- **Money/reach rationale:** T-145's `GitLabProvider` works for push/
+  pull/status but `connect`/`disconnect` cannot persist — the schema
+  has no GitLab columns/token table. Until this lands, a GitLab mirror
+  can't be durably attached to a project.
+- **Priority:** P1
+- **Status:** 🔴 not started
+- **Scope:** clean-baseline DDL — add `gitlab_host`/`gitlab_namespace`/
+  `gitlab_project` to `cloud_git_repos` (folded into `0012_cloud_git.sql`,
+  NOT an alter shim) and a `cloud_gitlab_tokens` table analogous to
+  `cloud_github_tokens` (fold into its baseline `0006`/`0010`). Wire
+  `GitLabProvider.connect`/`disconnect`/`status` to persist. **SOLO
+  migration task** — DROP SCHEMA reset; run only when NO other agent
+  uses the shared DB; verify all migrations apply, 0 back-stamped.
+- **Target files/packages:** `0012_cloud_git.sql` + the github-tokens
+  baseline, `git_providers/gitlab.py`, tests.
+- **Definition of Done:** GitLab connect/disconnect persist + survive
+  reload; schema reset clean, 0 back-stamped; existing git-provider
+  tests still green.
+- **Depends-on:** T-145
