@@ -1,15 +1,22 @@
 """
-Compatibility shims for running kerf_civil outside the kerf-core runtime.
+Compatibility shims for running kerf_civil outside of the full Kerf backend.
 
-Mirrors the pattern used in kerf_fem._compat.
+When kerf_civil is imported as a standalone package (e.g., during testing or
+scripting) the real kerf_core / kerf_chat registry may not be on the path.
+These thin replacements allow the module to import cleanly; at runtime the
+real implementations from kerf-core are used.
 """
 
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Callable
 
+
+# ---------------------------------------------------------------------------
+# ToolSpec / registry shims
+# ---------------------------------------------------------------------------
 
 @dataclass
 class ToolSpec:
@@ -36,9 +43,21 @@ def err_payload(msg: str, code: str) -> str:
     return json.dumps({"error": msg, "code": code})
 
 
+# ---------------------------------------------------------------------------
+# ProjectCtx shim
+# ---------------------------------------------------------------------------
+
 class ProjectCtx:
-    def __init__(self, pool=None, project_id=None, user_id=None, storage=None,
-                 http_client=None):
+    """Minimal stand-in for kerf_core.utils.context.ProjectCtx."""
+
+    def __init__(
+        self,
+        pool=None,
+        project_id=None,
+        user_id=None,
+        storage=None,
+        http_client=None,
+    ):
         self.pool = pool
         self.project_id = project_id
         self.user_id = user_id

@@ -2,35 +2,56 @@
 kerf-civil plugin entry-point.
 
 Registers:
-  - LLM tools: civil_crs_transform, civil_tin_build
+  - LLM tools: civil_horizontal_alignment, civil_vertical_alignment,
+               civil_corridor_sections, civil_earthwork_volume
 """
 
 from __future__ import annotations
 
 from fastapi import FastAPI
 
-# Check for optional pyproj
-_PYPROJ_AVAILABLE = False
-try:
-    import pyproj  # noqa: F401
-    _PYPROJ_AVAILABLE = True
-except ImportError:
-    pass
-
 
 async def register(app: FastAPI, ctx):
     """Plugin entry-point — called by the kerf-core plugin loader at startup."""
 
     from kerf_civil.tools import (
-        civil_crs_transform_spec, run_civil_crs_transform,
-        civil_tin_build_spec, run_civil_tin_build,
+        civil_horizontal_alignment_spec,
+        run_civil_horizontal_alignment,
+        civil_vertical_alignment_spec,
+        run_civil_vertical_alignment,
+        civil_corridor_sections_spec,
+        run_civil_corridor_sections,
+        civil_earthwork_volume_spec,
+        run_civil_earthwork_volume,
     )
-    ctx.tools.register("civil_crs_transform", civil_crs_transform_spec, run_civil_crs_transform)
-    ctx.tools.register("civil_tin_build", civil_tin_build_spec, run_civil_tin_build)
 
-    provides = ["civil.tin", "civil.crs"]
-    if _PYPROJ_AVAILABLE:
-        provides.append("civil.crs.full")  # full EPSG library via pyproj
+    ctx.tools.register(
+        "civil_horizontal_alignment",
+        civil_horizontal_alignment_spec,
+        run_civil_horizontal_alignment,
+    )
+    ctx.tools.register(
+        "civil_vertical_alignment",
+        civil_vertical_alignment_spec,
+        run_civil_vertical_alignment,
+    )
+    ctx.tools.register(
+        "civil_corridor_sections",
+        civil_corridor_sections_spec,
+        run_civil_corridor_sections,
+    )
+    ctx.tools.register(
+        "civil_earthwork_volume",
+        civil_earthwork_volume_spec,
+        run_civil_earthwork_volume,
+    )
+
+    provides = [
+        "civil.horizontal_alignment",
+        "civil.vertical_alignment",
+        "civil.corridor",
+        "civil.earthwork",
+    ]
 
     try:
         from kerf_core.plugin import PluginManifest

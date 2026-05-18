@@ -7,16 +7,12 @@ name = "kerf-civil"
 version = "0.1.0"
 license = { text = "MIT" }
 classifiers = ["License :: OSI Approved :: MIT License"]
-description = "Civil engineering plugin for Kerf — geospatial CRS + TIN terrain"
+description = "Civil engineering plugin for Kerf — horizontal/vertical alignment, corridor, earthwork"
 requires-python = ">=3.11"
 dependencies = [
-    "numpy",
-    "scipy",
-]
-
-[project.optional-dependencies]
-crs = [
-    "pyproj>=3.6",
+    "fastapi",
+    "asyncpg",
+    "aiohttp",
 ]
 
 [project.entry-points."kerf.plugins"]
