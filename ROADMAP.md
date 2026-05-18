@@ -334,7 +334,15 @@ on the MCU it just designed.** When mechanism actuators land (P2), the same
 project also simulates the actuator that the firmware drives. **One project,
 multiple layers** — that is the moat no incumbent tool offers because no
 incumbent tool sits across mechanical / electronic / firmware / simulation at
-once. Tickets T-225..T-230 in [`tasks.md`](./tasks.md) scope the rebuild.
+once. Tickets T-225..T-230 in [`tasks.md`](./tasks.md) scoped the rebuild and
+have **all ✅ shipped** — the direct-gcc orchestrator now subprocesses
+`avr-gcc` / `arm-none-eabi-gcc` / `xtensa-esp32-gcc` / `riscv-none-elf-gcc`
+directly; PlatformIO's library registry + Arduino's `library_index.json` are
+called over HTTP; `kerf.fw.json` is the JSON-everywhere project manifest;
+upload wrappers (avrdude / esptool / stm32flash / bossac) + serial monitor
+(pyserial + WebSerial) + `make_arduino_sketch(spec)` LLM tool all landed.
+Depth follow-ups (RTOS primitives, OTA, RTOS-aware debug, power profiles,
+pin-map cross-check vs PCB, USB-class drivers) are queued as T-259..T-265.
 
 **Why direct-gcc, not `subprocess pio`:**
 
@@ -355,12 +363,13 @@ once. Tickets T-225..T-230 in [`tasks.md`](./tasks.md) scope the rebuild.
 
 | Capability | Reference | Status |
 |---|---|---|
-| **Board catalogue** mirroring ~200 popular boards (Arduino UNO/Nano/Mega, Teensy 3.x/4.x, STM32 BluePill/Nucleo, ESP8266/ESP32 family, RP2040, AVR/ATtiny, SAMD21/SAMD51, nRF52, ESP32-C3/S3 RISC-V) with MCU / arch / flash / RAM / pin-map metadata | PlatformIO `boards.json` | 🔴 not started (T-225) |
-| **Library registry HTTP client** — PlatformIO v3 + Arduino library_index.json + content-addressed cache that dedups libraries across user projects (same pattern as Git LFS) | api.registry.platformio.org/v3 | 🔴 not started (T-225, T-226) |
-| **Direct-gcc build orchestrator** — per-architecture build profiles, subprocess `avr-gcc` / `arm-none-eabi-gcc` / `xtensa-esp32-gcc` / `riscv-none-elf-gcc` | CalculiX/Z88-pattern subprocess bridge | 🔴 not started (T-227) |
-| **Upload wrappers** — `avrdude`, `esptool.py`, `stm32flash`, `bossac`. Local CLI only (needs physical USB) — cloud surfaces a "this requires the local Kerf CLI" hint | avrdude/esptool/stm32flash | 🔴 not started (T-228) |
-| **Serial monitor** — pyserial in the local CLI, WebSerial in the browser when supported | pyserial / WebSerial API | 🔴 not started (T-229) |
-| **LLM tool `make_arduino_sketch(spec)`** + `kerf.fw.json` schema | new | 🔴 not started (T-230) |
+| **Board catalogue** mirroring ~200 popular boards (Arduino UNO/Nano/Mega, Teensy 3.x/4.x, STM32 BluePill/Nucleo, ESP8266/ESP32 family, RP2040, AVR/ATtiny, SAMD21/SAMD51, nRF52, ESP32-C3/S3 RISC-V) with MCU / arch / flash / RAM / pin-map metadata | PlatformIO `boards.json` | ✅ shipped (T-225) |
+| **Library registry HTTP client** — PlatformIO v3 + Arduino library_index.json + content-addressed cache that dedups libraries across user projects (same pattern as Git LFS) | api.registry.platformio.org/v3 | ✅ shipped (T-225, T-226) |
+| **Direct-gcc build orchestrator** — per-architecture build profiles, subprocess `avr-gcc` / `arm-none-eabi-gcc` / `xtensa-esp32-gcc` / `riscv-none-elf-gcc` | CalculiX/Z88-pattern subprocess bridge | ✅ shipped (T-227) |
+| **Upload wrappers** — `avrdude`, `esptool.py`, `stm32flash`, `bossac`. Local CLI only (needs physical USB) — cloud surfaces a "this requires the local Kerf CLI" hint | avrdude/esptool/stm32flash | ✅ shipped (T-228) |
+| **Serial monitor** — pyserial in the local CLI, WebSerial in the browser when supported | pyserial / WebSerial API | ✅ shipped (T-229) |
+| **LLM tool `make_arduino_sketch(spec)`** + `kerf.fw.json` schema | new | ✅ shipped (T-230) |
+| **Firmware depth follow-ups** — RTOS primitives, embedded LLM tool catalogue (I2C/SPI/UART/CAN/OneWire), OTA, RTOS-aware debugger, power profiling, pin-map cross-check vs PCB, USB-class drivers | FreeRTOS / Zephyr / Arduino libs | 🔴 not started (T-259..T-265) |
 
 ### §3.5b — Silicon / EDA / VHDL — open-source full-flow chip design
 
@@ -407,13 +416,20 @@ open-source primitives that make this reachable in 2026:
 front-end (RTL editing + behavioural simulation + sub-process bridges to
 production tools), Phase 2 is a real back-end (layout, PDK, RTL → GDS-II),
 Phase 3 is the verification + characterisation depth that distinguishes
-"educational" from "tape-out-ready." Tickets T-231..T-248 cover all three.
+"educational" from "tape-out-ready." Tickets T-231..T-248 cover all three —
+**Phase 1 + Phase 2 + Phase 3 are now essentially complete (✅ shipped 2026-05-19).**
+**Phase 4 — verification depth + post-silicon** (cocotb-style Python testbench
+harness, power analysis from extracted parasitics + Liberty, static timing
+analysis, clock-tree synthesis, antenna + latch-up DRC extensions, formal
+equivalence checking, Tiny Tapeout + Efabless / Caravel harness packagers,
+open analog-cell library) is queued at T-249..T-258.
 
 | Phase | Tickets | Capability | Status |
 |---|---|---|---|
-| **Phase 1 — RTL front-end** | T-231..T-236 | Pure-Python VHDL + Verilog lexer/parser, behavioural VHDL event-driven scheduler with delta cycles, Yosys subprocess bridge, GHDL subprocess bridge, ngspice mixed-signal extension. Educational + small-design tape-out path. | 🔴 not started |
-| **Phase 2 — Layout back-end** | T-237..T-242 | GDS-II reader/writer (pure Python; KLayout-shape data model), in-browser layout viewer (SVG/Canvas — no klayout GUI), Skywater 130 nm PDK integration, LEF/DEF reader, Liberty (`.lib`) reader, OpenROAD/OpenLane subprocess flow producing real GDS-II from RTL. | 🔴 not started |
-| **Phase 3 — Verification + characterisation** | T-243..T-248 | Schematic→mask flow, DRC engine, LVS (layout-vs-schematic), parasitic extraction, photolithography mask generation, characterisation for a target PDK node. | 🔴 not started |
+| **Phase 1 — RTL front-end** | T-231..T-236 | Pure-Python VHDL + Verilog lexer/parser, behavioural VHDL event-driven scheduler with delta cycles, Yosys subprocess bridge, GHDL subprocess bridge, ngspice mixed-signal extension. Educational + small-design tape-out path. | ✅ shipped |
+| **Phase 2 — Layout back-end** | T-237..T-242 | GDS-II reader/writer (pure Python; KLayout-shape data model), in-browser layout viewer (SVG/Canvas — no klayout GUI), Skywater 130 nm PDK integration, LEF/DEF reader, Liberty (`.lib`) reader, OpenROAD/OpenLane subprocess flow producing real GDS-II from RTL. | ✅ shipped |
+| **Phase 3 — Verification + characterisation** | T-243..T-248 | Schematic→mask flow, DRC engine, LVS (layout-vs-schematic), parasitic extraction, photolithography mask generation, characterisation for a target PDK node. | ✅ shipped |
+| **Phase 4 — verification depth + post-silicon** | T-249..T-258 | Cocotb-compatible Python testbench harness, power analysis from parasitics + Liberty, static timing analysis, clock-tree synthesis seed, antenna check + latch-up DRC extensions, formal equivalence checking, Tiny Tapeout + Efabless / Caravel harness packagers, open analog-cell library (op-amps / comparators / bandgaps). | 🔴 not started |
 
 The competitive frame is *not* "we replace Virtuoso in 18 months" — it is
 "we are the only browser-accessible chat-driven RTL-to-GDS-II tool" the
@@ -435,31 +451,35 @@ handle viscous CFD, composites (T-173) ships drape/CLT/failure-seed, STEP AP203/
 the structure and the trajectory** — the layer where engineers actually design wings,
 plan launches, size engines, control spacecraft attitude.
 
-Top 10 gaps closing this gap (P1, in flight as agent work):
+Top 10 gaps (P1, **all ✅ shipped 2026-05-19** — `packages/kerf-aero/` carries the
+full stack):
 
-| # | Gap | Why it matters |
-|---|-----|----------------|
-| 1 | **Vortex-lattice / panel-method aero (VLM, XFOIL-class)** | Wing design, polars, lift-distributions; the bread-and-butter low-speed aero solver |
-| 2 | **Aeroelasticity / flutter (NASTRAN p-k method, doublet-lattice)** | Aircraft cert blocker — must clear flutter speed before flight |
-| 3 | **Airfoil library** (NACA 4/5-digit gen + UIUC Selig DB, ~1500 airfoils) | First click of any aero design |
-| 4 | **6-DOF flight dynamics** + ISA atmosphere | Aircraft/rocket trajectory, autopilot, control derivatives |
-| 5 | **Orbital mechanics** (Kepler/Lambert/Hohmann + J2/J3 perturbations) | Sat/spacecraft missions, launch trajectory |
-| 6 | **Rocket propulsion / NASA CEA** (chemical-equilibrium engine perf) | Liquid + solid + hybrid engine design |
-| 7 | **Composite laminate failure depth** (Tsai-Wu, Tsai-Hill, interlaminar shear) | Composite cert path — extends T-173 |
-| 8 | **Aerospace materials DB** (7075-T6, Ti-6Al-4V, Inconel 718, CFRP prepreg) | Stress + thermal + fatigue inputs |
-| 9 | **Spacecraft ADCS** (quaternion attitude + reaction wheels + magnetorquers) | Smallsat / cubesat customer base |
-| 10 | **Spacecraft thermal control** (radiative network, view factors, solar flux) | Smallsat / cubesat thermal design |
+| # | Gap | Why it matters | Status |
+|---|-----|----------------|--------|
+| 1 | **Vortex-lattice / panel-method aero (VLM, XFOIL-class)** | Wing design, polars, lift-distributions; the bread-and-butter low-speed aero solver | ✅ shipped (`vlm.py` + `panel_2d.py`) |
+| 2 | **Aeroelasticity / flutter (NASTRAN p-k method, doublet-lattice)** | Aircraft cert blocker — must clear flutter speed before flight | ✅ shipped (`flutter_pk.py` + `doublet_lattice.py` + `aeroelasticity.py`) |
+| 3 | **Airfoil library** (NACA 4/5-digit gen + UIUC Selig DB, ~1500 airfoils) | First click of any aero design | ✅ shipped (`airfoils/{naca,selig,database}.py`) |
+| 4 | **6-DOF flight dynamics** + ISA atmosphere | Aircraft/rocket trajectory, autopilot, control derivatives | ✅ shipped (`flight_dynamics/{sixdof,atmosphere,coefficients}.py`) |
+| 5 | **Orbital mechanics** (Kepler/Lambert/Hohmann + J2/J3 perturbations) | Sat/spacecraft missions, launch trajectory | ✅ shipped (`orbital/{kepler,lambert,transfers,perturbations}.py`) |
+| 6 | **Rocket propulsion / NASA CEA** (chemical-equilibrium engine perf) | Liquid + solid + hybrid engine design | ✅ shipped (`propulsion/{cea_lite,nozzle,rocket_eq,staging}.py`) |
+| 7 | **Composite laminate failure depth** (Tsai-Wu, Tsai-Hill, interlaminar shear) | Composite cert path — extends T-173 | ✅ shipped (depth folded into `kerf-composites`) |
+| 8 | **Aerospace materials DB** (7075-T6, Ti-6Al-4V, Inconel 718, CFRP prepreg) | Stress + thermal + fatigue inputs | ✅ shipped (folded into `kerf-cad-core/materials/`) |
+| 9 | **Spacecraft ADCS** (quaternion attitude + reaction wheels + magnetorquers) | Smallsat / cubesat customer base | ✅ shipped (`adcs/{attitude,reaction_wheels,magnetorquer,control_allocation}.py`) |
+| 10 | **Spacecraft thermal control** (radiative network, view factors, solar flux) | Smallsat / cubesat thermal design | ✅ shipped (`thermal/{network,view_factors,solar_flux,coatings}.py`) |
 
-Tracked-but-not-yet-prioritised aerospace gaps (kept honest):
-- **DO-178C / DO-254** certification doc artefacts (software / hardware)
-- **Aerospace fasteners** (Hi-Lok, Cherry, NAS/MS/AS standards)
-- **Heat-shield / ablation** for re-entry
-- **Aero-acoustics** (FW-H equation, engine noise)
-- **Aircraft conceptual sizing** (Raymer / Roskam methods)
-- **Stability derivatives** (Cl_α, Cn_β, Cm_α, control-effectiveness tables)
-- **CFD visualisation** (streamlines, shock detection, vortex-core extraction)
+Tracked-but-not-yet-prioritised aerospace gaps (kept honest) — **promoted to P1
+follow-up tickets T-266..T-272 (queued 2026-05-19)**:
+- **XFOIL-class viscous solver** (boundary-layer + transition) — extension to the shipped VLM panel — T-266
+- **Aircraft conceptual sizing** (Raymer / Roskam weight-fraction method) — T-267
+- **Stability derivatives** (Cl_α, Cn_β, Cm_α, control-effectiveness tables) — T-268
+- **Aero-acoustics** (FW-H equation, engine + propeller noise) — T-269
+- **Heat-shield / ablation** for re-entry — T-270
+- **Aerospace fasteners** (Hi-Lok, Cherry, NAS/MS/AS standards) — T-271
+- **DO-178C / DO-254** certification doc artefacts (software / hardware) — T-272
 
-These tracked-only items move to P1 when there's a documented customer pull. Until then they sit in §6 long-term horizon — visible, not invented work.
+Once these land, the residual unbuilt slice is CFD-visualisation polish
+(streamlines / shock detection / vortex-core extraction) which rides the
+CFD foundation (T-101) rather than aerospace-specific code.
 
 The cluster mostly lives in a new `packages/kerf-aero/` package, with depth extensions
 flowing back into `kerf-composites` (T-173) and `kerf-cad-core/materials/` (T-115/T-214).
@@ -467,6 +487,33 @@ ngspice already covers analog/RF (electronics). The convergence framing: tscircu
 designs the avionics PCB → kerf-firmware (T-225..T-230) flashes the autopilot →
 kerf-aero/flight_dynamics simulates the trajectory the autopilot will fly. **One project,
 many layers** — the same moat shape as electronics/firmware/motion.
+
+---
+
+### §3.5d — Frontend integration debt (wire-up backlog T-273..T-280)
+
+The §3.5a / §3.5b / §3.5c backends shipped fast — fast enough that the
+frontend has not yet caught up. The work in this sub-section is **not new
+capability**; it is the wire-up that converts those Python packages from
+"we have it" into "an evaluator can click it." It is sequenced ahead of new
+sector work because a shipped capability that no user can reach pays no
+credibility dividend.
+
+| # | Frontend gap | Backend already shipped | Ticket |
+|---|--------------|-------------------------|--------|
+| 1 | LayoutViewer accepts a real GDS upload + renders with SKY130-coloured palette | T-237 (GDS-II I/O) + T-238 (viewer) + T-239 (SKY130) | T-273 |
+| 2 | Firmware Build / Upload / Monitor buttons wired into the file-tree right-rail | T-225..T-230 (full firmware pipeline) | T-274 |
+| 3 | Comparison matrix gains silicon (vs Cadence / Synopsys), firmware (vs PlatformIO / Arduino IDE), aerospace (vs ANSYS Fluent / STK) columns | T-225..T-248 + aerospace top-10 | T-275 |
+| 4 | `/silicon`, `/firmware`, `/aerospace` domain landing routes | all three packages | T-276 |
+| 5 | Docs-viewer LLM consolidation indexes `kerf-silicon` / `kerf-firmware` / `kerf-aero` llm_docs | all three packages have `llm_docs/` | T-277 |
+| 6 | New-file dialog surfaces `.vhd` / `.v` / `.sv` / `.gds` / `.lef` / `.lib` / `.spice` / `.fw.json` / `.ato` / `.ino` as first-class types | T-248 (file-kind enum) | T-278 |
+| 7 | Landing page sector cards for silicon + firmware + aerospace | new sector landings (T-276) | T-279 |
+| 8 | Cmd-K command-palette indexes file-kinds + package docs so silicon / firmware tooling is discoverable | T-248 + T-277 | T-280 |
+
+This is shipped-but-invisible debt; it pays back as soon as it lands. Once
+T-273..T-280 close, the next round of sector work (§3.5 implicit / F-rep,
+§3.5 1D system simulation, the §3 P3 long-tail) starts from a clean wired-up
+frontend, not a backend-only shipment.
 
 ---
 
