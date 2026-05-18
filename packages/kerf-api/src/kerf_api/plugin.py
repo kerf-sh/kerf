@@ -19,9 +19,11 @@ PLUGIN_DEPENDS = ["kerf-auth"]
 
 async def register(app: FastAPI, ctx) -> PluginManifest:
     from kerf_api.routes import router
+    from kerf_api.routes_atopile import router as atopile_router
     app.include_router(router, prefix="/api", tags=["api"])
     from kerf_api.routes_git_diff import router as git_diff_router
     app.include_router(git_diff_router, prefix="/api", tags=["git-diff"])
+    app.include_router(atopile_router, tags=["atopile"])
 
     _register_tools(ctx)
 
