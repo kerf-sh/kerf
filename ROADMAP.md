@@ -73,9 +73,61 @@ LLM must be able to check its own work and hand off to the real world.
 
 ---
 
+## §1.5 — Platform foundation: own-your-data, one client, easy self-host
+
+The sector work above only matters if a person **owns their work, isn't
+locked in, and can run Kerf wherever they want.** These are not features
+bolted onto the side — they are the substrate the whole product sits on, and
+they order the platform spine the same way the LLM-native filter orders the
+capability spine. Four commitments, all decided:
+
+**1 — Every cloud project is a real git repository.** Not a metaphor: a
+project is a git repo a user can `git clone` with stock git, no special
+client and no extra tooling. Source and parametric files live in git
+directly. Large or binary files are detected automatically and kept in object
+storage with a small pointer committed to git, so history stays fast and the
+clone stays small. Forks are near-instant and near-zero-cost because content
+is shared, not copied. The version-control story is therefore two
+complementary layers — fine-grained automatic file history *and* deliberate,
+shareable commits with GitHub sync — not competing alternatives.
+
+**2 — One client, cloud by default, self-host that is genuinely easy.**
+`pip install kerf` gives the hosted cloud with zero setup — just
+`kerf login`. Self-hosting is a fully supported, well-documented path, *not*
+a hard mode: `pip install 'kerf[server]'`, point `DATABASE_URL` at a Postgres
+instance you provide (a documented one-liner), then `kerf serve`. The same
+client and the same data model serve both; self-host is presented as a
+first-class, straightforward option. Kerf does not embed or manage its own
+database — bring-your-own-Postgres is easy and documented, so embedding one
+would add weight for no benefit. The only hardening here is that `kerf serve`
+must fail fast with a clear, actionable message when the database URL is
+missing or unreachable.
+
+**3 — Portability is the anti-lock-in guarantee.** `kerf sync` mirrors a
+project to a local folder with two-way sync, giving the local-filesystem feel
+without giving up the cloud. `kerf export` / `kerf import` produce and ingest
+a plain file tree. Because the cloud and the self-hosted server are
+symmetric, moving a project in either direction is painless. "You own your
+data and can leave any time" is a property we can demonstrate, not a promise.
+
+**4 — A fully-local / offline / no-account desktop app is explicitly *not* a
+launch pillar.** It is committed but demand-gated and post-launch. Portability
++ two-way sync + easy self-host is the complete launch answer to "I want to
+own my data, not be locked in, and be able to run it myself." A standalone
+offline desktop build is sequenced behind real demand, not assumed.
+
+These four order the platform spine: git-as-substrate, the unified client,
+and portability sit in the near-term priority tiers (§3) because they are
+architecture-independent and gate trust for *every* persona at once; the
+offline desktop app sits at the lowest tier as a post-launch, demand-gated
+bet.
+
+---
+
 ## §2 — Per-persona deliverable scorecard
 
 <!-- Status reconciled 2026-05-17: ECAD fab output ✅; jewelry render ✅; mechanical sheet metal/weldments/GD&T ✅ (bend table T-4 now ✅); architecture IFC Tier 2 + family editor ✅; DXF read+DWG bridge ✅; general DXF writer ✅ (T-7 shipped; DWG via ODA external); compare hub w/ per-category matrices + 14 compare pages ✅; ScrollToTop + Roadmap topbar link ✅; FEM reference-value suite + CFD foundation (potential + Navier-Stokes) ✅; body max-width:100vw h-scroll guard ✅. -->
+<!-- Planning session 2026-05-18: the platform-trust dimension (own-your-data / one client / easy self-host / portability) is now captured in §1.5 and threaded through the §3 tiers; it underpins, but does not change, the per-persona scorecard below. -->
 
 Brutally honest. For each persona: the end deliverable they must ship, and
 whether Kerf can produce it **text-natively today**.
@@ -105,6 +157,7 @@ Ordered by **leverage**, not time. Automotive cross-refs preserved inline.
 ### P0 — credibility blockers
 
 <!-- Status reconciled 2026-05-16: P0-1 ✅ (gerber.py/excellon.py/pnp.py/ipc2581.py/odbpp shipped); P0-3 🔴→🚧 (T-1/T-2/T-3 done, T-4 bend table not done); P0-4 ✅ (boolean hardening + faceNamingT3Booleans corpus shipped). -->
+<!-- Planning session 2026-05-18: added the architecture-independent P0 spine — P0-6 broaden text/code file support, P0-7 project export/materialize foundation, P0-8 testing/seeding/deploy-hardening (🚧, partially landed). These are the platform-trust + quality blockers that gate the §1.5 portability guarantee and broader build-out; sized entries live in tasks.md by capability. -->
 
 A professional in the domain hits these in the first hour; their absence
 disqualifies Kerf in minute one.
@@ -116,10 +169,14 @@ disqualifies Kerf in minute one.
 | P0-3 | Mechanical · **Automotive** | **Sheet metal** — flange / bend / unfold / flat-pattern / bend tables. Flange (T-1), unfold + flat-pattern DXF (T-2/T-3) shipped (`kerf_cad_core.sheet_metal`). Bend table per-material/thickness lookup shipped (`kerf_cad_core.sheet_metal_bend_table`, T-4). | ✅ shipped |
 | P0-4 | All (chat-driven core) | **Persistent face-naming hardening** — boolean-heavy regression corpus + stress on real production models. T1–T2 landed; boolean-boundary naming (T3) + pattern/mates/sweep hardening (T4–T7) shipped (`faceNamingT3Booleans.test.js` + T4–T6 suites). | ✅ shipped |
 | P0-5 | Mechanical · Architect · **Automotive** | **Large-assembly performance ceiling** — measured budget + LOD / lazy-load for 1000s of parts. Automotive full-vehicle DMU (10,000s) is the extreme case. | 🔴 not started |
+| P0-6 | All (every persona) | **Broaden text / code file support** — common text and code files (`.txt` `.md` `.c` `.cpp` `.h` `.hpp` `.py` `.js` `.ts` `.json` `.yaml` `.yml` `.toml` `.ini` `.cfg` `.sh` `.ino`/`.uno` `.ld` `.v` `.vhd` and similar) open as editable text with plain highlighting **now**; proper per-language syntax highlighting follows. Architecture-independent; every project benefits. | 🔴 not started |
+| P0-7 | All (platform trust) | **Project export / materialize foundation** — the plain file-tree representation that `kerf export` / `kerf import` / `kerf sync` build on (§1.5 commitment 3). The substrate for portability and the anti-lock-in guarantee. | 🔴 not started |
+| P0-8 | All (engineering quality) | **Testing / seeding / deploy-hardening initiative** — broad test suites + realistic seed data + one-command local and dev loops. Partially landed; the rest of the initiative is the P0 quality gate before broader build-out. | 🚧 in flight |
 
 ### P1 — depth that converts evaluators to users
 
 <!-- Status reconciled 2026-05-16: P1-1 ✅ (board_step.py + kicad adapter shipped); P1-2 ✅ (all jewelry worker ops wired in occtWorker.js); P1-3 ✅ (weldment.py with cut list + gdt_callouts/ shipped); P1-4 ✅ (IFC Tier 2 openings/MEP/families/schedules + parametric family editor shipped). -->
+<!-- Planning session 2026-05-18: added the platform build-out spine — P1-8 git-as-substrate + auto large-file + free forks (🚧, large-file pointer + cloud-git layers shipped), P1-9 unified cloud-default/easy-self-host client (🚧), P1-10 sync + export/import portability. These realize the §1.5 own-your-data commitments; sized entries live in tasks.md by capability. -->
 
 | # | Persona / sector | Capability | Status |
 |---|---|---|---|
@@ -130,6 +187,9 @@ disqualifies Kerf in minute one.
 | P1-5 | Jewelry · **Automotive** | Surface-boolean robustness on dense NURBS — eliminate runtime escalation paths so organic models survive booleans reliably. Bounded 2-step retry ladder (`_MAX_ATTEMPTS=2`), V-column self-intersection check added, dense-NURBS near-tangent warning, `_build_tolerance_ladder` as single escalation source, `attempts` in return dict. 39-case regression corpus covering dense grids, sliver, near-tangent organic, jewelry shapes (thin bezel wall, prong-into-shank). | ✅ shipped |
 | P1-6 | **Automotive** | **Class-A surfacing.** sweep/network/blend + `surface_continuity` (C0–C2 / G0–G2, no G3) + curvature-comb *visualization* + **zebra / reflection-line viewport toggle** (shader-side `ShaderMaterial`, no WASM rebuild). Algorithmic G3 structurally impossible in stock OCCT (`GeomAbs_G3` absent — verified) and stays deferred. | ✅ shipped |
 | P1-7 | **Automotive** · ECAD | **3D in-vehicle wiring harness** — route through the DMU, bundle/segment/connector libs, formboard flatten, length/gauge/voltage-drop. Today only 2D WireViz `.wiring` diagrams. | 🔴 not started |
+| P1-8 | All (platform substrate) | **Git-as-substrate with automatic large-file handling + free forks** (§1.5 commitment 1) — every project a stock-`git clone`-able repo; large/binary files auto-detected and kept in object storage behind a small in-git pointer; near-instant, near-zero-cost forks via shared content-addressed storage. Builds on the shipped large-file pointer + cloud-git layers toward the no-special-client guarantee. | 🚧 in flight |
+| P1-9 | All (platform reach) | **Unified `pip install kerf` client — cloud-default, easy optional self-host** (§1.5 commitment 2). One client; `kerf login` for hosted; `pip install 'kerf[server]'` + bring-your-own-Postgres one-liner + `kerf serve` for self-host; fail-fast on a missing/unreachable database URL. | 🚧 in flight |
+| P1-10 | All (anti-lock-in) | **Local folder sync + export / import portability** (§1.5 commitment 3) — `kerf sync` two-way folder mirror; `kerf export` / `kerf import` plain file tree; symmetric cloud ↔ self-host so data moves either way painlessly. | 🔴 not started |
 
 ### P2 — moats / breadth (tracked, not urgent)
 
@@ -148,6 +208,15 @@ Each is a solver-class or platform-class project; none blocks P0/P1.
 - Nesting / cut-optimization (laser / waterjet / plasma / sheet).
 - GD&T / PMI model-based-definition + homologation documentation (shares the
   P1-3 "GD&T-from-model" gap).
+- **Ladder logic / PLC programming** (IEC 61131-3 Ladder Diagram) 🔴 —
+  complements the already-shipped structured-text PLC support
+  (`.plc.st`); rounds out the automation / electronics domain with the
+  ladder-diagram representation alongside structured text.
+- **Embedded / firmware programming + integrated toolchains** 🔴 —
+  Arduino (`.uno`), C / C++, broader programming-language support, and an
+  integrated compiler / toolchain set (board + toolchain management, build
+  / flash). PlatformIO is the reference model. Builds directly on the P0-6
+  broadened text/code file support once per-language depth is needed.
 
 ### P3 — long-tail verticals & distinct-engine domains
 
@@ -196,6 +265,12 @@ metal is P0-3; lattice/DfAM is P2; 3-print slicing + 3/5-axis CAM shipped.)
 **Scientific / niche:** optical / lens / ray-trace 🔴 · microfluidics / MEMS
 🔴 · wind-turbine / large-energy structures 🔴 · theatrical / stage / rigging
 🔴 · signage / large-format 🔴.
+
+**Platform (post-launch, demand-gated):** fully-local / offline / no-account
+**desktop app** 🔴 — committed but explicitly **not a launch pillar** (§1.5
+commitment 4). The launch answer for "own my data / not locked in / run it
+myself" is portability + two-way sync + easy self-host (P0-7, P1-9, P1-10);
+the standalone offline desktop build is sequenced behind real demand.
 
 **How to extend P3:** an uncovered sector is never "out of scope" — it is a
 new line here plus one or more sized tasks in [`tasks.md`](./tasks.md). The
@@ -255,6 +330,12 @@ roadmap no longer narrates it.
 - **Diff-based + compressed revisions** ✅ — 82× shrink.
 - **Workspaces (orgs), activity timeline, avatars/CDN, collapsible chat** ✅.
 - **E2E Playwright + per-plugin pytest suites** ✅.
+- **Hosted-billing ledger schema on fresh databases** ✅ — billing-ledger
+  schema fix so the hosted billing path stands up correctly on a
+  brand-new database (landed this session).
+- **Testing / seeding / deploy-hardening initiative** 🚧 — broader test
+  suites + realistic seed data + one-command local/dev loops; partially
+  landed, the remainder is the P0-8 quality gate (§3).
 
 ### Scripting / SDK
 - **`.script.py` via `kerf-sdk`** ✅ — `/v1/rpc` JSON-RPC over the LLM tool
@@ -362,6 +443,8 @@ Quick map of what is in `packages/kerf-cad-core/src/kerf_cad_core/geom/`:
   cloud + reference + develop), breadcrumbs, TOC, audit-filter,
   internal-planning-artifact filtering. `scripts/build-docs-manifest.mjs`
   emits the grouped taxonomy into `public/docs-manifest.json`.
+- **Docs viewer article-rendering fix** ✅ — article body now renders
+  correctly in the user-facing docs viewer (landed this session).
 - **Comparison pages** ✅ — `src/routes/compare/` ships **14**
   head-to-head pages: Altium, Autocad, Blender, Civil3d, Freecad,
   Fusion, Inventor, KiCad, MatrixGold, Max3ds, Onshape, Revit, Rhino,
