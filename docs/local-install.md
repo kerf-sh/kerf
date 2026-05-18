@@ -5,21 +5,42 @@ open-source (MIT) for the core; no account or network access is required.
 
 ## Install paths
 
-### Homebrew (coming soon)
+Kerf ships on PyPI. There is no Homebrew formula — pip/pipx is the one supported install path.
+
+### Recommended — pipx (isolated venv, always on PATH)
 
 ```sh
-brew install kerf-sh/tap/kerf
+pipx install kerf
 ```
 
-### One-shot installer
+`pipx` installs Kerf into its own isolated virtualenv and puts the `kerf` command on your PATH, keeping it separate from any other Python environment.
+
+### Alternative — pip inside a virtualenv
 
 ```sh
-curl -fsSL https://kerf.sh/install.sh | sh
+python -m venv .venv && source .venv/bin/activate
+pip install kerf
 ```
 
-The script installs the `kerf` Python package and the `kerf-server` CLI.
+### Self-host (server + database)
 
-### From PyPI (explicit persona)
+To run the full server stack, install the `[server]` extra:
+
+```sh
+pip install 'kerf[server]'
+```
+
+`kerf serve` requires PostgreSQL. Set `DATABASE_URL` before starting.
+If you don't have Postgres yet, spin one up with Docker:
+
+```sh
+docker run -d --name kerf-postgres -e POSTGRES_PASSWORD=kerf -p 5432:5432 postgres:16
+export DATABASE_URL=postgres://postgres:kerf@localhost:5432/kerf
+```
+
+If `DATABASE_URL` is missing or unreachable, `kerf serve` fails immediately with a clear error and prints the above one-liner.
+
+### Persona installs (explicit plugin set)
 
 ```sh
 pip install "kerf[mech]"          # mechanical CAD

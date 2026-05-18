@@ -174,8 +174,8 @@ password = ""
 When `password` is non-empty, the server ensures this user exists in the
 database on boot, mints a long-lived refresh token, and writes it to
 `~/.config/kerf/state.json`. The frontend reads `/api/bootstrap` on first
-load and silently signs in. This is the mechanism behind the brew/curl
-single-user UX.
+load and silently signs in. This is the mechanism behind the
+single-user local-install UX.
 
 Leave `password` blank for multi-user deploys — bootstrap becomes a no-op.
 

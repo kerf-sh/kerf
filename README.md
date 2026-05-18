@@ -52,23 +52,43 @@ A single workspace for mechanical, electronics, drawings, and library parts — 
 
 [kerf.sh](https://kerf.sh) — sign up, you get 50 MB free, top up with credits when you need more LLM tokens or storage.
 
-### Local
+### Local (pip / pipx)
+
+Kerf ships on PyPI. There is no Homebrew formula — pip/pipx is the one supported install path.
+
+**Recommended — isolated install with pipx:**
 
 ```sh
-# Homebrew (coming soon)
-# brew install kerf-sh/tap/kerf
-
-# Or one-shot installer
-curl -fsSL https://kerf.sh/install.sh | sh
-
-# Set up (creates kerf.toml + runs migrations)
-createdb kerf
-pip install -e .[mech]      # smallest persona covering mechanical CAD
-kerf-server --migrate
-kerf-server                 # → http://localhost:8080
+pipx install kerf
 ```
 
-In local mode the server auto-creates a single user and skips the login screen entirely (`[server].local_mode = true` is the default).
+**Alternative — inside a virtualenv:**
+
+```sh
+pip install kerf
+```
+
+**Self-host with the full server stack (Postgres required):**
+
+```sh
+pip install 'kerf[server]'
+
+# Postgres must be running and DATABASE_URL must be set before starting.
+# If you don't have Postgres yet:
+#   docker run -d --name kerf-postgres -e POSTGRES_PASSWORD=kerf -p 5432:5432 postgres:16
+#   export DATABASE_URL=postgres://postgres:kerf@localhost:5432/kerf
+
+kerf serve      # fails fast with the above hint if DATABASE_URL is missing or unreachable
+```
+
+**Persona installs** (choose the feature set you need):
+
+```sh
+pip install 'kerf[mech]'          # mechanical CAD
+pip install 'kerf[electronics]'   # EDA / PCB
+pip install 'kerf[bim]'           # building information modelling
+pip install 'kerf[full]'          # everything
+```
 
 ### From source
 
