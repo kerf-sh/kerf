@@ -2472,3 +2472,26 @@ frontend tasks (T-147/T-148) serialize behind other frontend work.
 - **Definition of Done:** both providers’ happy + failure paths tested
   with fakes; our-git-untouched invariant asserted; suite green.
 - **Depends-on:** T-144, T-145, T-146
+
+### T-150 GitReachabilityOracle — let blob GC leave dry-run
+- **Tier:** B
+- **Money/reach rationale:** the only remaining storage loose-end.
+  T-136's GC worker ships dry-run-safe behind a `GitReachabilityOracle`
+  interface; until a real oracle is registered no unreferenced blob is
+  ever reclaimed → dedup storage grows unbounded. Closing this makes the
+  storage substrate fully self-maintaining.
+- **Priority:** P1
+- **Status:** 🔴 not started
+- **Scope:** implement a `GitReachabilityOracle` that, given an oid,
+  reports whether ANY commit reachable from ANY ref of the project's
+  bare repo contains an LFS pointer for it (must include history, not
+  just HEAD). Register it so `BlobGCWorker` uses it; keep the dry-run
+  default and require an explicit opt-in env flag to actually delete.
+- **Target files/packages:** `packages/kerf-billing/blob_gc.py` (wire
+  the oracle), a new oracle impl reading the bare repos (kerf-core
+  storage / pygit2), + tests.
+- **Definition of Done:** oracle correctly classifies reachable vs
+  unreachable against real repos incl. history; GC reclaims ONLY
+  unreferenced + unreachable + past-grace oids; still inert unless the
+  opt-in flag is set; tests green.
+- **Depends-on:** T-125, T-136
