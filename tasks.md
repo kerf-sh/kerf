@@ -1443,7 +1443,7 @@ Tier A (single persona unlock), render / SubD / direct-edit → Tier B
   primary today; users editing imported "dumb" geometry need deeper
   direct editing alongside the parametric tree.
 - **Priority:** P2
-- **Status:** 🔴 not started
+- **Status:** ✅ shipped (integrated this session)
 - **Scope:** Promote direct edits (face move / pull / patch / delete)
   into first-class feature nodes in the parametric DAG so a direct
   edit replays on parameter changes instead of being lost.
@@ -2558,7 +2558,7 @@ frontend tasks (T-147/T-148) serialize behind other frontend work.
 ### T-154 Coordinated DB reset — activate accumulated baseline edits
 - **Tier:** A
 - **Priority:** P0
-- **Status:** 🔴 not started
+- **Status:** ✅ done — coordinated reset applied; 12 migrations 0 back-stamped; objects verified
 - **Scope:** parent-owned, SOLO (run only when NO agent uses the shared
   DB). Several baseline migration edits are committed but not applied to
   the live local DB (idempotent-by-filename): T-130 added `'firmware'`
