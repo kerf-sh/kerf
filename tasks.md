@@ -1269,7 +1269,7 @@ Tier A (single persona unlock), render / SubD / direct-edit → Tier B
   2 personas). The single highest-leverage gate in the epic — every
   later G3/class-A sub-task asserts against this oracle.
 - **Priority:** P1
-- **Status:** 🔴 not started
+- **Status:** ✅ shipped (integrated this session)
 - **Scope:** Add a pure-Python **G3 residual** to the existing
   continuity machinery (sibling to
   `surface_fillet.curvature_comb_continuity_residual`, which today
