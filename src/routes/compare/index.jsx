@@ -246,7 +246,7 @@ const MECH_FEATURES = [
       solidworks: `${GOOD} Full offline (perpetual)`,
       onshape: `${GAP} Browser-only`,
       inventor: `${GOOD} Full offline`,
-      kerf: `${GOOD} Single-binary local (brew/curl)`,
+      kerf: `${GOOD} pip install 'kerf[server]' + kerf serve (BYO Postgres)`,
     },
   },
 
@@ -310,7 +310,7 @@ const MECH_FEATURES = [
       solidworks: `${GOOD} Full mate system; gear/cam`,
       onshape: `${GOOD} Full mate system`,
       inventor: `${GOOD} Flush/angle/tangent/insert`,
-      kerf: `${WEAK} Assembly mates (newer)`,
+      kerf: `${GOOD} Full joint system — rigid/revolute/slider/cam/gear/pin-slot`,
     },
   },
   {
@@ -374,7 +374,7 @@ const MECH_FEATURES = [
       solidworks: `${GOOD} SW Simulation (add-in)`,
       onshape: `${WEAK} Paid third-party only`,
       inventor: `${GOOD} In-box Stress Analysis`,
-      kerf: `${GAP} Not yet`,
+      kerf: `${WEAK} Linear static + thermal + nonlinear plasticity; not full parity`,
     },
   },
 
@@ -584,6 +584,15 @@ const EDA_FEATURES = [
   /* — Cross-domain & ecosystem */
   {
     group: 'Cross-domain & ecosystem',
+    name: 'ECAD importers',
+    cells: {
+      kicad: `${GOOD} Allegro / PADS / gEDA / Eagle (v10)`,
+      altium: `${GOOD} Broad legacy format support`,
+      kerf: `${GOOD} Eagle / Allegro / PADS / gEDA / KiCad`,
+    },
+  },
+  {
+    group: 'Cross-domain & ecosystem',
     name: 'Mechanical CAD (same tool)',
     cells: {
       kicad: `${GAP} Separate tool required`,
@@ -645,7 +654,7 @@ const BIM_FEATURES = [
     cells: {
       revit: `${GOOD} Deep family editor + shared params`,
       civil3d: `${WEAK} DWG blocks; not BIM families`,
-      kerf: `${GAP} No native family authoring`,
+      kerf: `${GOOD} Parametric .family.json — type/instance params, formulas`,
     },
   },
   {
@@ -654,7 +663,7 @@ const BIM_FEATURES = [
     cells: {
       revit: `${GOOD} Full parametric building elements`,
       civil3d: `${NA} Not a building tool`,
-      kerf: `${WEAK} BIM primitives (basic)`,
+      kerf: `${GOOD} Parametric walls/doors/windows/slabs/stairs/ramps`,
     },
   },
   {
@@ -708,11 +717,11 @@ const BIM_FEATURES = [
   },
   {
     group: 'Interoperability',
-    name: 'AutoCAD DWG native',
+    name: 'AutoCAD DWG / DXF',
     cells: {
       revit: `${GOOD} DWG import/export`,
       civil3d: `${GOOD} Built on AutoCAD`,
-      kerf: `${WEAK} DXF import/export only`,
+      kerf: `${WEAK} DXF/DWG import; DXF export`,
     },
   },
 
@@ -789,7 +798,7 @@ const JEWELRY_FEATURES = [
     cells: {
       rhino: `${GOOD} SubD with creases (Rhino 8)`,
       matrixgold: `${GOOD} Rhino SubD inherited`,
-      kerf: `${WEAK} Quad remesh; no SubD authoring`,
+      kerf: `${GOOD} SubD authoring with creases; quad remesh + surfacing`,
     },
   },
   {
@@ -971,7 +980,7 @@ const DCC_FEATURES = [
     cells: {
       blender: `${GOOD} Cycles + Eevee (benchmark)`,
       max3ds: `${GOOD} Arnold built-in`,
-      kerf: `${WEAK} HDRI + ACES + bloom; no path tracer`,
+      kerf: `${WEAK} Cycles backend + browser path tracer; no animation / caustics`,
     },
   },
   {

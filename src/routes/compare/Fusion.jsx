@@ -1,7 +1,7 @@
 /**
  * /compare/fusion — Kerf vs Fusion 360
  *
- * Web-grounded (last reviewed 2026-05-17). Autodesk Fusion (formerly Fusion
+ * Web-grounded (last reviewed 2026-05-18). Autodesk Fusion (formerly Fusion
  * 360) pioneered cloud-connected parametric CAD with integrated CAM, CAE,
  * and electronics. Commercial use is ~US$680/yr (~$85/mo); a restricted
  * free personal tier exists (must convert once non-commercial / >US$1,000
@@ -57,7 +57,7 @@ const TABLE = [
     kerf: `${GOOD} BYO key (kerf_byo bucket) — use own Anthropic/OpenAI key` },
   { group: 'Licensing & platform', feature: 'Offline / self-host',
     competitor: `${WEAK} Limited offline; many features cloud-tied`,
-    kerf: `${GOOD} Full offline single-binary install (brew / curl)` },
+    kerf: `${GOOD} Full offline: pip install 'kerf[server]' + kerf serve (BYO Postgres)` },
   { group: 'Licensing & platform', feature: 'Open source',
     competitor: `${GAP} Proprietary`,
     kerf: `${GOOD} MIT — full codebase on GitHub` },
@@ -91,7 +91,7 @@ const TABLE = [
   // Assemblies
   { group: 'Assemblies', feature: 'Joints / mates',
     competitor: `${GOOD} Full joint system (rigid, revolute, slider, etc.)`,
-    kerf: `${WEAK} Assembly mates (newer, fewer joint types)` },
+    kerf: `${GOOD} Full joint system — rigid/revolute/slider/cam/gear/pin-slot` },
   { group: 'Assemblies', feature: 'Motion study',
     competitor: `${GOOD} Motion + contact sets + interference detection`,
     kerf: `${GAP} Not yet` },
@@ -110,7 +110,7 @@ const TABLE = [
   // Simulation — mechanical
   { group: 'Simulation — mechanical', feature: 'FEM (static / thermal)',
     competitor: `${GOOD} Built-in (extension / cloud-metered)`,
-    kerf: `${GAP} Not yet` },
+    kerf: `${WEAK} Linear static + thermal + nonlinear plasticity; not full multi-physics parity` },
   { group: 'Simulation — mechanical', feature: 'Generative design',
     competitor: `${GOOD} Cloud topology optimisation (flagship feature)`,
     kerf: `${GAP} Roadmap; not shipped` },
@@ -285,15 +285,18 @@ export default function FusionPage() {
               match.
             </Li>
             <Li>
-              <strong className="text-ink-100">Full assembly and motion.</strong>{' '}
-              A complete joint system (rigid, revolute, slider, ball, etc.) with
-              motion studies, contact sets, and interference detection.
-              Kerf&#8217;s assembly mates are newer and lack motion study.
+              <strong className="text-ink-100">Assembly motion study and interference detection.</strong>{' '}
+              Fusion provides motion studies, contact sets, and interference
+              detection on top of its joint system. Kerf now matches the joint
+              type set (rigid, revolute, slider, cam, gear, pin-slot) but does
+              not yet ship motion study.
             </Li>
             <Li>
-              <strong className="text-ink-100">Built-in FEM simulation.</strong>{' '}
-              Linear static and thermal FEM (extension / cloud-metered) — a
-              mechanical simulation capability Kerf does not ship at all today.
+              <strong className="text-ink-100">FEM multi-physics depth.</strong>{' '}
+              Linear static and thermal FEM (extension / cloud-metered) with
+              a mature solver validation record. Kerf now ships linear static,
+              thermal, and nonlinear plasticity FEM but does not yet match
+              Fusion's multi-physics coverage or cloud-compute scale.
             </Li>
             <Li>
               <strong className="text-ink-100">Eagle PCB integration.</strong>{' '}
@@ -346,9 +349,20 @@ export default function FusionPage() {
             </Li>
             <Li>
               <strong className="text-ink-100">True offline, fully open codebase.</strong>{' '}
-              A single binary (brew or curl install) with no Autodesk account
-              and no limited-offline caveat. The full codebase is on GitHub
-              under MIT.
+              <code className="font-mono text-kerf-300">pip install 'kerf[server]'</code>{' '}
+              + <code className="font-mono text-kerf-300">kerf serve</code>{' '}
+              with BYO Postgres — no Autodesk account, no limited-offline caveat.
+              The full codebase is on GitHub under MIT.
+            </Li>
+            <Li>
+              <strong className="text-ink-100">Every project is a real git repo.</strong>{' '}
+              Projects are cloneable git repositories with large-file auto-handling,
+              near-free forks, and optional GitHub or GitLab mirrors. The CLI
+              provides <code className="font-mono text-kerf-300">kerf sync</code>,{' '}
+              <code className="font-mono text-kerf-300">kerf export</code>,{' '}
+              <code className="font-mono text-kerf-300">kerf import</code>, and{' '}
+              <code className="font-mono text-kerf-300">kerf hydrate</code> for
+              folder-level two-way sync.
             </Li>
             <Li>
               <strong className="text-ink-100">Pre-compliance electronics simulation — in-box.</strong>{' '}
@@ -400,16 +414,15 @@ export default function FusionPage() {
               CAM are younger and less hardened.
             </Li>
             <Li>
-              <strong className="text-ink-100">Assembly and motion.</strong>{' '}
-              Fusion&#8217;s joint system — with motion studies, contact sets,
-              and interference detection — is significantly ahead of
-              Kerf&#8217;s assembly mates, which lack motion study entirely.
+              <strong className="text-ink-100">Assembly motion study.</strong>{' '}
+              Kerf now matches Fusion&#8217;s joint type set, but motion studies,
+              contact sets, and interference detection are not yet shipped.
             </Li>
             <Li>
-              <strong className="text-ink-100">No mechanical FEM.</strong>{' '}
-              Fusion ships linear static and thermal FEM for mechanical
-              structures. Kerf has no structural FEM; the simulation depth in
-              Kerf is currently limited to electronics pre-compliance.
+              <strong className="text-ink-100">FEM multi-physics coverage.</strong>{' '}
+              Kerf ships linear static, thermal, and nonlinear plasticity FEM;
+              Fusion&#8217;s multi-physics cloud solvers cover more boundary
+              conditions and load types. CFD is not in Kerf.
             </Li>
             <Li>
               <strong className="text-ink-100">No generative design.</strong>{' '}

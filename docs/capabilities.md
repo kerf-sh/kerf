@@ -63,25 +63,48 @@ features it would normally surface are unavailable.
 | **kerf-fem**       | `fem.linear-static`        | CalculiX / pure-Python linear-static FEA          |
 |                    | `fem.modal`                | SLEPc or CalculiX modal analysis                  |
 |                    | `fem.thermal`              | Thermal analysis                                  |
+|                    | `fem.nonlinear-plasticity` | Nonlinear material plasticity solver               |
 | **kerf-cam**       | `cam.2_5d`                 | 2.5D pocket / contour (always available)          |
 |                    | `cam.parallel-3d`          | Parallel finishing 3D (needs cad-core)            |
 |                    | `cam.waterline`            | Waterline 3D (needs cad-core)                     |
 |                    | `cam.lathe`                | Lathe / turning (needs cad-core)                  |
 | **kerf-topo**      | `topo.simp`                | SIMP topology optimization                        |
-| **kerf-mates**     | `mates.solver`             | Closed-form mate solver (needs OCCT/numpy)        |
+| **kerf-mates**     | `mates.solver`             | Closed-form mate solver — rigid/revolute/slider/cam/gear/pin-slot |
 |                    | `mates.gradient-descent`   | Fallback gradient-descent solver                  |
 | **kerf-bim**       | `bim.ifc-compile`          | IFC4 compile via IfcOpenShell                     |
 |                    | `bim.text-dsl`             | `.bim` text-DSL authoring                         |
 |                    | `bim.revit-parity`         | Categories / families / schedules / views / sheets |
+|                    | `bim.family-authoring`     | Parametric `.family.json` component authoring      |
+|                    | `bim.family-library`       | Built-in parametric family catalog                 |
+|                    | `bim.stairs-ramps`         | Stairs and ramps (parametric)                      |
+|                    | `bim.toposolids`           | Site toposolids from survey point data             |
+|                    | `bim.material-catalogue`   | BIM material library with render + schedule props  |
 | **kerf-electronics** | `electronics.rf`         | scikit-rf S-parameter analysis                    |
 |                    | `electronics.spice`        | ngspice SPICE simulation                          |
 |                    | `electronics.autoroute`    | FreeRouting integration                           |
 |                    | `electronics.pour`         | Copper-pour generation                            |
+| **kerf-plc**       | `plc.structured-text`      | IEC 61131-3 Structured Text editor                |
+|                    | `plc.ladder-diagram`       | IEC 61131-3 Ladder Diagram visual editor          |
+| **kerf-firmware**  | `firmware.arduino`         | Arduino `.ino`/`.uno` build + flash               |
+|                    | `firmware.platformio`      | PlatformIO-style build/flash toolchain            |
+|                    | `firmware.c-cpp`           | Embedded C/C++ source editing + build             |
 | **kerf-imports**   | `imports.kicad`            | KiCad sch + pcb → `.circuit.tsx`                  |
 |                    | `imports.freecad`          | FreeCAD `.FCStd` import (planned)                 |
 |                    | `imports.rhino3dm`         | Rhino `.3dm` import + export                      |
-|                    | `imports.subd-mesh`        | Catmull-Clark subdivision surfaces                |
-| **kerf-render**    | `render.image`             | Blender Cycles render images                      |
+|                    | `imports.subd-mesh`        | Catmull-Clark subdivision surfaces with creases   |
+|                    | `imports.dxf-dwg`          | DXF/DWG 2D drafting import/export                 |
+|                    | `imports.ecad`             | Eagle / Allegro / PADS / gEDA schematic import    |
+| **kerf-render**    | `render.image`             | Cycles scene translator + render worker           |
+|                    | `render.browser-pt`        | In-browser `three-gpu-pathtracer` fallback        |
+| **kerf-civil**     | `civil.crs`                | Geospatial CRS attachment (WGS-84, UTM, etc.)     |
+|                    | `civil.tin-terrain`        | TIN terrain from point-cloud / survey data        |
+| **kerf-marine**    | `marine.hull-fairing`      | NURBS hull-fairing for naval architecture          |
+| **kerf-clash**     | `clash.detection`          | Cross-discipline clash detection + report          |
+| **kerf-nesting**   | `nesting.2d`               | 2D sheet-metal nesting + cut-optimisation          |
+| **kerf-git**       | `git.project-repo`         | Every project is a cloneable git repository        |
+|                    | `git.large-files`          | Large-file pointer + object-storage backing        |
+|                    | `git.github-mirror`        | GitHub mirror push/pull                            |
+|                    | `git.gitlab-mirror`        | GitLab mirror push/pull                            |
 | **kerf-workers**   | `workers.harness`          | Background worker harness                         |
 
 ## Install personas
@@ -95,7 +118,7 @@ in a curated subset of plugin packages from `packages/`.
 | `mech`         | core + auth + api + chat + cad-core + tess + fem + cam + topo + mates | Mechanical CAD workstation     |
 | `electronics`  | core + auth + api + chat + electronics                               | EDA / PCB / SPICE              |
 | `bim`          | core + auth + api + chat + bim                                       | Architecture / Revit-parity    |
-| `full`         | everything above + billing + cloud + imports + render + workers      | Single-binary local install or development |
+| `full`         | everything above + billing + cloud + imports + render + workers + plc + firmware + civil + marine + clash + nesting + git | Single-binary local install or development |
 | `compute-only` | core + cad-core + tess + fem + cam + topo + mates + electronics + bim + imports + render + workers | Behind an internal LB; no auth/API |
 
 Install:

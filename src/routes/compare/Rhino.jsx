@@ -1,7 +1,7 @@
 /**
  * /compare/rhino — Kerf vs Rhino (RhinoGold / Matrix / MatrixGold)
  *
- * Web-grounded (last reviewed 2026-05-15). Rhino 8 is a perpetual,
+ * Web-grounded (last reviewed 2026-05-18). Rhino 8 is a perpetual,
  * one-time-purchase licence (~US$995 full / ~$595 upgrade — not a
  * subscription), Windows/macOS, with the industry-reference NURBS kernel,
  * SubD, ShrinkWrap, and Grasshopper visual scripting. For jewelry, the
@@ -57,7 +57,7 @@ const TABLE = [
     kerf: `${WEAK} NURBS Phase 4 — trim-by-curve, G3 combs (early)` },
   { group: 'Modeling', feature: 'SubD modelling',
     competitor: `${GOOD} SubD with creases (Rhino 8)`,
-    kerf: `${WEAK} Quad remesh + surfacing; no SubD authoring` },
+    kerf: `${GOOD} SubD authoring with creases; quad remesh + surfacing` },
   { group: 'Modeling', feature: 'Parametric solids (B-rep)',
     competitor: `${WEAK} Via Grasshopper / plugins`,
     kerf: `${GOOD} OCCT feature tree — pad/pocket/revolve/loft/etc.` },
@@ -98,8 +98,8 @@ const TABLE = [
 
   // Rendering
   { group: 'Rendering', feature: 'Photoreal rendering',
-    competitor: `${GOOD} Cycles + V-Ray/Enscape/KeyShot`,
-    kerf: `${WEAK} PBR materials; no caustics/dispersion` },
+    competitor: `${GOOD} Cycles + V-Ray/Enscape/KeyShot; caustics + dispersion`,
+    kerf: `${WEAK} Cycles backend + browser path tracer (no caustics/dispersion)` },
 
   // Documentation
   { group: 'Drawings & docs', feature: '2D drawings / GD&T',
@@ -221,9 +221,11 @@ export default function RhinoPage() {
               disciplines Rhino needs separate plugins or tools for.
             </Li>
             <Li>
-              <strong className="text-ink-100">Hosted option, no install.</strong>{' '}
-              Sign up and design in the browser, or run a single binary locally
-              — no platform-specific installer and no licence dongle.
+              <strong className="text-ink-100">Hosted option or local pip install.</strong>{' '}
+              Sign up and design in the browser, or{' '}
+              <code className="font-mono text-kerf-300">pip install kerf</code>{' '}
+              locally — no platform-specific installer, no licence dongle, and
+              no Homebrew formula.
             </Li>
             <Li>
               <strong className="text-ink-100">CAM built in.</strong>{' '}
@@ -252,13 +254,17 @@ export default function RhinoPage() {
               fill part of that space but not all of it.
             </Li>
             <Li>
-              <strong className="text-ink-100">No SubD authoring.</strong>{' '}
-              Rhino 8's SubD-with-creases workflow has no Kerf counterpart.
+              <strong className="text-ink-100">SubD depth is newer.</strong>{' '}
+              Kerf now ships SubD authoring with creases, but Rhino 8&rsquo;s
+              SubD tools are more mature and deeply integrated with the NURBS
+              surfacing workflow (SubD→NURBS conversion, ShrinkWrap).
             </Li>
             <Li>
-              <strong className="text-ink-100">Rendering is basic.</strong>{' '}
-              PBR materials only; caustics, dispersion, and photoreal gem
-              renders need the external renderers Rhino already integrates.
+              <strong className="text-ink-100">Render quality is narrower.</strong>{' '}
+              Kerf&rsquo;s Cycles backend and in-browser path tracer provide
+              photoreal output, but Rhino&rsquo;s plugin ecosystem (V-Ray, Enscape,
+              KeyShot) provides caustics, accurate gem dispersion, and archviz
+              lighting quality that Kerf&rsquo;s render path does not match today.
             </Li>
             <Li>
               <strong className="text-ink-100">Jewelry plugin depth.</strong>{' '}

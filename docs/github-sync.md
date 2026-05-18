@@ -1,8 +1,23 @@
-# GitHub sync
+# Git sync (GitHub & GitLab)
 
-Kerf Cloud provides a hosted git layer for projects. It is a deliberate-commit version control layer that sits on top of (and complements, not replaces) the always-on [file revision history](./file-revisions.md).
+Every Kerf project is a real, cloneable git repository. Large files are stored
+as pointer objects in object storage — forks are near-free because they share
+immutable blobs. The hosted git layer is a deliberate-commit version control
+layer that sits on top of (and complements, not replaces) the always-on
+[file revision history](./file-revisions.md).
 
 This feature is cloud-only by nature: it presupposes a hosted managed git remote. A self-hosted Kerf install retains full version-control capability through `file_revisions` alone.
+
+## CLI commands
+
+The `kerf` CLI exposes folder-level sync:
+
+| Command | Description |
+|---------|-------------|
+| `kerf sync` | Two-way folder ↔ project sync |
+| `kerf export` | Snapshot export to a local directory |
+| `kerf import` | Import a local directory into a new or existing project |
+| `kerf hydrate` | Resolve large-file pointers and download binary assets |
 
 ---
 
@@ -145,6 +160,33 @@ For stateless deployments, the git backend uses an object-storage-backed storer 
 ## GitHub OAuth token security
 
 The GitHub access token is never stored in plaintext. It is encrypted with AES-GCM using a key derived from the server's `JWT_SECRET`. Rotating `JWT_SECRET` invalidates all stored tokens — users must re-link their GitHub account on the next push or pull operation.
+
+---
+
+---
+
+## GitLab mirror
+
+GitLab mirror works the same as GitHub mirror, using a GitLab personal access
+token (PAT) with `read_repository` + `write_repository` scopes.
+
+### Connecting a GitLab account
+
+1. Navigate to **Settings → GitLab** in the app.
+2. Paste your GitLab personal access token and the GitLab instance URL
+   (defaults to `https://gitlab.com`).
+3. Your token is stored encrypted at rest (AES-GCM, same as GitHub).
+
+### Connecting a GitLab repo to a project
+
+```
+POST /api/projects/:pid/git/connect
+```
+
+Body: `{gitlab_url, gitlab_project_id}` — the project ID is the integer shown
+in the GitLab project overview.
+
+Push and pull work identically to the GitHub path.
 
 ---
 

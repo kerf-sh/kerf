@@ -105,6 +105,12 @@ The `mates` array defines geometric relationships between Components. Each mate 
 | `distance`    | 3 (translation)               | `value` (mm)                  |
 | `angle`       | 2 (rotation)                  | `value` (degrees)             |
 | `tangent`     | 2 (translation) + 1 (rotation)| `inside` (bool)               |
+| `rigid`       | 6 (all DOFs)                  | —                             |
+| `revolute`    | 5 (all except rotation about axis) | `axis` (unit vector)    |
+| `slider`      | 5 (all except translation along axis) | `axis` (unit vector) |
+| `cam`         | surface contact DOFs          | `offset` (mm)                 |
+| `gear`        | rotation ratio                | `ratio`, `axis_a`, `axis_b`   |
+| `pin_slot`    | 4 (pin constrained in slot)   | `slot_length` (mm)            |
 
 ```json
 {

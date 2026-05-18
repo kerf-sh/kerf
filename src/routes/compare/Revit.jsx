@@ -9,9 +9,9 @@
  * coordination, BIM 360 / Autodesk Docs cloud, and pyRevit + Dynamo.
  *
  * Kerf's arch/civil capabilities are real but fundamentally lighter — IFC
- * Tier 2 import (task #92, task #123), IFC export in progress, DXF, BIM
- * primitives, structural grid + steel framing, site grading, stairs,
- * drawings, BOM. It is not a full BIM platform today, and we say so plainly.
+ * Tier 2 import, parametric family authoring (.family.json), walls/doors/windows/
+ * slabs/stairs/ramps, structural grid + steel framing, site toposolids, material
+ * catalogue, drawings, BOM. It is not a full BIM platform today, and we say so plainly.
  */
 import Header from '../../components/Header.jsx'
 import Footer from '../../components/Footer.jsx'
@@ -70,43 +70,43 @@ const TABLE = [
     group: 'BIM authoring',
     feature: 'Parametric family system',
     competitor: `${GOOD} Deep family editor + types + shared parameters`,
-    kerf: `${GAP} No native family authoring`,
+    kerf: `${GOOD} Parametric .family.json authoring — type/instance params, formulas, schedule metadata`,
   },
   {
     group: 'BIM authoring',
     feature: 'Family library',
     competitor: `${GOOD} Autodesk Content Library + vast third-party`,
-    kerf: `${GAP} No BIM family library`,
+    kerf: `${WEAK} Built-in parametric family catalog (doors, windows, slabs, beams, columns); smaller than Revit's`,
   },
   {
     group: 'BIM authoring',
     feature: 'Walls / doors / windows / slabs',
     competitor: `${GOOD} Full parametric building elements`,
-    kerf: `${WEAK} BIM primitives (basic walls/doors/windows/slabs)`,
+    kerf: `${GOOD} Parametric walls/doors/windows/slabs, hosting-aware`,
   },
   {
     group: 'BIM authoring',
     feature: 'Stairs / ramps',
     competitor: `${GOOD} Full stair/ramp families`,
-    kerf: `${WEAK} Stairs (basic)`,
+    kerf: `${GOOD} Parametric stairs and ramps`,
   },
   {
     group: 'BIM authoring',
     feature: 'Structural grid / framing',
     competitor: `${GOOD} Revit Structure + Robot structural analysis`,
-    kerf: `${WEAK} Structural grid + steel framing (early)`,
+    kerf: `${WEAK} Structural grid + steel framing; no structural analysis parity`,
   },
   {
     group: 'BIM authoring',
     feature: 'Site / earthwork',
     competitor: `${GOOD} Toposolids, site tools`,
-    kerf: `${WEAK} Site grading / earthwork (basic)`,
+    kerf: `${GOOD} Site toposolids from survey point data + earthwork volumes`,
   },
   {
     group: 'BIM authoring',
     feature: 'Materials & finishes',
     competitor: `${GOOD} Material library with render appearance`,
-    kerf: `${WEAK} PBR materials; no BIM material catalogue`,
+    kerf: `${GOOD} BIM material catalogue with render appearance + schedule properties`,
   },
 
   // MEP & coordination
@@ -120,7 +120,7 @@ const TABLE = [
     group: 'MEP & coordination',
     feature: 'Clash detection',
     competitor: `${GOOD} Navisworks federated multi-discipline coordination`,
-    kerf: `${GAP} Not yet`,
+    kerf: `${WEAK} Cross-discipline clash detection + report (newer; not Navisworks-scale)`,
   },
   {
     group: 'MEP & coordination',
@@ -246,9 +246,11 @@ export default function RevitPage() {
             and construction — a deep parametric family system, full MEP, Revit
             Structure, mature IFC interoperability, Navisworks clash coordination,
             and Autodesk Docs cloud worksharing, at roughly US$2,910/yr per seat
-            on Windows. Kerf&rsquo;s arch/civil workflow (IFC Tier 2 import, BIM
-            primitives, structural grid + steel framing, site grading, stairs,
-            drawings, BOM) is real but fundamentally lighter.{' '}
+            on Windows. Kerf now ships parametric family authoring, expanded BIM
+            elements (walls, doors, windows, slabs, stairs, ramps), site toposolids,
+            a material catalogue, and cross-discipline clash detection — but full
+            MEP, worksharing at AEC project scale, and Navisworks-class coordination
+            are still ahead of Kerf.{' '}
             <strong className="text-ink-200">
               Kerf is not a full BIM platform today
             </strong>
@@ -265,17 +267,18 @@ export default function RevitPage() {
               <strong className="text-ink-100">
                 Deep parametric BIM family system.
               </strong>{' '}
-              Revit&rsquo;s family editor lets every building element carry
-              parameters, types, formulas, shared parameters, and schedule
-              metadata — the load-bearing foundation of real BIM. Kerf has no
-              native family authoring today.
+              Revit&rsquo;s family editor — including nested families, hosting
+              rules, instance vs type params, and per-element scheduling — is
+              considerably deeper than Kerf&rsquo;s parametric family authoring,
+              which covers type/instance params and formulas but not nested
+              families or level-based hosting.
             </Li>
             <Li>
               <strong className="text-ink-100">Vast content library.</strong>{' '}
               The Autodesk Content Library plus a large third-party market
               supply parametric families for nearly every product category —
-              doors, structural sections, MEP equipment, and fixtures. Kerf
-              has no BIM family library.
+              doors, structural sections, MEP equipment, and fixtures. Kerf&rsquo;s
+              built-in catalog is functional but substantially smaller.
             </Li>
             <Li>
               <strong className="text-ink-100">
@@ -421,17 +424,20 @@ export default function RevitPage() {
             </Li>
             <Li>
               <strong className="text-ink-100">
-                No parametric family authoring.
+                Family authoring is shallower.
               </strong>{' '}
-              Revit&rsquo;s family editor — with nested families,
-              formula-driven types, and scheduling metadata — underpins real
-              BIM. Kerf&rsquo;s BIM primitives are fixed components, not
-              author-your-own parametric building families.
+              Kerf now ships parametric family authoring (type/instance params,
+              formulas, scheduling metadata) but Revit&rsquo;s nested families,
+              formula-driven visibility rules, and level-based hosting are
+              deeper. For complex parametric building families, Revit&rsquo;s
+              family editor remains ahead.
             </Li>
             <Li>
-              <strong className="text-ink-100">No clash detection.</strong>{' '}
-              Federated multi-discipline coordination (Navisworks-style) is
-              not in Kerf.
+              <strong className="text-ink-100">Clash detection is newer.</strong>{' '}
+              Kerf ships cross-discipline clash detection with clearance
+              inspection and report export, but Navisworks-scale federated
+              coordination for large multi-discipline AEC project teams is
+              more mature in Revit&rsquo;s ecosystem.
             </Li>
             <Li>
               <strong className="text-ink-100">

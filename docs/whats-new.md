@@ -2,6 +2,153 @@
 
 Recent features shipped to Kerf. See [ROADMAP.md](https://github.com/kerf-sh/kerf/blob/main/ROADMAP.md) for the full list and status of every item.
 
+## Sprint — 18 May 2026 — git-as-project / CLI / PLC-LD / firmware / joints / imports / BIM / SubD / civil / marine / render / clash / nesting
+
+A large feature sweep landed across every major discipline. All items below are shipped and integrated on main.
+
+### Every project is a real git repo
+
+Every Kerf project is now a cloneable git repository. Large files are
+auto-handled (stored as pointer objects in object storage). Forking a project
+is near-free — shared immutable blobs mean you pay only for diverged content.
+Both **GitHub and GitLab** mirror connections are supported. The CLI exposes
+the full sync surface:
+
+- `kerf sync` — two-way folder sync between a project and a local directory
+- `kerf export` — snapshot export to a local folder
+- `kerf import` — import a local folder into a new or existing project
+- `kerf hydrate` — resolve large-file pointers and download binary assets
+
+### One client: `pip install kerf`
+
+The single install path for end users is now **PyPI**. There is no Homebrew
+formula.
+
+```sh
+pip install kerf          # cloud-default client + CLI
+pip install 'kerf[server]'   # full self-host: bring-your-own Postgres + kerf serve
+```
+
+`pip install 'kerf[server]'` followed by `kerf serve` brings up the full
+server stack. Requires Postgres. See [local-install.md](./local-install.md).
+
+### PLC: IEC 61131-3 Ladder Diagram editor
+
+A visual Ladder Diagram editor is now available alongside the existing
+Structured Text (ST) editor. Both conform to IEC 61131-3. Switch between LD
+and ST within the same `.plc` file.
+
+### Embedded / firmware: Arduino + PlatformIO
+
+New embedded/firmware workflow:
+
+- Arduino `.ino`/`.uno` file kinds are first-class project files.
+- C/C++ embedded source supported.
+- PlatformIO-style build and flash toolchain for common MCU targets.
+
+### Full mechanical joint system
+
+Assemblies now carry a complete mechanical joint type set: **rigid, revolute,
+slider, cam, gear, and pin-slot** joints. Pair this with the FEM nonlinear
+plasticity solver (also landed) for structural simulation that follows
+material failure past the elastic limit.
+
+### Import breadth
+
+New importers and export targets:
+
+- **DXF/DWG** — round-trip for 2D drafting interchange.
+- **ECAD formats** — Eagle, Allegro, PADS, and gEDA schematics/layouts import
+  into the Kerf electronics workspace.
+- **Fab outputs** — Gerber, Excellon, Pick & Place, IPC-2581, and ODB++ bundle
+  export all wired up.
+
+### BIM: parametric families + extended building elements
+
+BIM authoring expanded significantly:
+
+- **Parametric family authoring** — author your own `.family.json` components
+  with type/instance parameters, formulas, and scheduling metadata.
+- **Parametric family library** — a built-in catalog of door, window, slab,
+  beam, and column families.
+- **Extended building elements** — walls, doors, windows, slabs, stairs, and
+  ramps are all now parametric and hosting-aware.
+- **Structural grid and framing** — column/beam grids with structural member
+  profiles.
+- **Site toposolids** — terrain surface from survey points with earthwork
+  volumes.
+- **Material catalogue** — BIM-grade material library with render appearance
+  and schedule properties.
+
+### SubD authoring with creases
+
+Catmull-Clark subdivision surface authoring is now available, including
+**crease** support for sharp edges on organic forms. Pair with the existing
+quad-remesh and mesh-repair tools.
+
+### Civil: geospatial CRS + TIN terrain
+
+Civil engineering workflow additions:
+
+- Geospatial coordinate-reference-system (CRS) support — attach a project to
+  a real-world datum (WGS-84, local UTMs).
+- TIN terrain surfaces from point-cloud / survey data.
+
+### Marine: NURBS hull-fairing
+
+Marine hull design: NURBS hull-fairing workflow for smooth developable
+surfaces, targeting naval architecture and small-craft design.
+
+### Photoreal render path
+
+The Cycles-based render path is now end-to-end:
+
+- **Scene translator** — maps Kerf PBR materials to the render shader graph.
+- **Render worker** — headless worker queues, executes, and caches renders by
+  scene hash.
+- **Hero render panel** — resolution presets (1 K / 2 K / 4 K), sample count,
+  HDR environment selection, start / cancel / download.
+- **GPU pricing meter** — cloud installs meter GPU-seconds in the `kerf_paid`
+  bucket at cost + markup.
+- **In-browser fallback** — `three-gpu-pathtracer` progressive path tracer for
+  offline and self-hosted use.
+
+### Cross-discipline clash detection
+
+Clash detection across multiple disciplines (mechanical + electrical +
+structural + BIM) in a single federated model view. Select clash pairs,
+inspect clearances, and export a clash report.
+
+### Nesting / cut-optimisation + layout view
+
+2D sheet-metal nesting and cut-optimisation for flat parts: places contours on
+a stock sheet with configurable kerf and spacing, reports material utilisation,
+and exports the layout as DXF.
+
+### Education / maker on-ramp
+
+Guided on-ramp projects for education and maker use: simplified UI mode,
+pre-built example projects, and a streamlined first-run experience.
+
+### Large-assembly LOD
+
+Level-of-detail (LOD) management for large assemblies: automatically swap
+in simplified meshes beyond a configurable part count or bounding-box threshold,
+keeping frame rates interactive on assemblies with thousands of components.
+
+### Broadened text/code file editing
+
+The chat and file editors now support a wider set of text and code file kinds
+(Markdown, plain text, CSV, JSON, YAML, XML, Python, and others) directly
+within a project, without leaving the Kerf workspace.
+
+### App version in Settings
+
+The **Settings** panel now shows the running server version and build commit,
+making it easy to confirm which release is deployed.
+
+---
+
 ## Sprint — 17 May 2026 (later) — compare hub matrices, scroll-to-top, CFD foundation, FEM ref-values
 
 What's new this sprint: the [Compare hub](/compare) now shows per-category

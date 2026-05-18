@@ -1,7 +1,7 @@
 /**
  * /compare/kicad — Kerf vs KiCad
  *
- * Web-grounded (last reviewed 2026-05-17). KiCad 10.0 shipped March 2026
+ * Web-grounded (last reviewed 2026-05-18). KiCad 10.0 shipped March 2026
  * (10.0.2 in May 2026): GPL v3, fully free, cross-platform. It now natively
  * exports IPC-2581 *and* ODB++, gained an overhauled track-tuning system with
  * time-domain constraints, design variants, a graphical DRC rule editor, and
@@ -185,7 +185,7 @@ const TABLE = [
     kerf: `${GOOD} kerf-sdk on PyPI — HTTP/JSON-RPC from your machine` },
   { group: 'Ecosystem & SDK', feature: 'Importers',
     competitor: `${GOOD} Allegro / PADS / gEDA / Eagle (v10)`,
-    kerf: `${WEAK} KiCad-oriented import path` },
+    kerf: `${GOOD} Eagle / Allegro / PADS / gEDA / KiCad import` },
   { group: 'Ecosystem & SDK', feature: 'Community & docs',
     competitor: `${GOOD} Very large, well-documented`,
     kerf: `${WEAK} Early-stage, growing` },
@@ -508,9 +508,10 @@ export default function KicadPage() {
               community is early-stage.
             </Li>
             <Li>
-              <strong className="text-ink-100">Fewer importers.</strong>{' '}
-              KiCad 10 imports Allegro, PADS, gEDA, and Eagle directly; Kerf's
-              EDA import path is KiCad-oriented today.
+              <strong className="text-ink-100">Importer maturity.</strong>{' '}
+              Kerf now imports Eagle, Allegro, PADS, gEDA, and KiCad — the same
+              set as KiCad 10 — but these importers are newer and may not handle
+              all edge cases that KiCad&rsquo;s production-hardened importers do.
             </Li>
           </ul>
         </Section>

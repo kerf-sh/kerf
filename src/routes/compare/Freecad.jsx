@@ -1,7 +1,7 @@
 /**
  * /compare/freecad — Kerf vs FreeCAD
  *
- * Honest, web-grounded comparison (last reviewed 2026-05-15).
+ * Honest, web-grounded comparison (last reviewed 2026-05-18).
  *
  * FreeCAD 1.0 shipped November 2024 (1.1 in development) with a built-in
  * Assembly workbench, a largely-fixed topological naming problem, FEM
@@ -12,7 +12,7 @@
  * an MIT open-core licence, a hosted option, the kerf-sdk Python interface,
  * and an integrated electronics + jewelry + arch stack in one workspace.
  *
- * This file also exports the shared sub-components used by the other four
+ * This file also exports the shared sub-components used by the other
  * comparison pages: Section, Li, CompareTable, TableFooter, FairnessNote,
  * CTAStrip, GAP / GOOD / WEAK / NA glyph helpers.
  */
@@ -45,7 +45,7 @@ const TABLE = [
     kerf: `${GOOD} Browser (hosted) + single-binary local` },
   { group: 'Licensing & platform', feature: 'Hosted / cloud',
     competitor: `${GAP} Desktop only`,
-    kerf: `${GOOD} Hosted SaaS + local install (brew/curl)` },
+    kerf: `${GOOD} Hosted SaaS + local install (pip install kerf)` },
   { group: 'Licensing & platform', feature: 'Maturity',
     competitor: `${GOOD} 1.0 in 2024, ~20 yr history`,
     kerf: `${WEAK} Early-stage, < 2 yr public` },
@@ -76,7 +76,7 @@ const TABLE = [
   // Assemblies
   { group: 'Assemblies', feature: 'Assembly / mates',
     competitor: `${GOOD} Built-in Assembly WB (1.0, new solver)`,
-    kerf: `${GOOD} Assembly mates` },
+    kerf: `${GOOD} Full joint system — rigid/revolute/slider/cam/gear/pin-slot` },
   { group: 'Assemblies', feature: 'Fasteners / gears / weldment',
     competitor: `${GOOD} Fasteners WB, Gear/Spring add-ons`,
     kerf: `${GOOD} Threads, gears, weldment` },
@@ -100,7 +100,7 @@ const TABLE = [
   // Simulation
   { group: 'Simulation', feature: 'FEM (structural / thermal)',
     competitor: `${GOOD} FEM WB — CalculiX / Elmer / Z88 / Mystran`,
-    kerf: `${GAP} Not yet` },
+    kerf: `${WEAK} Linear static + thermal + nonlinear plasticity; not full multi-physics parity` },
   { group: 'Simulation', feature: 'CFD',
     competitor: `${WEAK} CfdOF add-on (OpenFOAM)`,
     kerf: `${GAP} Not yet` },
@@ -114,7 +114,7 @@ const TABLE = [
     kerf: `${GOOD} Gemstones v2 (30 cuts), settings v3/v4, ring v4, chain v2` },
   { group: 'Domain breadth', feature: 'Architecture / BIM',
     competitor: `${GOOD} Arch + BIM WB, IFC import/export`,
-    kerf: `${WEAK} IFC Tier 2 import, BIM primitives, IFC export in progress` },
+    kerf: `${WEAK} IFC Tier 2 import, parametric family authoring, BIM elements, IFC export in progress` },
 
   // Ecosystem & SDK
   { group: 'Ecosystem & SDK', feature: 'Python scripting',
@@ -128,7 +128,7 @@ const TABLE = [
     kerf: `${WEAK} Early — open-core + plugin API in progress` },
   { group: 'Ecosystem & SDK', feature: 'Import formats',
     competitor: `${GOOD} STEP/IGES/DXF/IFC/STL/OBJ/BREP`,
-    kerf: `${GOOD} FreeCAD/STEP/IFC/IGES/DXF import` },
+    kerf: `${GOOD} STEP/IGES/IFC/DXF/DWG/FreeCAD/Eagle/Allegro/PADS/gEDA import` },
   { group: 'Ecosystem & SDK', feature: 'Community & docs',
     competitor: `${GOOD} Large, decade-old, well-documented`,
     kerf: `${WEAK} Early-stage, growing` },
@@ -245,9 +245,19 @@ export default function FreecadPage() {
               offers comparatively basic annotation.
             </Li>
             <Li>
-              <strong className="text-ink-100">file-revisions undo.</strong>{' '}
-              Fine-grained, OSS-side revision history of the design source,
-              independent of any deliberate version-control commits.
+              <strong className="text-ink-100">Every project is a real git repo.</strong>{' '}
+              Projects are cloneable git repositories with large-file handling,
+              near-free forks (shared immutable blobs), optional GitHub or
+              GitLab mirror, and CLI sync: <code className="font-mono text-kerf-300">kerf sync</code>{' '}
+              / <code className="font-mono text-kerf-300">kerf export</code>{' '}
+              / <code className="font-mono text-kerf-300">kerf import</code>{' '}
+              / <code className="font-mono text-kerf-300">kerf hydrate</code>.
+            </Li>
+            <Li>
+              <strong className="text-ink-100">Full mechanical joint system.</strong>{' '}
+              Rigid, revolute, slider, cam, gear, and pin-slot joints are
+              all available, bringing Kerf's assembly depth much closer to
+              FreeCAD's built-in Assembly workbench.
             </Li>
           </ul>
         </Section>
@@ -256,9 +266,11 @@ export default function FreecadPage() {
         <Section title="Honest gaps — where Kerf is behind today">
           <ul className="flex flex-col gap-3">
             <Li>
-              <strong className="text-ink-100">No FEM or CFD.</strong>{' '}
-              FreeCAD's FEM workbench (CalculiX/Elmer/Z88/Mystran) and the CfdOF
-              add-on are real, multi-physics simulation. Kerf has none of this.
+              <strong className="text-ink-100">FEM depth is narrower.</strong>{' '}
+              Kerf ships linear static, thermal, and nonlinear plasticity FEM,
+              but FreeCAD's workbench (CalculiX/Elmer/Z88/Mystran) covers more
+              solver types, boundary conditions, and multi-physics coupling. CFD
+              (OpenFOAM via CfdOF) is not in Kerf at all.
             </Li>
             <Li>
               <strong className="text-ink-100">Far smaller ecosystem.</strong>{' '}
@@ -276,9 +288,10 @@ export default function FreecadPage() {
               tool leads here, but FreeCAD's Surface WB has more operations today.
             </Li>
             <Li>
-              <strong className="text-ink-100">Assembly is newer.</strong>{' '}
-              FreeCAD 1.0's first-party Assembly workbench is more proven than
-              Kerf's assembly mates.
+              <strong className="text-ink-100">Assembly motion study is not yet available.</strong>{' '}
+              Kerf now has a full joint type set (rigid, revolute, slider, cam,
+              gear, pin-slot) but interactive motion study and interference
+              detection are not yet shipped.
             </Li>
             <Li>
               <strong className="text-ink-100">No fully-offline guarantee for chat.</strong>{' '}
@@ -493,7 +506,7 @@ function FairnessNote() {
           We try hard to keep these comparisons fair and current.
         </span>{' '}
         Last reviewed{' '}
-        <span className="font-mono text-ink-200">2026-05-15</span>, with each
+        <span className="font-mono text-ink-200">2026-05-18</span>, with each
         competitor's feature set, licensing, and pricing checked against current
         public sources. Software moves fast and we will get things wrong. Think
         something here is inaccurate or unfair to a competitor (or to Kerf)?

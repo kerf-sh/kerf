@@ -196,9 +196,25 @@ rm -rf ~/.config/kerf                             # config + auth state
 rm -rf ./.kerf-storage                            # local blob store (if used)
 ```
 
+## Project git CLI
+
+Every Kerf project is a cloneable git repository. The `kerf` CLI exposes
+folder-level sync and large-file management:
+
+```sh
+kerf sync      # two-way folder ↔ project sync
+kerf export    # snapshot export to a local directory
+kerf import    # import a local directory into a new or existing project
+kerf hydrate   # resolve large-file pointers and download binary assets
+```
+
+GitHub and GitLab mirror connections are configured per-project in Settings →
+Git. See [github-sync.md](./github-sync.md) for the full mirror setup.
+
 ## See also
 
 - [getting-started.md](./getting-started.md) — step-by-step first run
 - [configuration.md](./configuration.md) — full config schema
 - [persona-bundles.md](./persona-bundles.md) — which plugins each persona includes
 - [deployment.md](./deployment.md) — Docker + production deploy
+- [github-sync.md](./github-sync.md) — git mirror + CLI sync commands

@@ -1,7 +1,7 @@
 /**
  * /compare/solidworks — Kerf vs SOLIDWORKS (Dassault Systèmes)
  *
- * Honest, web-grounded comparison (last reviewed 2026-05-17).
+ * Honest, web-grounded comparison (last reviewed 2026-05-18).
  *
  * SOLIDWORKS is the incumbent in professional mechanical CAD. Standard licence
  * ~US$4,000 one-time + ~US$1,500/yr maintenance; Professional ~US$5,500 + $2,000;
@@ -86,7 +86,7 @@ const TABLE = [
     group: 'Licensing & platform',
     feature: 'Offline / self-host',
     competitor: `${GOOD} Full offline (perpetual licence)`,
-    kerf: `${GOOD} Full offline single-binary (brew / curl install)`,
+    kerf: `${GOOD} Full offline: pip install 'kerf[server]' + kerf serve (BYO Postgres)`,
   },
   {
     group: 'Licensing & platform',
@@ -150,7 +150,7 @@ const TABLE = [
     group: 'Assemblies',
     feature: 'Mates / joints',
     competitor: `${GOOD} Full mate system — coincident / concentric / gear / cam / screw`,
-    kerf: `${WEAK} Assembly mates (newer, fewer mate types)`,
+    kerf: `${GOOD} Full joint system — rigid/revolute/slider/cam/gear/pin-slot`,
   },
   {
     group: 'Assemblies',
@@ -162,7 +162,7 @@ const TABLE = [
     group: 'Assemblies',
     feature: 'Large assembly mode',
     competitor: `${GOOD} Lightweight components, SpeedPak, large assembly mode`,
-    kerf: `${WEAK} No dedicated large-assembly tooling today`,
+    kerf: `${WEAK} LOD mesh swapping (configurable threshold); less mature than SpeedPak`,
   },
 
   // CAM / fabrication
@@ -190,7 +190,7 @@ const TABLE = [
     group: 'Simulation — mechanical',
     feature: 'FEM (static / thermal)',
     competitor: `${GOOD} SOLIDWORKS Simulation (add-in): static, thermal, fatigue`,
-    kerf: `${GAP} Not yet; roadmap`,
+    kerf: `${WEAK} Linear static + thermal + nonlinear plasticity; not full multi-physics parity`,
   },
   {
     group: 'Simulation — mechanical',
@@ -531,18 +531,17 @@ export default function SolidworksPage() {
             aria-label="Areas where Kerf is behind SOLIDWORKS today"
           >
             <Li>
-              <strong className="text-ink-100">Assembly and motion simulation.</strong>{' '}
-              SOLIDWORKS&#8217; full mate system — gear, cam, screw, slot — with
-              motion analysis, contact sets, and interference detection has no
-              Kerf counterpart today. Assembly mates in Kerf are newer and lack
-              motion study entirely.
+              <strong className="text-ink-100">Assembly motion study.</strong>{' '}
+              Kerf now matches SOLIDWORKS&#8217; joint type set (including gear,
+              cam, pin-slot), but motion analysis, contact sets, and interference
+              detection are not yet shipped in Kerf.
             </Li>
             <Li>
-              <strong className="text-ink-100">Mechanical FEM and CFD.</strong>{' '}
-              SOLIDWORKS Simulation and Flow Simulation are production-grade
-              structural and fluid analysis tools. Kerf ships no structural FEM;
-              the simulation depth in Kerf is currently limited to electronics
-              pre-compliance.
+              <strong className="text-ink-100">FEM multi-physics depth and CFD.</strong>{' '}
+              Kerf ships linear static, thermal, and nonlinear plasticity FEM, but
+              SOLIDWORKS Simulation (fatigue, frequency, buckling, nonlinear) and
+              Flow Simulation (CFD) are significantly more mature. CFD is not in
+              Kerf.
             </Li>
             <Li>
               <strong className="text-ink-100">NURBS surfacing depth.</strong>{' '}
