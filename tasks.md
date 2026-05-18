@@ -1076,7 +1076,7 @@ Template:
   engineering seed — touches mechanical, architecture, automotive, and
   medical at once. P2.
 - **Priority:** P2
-- **Status:** 🔴 not started
+- **Status:** ✅ shipped (already landed pre-session at 1360b6a; marker reconciled)
 - **Scope:** Ingest a point cloud (PLY/E57 subset) and fit basic
   primitives (plane/cylinder/sphere) — the high-leverage reverse-engineering
   seed.
