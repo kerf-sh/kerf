@@ -13,6 +13,7 @@ import {
   addType,
   removeType,
   resolveParams,
+  flexFamily,
 } from '../../lib/family.js'
 
 // ── 1. defaultFamily ──────────────────────────────────────────────────────────
@@ -170,5 +171,96 @@ describe('resolveParams', () => {
     addType(f, { id: 'narrow', name: 'Narrow', params: { width: 700 } })
     const resolved = resolveParams(f, { type_id: 'narrow' })
     expect(resolved.width).toBe(700)
+  })
+})
+
+// ── 6. flexFamily — T-109 flex panel (column / window / door) ─────────────────
+
+describe('flexFamily — T-109 DoD flex panel', () => {
+  // Shared column family fixture
+  const columnFamily = {
+    version: 1,
+    name: 'Concrete Column',
+    category: 'Column',
+    params: [
+      { name: 'width',  type: 'number', default: 400, min: 150, max: 1200, unit: 'mm' },
+      { name: 'depth',  type: 'number', default: 400, min: 150, max: 1200, unit: 'mm' },
+      { name: 'height', type: 'number', default: 3600, min: 2000, max: 12000, unit: 'mm' },
+      { name: 'grade',  type: 'enum',   default: 'C30/37', options: ['C25/30', 'C30/37', 'C40/50', 'C45/55'] },
+    ],
+    types: [
+      { id: '300sq',  name: '300×300',  params: { width: 300,  depth: 300 } },
+      { id: '400sq',  name: '400×400',  params: { width: 400,  depth: 400 } },
+      { id: '600sq',  name: '600×600',  params: { width: 600,  depth: 600 } },
+      { id: '400x600', name: '400×600', params: { width: 400,  depth: 600, grade: 'C40/50' } },
+    ],
+  }
+
+  it('sweeps all column types with allOk=true', () => {
+    const sets = columnFamily.types.map((t) => ({ type_id: t.id }))
+    const { allOk, results } = flexFamily(columnFamily, sets)
+    expect(allOk).toBe(true)
+    expect(results).toHaveLength(4)
+  })
+
+  it('300sq type resolves correct width and depth', () => {
+    const { results } = flexFamily(columnFamily, [{ type_id: '300sq' }])
+    expect(results[0].resolved.width).toBe(300)
+    expect(results[0].resolved.depth).toBe(300)
+    expect(results[0].resolved.grade).toBe('C30/37') // falls through to default
+  })
+
+  it('400x600 type resolves with upgraded grade', () => {
+    const { results } = flexFamily(columnFamily, [{ type_id: '400x600' }])
+    expect(results[0].resolved.width).toBe(400)
+    expect(results[0].resolved.depth).toBe(600)
+    expect(results[0].resolved.grade).toBe('C40/50')
+  })
+
+  it('instance param overrides type grade', () => {
+    const { results } = flexFamily(columnFamily, [
+      { type_id: '400sq', params: { grade: 'C45/55' } },
+    ])
+    expect(results[0].resolved.grade).toBe('C45/55')
+    expect(results[0].ok).toBe(true)
+  })
+
+  it('below-min width is flagged', () => {
+    const { results, allOk } = flexFamily(columnFamily, [
+      { params: { width: 50 } }, // below min 150
+    ])
+    expect(results[0].ok).toBe(false)
+    expect(results[0].errors.some((e) => /below min/.test(e))).toBe(true)
+    expect(allOk).toBe(false)
+  })
+
+  it('above-max height is flagged', () => {
+    const { results } = flexFamily(columnFamily, [
+      { params: { height: 99999 } }, // above max 12000
+    ])
+    expect(results[0].ok).toBe(false)
+    expect(results[0].errors.some((e) => /above max/.test(e))).toBe(true)
+  })
+
+  it('invalid enum grade is flagged', () => {
+    const { results } = flexFamily(columnFamily, [
+      { params: { grade: 'C80/100' } }, // not in options
+    ])
+    expect(results[0].ok).toBe(false)
+    expect(results[0].errors.some((e) => /not a valid option/.test(e))).toBe(true)
+  })
+
+  it('result includes index, input, resolved, errors, ok', () => {
+    const { results } = flexFamily(columnFamily, [{ type_id: '400sq' }])
+    const r = results[0]
+    expect(r).toHaveProperty('index', 0)
+    expect(r).toHaveProperty('input')
+    expect(r).toHaveProperty('resolved')
+    expect(r).toHaveProperty('errors')
+    expect(r).toHaveProperty('ok')
+  })
+
+  it('throws on empty parameter sets', () => {
+    expect(() => flexFamily(columnFamily, [])).toThrow()
   })
 })

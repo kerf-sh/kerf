@@ -9,6 +9,7 @@ import {
   updateParam,
   addType,
   removeType,
+  flexFamily,
 } from './family.js'
 
 // ── defaultFamily ─────────────────────────────────────────────────────────────
@@ -277,5 +278,185 @@ describe('addType / removeType', () => {
   it('removeType throws when id not found', () => {
     const f = defaultFamily('Column')
     expect(() => removeType(f, 'missing')).toThrow()
+  })
+})
+
+// ── flexFamily — end-to-end parametric flex tests (T-109 DoD) ─────────────────
+
+describe('flexFamily — column family end-to-end flex', () => {
+  // Parametric Column family with multiple types
+  const columnFamily = {
+    version: 1,
+    name: 'Structural Column',
+    category: 'Column',
+    params: [
+      { name: 'width',    type: 'number', default: 400, min: 150, max: 1200, unit: 'mm' },
+      { name: 'depth',    type: 'number', default: 400, min: 150, max: 1200, unit: 'mm' },
+      { name: 'height',   type: 'number', default: 3600, min: 2000, max: 12000, unit: 'mm' },
+      { name: 'material', type: 'enum',   default: 'concrete', options: ['concrete', 'steel', 'timber'] },
+    ],
+    types: [
+      { id: '300sq',  name: '300×300',  params: { width: 300,  depth: 300 } },
+      { id: '400sq',  name: '400×400',  params: { width: 400,  depth: 400 } },
+      { id: '600sq',  name: '600×600',  params: { width: 600,  depth: 600 } },
+      { id: '400x600', name: '400×600', params: { width: 400,  depth: 600, material: 'steel' } },
+    ],
+  }
+
+  it('returns allOk when all parameter sets are valid', () => {
+    const { results, allOk } = flexFamily(columnFamily, [
+      {},                                          // all defaults
+      { type_id: '300sq' },                        // smallest type
+      { type_id: '600sq' },                        // largest type
+      { type_id: '400x600', params: { height: 4000 } }, // type + instance override
+    ])
+    expect(results).toHaveLength(4)
+    expect(allOk).toBe(true)
+  })
+
+  it('resolves defaults for empty instance', () => {
+    const { results } = flexFamily(columnFamily, [{}])
+    const r = results[0].resolved
+    expect(r.width).toBe(400)
+    expect(r.depth).toBe(400)
+    expect(r.height).toBe(3600)
+    expect(r.material).toBe('concrete')
+  })
+
+  it('resolves type param preset correctly', () => {
+    const { results } = flexFamily(columnFamily, [{ type_id: '300sq' }])
+    const r = results[0].resolved
+    expect(r.width).toBe(300)
+    expect(r.depth).toBe(300)
+    expect(r.material).toBe('concrete') // falls through to default
+  })
+
+  it('instance param beats type param beats default', () => {
+    const { results } = flexFamily(columnFamily, [
+      { type_id: '400x600', params: { depth: 700 } },
+    ])
+    const r = results[0].resolved
+    expect(r.width).toBe(400)    // from type
+    expect(r.depth).toBe(700)    // instance overrides type (600)
+    expect(r.material).toBe('steel') // from type
+  })
+
+  it('flags below-min violation and marks row not ok', () => {
+    const { results, allOk } = flexFamily(columnFamily, [
+      { params: { width: 50 } },  // 50 < min 150
+    ])
+    expect(results[0].ok).toBe(false)
+    expect(results[0].errors.some((e) => /below min/.test(e))).toBe(true)
+    expect(allOk).toBe(false)
+  })
+
+  it('flags above-max violation', () => {
+    const { results } = flexFamily(columnFamily, [
+      { params: { height: 99999 } },  // > max 12000
+    ])
+    expect(results[0].ok).toBe(false)
+    expect(results[0].errors.some((e) => /above max/.test(e))).toBe(true)
+  })
+
+  it('flags invalid enum value', () => {
+    const { results } = flexFamily(columnFamily, [
+      { params: { material: 'aluminium' } },
+    ])
+    expect(results[0].ok).toBe(false)
+    expect(results[0].errors.some((e) => /not a valid option/.test(e))).toBe(true)
+  })
+
+  it('throws when parameterSets is empty', () => {
+    expect(() => flexFamily(columnFamily, [])).toThrow()
+  })
+
+  it('spans all 4 types correctly (full type sweep)', () => {
+    const sets = columnFamily.types.map((t) => ({ type_id: t.id }))
+    const { results, allOk } = flexFamily(columnFamily, sets)
+    expect(allOk).toBe(true)
+    expect(results[0].resolved.width).toBe(300)
+    expect(results[1].resolved.width).toBe(400)
+    expect(results[2].resolved.width).toBe(600)
+    expect(results[3].resolved.depth).toBe(600)
+  })
+})
+
+describe('flexFamily — window family end-to-end flex', () => {
+  const windowFamily = {
+    version: 1,
+    name: 'Casement Window',
+    category: 'Window',
+    params: [
+      { name: 'width',   type: 'number', default: 900,  min: 300, max: 3000, unit: 'mm' },
+      { name: 'height',  type: 'number', default: 1200, min: 600, max: 2400, unit: 'mm' },
+      { name: 'glazing', type: 'enum',   default: 'double', options: ['single', 'double', 'triple'] },
+      { name: 'openable', type: 'boolean', default: true },
+    ],
+    types: [
+      { id: 'narrow', name: 'Narrow', params: { width: 600 } },
+      { id: 'wide',   name: 'Wide',   params: { width: 1500, glazing: 'triple' } },
+      { id: 'fixed',  name: 'Fixed',  params: { openable: false } },
+    ],
+  }
+
+  it('flexes all window types with valid params', () => {
+    const sets = windowFamily.types.map((t) => ({ type_id: t.id }))
+    const { allOk } = flexFamily(windowFamily, sets)
+    expect(allOk).toBe(true)
+  })
+
+  it('wide type has correct glazing', () => {
+    const { results } = flexFamily(windowFamily, [{ type_id: 'wide' }])
+    expect(results[0].resolved.glazing).toBe('triple')
+    expect(results[0].resolved.width).toBe(1500)
+  })
+
+  it('fixed type sets openable to false', () => {
+    const { results } = flexFamily(windowFamily, [{ type_id: 'fixed' }])
+    expect(results[0].resolved.openable).toBe(false)
+  })
+})
+
+describe('flexFamily — door family end-to-end flex', () => {
+  const doorFamily = {
+    version: 1,
+    name: 'Single Leaf Door',
+    category: 'Door',
+    params: [
+      { name: 'width',   type: 'number', default: 900,  min: 600, max: 2400, unit: 'mm' },
+      { name: 'height',  type: 'number', default: 2100, min: 1800, max: 3000, unit: 'mm' },
+      { name: 'swing',   type: 'enum',   default: 'right', options: ['left', 'right', 'double', 'sliding'] },
+      { name: 'fire_rated', type: 'boolean', default: false },
+    ],
+    types: [
+      { id: '762x2032', name: '762×2032',  params: { width: 762,  height: 2032 } },
+      { id: '838x2032', name: '838×2032',  params: { width: 838,  height: 2032 } },
+      { id: '900x2100', name: '900×2100',  params: { width: 900,  height: 2100 } },
+      { id: 'double',   name: 'Double',    params: { width: 1800, swing: 'double' } },
+    ],
+  }
+
+  it('flexes all door types cleanly', () => {
+    const sets = doorFamily.types.map((t) => ({ type_id: t.id }))
+    const { allOk, results } = flexFamily(doorFamily, sets)
+    expect(allOk).toBe(true)
+    expect(results).toHaveLength(4)
+  })
+
+  it('double door type sets correct swing', () => {
+    const { results } = flexFamily(doorFamily, [{ type_id: 'double' }])
+    expect(results[0].resolved.swing).toBe('double')
+    expect(results[0].resolved.width).toBe(1800)
+  })
+
+  it('authored instance overrides type', () => {
+    const { results } = flexFamily(doorFamily, [
+      { type_id: '900x2100', params: { swing: 'left', fire_rated: true } },
+    ])
+    const r = results[0].resolved
+    expect(r.swing).toBe('left')
+    expect(r.fire_rated).toBe(true)
+    expect(r.width).toBe(900)
+    expect(r.height).toBe(2100)
   })
 })

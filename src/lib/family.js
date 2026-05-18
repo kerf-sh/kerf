@@ -315,3 +315,64 @@ export function removeType(family, type_id) {
   family.types.splice(idx, 1)
   return family
 }
+
+// ── flexFamily ────────────────────────────────────────────────────────────────
+
+/**
+ * Exercise a family across multiple parameter sets and return each resolved
+ * result with validation. This mirrors the backend flex_family tool and is
+ * the "flex panel" for the authoring UX.
+ *
+ * @param {object} family  — The .family.json object
+ * @param {Array<object>} parameterSets  — Array of instance dicts {type_id?, params?}
+ * @returns {{ results: Array<{index, input, resolved, errors, ok}>, allOk: boolean }}
+ */
+export function flexFamily(family, parameterSets) {
+  if (!Array.isArray(parameterSets) || parameterSets.length === 0) {
+    throw new Error('parameterSets must be a non-empty array')
+  }
+
+  const paramDefs = {}
+  for (const p of family.params ?? []) {
+    paramDefs[p.name] = p
+  }
+
+  const results = parameterSets.map((instance, idx) => {
+    const resolved = resolveParams(family, instance)
+    const errors = []
+
+    for (const [name, value] of Object.entries(resolved)) {
+      const def = paramDefs[name]
+      if (!def) continue
+
+      if (def.type === 'number') {
+        if (typeof value !== 'number') {
+          errors.push(`param "${name}": expected number, got ${typeof value}`)
+          continue
+        }
+        if (def.min !== undefined && value < def.min) {
+          errors.push(`param "${name}": value ${value} is below min ${def.min}`)
+        }
+        if (def.max !== undefined && value > def.max) {
+          errors.push(`param "${name}": value ${value} is above max ${def.max}`)
+        }
+      }
+
+      if (def.type === 'enum' && !def.options.includes(value)) {
+        errors.push(`param "${name}": "${value}" is not a valid option (${def.options.join(', ')})`)
+      }
+
+      if (def.type === 'string' && typeof value !== 'string') {
+        errors.push(`param "${name}": expected string, got ${typeof value}`)
+      }
+
+      if (def.type === 'boolean' && typeof value !== 'boolean') {
+        errors.push(`param "${name}": expected boolean, got ${typeof value}`)
+      }
+    }
+
+    return { index: idx, input: instance, resolved, errors, ok: errors.length === 0 }
+  })
+
+  return { results, allOk: results.every((r) => r.ok) }
+}

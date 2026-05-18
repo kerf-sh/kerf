@@ -536,3 +536,208 @@ async def run_update_instance(ctx: ProjectCtx, args: bytes) -> str:
     await record_revision_for_file(ctx, host_fid, body, "tool")
 
     return ok_payload({"instance_id": instance_id, "params": target["params"]})
+
+
+# ── flex_family ────────────────────────────────────────────────────────────────
+
+flex_family_spec = ToolSpec(
+    name="flex_family",
+    description=(
+        "Exercise a .family.json definition across multiple parameter sets and "
+        "return the resolved values for each set. Useful as a 'flex panel' to "
+        "verify that the family produces correct resolved parameters across its "
+        "full range. Each item in 'parameter_sets' is an instance dict "
+        "({type_id?, params?}) resolved against the family; results are returned "
+        "in the same order."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "file_id": {
+                "type": "string",
+                "description": "UUID of the .family.json file to flex",
+            },
+            "parameter_sets": {
+                "type": "array",
+                "description": "List of instance dicts to resolve. Each item: {type_id?, params?}.",
+                "items": {"type": "object"},
+                "minItems": 1,
+            },
+        },
+        "required": ["file_id", "parameter_sets"],
+    },
+)
+
+
+@register(flex_family_spec, write=False)
+async def run_flex_family(ctx: ProjectCtx, args: bytes) -> str:
+    try:
+        a = json.loads(args)
+    except Exception as e:
+        return err_payload(f"invalid args: {e}", "BAD_ARGS")
+
+    file_id = a.get("file_id", "")
+    parameter_sets = a.get("parameter_sets", [])
+
+    try:
+        fid = _uuid.UUID(file_id)
+    except Exception:
+        return err_payload("file_id must be a valid UUID", "BAD_ARGS")
+
+    if not isinstance(parameter_sets, list) or len(parameter_sets) == 0:
+        return err_payload("parameter_sets must be a non-empty array", "BAD_ARGS")
+
+    row = await ctx.pool.fetchrow(
+        "SELECT content FROM files WHERE id = $1 AND project_id = $2 AND kind = 'family' AND deleted_at IS NULL",
+        fid, ctx.project_id,
+    )
+    if not row:
+        return err_payload("family file not found", "NOT_FOUND")
+
+    try:
+        family_doc = json.loads(row["content"])
+    except Exception:
+        return err_payload("family file content is not valid JSON", "PARSE_ERROR")
+
+    results = []
+    param_defs = {p["name"]: p for p in family_doc.get("params", [])}
+
+    for idx, instance in enumerate(parameter_sets):
+        if not isinstance(instance, dict):
+            return err_payload(f"parameter_sets[{idx}] must be an object", "BAD_ARGS")
+
+        resolved = resolve_params(family_doc, instance)
+
+        # Validate resolved values against param definitions
+        param_errors = []
+        for pname, value in resolved.items():
+            defn = param_defs.get(pname)
+            if not defn:
+                continue
+            if defn.get("type") == "number":
+                mn, mx = defn.get("min"), defn.get("max")
+                if mn is not None and value < mn:
+                    param_errors.append(f"param \"{pname}\": {value} is below min {mn}")
+                if mx is not None and value > mx:
+                    param_errors.append(f"param \"{pname}\": {value} is above max {mx}")
+            if defn.get("type") == "enum":
+                if value not in defn.get("options", []):
+                    param_errors.append(f"param \"{pname}\": \"{value}\" is not a valid option")
+
+        results.append({
+            "index": idx,
+            "input": instance,
+            "resolved": resolved,
+            "errors": param_errors,
+            "ok": len(param_errors) == 0,
+        })
+
+    all_ok = all(r["ok"] for r in results)
+    return ok_payload({
+        "file_id": file_id,
+        "family_name": family_doc.get("name"),
+        "category": family_doc.get("category"),
+        "results": results,
+        "all_ok": all_ok,
+    })
+
+
+# ── set_family_representation ──────────────────────────────────────────────────
+
+VALID_REPRESENTATION_KINDS = frozenset({
+    "geometry_ref",    # reference to a CAD geometry file
+    "feature_tree",    # parametric feature-tree (CAD ops)
+    "circuit_ref",     # electronics / circuit reference
+    "parametric_box",  # axis-aligned bounding box driven by params
+})
+
+set_family_representation_spec = ToolSpec(
+    name="set_family_representation",
+    description=(
+        "Attach a geometry representation hint to a .family.json file. "
+        "This links the parametric parameter schema to a geometry source "
+        "so renderers and exporters know how to produce geometry from "
+        "resolved parameter values. "
+        "kind must be one of: geometry_ref, feature_tree, circuit_ref, parametric_box."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "file_id": {"type": "string", "description": "UUID of the .family.json file"},
+            "kind": {
+                "type": "string",
+                "description": "Representation kind (geometry_ref | feature_tree | circuit_ref | parametric_box)",
+            },
+            "ref": {
+                "type": "string",
+                "description": "For geometry_ref/feature_tree: file path or id of the geometry. For parametric_box: omit.",
+            },
+            "size_params": {
+                "type": "object",
+                "description": (
+                    "For parametric_box: mapping of box dimension to param name, "
+                    "e.g. {\"x\": \"width\", \"y\": \"depth\", \"z\": \"height\"}."
+                ),
+            },
+        },
+        "required": ["file_id", "kind"],
+    },
+)
+
+
+@register(set_family_representation_spec, write=True)
+async def run_set_family_representation(ctx: ProjectCtx, args: bytes) -> str:
+    try:
+        a = json.loads(args)
+    except Exception as e:
+        return err_payload(f"invalid args: {e}", "BAD_ARGS")
+
+    file_id = a.get("file_id", "")
+    kind = a.get("kind", "")
+
+    try:
+        fid = _uuid.UUID(file_id)
+    except Exception:
+        return err_payload("file_id must be a valid UUID", "BAD_ARGS")
+
+    if kind not in VALID_REPRESENTATION_KINDS:
+        return err_payload(
+            f"kind must be one of {sorted(VALID_REPRESENTATION_KINDS)}",
+            "BAD_ARGS",
+        )
+
+    row = await ctx.pool.fetchrow(
+        "SELECT content FROM files WHERE id = $1 AND project_id = $2 AND kind = 'family' AND deleted_at IS NULL",
+        fid, ctx.project_id,
+    )
+    if not row:
+        return err_payload("family file not found", "NOT_FOUND")
+
+    try:
+        doc = json.loads(row["content"])
+    except Exception:
+        return err_payload("family file content is not valid JSON", "PARSE_ERROR")
+
+    representation: dict = {"kind": kind}
+    if a.get("ref"):
+        representation["ref"] = a["ref"]
+    if a.get("size_params"):
+        representation["size_params"] = a["size_params"]
+
+    # Validate parametric_box has required size_params
+    if kind == "parametric_box" and not a.get("size_params"):
+        return err_payload(
+            "parametric_box representation requires size_params mapping",
+            "BAD_ARGS",
+        )
+
+    doc["representation"] = representation
+    body = json.dumps(doc, indent="  ")
+
+    await ctx.pool.execute(
+        "UPDATE files SET content = $1 WHERE id = $2 AND project_id = $3",
+        body, fid, ctx.project_id,
+    )
+    await record_revision_for_file(ctx, fid, body, "tool")
+
+    return ok_payload({"file_id": file_id, "representation": representation})
