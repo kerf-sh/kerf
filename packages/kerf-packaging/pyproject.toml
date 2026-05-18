@@ -1,0 +1,21 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "kerf-packaging"
+version = "0.1.0"
+license = { text = "MIT" }
+classifiers = ["License :: OSI Approved :: MIT License"]
+description = "Packaging / dieline plugin for Kerf — folding carton + corrugated box"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.entry-points."kerf.plugins"]
+packaging = "kerf_packaging.plugin:register"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/kerf_packaging"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
