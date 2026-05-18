@@ -603,7 +603,12 @@ class TestClashRecordToDict:
     def test_keys(self):
         r = ClashRecord("c1", "c2", ClashType.HARD, 1.5)
         d = r.to_dict()
-        assert set(d.keys()) == {"a", "b", "type", "depth"}
+        # Core keys always present
+        assert {"a", "b", "type", "depth"}.issubset(d.keys())
+        # Discipline keys present (may be None for unclassified)
+        assert "discipline_a" in d
+        assert "discipline_b" in d
+        assert "discipline_pair" in d
         assert d["a"] == "c1"
         assert d["b"] == "c2"
         assert d["type"] == "hard"

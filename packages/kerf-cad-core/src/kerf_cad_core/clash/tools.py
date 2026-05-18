@@ -6,17 +6,19 @@ Tool
 clash_detect
     Detect spatial clashes (hard interference, clearance violations, coincident
     placements) between a list of component instances.  Each component is
-    described by its placed bounding box and optional triangle mesh.
+    described by its placed bounding box, optional triangle mesh, and optional
+    discipline tag for cross-discipline reporting.
 
 Input schema
 ------------
 {
   "components": [
     {
-      "instance_id": "bolt-1",
-      "transform": [16 floats, row-major 4x4],   // optional; identity if omitted
-      "bbox_min": [x, y, z],                      // local-frame AABB min (mm)
-      "bbox_max": [x, y, z],                      // local-frame AABB max (mm)
+      "instance_id": "column-1",
+      "discipline": "structural",                  // optional; e.g. structural/mep/architectural
+      "transform": [16 floats, row-major 4x4],     // optional; identity if omitted
+      "bbox_min": [x, y, z],                       // local-frame AABB min (mm)
+      "bbox_max": [x, y, z],                       // local-frame AABB max (mm)
       "triangles": [[[x,y,z],[x,y,z],[x,y,z]],...] // optional mesh
     },
     ...
@@ -29,10 +31,16 @@ Output payload
 {
   "ok": bool,
   "clashes": [
-    {"a": "id-a", "b": "id-b", "type": "hard"|"clearance"|"coincident",
+    {"a": "id-a", "b": "id-b",
+     "discipline_a": "structural", "discipline_b": "mep",
+     "discipline_pair": "mep vs structural",
+     "type": "hard"|"clearance"|"coincident",
      "depth": float}
   ],
   "clash_count": int,
+  "by_discipline_pair": {
+    "mep vs structural": {"hard": 1, "clearance": 0, "coincident": 0, "total": 1}
+  },
   "errors": [str, ...]
 }
 
@@ -61,8 +69,14 @@ _spec = ToolSpec(
         "Returns hard clashes (volume interpenetration), clearance violations "
         "(gap < min_clearance), and coincident/duplicate placements.\n"
         "\n"
+        "Supports cross-discipline reporting: tag each component with a "
+        "'discipline' string (e.g. 'structural', 'mep', 'architectural', "
+        "'civil', 'mechanical', 'electrical') to get a by_discipline_pair "
+        "summary grouped by discipline combination.\n"
+        "\n"
         "Each component needs:\n"
         "  instance_id  — unique string identifier\n"
+        "  discipline   — optional discipline tag for cross-discipline reporting\n"
         "  bbox_min     — local-frame bounding box min corner [x,y,z] (mm)\n"
         "  bbox_max     — local-frame bounding box max corner [x,y,z] (mm)\n"
         "  transform    — optional 4×4 row-major matrix (16 floats); "
@@ -85,6 +99,15 @@ _spec = ToolSpec(
                     "type": "object",
                     "properties": {
                         "instance_id": {"type": "string"},
+                        "discipline": {
+                            "type": "string",
+                            "description": (
+                                "Optional discipline tag for cross-discipline "
+                                "reporting, e.g. 'structural', 'mep', "
+                                "'architectural', 'civil', 'mechanical', "
+                                "'electrical'."
+                            ),
+                        },
                         "transform": {
                             "type": "array",
                             "items": {"type": "number"},
@@ -146,6 +169,7 @@ async def run_clash_detect(ctx: ProjectCtx, args: bytes) -> str:
         "ok": result["ok"],
         "clashes": result["clashes"],
         "clash_count": len(result["clashes"]),
+        "by_discipline_pair": result.get("by_discipline_pair", {}),
         "errors": result["errors"],
     })
 

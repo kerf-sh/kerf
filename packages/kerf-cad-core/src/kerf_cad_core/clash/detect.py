@@ -20,6 +20,9 @@ Data model
 ----------
 ComponentShape — lightweight descriptor:
     instance_id  str           unique instance identifier
+    discipline   str | None    component discipline tag, e.g. "structural",
+                               "mep", "architectural", "civil", "mechanical",
+                               "electrical".  None means unclassified.
     transform    list[float]   16-float row-major 4x4 matrix (world placement)
     bbox_min     tuple[float, float, float]   local-frame AABB min corner (mm)
     bbox_max     tuple[float, float, float]   local-frame AABB max corner (mm)
@@ -37,11 +40,23 @@ Output dict
     {
       "a": <instance_id>,
       "b": <instance_id>,
+      "discipline_a": str | None,
+      "discipline_b": str | None,
+      "discipline_pair": str,      # e.g. "architectural vs mep"
       "type": "hard" | "clearance" | "coincident",
       "depth": float,   # penetration depth (>0 hard) or gap (<=0 clearance)
     },
     ...
   ],
+  "by_discipline_pair": {
+    "<pair_key>": {
+      "hard": int,
+      "clearance": int,
+      "coincident": int,
+      "total": int,
+    },
+    ...
+  },
   "errors": [str, ...]   # non-fatal parse/input warnings
 }
 
@@ -95,25 +110,57 @@ class ClashRecord:
 
     Attributes
     ----------
-    a, b    : instance_id of the two components
-    type    : ClashType constant
-    depth   : penetration depth in mm (positive = interpenetrating for HARD/COINCIDENT,
-              negative = separation for CLEARANCE)
+    a, b           : instance_id of the two components
+    discipline_a   : discipline tag of component a (or None)
+    discipline_b   : discipline tag of component b (or None)
+    type           : ClashType constant
+    depth          : penetration depth in mm (positive = interpenetrating for HARD/COINCIDENT,
+                     negative = separation for CLEARANCE)
     """
 
-    __slots__ = ("a", "b", "type", "depth")
+    __slots__ = ("a", "b", "discipline_a", "discipline_b", "type", "depth")
 
-    def __init__(self, a: str, b: str, clash_type: str, depth: float) -> None:
+    def __init__(
+        self,
+        a: str,
+        b: str,
+        clash_type: str,
+        depth: float,
+        discipline_a: str | None = None,
+        discipline_b: str | None = None,
+    ) -> None:
         self.a = a
         self.b = b
+        self.discipline_a = discipline_a
+        self.discipline_b = discipline_b
         self.type = clash_type
         self.depth = depth
 
+    @property
+    def discipline_pair(self) -> str:
+        """Canonical sorted pair string, e.g. 'architectural vs mep'."""
+        da = self.discipline_a or "unclassified"
+        db = self.discipline_b or "unclassified"
+        if da <= db:
+            return f"{da} vs {db}"
+        return f"{db} vs {da}"
+
     def to_dict(self) -> dict:
-        return {"a": self.a, "b": self.b, "type": self.type, "depth": self.depth}
+        return {
+            "a": self.a,
+            "b": self.b,
+            "discipline_a": self.discipline_a,
+            "discipline_b": self.discipline_b,
+            "discipline_pair": self.discipline_pair,
+            "type": self.type,
+            "depth": self.depth,
+        }
 
     def __repr__(self) -> str:  # pragma: no cover
-        return f"ClashRecord({self.a!r}, {self.b!r}, {self.type!r}, depth={self.depth:.4f})"
+        return (
+            f"ClashRecord({self.a!r}, {self.b!r}, {self.type!r}, "
+            f"depth={self.depth:.4f}, pair={self.discipline_pair!r})"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -127,6 +174,9 @@ class ComponentShape:
     Parameters
     ----------
     instance_id : str
+    discipline  : optional discipline tag, e.g. "structural", "mep",
+                  "architectural", "civil", "mechanical", "electrical".
+                  None means unclassified.
     transform   : 16-float row-major 4x4 matrix; None → identity
     bbox_min    : local-frame AABB min corner (x, y, z) in mm
     bbox_max    : local-frame AABB max corner (x, y, z) in mm
@@ -134,11 +184,12 @@ class ComponentShape:
                   for narrow-phase mesh intersection
     """
 
-    __slots__ = ("instance_id", "transform", "bbox_min", "bbox_max", "triangles")
+    __slots__ = ("instance_id", "discipline", "transform", "bbox_min", "bbox_max", "triangles")
 
     def __init__(
         self,
         instance_id: str,
+        discipline: str | None = None,
         transform: list[float] | None = None,
         bbox_min: tuple[float, float, float] = (0.0, 0.0, 0.0),
         bbox_max: tuple[float, float, float] = (1.0, 1.0, 1.0),
@@ -147,6 +198,7 @@ class ComponentShape:
         if not instance_id or not str(instance_id).strip():
             raise ValueError("instance_id must be a non-empty string")
         self.instance_id: str = str(instance_id).strip()
+        self.discipline: str | None = str(discipline).strip().lower() if discipline else None
         self.transform: list[float] = _validate_transform(transform)
         self.bbox_min: tuple[float, float, float] = tuple(float(v) for v in bbox_min)  # type: ignore[assignment]
         self.bbox_max: tuple[float, float, float] = tuple(float(v) for v in bbox_max)  # type: ignore[assignment]
@@ -589,6 +641,93 @@ def _obb_clearance_gap(obb_a: "_OBB", obb_b: "_OBB") -> float:
 
 
 # ---------------------------------------------------------------------------
+# ClashReport — structured report view
+# ---------------------------------------------------------------------------
+
+class ClashReport:
+    """
+    Structured report wrapping the output of clash_detect.
+
+    Attributes
+    ----------
+    clashes             : list of ClashRecord (all types)
+    by_discipline_pair  : dict mapping pair key → {"hard", "clearance",
+                          "coincident", "total"} counts
+    hard_clashes        : filtered list of HARD clashes
+    clearance_clashes   : filtered list of CLEARANCE clashes
+    coincident_clashes  : filtered list of COINCIDENT clashes
+    errors              : list of non-fatal parse warnings
+    ok                  : bool (True even when clashes exist)
+    """
+
+    __slots__ = (
+        "ok",
+        "clashes",
+        "by_discipline_pair",
+        "hard_clashes",
+        "clearance_clashes",
+        "coincident_clashes",
+        "errors",
+    )
+
+    def __init__(self, result: dict) -> None:
+        self.ok: bool = result.get("ok", True)
+        self.errors: list[str] = result.get("errors", [])
+        self.by_discipline_pair: dict = result.get("by_discipline_pair", {})
+
+        raw = result.get("clashes", [])
+        self.clashes: list[ClashRecord] = []
+        for d in raw:
+            self.clashes.append(
+                ClashRecord(
+                    a=d["a"],
+                    b=d["b"],
+                    clash_type=d["type"],
+                    depth=d["depth"],
+                    discipline_a=d.get("discipline_a"),
+                    discipline_b=d.get("discipline_b"),
+                )
+            )
+        self.hard_clashes: list[ClashRecord] = [
+            r for r in self.clashes if r.type == ClashType.HARD
+        ]
+        self.clearance_clashes: list[ClashRecord] = [
+            r for r in self.clashes if r.type == ClashType.CLEARANCE
+        ]
+        self.coincident_clashes: list[ClashRecord] = [
+            r for r in self.clashes if r.type == ClashType.COINCIDENT
+        ]
+
+    @property
+    def clash_count(self) -> int:
+        return len(self.clashes)
+
+    def clashes_for_pair(self, discipline_a: str, discipline_b: str) -> list[ClashRecord]:
+        """Return all clashes between two specific disciplines (order-independent)."""
+        da = discipline_a.strip().lower() if discipline_a else "unclassified"
+        db = discipline_b.strip().lower() if discipline_b else "unclassified"
+        target = f"{min(da, db)} vs {max(da, db)}"
+        return [r for r in self.clashes if r.discipline_pair == target]
+
+    def to_dict(self) -> dict:
+        return {
+            "ok": self.ok,
+            "clash_count": self.clash_count,
+            "clashes": [r.to_dict() for r in self.clashes],
+            "by_discipline_pair": self.by_discipline_pair,
+            "errors": self.errors,
+        }
+
+    def __repr__(self) -> str:  # pragma: no cover
+        return (
+            f"ClashReport(ok={self.ok}, "
+            f"hard={len(self.hard_clashes)}, "
+            f"clearance={len(self.clearance_clashes)}, "
+            f"coincident={len(self.coincident_clashes)})"
+        )
+
+
+# ---------------------------------------------------------------------------
 # Main entry point
 # ---------------------------------------------------------------------------
 
@@ -638,7 +777,7 @@ def clash_detect(
             errors.append(f"components[{i}]: expected ComponentShape or dict, got {type(raw).__name__}")
 
     if len(shapes) < 2:
-        return {"ok": True, "clashes": [], "errors": errors}
+        return {"ok": True, "clashes": [], "by_discipline_pair": {}, "errors": errors}
 
     try:
         min_clearance = float(min_clearance)
@@ -655,6 +794,7 @@ def clash_detect(
 
     # ── Pairwise tests ───────────────────────────────────────────────────
     n = len(shapes)
+    clash_records: list[ClashRecord] = []
     for i in range(n):
         for j in range(i + 1, n):
             sha, shb = shapes[i], shapes[j]
@@ -663,10 +803,12 @@ def clash_detect(
 
             # Step 1: Coincident bbox centres — flag and continue
             if _centres_coincident(obb_a, obb_b):
-                clashes.append(ClashRecord(
+                clash_records.append(ClashRecord(
                     sha.instance_id, shb.instance_id,
                     ClashType.COINCIDENT, 0.0,
-                ).to_dict())
+                    discipline_a=sha.discipline,
+                    discipline_b=shb.discipline,
+                ))
                 continue
 
             # Step 2: AABB broad-phase reject
@@ -685,38 +827,56 @@ def clash_detect(
                 if intersecting:
                     # Use OBB SAT for depth estimate
                     _, depth = _obb_sat(obb_a, obb_b)
-                    clashes.append(ClashRecord(
+                    clash_records.append(ClashRecord(
                         sha.instance_id, shb.instance_id,
                         ClashType.HARD, depth,
-                    ).to_dict())
+                        discipline_a=sha.discipline,
+                        discipline_b=shb.discipline,
+                    ))
                 else:
                     # Check clearance
                     gap = _obb_clearance_gap(obb_a, obb_b)
                     if gap < min_clearance:
-                        clashes.append(ClashRecord(
+                        clash_records.append(ClashRecord(
                             sha.instance_id, shb.instance_id,
                             ClashType.CLEARANCE, gap,
-                        ).to_dict())
+                            discipline_a=sha.discipline,
+                            discipline_b=shb.discipline,
+                        ))
             else:
                 # OBB SAT path
                 overlapping, depth = _obb_sat(obb_a, obb_b)
                 if overlapping:
-                    clashes.append(ClashRecord(
+                    clash_records.append(ClashRecord(
                         sha.instance_id, shb.instance_id,
                         ClashType.HARD, depth,
-                    ).to_dict())
+                        discipline_a=sha.discipline,
+                        discipline_b=shb.discipline,
+                    ))
                 else:
                     # depth here is the separation distance from SAT
                     gap = _obb_clearance_gap(obb_a, obb_b)
                     if 0.0 <= gap < min_clearance:
-                        clashes.append(ClashRecord(
+                        clash_records.append(ClashRecord(
                             sha.instance_id, shb.instance_id,
                             ClashType.CLEARANCE, gap,
-                        ).to_dict())
+                            discipline_a=sha.discipline,
+                            discipline_b=shb.discipline,
+                        ))
+
+    # ── Aggregate by discipline pair ─────────────────────────────────────
+    by_pair: dict[str, dict[str, int]] = {}
+    for rec in clash_records:
+        key = rec.discipline_pair
+        if key not in by_pair:
+            by_pair[key] = {"hard": 0, "clearance": 0, "coincident": 0, "total": 0}
+        by_pair[key][rec.type] += 1
+        by_pair[key]["total"] += 1
 
     return {
         "ok": True,
-        "clashes": clashes,
+        "clashes": [r.to_dict() for r in clash_records],
+        "by_discipline_pair": by_pair,
         "errors": errors,
     }
 
@@ -730,6 +890,7 @@ def _shape_from_dict(d: dict) -> ComponentShape:
     iid = d.get("instance_id")
     if not iid:
         raise ValueError("instance_id is required")
+    discipline = d.get("discipline")
     transform = d.get("transform")
     bbox_min = tuple(d.get("bbox_min", [0.0, 0.0, 0.0]))
     bbox_max = tuple(d.get("bbox_max", [1.0, 1.0, 1.0]))
@@ -742,6 +903,7 @@ def _shape_from_dict(d: dict) -> ComponentShape:
         ]
     return ComponentShape(
         instance_id=iid,
+        discipline=discipline,
         transform=transform,
         bbox_min=bbox_min,  # type: ignore[arg-type]
         bbox_max=bbox_max,  # type: ignore[arg-type]
@@ -756,4 +918,10 @@ __all__ = [
     "ComponentShape",
     "clash_detect",
     "_shape_from_dict",
+    "_OBB",
+    "_obb_sat",
+    "_aabb_overlap",
+    "_aabb_gap",
+    "_world_aabb",
+    "_obb_clearance_gap",
 ]
