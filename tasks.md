@@ -3736,7 +3736,7 @@ User-direction 2026-05-18: "look at Blender and other CADs, I want variety of re
 ### T-215 Animated sun-driven day-night cycle UI
 - **Tier:** B
 - **Priority:** P1
-- **Status:** 🔴 not started
+- **Status:** ✅ shipped
 - **Scope:** add a "Time of day" slider that drives the sun position (T-205 sky + T-204 sun light) from sunrise → noon → sunset → night. Tweens elevation/azimuth + sun colour temperature + sky turbidity. Play/pause button for an animated cycle.
 - **Target files/packages:** `src/lib/dayNightCycle.js` (NEW), `src/lib/dayNightCycle.test.js` (NEW), `src/components/DayNightSlider.jsx` (NEW), `src/components/DayNightSlider.test.jsx` (NEW)
 - **Definition of Done:** slider position maps to (elevation, azimuth, K) deterministically; play mode animates without dropped frames; vitest oracles on the time→position math; `npm run build` clean.
@@ -3745,7 +3745,7 @@ User-direction 2026-05-18: "look at Blender and other CADs, I want variety of re
 ### T-216 Render quality presets (Draft / Preview / Final / Path-traced)
 - **Tier:** B
 - **Priority:** P1
-- **Status:** 🔴 not started
+- **Status:** ✅ shipped
 - **Scope:** four one-click quality presets that batch-set: samples, max bounces, post-fx (T-210), shadow map size (T-219), AA mode. Maps cleanly between the in-viewport realtime path and the T-106b Cycles worker.
 - **Target files/packages:** `src/lib/qualityPresets.js` (NEW), `src/lib/qualityPresets.test.js` (NEW), `src/components/QualityPicker.jsx` (NEW), `src/components/QualityPicker.test.jsx` (NEW)
 - **Definition of Done:** each preset toggles the expected settings deterministically; vitest oracles; `npm run build` clean.
@@ -3763,7 +3763,7 @@ User-direction 2026-05-18: "look at Blender and other CADs, I want variety of re
 ### T-218 Viewport keybinds — Blender-style
 - **Tier:** B
 - **Priority:** P1
-- **Status:** 🔴 not started
+- **Status:** ✅ shipped
 - **Scope:** keyboard shortcuts familiar to Blender / Maya users: `1/3/7` for front/right/top views, `Numpad 0` for camera view, `G/R/S` for transform modes (translate/rotate/scale), `Z` for wireframe toggle, `Shift+Z` for rendered/material view, `T` for transform gizmo toggle, `~` for view-pie-menu. Configurable via a JSON file.
 - **Target files/packages:** `src/lib/viewportKeybinds.js` (NEW), `src/lib/viewportKeybinds.test.js` (NEW), `src/components/KeybindHelp.jsx` (NEW), `src/components/KeybindHelp.test.jsx` (NEW)
 - **Definition of Done:** each keybind dispatches an event the renderer can listen for; vitest fires KeyboardEvent and asserts the right action emitted; `npm run build` clean.
