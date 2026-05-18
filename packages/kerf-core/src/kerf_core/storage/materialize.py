@@ -43,6 +43,7 @@ for the future ``kerf export --hydrate`` path.
 from __future__ import annotations
 
 import asyncio
+import datetime
 import hashlib
 import io
 import os
@@ -64,6 +65,7 @@ __all__ = [
     "MaterializeResult",
     "blob_storage_key",
     "materialize_and_commit",
+    "auto_commit_if_idle",
     "read_path",
 ]
 
@@ -108,6 +110,8 @@ class MaterializeResult:
     inlined: list[str] = field(default_factory=list)
     # shas of the commit's parents (empty list for a root commit)
     parent_shas: list[str] = field(default_factory=list)
+    # 'manual' or 'autosave' — mirrors the kind passed to materialize_and_commit
+    kind: str = "manual"
 
 
 def _normalize_path(path: str) -> str:
@@ -191,6 +195,7 @@ async def materialize_and_commit(
     author_email: str = "noreply@kerf.dev",
     branch: str = "main",
     threshold: Optional[int] = None,
+    kind: str = "manual",
 ) -> MaterializeResult:
     """Classify → (blob → store+ledger+pointer | inline) → commit a git tree.
 
@@ -208,13 +213,18 @@ async def materialize_and_commit(
         branch:       Branch ref to advance (``refs/heads/<branch>``).
         threshold:    Override for the blob size threshold (bytes). Defaults
                       to ``settings.git_inline_max_bytes`` via ``classify``.
+        kind:         Commit kind — ``'manual'`` (deliberate) or ``'autosave'``
+                      (automatic safety-net). Written to ``cloud_git_commits``
+                      by the caller; ``materialize_and_commit`` stores it on
+                      ``MaterializeResult.kind`` so callers don't have to
+                      thread it separately.
 
     Returns:
         ``MaterializeResult`` with the new commit/tree shas and a breakdown of
         which paths were offloaded as blobs vs. stored inline.
     """
     tree_content: dict[str, bytes] = {}
-    result = MaterializeResult(commit_sha="", tree_sha="")
+    result = MaterializeResult(commit_sha="", tree_sha="", kind=kind)
 
     for entry in files:
         path = _normalize_path(entry.path)
@@ -289,6 +299,164 @@ async def materialize_and_commit(
     result.tree_sha = tree_sha
     result.parent_shas = parent_shas
     return result
+
+
+async def auto_commit_if_idle(
+    workspace_id: UUID,
+    *,
+    db_conn,
+    storage: Storage,
+    idle_minutes: int = 15,
+) -> Optional[MaterializeResult]:
+    """Auto-commit all projects in *workspace_id* that have unsaved L2 edits.
+
+    For each project in the workspace:
+
+    1. Find the latest ``cloud_git_commits`` row on the default branch.
+    2. Find the latest ``file_revisions`` timestamp for any file in the project.
+    3. If there is at least one newer revision AND the latest commit is older
+       than ``idle_minutes``, materialise a squashed autosave commit.
+
+    Returns the ``MaterializeResult`` of the last project that triggered an
+    autosave, or ``None`` when no autosave was needed.  Idempotent: a second
+    call with no new revisions in between is always a no-op.
+    """
+    now_utc = datetime.datetime.now(tz=datetime.timezone.utc)
+    idle_delta = datetime.timedelta(minutes=idle_minutes)
+
+    # Resolve every project that belongs to this workspace.
+    project_rows = await db_conn.fetch(
+        "SELECT id FROM projects WHERE workspace_id = $1",
+        workspace_id,
+    )
+
+    last_result: Optional[MaterializeResult] = None
+
+    for proj_row in project_rows:
+        project_id: UUID = proj_row["id"]
+
+        # Latest deliberate commit on main (any branch — fall back to most
+        # recent across all branches when the 'main' branch doesn't exist).
+        latest_commit = await db_conn.fetchrow(
+            """
+            SELECT id, created_at
+            FROM cloud_git_commits
+            WHERE project_id = $1
+            ORDER BY created_at DESC
+            LIMIT 1
+            """,
+            project_id,
+        )
+
+        latest_commit_ts: Optional[datetime.datetime] = (
+            latest_commit["created_at"] if latest_commit else None
+        )
+
+        # Check whether any file_revision is newer than the latest commit.
+        if latest_commit_ts is not None:
+            newer_revision = await db_conn.fetchval(
+                """
+                SELECT 1
+                FROM file_revisions fr
+                JOIN files f ON f.id = fr.file_id
+                WHERE f.project_id = $1
+                  AND fr.created_at > $2
+                LIMIT 1
+                """,
+                project_id,
+                latest_commit_ts,
+            )
+            has_new_revisions = newer_revision is not None
+
+            # Only fire if the idle threshold has also elapsed.
+            idle_elapsed = (now_utc - latest_commit_ts) >= idle_delta
+        else:
+            # No commit ever — check whether there are ANY revisions at all.
+            any_revision = await db_conn.fetchval(
+                """
+                SELECT 1
+                FROM file_revisions fr
+                JOIN files f ON f.id = fr.file_id
+                WHERE f.project_id = $1
+                LIMIT 1
+                """,
+                project_id,
+            )
+            has_new_revisions = any_revision is not None
+            idle_elapsed = True  # no commit yet counts as "long enough idle"
+
+        if not (has_new_revisions and idle_elapsed):
+            continue
+
+        # Collect the current file tree for the project.
+        file_rows = await db_conn.fetch(
+            """
+            SELECT id, name, kind, content, storage_key
+            FROM files
+            WHERE project_id = $1 AND deleted_at IS NULL AND kind != 'folder'
+            ORDER BY name
+            """,
+            project_id,
+        )
+
+        entries: list[FileEntry] = []
+        for fr in file_rows:
+            if fr["storage_key"]:
+                try:
+                    stream, _ = await storage.get(fr["storage_key"])
+                    try:
+                        raw = stream.read()
+                    finally:
+                        close = getattr(stream, "close", None)
+                        if callable(close):
+                            close()
+                    entries.append(FileEntry(path=fr["name"], content=raw))
+                except Exception:
+                    # If the object is missing, skip this file rather than
+                    # aborting the whole autosave.
+                    continue
+            else:
+                content_str = fr["content"] or ""
+                entries.append(
+                    FileEntry(path=fr["name"], content=content_str.encode("utf-8"))
+                )
+
+        if not entries:
+            continue
+
+        # Resolve the bare-repo location for this project.
+        from kerf_core.storage.factory import resolve_project_repo  # local import avoids circularity
+
+        loc = resolve_project_repo(str(project_id), storage)
+
+        iso_now = now_utc.strftime("%Y-%m-%dT%H:%M:%SZ")
+        mat = await materialize_and_commit(
+            repo_dir=loc.repo_dir,
+            files=entries,
+            project_id=project_id,
+            workspace_id=workspace_id,
+            storage=storage,
+            db_conn=db_conn,
+            message=f"autosave {iso_now}",
+            kind="autosave",
+        )
+
+        # Record in cloud_git_commits so the next call sees the fresh timestamp
+        # and is idempotent (no new revisions → skipped above).
+        await db_conn.execute(
+            """
+            INSERT INTO cloud_git_commits
+                (project_id, sha, message, author_name, author_email, branch, kind)
+            VALUES ($1, $2, $3, 'Kerf', 'noreply@kerf.dev', 'main', 'autosave')
+            """,
+            project_id,
+            mat.commit_sha,
+            f"autosave {iso_now}",
+        )
+
+        last_result = mat
+
+    return last_result
 
 
 async def read_path(

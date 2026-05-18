@@ -46,6 +46,7 @@ CREATE TABLE IF NOT EXISTS cloud_git_commits (
     author_email text NOT NULL DEFAULT '',
     branch       text NOT NULL DEFAULT 'main',
     parent_shas  text[] NOT NULL DEFAULT '{}',
+    kind         text NOT NULL DEFAULT 'manual' CHECK (kind IN ('manual', 'autosave')),
     created_at   timestamptz NOT NULL DEFAULT now()
 );
 

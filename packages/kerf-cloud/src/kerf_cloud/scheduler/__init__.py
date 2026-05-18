@@ -1,1 +1,1 @@
-# kerf_cloud.scheduler — background maintenance tasks.
+"""Kerf-cloud background scheduler package — background maintenance tasks."""
