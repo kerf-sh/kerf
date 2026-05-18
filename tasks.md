@@ -3024,7 +3024,7 @@ depth and listed in ROADMAP §3 P2 / §3.5.
 - **Tier:** A
 - **Money/reach rationale:** Basic SIMP topo-opt is shipped (`packages/kerf-topo`). Production-grade generative design (manufacturing-constrained, multi-load-case, multi-objective, lattice-infill) is the moat item for mechanical + automotive (2 personas, ROADMAP §3.5). High AI-native leverage: the LLM frames objectives + constraints in text.
 - **Priority:** P2
-- **Status:** 🔴 not started
+- **Status:** ✅ shipped
 - **Scope:** Extend `packages/kerf-topo` beyond the basic single-objective SIMP with: (a) manufacturing constraints — minimum member size, draw direction, symmetry planes; (b) multi-load-case envelope optimization (worst-case compliance over N load cases); (c) multi-objective Pareto front (stiffness vs mass vs manufacturability); (d) lattice-infill grading (variable density lattice inside the topology boundary). Each is additive to the FEniCSx SIMP core; do not rewrite the solver, extend it. Reference tests: compliance minimization with minimum-member-size constraint must produce a result with no features thinner than the specified minimum (verify via a thickness map). Cite ROADMAP §3.5 "production-grade" distinction from the basic shipped version.
 - **Target files/packages:** `packages/kerf-topo/src/kerf_topo/` (constraints module, multi-load module, lattice module), `packages/kerf-topo/tests/` (extend).
 - **Definition of Done:** multi-load optimization runs on 2+ load cases and produces a compliance envelope; minimum-member-size constraint produces verifiably thicker features; Pareto front returns 3+ non-dominated designs; lattice infill grading verified by density histogram; pytest with analytic or fixture-based references.
@@ -3470,7 +3470,7 @@ User-requested 2026-05-18 — improve tscircuit editing (wires, placement, ratsn
 - **Tier:** A
 - **Money/reach rationale:** placing parts is the second-most-common operation after wiring; today users have to author tscircuit JSX. A direct-manipulation footprint placer matches the KiCad / Altium / EasyEDA expectation and removes a major friction point.
 - **Priority:** P1
-- **Status:** 🔴 not started
+- **Status:** ✅ shipped
 - **Scope:** sidebar component library (read from `@tscircuit/footprinter`'s catalogue); drag a footprint onto the canvas → ghost preview with the bounding box + pad outlines → drop emits a `source_component` + `pcb_component` + `schematic_component` triplet into the Circuit JSON. Rotation via `R` key (90° increments). Snap to a configurable grid (default 0.5 mm). Multi-select + group move.
 - **Target files/packages:** `src/components/CircuitCanvas/FootprintLibrary.jsx` (NEW), `src/components/CircuitCanvas/PlacementMode.jsx` (NEW), `src/lib/circuitJsonPatch.js` (NEW — additive Circuit JSON mutation helpers), vitest.
 - **Definition of Done:** drag any `@tscircuit/footprinter`-known footprint onto the canvas, rotate it, move it, undo — Circuit JSON round-trips clean; vitest; `npm run build` clean.
@@ -3530,7 +3530,7 @@ User-requested 2026-05-18 — improve tscircuit editing (wires, placement, ratsn
 - **Tier:** A
 - **Money/reach rationale:** authoring needs an editor surface. A Monaco panel for `.ato` files + the live Circuit JSON canvas alongside (read-only mirror of T-189/T-190's canvas) gives atopile users the same loop as tscircuit users.
 - **Priority:** P1
-- **Status:** 🔴 not started
+- **Status:** ✅ shipped
 - **Scope:** Monaco language-mode for `.ato` (tokenizer + syntax highlighting; no LSP yet). A split-pane editor: text on the left, live `<CircuitCanvasMini>` on the right showing the compiled Circuit JSON; debounced recompile on edit. Errors in the text panel show a red squiggle (from T-194 parser errors).
 - **Target files/packages:** `src/components/AtopileEditor.jsx` (NEW), `src/lib/atopileMonacoLanguage.js` (NEW), `src/lib/atopileCompileBridge.js` (NEW — calls the backend compile endpoint), API route to expose T-195's compiler over HTTP.
 - **Definition of Done:** editing a `.ato` file in the IDE shows live syntax highlight + a live Circuit JSON preview; error squiggles on a deliberately broken sample; vitest on pure helpers; `npm run build` clean.
@@ -3550,7 +3550,7 @@ User-requested 2026-05-18 — improve tscircuit editing (wires, placement, ratsn
 - **Tier:** B
 - **Money/reach rationale:** code-first electronics + LLM ≈ Cursor-for-PCB. The LLM emits `.ato`, the user previews the compiled Circuit JSON (T-196), iterates. Closes the "tell me what you want, get a working PCB" loop.
 - **Priority:** P1
-- **Status:** 🔴 not started
+- **Status:** ✅ shipped
 - **Scope:** add an LLM tool `make_atopile` to the existing tool registry — input: textual spec ("voltage divider, 10k+1k, 5V in, 0.45V out") → output: a `.ato` source string. Validate via T-194 parser before returning. The LLM tool docs (`llm_docs/atopile.md`) live in `kerf-electronics`.
 - **Target files/packages:** `packages/kerf-electronics/src/kerf_electronics/atopile/llm.py`, `packages/kerf-electronics/llm_docs/atopile.md`, `packages/kerf-electronics/tests/test_atopile_llm.py`.
 - **Definition of Done:** `make_atopile("voltage divider")` returns a parseable `.ato`; `make_atopile("RC low-pass 10kHz cutoff")` returns parseable + the cutoff value embedded as a parameter; pytest green.
