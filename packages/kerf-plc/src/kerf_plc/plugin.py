@@ -55,3 +55,10 @@ def _register_tools(ctx, provides: list) -> None:
         provides.append("plc.lint")
     except Exception as exc:
         logger.warning("kerf-plc: failed to load run_plc_lint tool: %s", exc)
+
+    try:
+        from kerf_plc.tools.create_ladder_rung import create_ladder_rung_spec, create_ladder_rung
+        ctx.tools.register("create_ladder_rung", create_ladder_rung_spec, create_ladder_rung)
+        provides.append("plc.ld")
+    except Exception as exc:
+        logger.warning("kerf-plc: failed to load create_ladder_rung tool: %s", exc)

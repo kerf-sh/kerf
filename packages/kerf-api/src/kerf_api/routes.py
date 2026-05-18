@@ -1440,7 +1440,7 @@ FILE_KINDS = (
     "feature", "circuit", "equations", "material", "simulation", "script",
     "step-ref", "assembly_lock", "canvas", "schedule", "view", "sheet",
     "duct", "pipe", "conduit", "subd", "mesh", "render", "section",
-    "cam_layered", "tool", "plc_st", "quadmesh", "print", "gem", "wiring",
+    "cam_layered", "tool", "plc_st", "plc_ld", "quadmesh", "print", "gem", "wiring",
 )
 
 
