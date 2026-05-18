@@ -796,7 +796,7 @@ Template:
   only 2D WireViz exists; a 3D harness opens a new deliverable for two
   personas already on the path.
 - **Priority:** P1
-- **Status:** 🔴 not started
+- **Status:** ✅ shipped (integrated this session)
 - **Scope:** A `harness_segment` op that routes a bundle along a 3D path
   with diameter from a wire list — the primitive 3D harness needs (today
   only 2D WireViz exists). Formboard flatten + voltage-drop are later tasks.
@@ -2540,3 +2540,18 @@ frontend tasks (T-147/T-148) serialize behind other frontend work.
   reload; schema reset clean, 0 back-stamped; existing git-provider
   tests still green.
 - **Depends-on:** T-145
+
+### T-153 occtWorker tube-sweep for 3D wiring harness (T-36 follow-up)
+- **Tier:** B
+- **Priority:** P2
+- **Status:** 🔴 not started
+- **Scope:** consume `kerf_wiring.harness3d.HarnessSegment` (waypoints +
+  bundle_diameter_mm) in `src/lib/occtWorker.js` to render the harness as
+  an OCCT tube-sweep along the polyline. Frontend/JS — deferred from T-36
+  (out of that task's wiring-package scope).
+- **Target files/packages:** `src/lib/occtWorker.js` + a vitest.
+- **Definition of Done:** a HarnessSegment renders as a swept tube of the
+  correct diameter along its waypoints; vitest on the layout math; build
+  clean. UI/geometry change — needs user dev verification.
+- **Depends-on:** T-36
+
