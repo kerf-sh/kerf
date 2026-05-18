@@ -10,11 +10,11 @@
 //      multi-layer documents; it renders an empty-state message for no layers;
 //      Generate G-code button is present when layers exist.
 //
-//   3. Migration 054: the SQL file exists and adds 'cam_layered' to the
-//      files.kind check constraint.
+//   3. The consolidated baseline migration's files_kind_check constraint
+//      includes 'cam_layered' (the per-kind migrations were folded 66->10).
 
 import { describe, it, expect } from 'vitest'
-import { readFileSync } from 'fs'
+import { readFileSync, readdirSync } from 'fs'
 import { fileURLToPath } from 'url'
 import path from 'path'
 
@@ -28,12 +28,22 @@ const fileTreeSrc = readFileSync(
 const camViewSrc = readFileSync(
   path.resolve(__dirname, '../components/CAMView.jsx'), 'utf8',
 )
+// After the 66->10 migration fold the per-kind migrations were collapsed
+// into the consolidated baseline. Use whichever migration carries the
+// final files_kind_check constraint.
 const migrationSrc = (() => {
-  const migPath = path.resolve(
+  const migDir = path.resolve(
     __dirname,
-    '../../packages/kerf-core/src/kerf_core/db/migrations/054_kind_cam_layered.sql',
+    '../../packages/kerf-core/src/kerf_core/db/migrations',
   )
-  try { return readFileSync(migPath, 'utf8') } catch { return '' }
+  try {
+    let found = ''
+    for (const f of readdirSync(migDir).filter(n => n.endsWith('.sql')).sort()) {
+      const sql = readFileSync(path.join(migDir, f), 'utf8')
+      if (/add constraint files_kind_check/i.test(sql)) found = sql
+    }
+    return found
+  } catch { return '' }
 })()
 
 // ── 1. FileTree kind registration ────────────────────────────────────────────

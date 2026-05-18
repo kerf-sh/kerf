@@ -11,15 +11,15 @@
 //      method present via useImperativeHandle; diagnostic panel rendered
 //      when diagnostics exist; lint debounce constant is 600ms.
 //
-//   3. Migration 057: SQL file exists and adds 'plc_st' to files.kind check
-//      constraint.
+//   3. The consolidated baseline migration's files_kind_check constraint
+//      includes 'plc_st' (the per-kind migrations were folded 66->10).
 //
 //   4. api.js: lintPLC function exported.
 //
 //   5. Editor.jsx: isPLCFile predicate present; PLCView imported.
 
 import { describe, it, expect } from 'vitest'
-import { readFileSync } from 'fs'
+import { readFileSync, readdirSync } from 'fs'
 import { fileURLToPath } from 'url'
 import path from 'path'
 
@@ -35,12 +35,22 @@ const plcViewSrc = readFileSync(
   path.resolve(__dirname, '../components/PLCView.jsx'), 'utf8',
 )
 
+// After the 66->10 migration fold the per-kind migrations were collapsed
+// into the consolidated baseline. Use whichever migration carries the
+// final files_kind_check constraint.
 const migrationSrc = (() => {
-  const p = path.resolve(
+  const migDir = path.resolve(
     __dirname,
-    '../../packages/kerf-core/src/kerf_core/db/migrations/057_kind_plc_st.sql',
+    '../../packages/kerf-core/src/kerf_core/db/migrations',
   )
-  try { return readFileSync(p, 'utf8') } catch { return '' }
+  try {
+    let found = ''
+    for (const f of readdirSync(migDir).filter(n => n.endsWith('.sql')).sort()) {
+      const sql = readFileSync(path.join(migDir, f), 'utf8')
+      if (/add constraint files_kind_check/i.test(sql)) found = sql
+    }
+    return found
+  } catch { return '' }
 })()
 
 const apiSrc = readFileSync(

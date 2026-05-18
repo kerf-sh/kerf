@@ -33,12 +33,22 @@ _MIGRATIONS = (
 
 
 def _latest_kind_check_set() -> set[str]:
-    """Parse the newest files_kind_check migration's allowed-kind set."""
-    latest = sorted(_MIGRATIONS.glob("*kind_wiring.sql"))[-1]
-    sql = latest.read_text()
-    m = re.search(r"kind in \(([^)]*)\)", sql)
-    assert m, "could not find `kind in (...)` in latest kind migration"
-    return set(re.findall(r"'([a-z_-]+)'", m.group(1)))
+    """Parse the final files_kind_check allowed-kind set.
+
+    After the 66->10 migration fold the constraint lives in the
+    consolidated baseline (0001_core_identity.sql). Scan every migration
+    in filename order and use the LAST files_kind_check definition, so
+    this keeps working wherever the constraint ends up.
+    """
+    pat = re.compile(
+        r"files_kind_check\s+check\s*\(\s*kind in \(([^)]*)\)", re.I
+    )
+    found: str | None = None
+    for path in sorted(_MIGRATIONS.glob("*.sql")):
+        for m in pat.finditer(path.read_text()):
+            found = m.group(1)
+    assert found, "no files_kind_check definition found in migrations"
+    return set(re.findall(r"'([a-z_-]+)'", found))
 
 
 def test_every_menu_kind_is_accepted_by_create_file():

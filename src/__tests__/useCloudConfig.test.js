@@ -26,11 +26,17 @@ function mockConfigFetch(payload, { status = 200 } = {}) {
 }
 
 beforeEach(() => {
+  // Hermetic: a developer's local .env may define VITE_GOOGLE_CLIENT_ID,
+  // which feeds the build-time googleEnabled fallback. Stub it empty so
+  // googleEnabled is driven solely by the mocked /api/config payload
+  // (matching CI, where no real client id is present).
+  vi.stubEnv('VITE_GOOGLE_CLIENT_ID', '')
   // Each test supplies its own fetch mock.
   globalThis.fetch = vi.fn()
 })
 
 afterEach(() => {
+  vi.unstubAllEnvs()
   vi.restoreAllMocks()
   delete globalThis.fetch
 })
