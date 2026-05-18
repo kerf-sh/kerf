@@ -46,22 +46,22 @@ def test_enabled_but_no_pool_is_safe_noop(monkeypatch):
     assert _run(_maybe_start_inprocess_workers(_fake_app(pool=None))) is None
 
 
-def test_zero_workers_is_clean_noop():
+def test_zero_workers_is_clean_noop(monkeypatch):
+    from kerf_workers import runner
     from kerf_workers.runner import InProcessWorkers, _build_workers
 
+    # All JOB-worker counts 0 → only the always-on PricingRefreshWorker
+    # remains (it keeps model_prices current; intentionally never zero).
     workers = _build_workers(
         pool=object(), storage_getter=lambda: None,
         fem_count=0, sim_count=0, tess_count=0, cam_count=0,
         compaction_count=0, cloud_enabled=False, local_mode=True,
     )
-    assert workers == []
+    assert [type(w).__name__ for w in workers] == ["PricingRefreshWorker"]
 
-    handle = _run(InProcessWorkers.start(
-        pool=object(), storage_getter=lambda: None,
-        fem_count=0, sim_count=0, tess_count=0, cam_count=0,
-        compaction_count=0, cloud_enabled=False, local_mode=True,
-    ))
-    # No task spawned; aclose() returns cleanly.
+    # A truly empty harness → InProcessWorkers is a clean no-op (no task).
+    monkeypatch.setattr(runner, "_build_workers", lambda *a, **k: [])
+    handle = _run(InProcessWorkers.start(pool=object(), storage_getter=lambda: None))
     _run(handle.aclose())
 
 
