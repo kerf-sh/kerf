@@ -53,6 +53,8 @@ import { exportSvg, exportPng, exportPdf } from '../lib/svgExport.js'
 import { api } from '../lib/api.js'
 import { mateRefFromPick, parseAssembly } from '../lib/assembly.js'
 import { _internalLoops } from '../lib/sketchGeom2.js'
+import FileEditor from '../components/FileEditor.jsx'
+import { isTextCodeFile } from '../lib/editorModes.js'
 
 // ---------------------------------------------------------------------------
 // Build3DDropdown — toolbar dropdown in the sketch header that scaffolds a
@@ -1016,6 +1018,10 @@ export default function Editor() {
   }, [femFile, w.parts])
 
   const printFile = isPrintFile(w.currentFile)
+  // T-116: plain-text / code files — matched by extension via editorModes.js.
+  // Must be checked AFTER all dedicated-extension checks above so that e.g.
+  // a .json family file is not accidentally grabbed by the plain editor.
+  const textCodeFile = isTextCodeFile(w.currentFile)
   // Resolver used by FeatureView to fetch sketch contents on demand. We
   // re-read the latest file content rather than relying on the cached
   // sketch parse from the workspace store (which may be stale if the user
@@ -1928,6 +1934,23 @@ export default function Editor() {
                 viewRef={currentViewRef}
                 content={w.currentFileContent}
                 fileName={w.currentFile?.name}
+              />
+              {w.toast && (
+                <div className="absolute bottom-3 right-3 z-20 px-3 py-2 rounded-md bg-ink-900 border border-kerf-300/60 text-kerf-300 text-xs shadow-xl"
+                  onClick={() => w.dismissToast()}>
+                  {w.toast}
+                </div>
+              )}
+            </div>
+          ) : textCodeFile ? (
+            /* T-116: plain-text / code files open full-bleed in the FileEditor
+               (Monaco with per-extension language mode). Changes round-trip
+               through the existing workspace save path via w.editContent(). */
+            <div className="flex-1 min-h-0 relative">
+              <FileEditor
+                content={w.currentFileContent}
+                fileName={w.currentFile?.name}
+                onChange={(v) => w.editContent(v)}
               />
               {w.toast && (
                 <div className="absolute bottom-3 right-3 z-20 px-3 py-2 rounded-md bg-ink-900 border border-kerf-300/60 text-kerf-300 text-xs shadow-xl"
