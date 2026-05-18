@@ -3902,7 +3902,7 @@ User-direction 2026-05-18: the existing `kerf-firmware` (T-130) is a thin `pio` 
 ### T-232 Verilog / SystemVerilog lexer/parser — pure Python, synthesizable subset
 - **Tier:** A
 - **Priority:** P2
-- **Status:** 🔴 not started
+- **Status:** ✅ shipped
 - **Scope:** companion to T-231 for Verilog (IEEE 1364) and a SystemVerilog (IEEE 1800) subset. Covers `module` / `endmodule` / port lists / parameters, `wire`/`reg`/`logic` declarations, `assign`, `always_ff`/`always_comb`/`always_latch`, `case`/`casex`/`casez`, `for`/`while`/`repeat`/`forever`, `function`/`task`, packed + unpacked arrays, blocking vs non-blocking assignment, hierarchical references. SystemVerilog adds: `logic` type, packed structs/unions, enums, `typedef`, `interface` (parsed, not elaborated). AST is the same frozen-dataclass shape as T-231 so downstream consumers can dispatch on language. Out-of-scope (future): full constraint-randomization, classes/OOP, UVM, assertions (SVA).
 - **Target files/packages:** `packages/kerf-silicon/src/kerf_silicon/verilog/__init__.py` (NEW), `packages/kerf-silicon/src/kerf_silicon/verilog/lexer.py` (NEW), `packages/kerf-silicon/src/kerf_silicon/verilog/parser.py` (NEW), `packages/kerf-silicon/src/kerf_silicon/verilog/ast.py` (NEW), `packages/kerf-silicon/src/kerf_silicon/verilog/pretty.py` (NEW), `packages/kerf-silicon/tests/test_verilog_lexer.py` (NEW), `packages/kerf-silicon/tests/test_verilog_parser.py` (NEW), `packages/kerf-silicon/tests/fixtures/verilog/` (NEW — 12 fixtures mirroring T-231's set in both `.v` and `.sv` flavours where the SV one exercises `logic`/`enum`/`typedef`).
 - **Definition of Done:** all 24 fixtures (12 `.v` + 12 `.sv`) parse to non-empty ASTs; pretty-print → re-parse round-trips with AST equality; `always_ff` vs `always_comb` correctly distinguished on the SV variant; pytest oracles; `npm run build` clean.
@@ -3938,7 +3938,7 @@ User-direction 2026-05-18: the existing `kerf-firmware` (T-130) is a thin `pio` 
 ### T-236 ngspice mixed-signal extension — device-level SPICE for silicon
 - **Tier:** A
 - **Priority:** P2
-- **Status:** 🔴 not started
+- **Status:** ✅ shipped
 - **Scope:** extend the existing `kerf-electronics` ngspice integration to handle device-level SPICE netlists for silicon (MOSFET-level, BSIM4 models, sub-circuits, parasitic networks). The existing `routes_spice.py` runs ngspice on PCB-level circuits; this task adds (1) a `.spice` / `.cir` file kind for raw netlists, (2) a transient/AC/DC/noise sweep wrapper that emits standard analysis types, (3) reads device models from a PDK directory (`sky130A.lib.spice` etc.) when the PDK is available (T-239), (4) plots the result via the existing wave-trace UI used for ngspice on PCB. Bridges T-231..T-235 (digital RTL) to T-243+ (mixed-signal verification).
 - **Target files/packages:** `packages/kerf-silicon/src/kerf_silicon/spice/__init__.py` (NEW), `packages/kerf-silicon/src/kerf_silicon/spice/ngspice_bridge.py` (NEW — re-uses `kerf_electronics.routes_spice` patterns), `packages/kerf-silicon/src/kerf_silicon/spice/analyses.py` (NEW — transient / AC / DC / noise), `packages/kerf-silicon/src/kerf_silicon/spice/pdk_models.py` (NEW — read device-model `.spice` files from a PDK dir), `packages/kerf-silicon/tests/test_spice_silicon.py` (NEW), `packages/kerf-silicon/tests/fixtures/spice/inverter_sky130.cir` (NEW — CMOS inverter on SKY130 models).
 - **Definition of Done:** with mocked ngspice, the inverter `.cir` runs through `tran 1n 100n` and the wrapper emits a structured `{time[], vout[]}` result; with real ngspice + SKY130 PDK models present (integration test gated), the inverter transitions cleanly with rise time < 1 ns; pytest oracles; `npm run build` clean.
@@ -3956,7 +3956,7 @@ User-direction 2026-05-18: the existing `kerf-firmware` (T-130) is a thin `pio` 
 ### T-238 In-browser layout viewer — SVG/Canvas, KLayout-style pan/zoom/layers
 - **Tier:** A
 - **Priority:** P2
-- **Status:** 🔴 not started
+- **Status:** ✅ shipped
 - **Scope:** React component that renders a parsed GDS-II (via T-237) in the browser using Canvas (for polygon-heavy designs) with an SVG overlay for selection and measure tools. Pan/zoom (KLayout-style: middle-mouse drag, scroll-wheel zoom to cursor, fit-to-window), a layers panel with per-layer colour + visibility (driven by the PDK layer map when available — T-239), polygon-pick → display layer / datatype / vertex-count / area, ruler tool (`r` key) for measure-distance, hierarchy panel showing top cell + children. **Not a klayout-GUI in the browser** — a clean re-render against our own data model.
 - **Target files/packages:** `src/components/LayoutViewer.jsx` (NEW), `src/components/LayoutViewer.test.jsx` (NEW), `src/components/LayoutViewerLayers.jsx` (NEW — layers panel), `src/components/LayoutViewerHierarchy.jsx` (NEW), `src/lib/gdsLoader.js` (NEW — fetch a parsed GDS payload from the backend), `src/lib/layoutCanvas.js` (NEW — pure rendering logic, no DOM coupling), `src/lib/layoutCanvas.test.js` (NEW — vitest on the rendering math), `packages/kerf-silicon/src/kerf_silicon/routes_layout.py` (NEW — HTTP route that streams a parsed GDS to the frontend as JSON-polygons).
 - **Definition of Done:** loading the SKY130 inverter fixture renders ≥ 1 visible polygon per layer; pan/zoom math: clicking at canvas-coord (200,150) at zoom=2x with origin (-100,-50) projects to layout-coord (200,200) (oracle); the layers panel toggles layer visibility and the canvas re-renders without lag (< 16 ms per frame on the inverter fixture); polygon-pick highlights the selection; vitest + pytest oracles; `npm run build` clean.
@@ -3983,7 +3983,7 @@ User-direction 2026-05-18: the existing `kerf-firmware` (T-130) is a thin `pio` 
 ### T-241 Liberty (`.lib`) timing-library reader — characterised cell timing
 - **Tier:** A
 - **Priority:** P2
-- **Status:** 🔴 not started
+- **Status:** ✅ shipped
 - **Scope:** pure-Python reader for **Liberty** (`.lib`) — the standard cell timing/power characterisation format. Spec is the public Synopsys Liberty Reference Manual; the format is a nested `key (value) { … }` grammar. Parses per-cell `cell` blocks containing `pin` blocks containing `timing` arcs with `cell_rise` / `cell_fall` / `rise_transition` / `fall_transition` lookup tables, plus `leakage_power` and `internal_power`. Dataclass tree. Reader-only in v1.
 - **Target files/packages:** `packages/kerf-silicon/src/kerf_silicon/layout/liberty/__init__.py` (NEW), `packages/kerf-silicon/src/kerf_silicon/layout/liberty/reader.py` (NEW), `packages/kerf-silicon/src/kerf_silicon/layout/liberty/ast.py` (NEW), `packages/kerf-silicon/tests/test_liberty.py` (NEW), `packages/kerf-silicon/tests/fixtures/liberty/sky130_fd_sc_hd__tt_025C_1v80.lib` (NEW — slim subset, ~10 cells, 1 PVT corner).
 - **Definition of Done:** Liberty fixture parses ≥ 10 cells; the inverter cell has a `cell_rise` LUT with the expected `index_1` (input slew) and `index_2` (output cap) axes; cell-leakage-power values are read as floats in the expected range (~1 pW for SKY130 HD); pytest oracles; `npm run build` clean.
@@ -4028,7 +4028,7 @@ User-direction 2026-05-18: the existing `kerf-firmware` (T-130) is a thin `pio` 
 ### T-246 Parasitic extraction (RC) — post-layout net capacitance + resistance
 - **Tier:** A
 - **Priority:** P3
-- **Status:** 🔴 not started
+- **Status:** ✅ shipped
 - **Scope:** Phase-3 capability: **parasitic extraction** — read a routed `.gds` + a per-PDK extraction deck (layer sheet-resistance Ω/sq, layer-to-substrate cap fF/μm², layer-to-layer cap fF/μm²) and emit a per-net `{R[], C[]}` SPICE-compatible parasitic netlist (`.spef` standard format). Drives back-annotated SPICE simulation (T-236) for real post-layout timing. v1 = lumped C and lumped R per net (not distributed RC tree); SKY130 deck only.
 - **Target files/packages:** `packages/kerf-silicon/src/kerf_silicon/extract/__init__.py` (NEW), `packages/kerf-silicon/src/kerf_silicon/extract/parasitics.py` (NEW — area/perimeter integration → C + R), `packages/kerf-silicon/src/kerf_silicon/extract/spef_writer.py` (NEW — IEEE 1481 SPEF format), `packages/kerf-silicon/src/kerf_silicon/pdk/sky130_extract.json` (NEW — sheet-R + cap per layer), `packages/kerf-silicon/tests/test_extract.py` (NEW).
 - **Definition of Done:** the inverter routed fixture extracts a per-net cap ≥ 0.1 fF and ≤ 10 fF (oracle range for that geometry on SKY130 met1); the SPEF output parses by `spef2spice` or our own re-reader; pytest oracles; `npm run build` clean.
@@ -4037,7 +4037,7 @@ User-direction 2026-05-18: the existing `kerf-firmware` (T-130) is a thin `pio` 
 ### T-247 Photolithography mask generation — fracturing + OPC stub
 - **Tier:** A
 - **Priority:** P3
-- **Status:** 🔴 not started
+- **Status:** ✅ shipped
 - **Scope:** Phase-3 capability: **photolithography mask generation** — take a finalised `.gds` and produce mask-shop deliverables. Two pieces: (1) **fracturing** — convert curvilinear / 45° polygons to rectilinear primitives (rectangles / trapezoids) compatible with mask-writer formats (MEBES, JEOL51); (2) **OPC stub** — placeholders for Optical Proximity Correction (hammerheads, serifs, scattering bars) implemented as a rule-based transform on layer boundaries. v1 OPC is a stub (rule-based corner-rounding only); production OPC needs model-based OPC which is a multi-quarter project — explicitly out of scope. The fracturing piece is genuinely useful at v1 because it is a deterministic geometric transform.
 - **Target files/packages:** `packages/kerf-silicon/src/kerf_silicon/mask/__init__.py` (NEW), `packages/kerf-silicon/src/kerf_silicon/mask/fracture.py` (NEW — polygon → rectangles/trapezoids), `packages/kerf-silicon/src/kerf_silicon/mask/opc_stub.py` (NEW — rule-based corner corrections), `packages/kerf-silicon/src/kerf_silicon/mask/mebes_writer.py` (NEW — minimal MEBES stub), `packages/kerf-silicon/tests/test_mask.py` (NEW).
 - **Definition of Done:** an L-shaped polygon fractures to 2 rectangles with no area loss; the OPC stub adds hammerheads at line-ends matching a 3-rule deck; mask writer emits a syntactically-valid MEBES stub that re-reads to the same shape set; pytest oracles; `npm run build` clean.
