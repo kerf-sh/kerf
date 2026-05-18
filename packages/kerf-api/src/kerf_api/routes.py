@@ -11,6 +11,7 @@ import time
 import uuid
 import io
 import zipfile
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Optional, Any
 
@@ -3619,6 +3620,240 @@ def slugify_name(name: str) -> str:
     return out
 
 
+@dataclass
+class _FileRecord:
+    """Normalised file record used by materialize_project_tree."""
+    id: str
+    parent_id: Optional[str]
+    name: str
+    kind: str
+    content: str          # inline text content (may be empty when storage_key is set)
+    storage_key: Optional[str]   # object-store key; set → blob, None → inline
+    mime_type: Optional[str]
+    size: Optional[int]
+
+
+@dataclass
+class MaterializeTreeResult:
+    """Return value from materialize_project_tree.
+
+    zip_bytes: raw bytes of the self-contained ZIP archive.
+    manifest:  the kerf-manifest.json dict (also embedded in the archive).
+    """
+    zip_bytes: bytes
+    manifest: dict
+
+
+async def materialize_project_tree(
+    *,
+    files: list[_FileRecord],
+    storage,
+    project_name: str = "",
+    project_description: str = "",
+    project_tags: list = None,
+    project_created_at: str = "",
+    thumbnail_storage_key: Optional[str] = None,
+    max_bytes: int = EXPORT_MAX_BYTES,
+) -> MaterializeTreeResult:
+    """Build a self-contained ZIP archive for a project's file tree.
+
+    This is the shared materialization spine reused by the export route,
+    sync (T-127), and import (T-128).  It is a pure async function with
+    no DB dependency — the caller resolves the file records and passes
+    them in.
+
+    Classification rules (mirrors the DB seam):
+    - ``storage_key`` is set   → *blob*: real bytes are fetched from
+      ``storage`` and written at the file's resolved path.
+    - ``storage_key`` is None  → *inline*: ``content`` bytes are written
+      verbatim at the file's resolved path.
+
+    The archive always contains a top-level ``kerf-manifest.json`` listing
+    every file with:
+    - ``path``           — POSIX repo-relative path
+    - ``kind``           — file kind (script, step, folder, …)
+    - ``classification`` — ``"inline"`` or ``"blob"``
+    - ``size``           — byte size of the actual content
+    - ``oid``            — sha256 hex digest of the content (blobs and
+                           inline files alike, so importers can verify)
+    - ``mime_type``      — optional; omitted when absent
+
+    Raises:
+        HTTPException(413): if the accumulated archive size exceeds
+            ``max_bytes`` (default: 500 MB).
+        Any storage.get() exception propagates unchanged so callers can
+            decide how to handle missing blobs.
+
+    Args:
+        files:                   Normalised file records (from ``files``
+                                 table rows).
+        storage:                 Kerf storage backend (LocalStorage /
+                                 S3Storage).
+        project_name:            Project name — embedded in the manifest.
+        project_description:     Project description — embedded in the
+                                 manifest.
+        project_tags:            Project tags list — embedded in the manifest.
+        project_created_at:      ISO-8601 string — embedded in the manifest.
+        thumbnail_storage_key:   When set, the thumbnail is fetched and
+                                 added to the archive as ``thumbnail.jpg``.
+        max_bytes:               Hard cap on the uncompressed content
+                                 written to the archive (default 500 MB).
+
+    Returns:
+        ``MaterializeTreeResult`` with ``zip_bytes`` and ``manifest``.
+    """
+    if project_tags is None:
+        project_tags = []
+
+    # --- 1. Build id→record index and resolve POSIX paths ----------------
+    by_id: dict[str, _FileRecord] = {f.id: f for f in files}
+    path_of: dict[str, str] = {}
+
+    def _resolve(fid: str) -> str:
+        if fid in path_of:
+            return path_of[fid]
+        rec = by_id.get(fid)
+        if not rec:
+            return ""
+        if not rec.parent_id:
+            p = rec.name
+        else:
+            parent_path = _resolve(rec.parent_id)
+            p = rec.name if not parent_path else f"{parent_path}/{rec.name}"
+        path_of[fid] = p
+        return p
+
+    # BFS ordering so parent paths are resolved before children.
+    roots = [f.id for f in files if not f.parent_id]
+    children_of: dict[str, list[str]] = {}
+    for f in files:
+        if f.parent_id:
+            children_of.setdefault(f.parent_id, []).append(f.id)
+
+    ordered: list[str] = []
+    queue = list(roots)
+    while queue:
+        fid = queue.pop(0)
+        ordered.append(fid)
+        queue.extend(children_of.get(fid, []))
+
+    # --- 2. Build manifest entries and collect pending writes -------------
+    manifest_files: list[dict] = []
+
+    # Each pending: {"path": str, "content_bytes": bytes | None,
+    #                "blob_key": str | None}
+    # We defer blob fetches so inline files are always written even if a
+    # blob fetch fails.
+    pendings: list[dict] = []
+    seen_blob_key: set[str] = set()
+
+    for fid in ordered:
+        rec = by_id[fid]
+        rel = _resolve(fid)
+
+        entry: dict = {"path": rel, "kind": rec.kind}
+        if rec.mime_type:
+            entry["mime_type"] = rec.mime_type
+
+        if rec.kind == "folder":
+            entry["classification"] = "folder"
+            manifest_files.append(entry)
+            continue
+
+        if rec.storage_key:
+            # Blob — real bytes live in the object store.
+            entry["classification"] = "blob"
+            entry["oid"] = rec.storage_key  # storage_key is the sha256 oid
+            if rec.size is not None:
+                entry["size"] = rec.size
+            if rec.storage_key not in seen_blob_key:
+                seen_blob_key.add(rec.storage_key)
+                pendings.append({
+                    "zip_path": rel,
+                    "blob_key": rec.storage_key,
+                    "content_bytes": None,
+                })
+        else:
+            # Inline — content column holds the text.
+            content_bytes = rec.content.encode("utf-8") if isinstance(rec.content, str) else (rec.content or b"")
+            oid = hashlib.sha256(content_bytes).hexdigest()
+            entry["classification"] = "inline"
+            entry["oid"] = oid
+            entry["size"] = len(content_bytes)
+            pendings.append({
+                "zip_path": rel,
+                "blob_key": None,
+                "content_bytes": content_bytes,
+            })
+
+        manifest_files.append(entry)
+
+    # --- 3. Fetch blob content and finalise oids before building manifest --
+    # We resolve all blob bytes first so kerf-manifest.json can be written
+    # with accurate oid and size values in a single pass.
+    for p in pendings:
+        if p["blob_key"]:
+            blob_io, _ = await storage.get(p["blob_key"])
+            blob_bytes = blob_io.read()
+            p["content_bytes"] = blob_bytes
+            # Update the manifest entry with the real sha256 oid and size.
+            oid = hashlib.sha256(blob_bytes).hexdigest()
+            for me in manifest_files:
+                if me.get("classification") == "blob" and me.get("oid") == p["blob_key"]:
+                    me["oid"] = oid
+                    me["size"] = len(blob_bytes)
+                    break
+
+    manifest: dict = {
+        "version": 1,
+        "name": project_name,
+        "description": project_description,
+        "tags": project_tags,
+        "created_at": project_created_at,
+        "files": manifest_files,
+    }
+
+    # --- 4. Assemble ZIP in-memory ----------------------------------------
+    buf = io.BytesIO()
+    written = 0
+
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        manifest_bytes = json.dumps(manifest, indent=2).encode("utf-8")
+        written += len(manifest_bytes)
+        if written > max_bytes:
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail="export exceeds 500MB cap",
+            )
+        zf.writestr("kerf-manifest.json", manifest_bytes)
+
+        for p in pendings:
+            content_bytes = p["content_bytes"] or b""
+            written += len(content_bytes)
+            if written > max_bytes:
+                raise HTTPException(
+                    status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                    detail="export exceeds 500MB cap",
+                )
+            zf.writestr(p["zip_path"], content_bytes)
+
+        if thumbnail_storage_key:
+            try:
+                thumb_io, _ = await storage.get(thumbnail_storage_key)
+                thumb_bytes = thumb_io.read()
+                written += len(thumb_bytes)
+                if written > max_bytes:
+                    raise HTTPException(
+                        status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                        detail="export exceeds 500MB cap",
+                    )
+                zf.writestr("thumbnail.jpg", thumb_bytes)
+            except Exception:
+                pass
+
+    return MaterializeTreeResult(zip_bytes=buf.getvalue(), manifest=manifest)
+
+
 @router.get("/projects/{pid}/export")
 async def export_project(
     request: Request,
@@ -3639,8 +3874,8 @@ async def export_project(
 
         row = await conn.fetchrow(
             """
-            select name, description, coalesce(tags, '{}'),
-                   to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'),
+            select name, description, coalesce(tags, '{}') as tags,
+                   to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
                    thumbnail_storage_key
             from projects where id = $1
             """,
@@ -3652,12 +3887,12 @@ async def export_project(
         name = row["name"]
         description = row["description"]
         tags = list(row["tags"]) if row["tags"] else []
-        created_at = row["to_char"]
+        created_at = row["created_at"]
         thumb_key = row["thumbnail_storage_key"]
 
         file_rows = await conn.fetch(
             """
-            select id, parent_id, name, kind, coalesce(content, ''),
+            select id, parent_id, name, kind, coalesce(content, '') as content,
                    storage_key, mime_type, size
             from files
             where project_id = $1 and deleted_at is null
@@ -3665,144 +3900,40 @@ async def export_project(
             uuid.UUID(pid),
         )
 
-        by_id = {}
-        for fr in file_rows:
-            by_id[str(fr["id"])] = {
-                "id": str(fr["id"]),
-                "parent_id": str(fr["parent_id"]) if fr["parent_id"] else None,
-                "name": fr["name"],
-                "kind": fr["kind"],
-                "content": fr["coalesce"],
-                "storage_key": fr["storage_key"],
-                "mime_type": fr["mime_type"],
-                "size": fr["size"],
-            }
+        records = [
+            _FileRecord(
+                id=str(fr["id"]),
+                parent_id=str(fr["parent_id"]) if fr["parent_id"] else None,
+                name=fr["name"],
+                kind=fr["kind"],
+                content=fr["content"],
+                storage_key=fr["storage_key"],
+                mime_type=fr["mime_type"],
+                size=fr["size"],
+            )
+            for fr in file_rows
+        ]
 
-        path_of = {}
+    storage = get_storage_required()
+    result = await materialize_project_tree(
+        files=records,
+        storage=storage,
+        project_name=name,
+        project_description=description or "",
+        project_tags=tags,
+        project_created_at=created_at or "",
+        thumbnail_storage_key=thumb_key,
+    )
 
-        def resolve(id_val: str) -> str:
-            if id_val in path_of:
-                return path_of[id_val]
-            f = by_id.get(id_val)
-            if not f:
-                return ""
-            parent_id = f["parent_id"]
-            if not parent_id:
-                p = f["name"]
-            else:
-                parent = resolve(parent_id)
-                p = f["name"] if not parent else f"{parent}/{f['name']}"
-            path_of[id_val] = p
-            return p
+    slug = slugify_name(name)
+    short = pid[:8]
+    filename = f"{slug}-{short}.zip"
 
-        roots = []
-        children_of = {}
-        for id_val, f in by_id.items():
-            parent_id = f["parent_id"]
-            if not parent_id:
-                roots.append(id_val)
-            else:
-                if parent_id not in children_of:
-                    children_of[parent_id] = []
-                children_of[parent_id].append(id_val)
-
-        ordered = []
-        queue = list(roots)
-        while queue:
-            id_val = queue.pop(0)
-            ordered.append(id_val)
-            queue.extend(children_of.get(id_val, []))
-
-        manifest_files = []
-        pendings = []
-        seen_blob = set()
-
-        for id_val in ordered:
-            f = by_id[id_val]
-            rel = resolve(id_val)
-
-            entry = {"path": rel, "kind": f["kind"]}
-            if f["mime_type"]:
-                entry["mime_type"] = f["mime_type"]
-            if f["size"]:
-                entry["size"] = f["size"]
-
-            if f["kind"] == "folder":
-                pass
-            elif f["storage_key"]:
-                key = f["storage_key"]
-                entry["storage_key"] = key
-                if key not in seen_blob:
-                    seen_blob.add(key)
-                    pendings.append({"path": f"blobs/{key}", "blob_key": key})
-            else:
-                entry["content"] = f["content"]
-                pendings.append({"path": f"files/{rel}", "content": f["content"]})
-
-            manifest_files.append(entry)
-
-        manifest = {
-            "version": 1,
-            "name": name,
-            "description": description,
-            "tags": tags,
-            "created_at": created_at,
-            "files": manifest_files,
-        }
-
-        slug = slugify_name(name)
-        short = pid[:8]
-        filename = f"{slug}-{short}.zip"
-
-        async def generate():
-            storage = get_storage_required()
-            written = 0
-
-            with zipfile.ZipFile(io.BytesIO(), "w", zipfile.ZIP_DEFLATED) as zf:
-                manifest_json = json.dumps(manifest, indent=2)
-                manifest_bytes = manifest_json.encode()
-                written += len(manifest_bytes)
-                if written > EXPORT_MAX_BYTES:
-                    raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="export exceeds 500MB cap")
-                zf.writestr("manifest.json", manifest_bytes)
-
-                for p in pendings:
-                    if p.get("blob_key"):
-                        try:
-                            blob_data, _ = await storage.get(p["blob_key"])
-                            blob_bytes = blob_data.read()
-                            written += len(blob_bytes)
-                            if written > EXPORT_MAX_BYTES:
-                                raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="export exceeds 500MB cap")
-                            zf.writestr(p["path"], blob_bytes)
-                        except Exception:
-                            pass
-                    else:
-                        content = p.get("content", "")
-                        content_bytes = content.encode() if isinstance(content, str) else content
-                        written += len(content_bytes)
-                        if written > EXPORT_MAX_BYTES:
-                            raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="export exceeds 500MB cap")
-                        zf.writestr(p["path"], content_bytes)
-
-                if thumb_key:
-                    try:
-                        thumb_data, _ = await storage.get(thumb_key)
-                        thumb_bytes = thumb_data.read()
-                        written += len(thumb_bytes)
-                        if written > EXPORT_MAX_BYTES:
-                            raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="export exceeds 500MB cap")
-                        zf.writestr("thumbnail.jpg", thumb_bytes)
-                    except Exception:
-                        pass
-
-                yield zf.writestr.__self__.getvalue()
-
-        return StreamingResponse(
-            generate(),
-            media_type="application/zip",
-            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-        )
+    return StreamingResponse(
+        iter([result.zip_bytes]),
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 # Project Thumbnail (project_thumbnail.go)
