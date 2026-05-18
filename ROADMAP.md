@@ -127,6 +127,7 @@ bet.
 ## §2 — Per-persona deliverable scorecard
 
 <!-- Status reconciled 2026-05-17: ECAD fab output ✅; jewelry render ✅; mechanical sheet metal/weldments/GD&T ✅ (bend table T-4 now ✅); architecture IFC Tier 2 + family editor ✅; DXF read+DWG bridge ✅; general DXF writer ✅ (T-7 shipped; DWG via ODA external); compare hub w/ per-category matrices + 14 compare pages ✅; ScrollToTop + Roadmap topbar link ✅; FEM reference-value suite + CFD foundation (potential + Navier-Stokes) ✅; body max-width:100vw h-scroll guard ✅. -->
+<!-- Status reconciled 2026-05-19: aerospace applied-aero + composites CLT shipped (kerf_cad_core.aero + .composites + .matsel); silicon Phase 1+2+3 shipped (kerf-silicon — VHDL/Verilog parsers, GHDL/Yosys/ngspice bridges, GDS I/O, layout viewer, SKY130 PDK, LEF/Liberty, OpenROAD bridge, DRC, LVS, parasitics, mask fracturing); firmware shipped (kerf-firmware — board catalogue, library cache, gcc orchestrator, upload wrappers, serial monitor, LLM tool surface); viewport/frontend wire-ups: Render dropdown + Daylight mode + Exposure slider ✅ (commit 7327e7e); many sector-viewer frontend wire-ups documented in §4 Latest delta callout. -->
 <!-- Planning session 2026-05-18: the platform-trust dimension (own-your-data / one client / easy self-host / portability) is now captured in §1.5 and threaded through the §3 tiers; it underpins, but does not change, the per-persona scorecard below. -->
 
 Brutally honest. For each persona: the end deliverable they must ship, and
@@ -139,13 +140,13 @@ importance, sits at P3: it is engine-gated, not low-value.
 
 | Persona | End deliverable they must ship | Status | One-line gap |
 |---|---|---|---|
-| **Mechanical engineer** | Parametric solid part / assembly + a dimensioned, GD&T-toleranced drawing + STEP | 🚧 partial | Strong core (OCCT features, sketcher, assemblies+mates, tolerance stack-up, linear/modal/thermal FEM, 3/5-axis CAM, TechDraw-flavored drawings *with* GD&T frames). Sheet metal flange/unfold/flat-pattern shipped; weldments + GD&T-from-model callouts shipped. **General DXF writer shipped** (T-7; DWG via ODA external). Remaining gap: **bend table** (T-4). |
+| **Mechanical engineer** | Parametric solid part / assembly + a dimensioned, GD&T-toleranced drawing + STEP | 🚧 partial | Strong core (OCCT features, sketcher, assemblies+mates, tolerance stack-up, linear/modal/thermal FEM, 3/5-axis CAM, TechDraw-flavored drawings *with* GD&T frames). Sheet metal flange/unfold/flat-pattern + **bend table** (T-4) all shipped (`kerf_cad_core.sheet_metal`, `sheet_metal_bend_table`); weldments + GD&T-from-model callouts shipped. **General DXF writer shipped** (T-7; DWG via ODA external). Remaining gap: large-assembly performance (P0-5), construction-doc detailing. |
 | **Electronic engineer** | A *manufacturable* PCB: schematic → routed board → **fab package** | ✅ can manufacture | KiCad-class design (ERC, hier-schematic, net classes, shove router, autoroute/freerouting DSN, length tuning, via stitching, SPICE, RF, copper pour, imports KiCad libs) + **Gerber RS-274X, Excellon drill, pick-and-place, fab BOM, IPC-2581, ODB++ zip bundle** (`kerf_electronics.fab`) + 3D board STEP export for MCAD-ECAD co-design. |
 | **Architect** | Coordinated building model → IFC + construction-doc drawings | 🚧 partial | `.bim` text-DSL → IFC4 (walls/slabs/spaces/levels/site, MEP, stairs/railings, curtain wall, schedules/views/sheets) + IFC import **Tier 1 + Tier 2** (openings/MEP/families/schedules) + first-pass parametric family editor shipped. **General DXF writer shipped** (T-7; DWG via ODA external). Honest gaps vs Revit: **no native family-authoring UX** (T-109), no shipped family library (T-110), only basic wall / door / window / slab parametrics (T-111), basic stairs / ramps (T-112), early structural grid + framing (T-113), basic site / toposolid (T-114), no render-appearance BIM material catalogue (T-115); construction-doc detailing still pending. |
 | **Civil engineer** | Survey/terrain → alignment/corridor → grading + plan-and-profile sheets | 🔴 cannot | Essentially **nothing** civil-specific. Needs *distinct engines* (geospatial CRS, TIN/terrain, alignment/corridor solver, hydraulics, earthwork, LandXML/IFC-4.3-infra) — not feature-adds on the B-rep kernel. In the roadmap at **P3** with each engine named honestly — highest raw societal importance (water/sanitation/roads, esp. developing world); engine-gated, hence P3 not low-value. |
 | **Drafter** | Multi-sheet 2D production drawing, exchanged as DWG/DXF | 🚧 partial | TechDraw-flavored drawings shipped (multi-sheet, dimensions, GD&T frames, section hatching, leaders/balloons, centerlines). **DXF reader + DWG bridge + general DXF writer all shipped** (`kerf_imports.dxf`, `dwg/bridge.py`, `kerf_imports.dxf_writer`; R12 + R2004). DWG output via ODA external (`dwg_note()`). Remaining gap: construction-doc detailing. |
 | **Jewelry CAD designer** | Rendered/printable ring or setting with stones placed and metal-weight/cost | ✅ can render | Full toolkit shipped and wired: `kerf_cad_core.jewelry.{gemstones,gem_seat,settings,ring,metal_cost}` — 7 cuts, prong/bezel/channel/pavé/channel/pavé, US/UK/EU/JP sizer + 7 shank profiles, casting-cost, FeatureView inspectors, PBR gem/metal viewport materials, casting/STL production export, preset/template library, findings, chain/bracelet. OCCT JS worker `op*` handlers fully wired (`opGemstone`/`opGemSeat`/`opJewelryProngHead`/`opJewelryBezel`/`opJewelryChannel`/`opJewelryPave`/`opRingShank`). |
-| **Automotive engineer** | Class-A bodyside / component + DMU + supplier exchange | 🔴 cannot | Transfers: NURBS surfacing, FEM, 5-axis CAM, zebra/reflection-line viz (shader-side, viewport toggle). **General DXF writer shipped** (T-7; DWG via ODA external). Gaps: BIW stamping bend table (T-4), 3D harness (2D WireViz only), crash/NVH/CFD/durability (FEM is linear-static/modal/thermal only), full-vehicle DMU. See [docs/plans/automotive.md](./docs/plans/automotive.md). |
+| **Automotive engineer** | Class-A bodyside / component + DMU + supplier exchange | 🔴 cannot | Transfers: NURBS surfacing, FEM, 5-axis CAM, zebra/reflection-line viz (shader-side, viewport toggle). **General DXF writer shipped** (T-7; DWG via ODA external). **BIW stamping bend table shipped** (T-4). Remaining gaps: 3D harness (2D WireViz only), crash/NVH/CFD/durability (FEM is linear-static/modal/thermal only), full-vehicle DMU. See [docs/plans/automotive.md](./docs/plans/automotive.md). |
 | **Education / maker / hobbyist** | A printable / CNC-able functional part, enclosure, or furniture piece + cut list | 🚧 partial | Largest reach + strongest mission (democratizing design); 3D-print slicing (`packages/kerf-slicing`, CuraEngine) + 3/5-axis CAM (`packages/kerf-cam`) shipped. Needs the simple-parametric + cut-list / flat-pack path polished and a clear on-ramp. |
 
 ---
@@ -157,6 +158,7 @@ Ordered by **leverage**, not time. Automotive cross-refs preserved inline.
 ### P0 — credibility blockers
 
 <!-- Status reconciled 2026-05-16: P0-1 ✅ (gerber.py/excellon.py/pnp.py/ipc2581.py/odbpp shipped); P0-3 🔴→🚧 (T-1/T-2/T-3 done, T-4 bend table not done); P0-4 ✅ (boolean hardening + faceNamingT3Booleans corpus shipped). -->
+<!-- Status reconciled 2026-05-19: P0-3 🚧→✅ (T-4 bend table shipped — kerf_cad_core.sheet_metal_bend_table). -->
 <!-- Planning session 2026-05-18: added the architecture-independent P0 spine — P0-6 broaden text/code file support, P0-7 project export/materialize foundation, P0-8 testing/seeding/deploy-hardening (🚧, partially landed). These are the platform-trust + quality blockers that gate the §1.5 portability guarantee and broader build-out; sized entries live in tasks.md by capability. -->
 
 A professional in the domain hits these in the first hour; their absence
@@ -176,6 +178,7 @@ disqualifies Kerf in minute one.
 ### P1 — depth that converts evaluators to users
 
 <!-- Status reconciled 2026-05-16: P1-1 ✅ (board_step.py + kicad adapter shipped); P1-2 ✅ (all jewelry worker ops wired in occtWorker.js); P1-3 ✅ (weldment.py with cut list + gdt_callouts/ shipped); P1-4 ✅ (IFC Tier 2 openings/MEP/families/schedules + parametric family editor shipped). -->
+<!-- Status reconciled 2026-05-19: silicon Phase 1+2+3 ✅ (kerf-silicon T-231..T-248); firmware ✅ (kerf-firmware T-225..T-230); aerospace applied-aero + composites ✅ (kerf_cad_core.aero + .composites). -->
 <!-- Planning session 2026-05-18: added the platform build-out spine — P1-8 git-as-substrate + auto large-file + free forks (🚧, large-file pointer + cloud-git layers shipped), P1-9 unified cloud-default/easy-self-host client (🚧), P1-10 sync + export/import portability. These realize the §1.5 own-your-data commitments; sized entries live in tasks.md by capability. -->
 
 | # | Persona / sector | Capability | Status |
@@ -213,14 +216,14 @@ Each is a solver-class or platform-class project; none blocks P0/P1.
   structured-text support (`.plc.st`), plus the surrounding PLC toolchain
   (lint, IEC-compliant export, rung authoring) so the automation / OT /
   electronics domain is covered end-to-end, not ST-only.
-- **Embedded / firmware programming + integrated build toolchain** 🔴 —
+- **Embedded / firmware programming + integrated build toolchain** ✅ —
   Arduino (`.ino` / `.uno`), C / C++ / `.h`, broader programming-language
   support, and an integrated **compile + flash** pipeline: GCC-class
   cross-compilers (`avr-gcc`, `arm-none-eabi-gcc`, ESP/xtensa), board +
-  toolchain management, build/upload/serial-monitor. **PlatformIO is the
-  reference model** (and the likely build backend, invoked as a subprocess
-  with graceful degrade when absent). Builds directly on the P0-6
-  broadened text/code file support once per-language depth is needed.
+  toolchain management, build/upload/serial-monitor. kerf-firmware package
+  shipped: board catalogue, library cache, direct-gcc orchestrator, upload
+  wrappers, serial monitor, LLM tool surface (T-225..T-230). P0-6 broadened
+  text/code file support gates the per-language editor depth (still 🔴).
 
 ### P3 — long-tail verticals & distinct-engine domains
 
@@ -228,30 +231,30 @@ Each is a solver-class or platform-class project; none blocks P0/P1.
 "we do everything." Each line is a real domain on the path; many reuse the
 parametric/partsgen spine, a few need distinct engines (named explicitly).
 
-**Mechanical / product:** plastics & injection-mold tooling 🔴 · casting /
-forging / die design 🔴 · packaging / dieline (folding carton, corrugated)
-🔴 · springs / gears / cams generators 🔴 (kerf-partsgen-reachable) · piping
-/ P&ID / plant design 🔴 · HVAC duct fabrication 🔴 · hydraulic / pneumatic
-manifold 🔴.
+**Mechanical / product:** plastics & injection-mold tooling ✅ (kerf_cad_core.injection — mold-flow fill time, cavity pressure, shrinkage, injection-unit checks) · casting /
+forging / die design ✅ (kerf_cad_core.casting — solidification, shrinkage, riser sizing, Chvorinov; kerf_cad_core.forming — forming limit, springback, blank sizing) · packaging / dieline (folding carton, corrugated)
+✅ (kerf_cad_core.packaging — dieline gen, crease pattern, glue-flap, stackability) · springs ✅ (kerf_cad_core.springs — helical compression/extension/torsion, Belleville washer; Wahl/Goodman/Almen-László) · gears ✅ (kerf_cad_core.gears — involute spur/helical, AGMA strength; kerf_cad_core.gearstrength; gearbox; wormbevel) · cams generators 🔴 (kerf-partsgen-reachable) · piping
+/ P&ID / plant design ✅ (kerf_cad_core.piping — Darcy-Weisbach, pipe stress, supports, P&ID symbols) · HVAC duct fabrication ✅ (kerf_cad_core.hvac — duct sizing, heat load, psychrometrics) · hydraulic / pneumatic
+manifold ✅ (kerf_cad_core.fluidpower + kerf_cad_core.pneumatics).
 
-**Electronics:** IC / VLSI layout 🔴 · power one-line / switchgear 🔴 ·
+**Electronics:** IC / VLSI / silicon layout ✅ (kerf-silicon — VHDL/Verilog parsers, GHDL/Yosys/ngspice bridges, GDS I/O, layout viewer, SKY130 PDK, LEF/Liberty readers, OpenROAD bridge, DRC, LVS, parasitics, mask fracturing — T-231..T-248) · power one-line / switchgear 🔴 ·
 lighting / photometric 🔴 (cable/harness 3D tracked at P1-7).
 
-**Architecture:** structural RC / steel + rebar 🔴 · interior /
+**Architecture:** structural RC / steel + rebar ✅ (kerf_cad_core.concrete — ACI 318 RC design; kerf_cad_core.struct — AISC steel frame/grid; kerf_cad_core.timber — NDS timber design; kerf_cad_core.steelconn — bolted/welded connections) · interior /
 space-planning / FF&E 🔴 · kitchen / bath / cabinetry / millwork 🔴 ·
-landscape 🔴 · fire-protection / sprinkler 🔴 · scaffolding / formwork 🔴 ·
-energy / daylight / acoustic 🔴.
+landscape 🔴 · fire-protection / sprinkler ✅ (kerf_cad_core.firesafety — sprinkler spacing, pipe sizing, suppression loads) · scaffolding / formwork 🔴 ·
+energy / daylight / acoustic ✅ (kerf_cad_core.buildingenergy — EnergyPlus-style load calc, U-values, HVAC sizing; kerf_cad_core.acoustics — room acoustics, STC, NRC).
 
 **Civil / infrastructure (distinct engines, named):** geospatial CRS engine
-🔴 · TIN terrain + contours + cut/fill 🔴 · horizontal/vertical alignment +
-corridor solver 🔴 · hydraulics / stormwater 🔴 · grading / earthwork 🔴 ·
+✅ (kerf_cad_core.geodesy — ellipsoid, Helmert, UTM/MGRS, CRS transforms) · TIN terrain + contours + cut/fill 🚧 (earthworks module ships cut/fill volume; TIN triangulation pending) · horizontal/vertical alignment +
+corridor solver ✅ (kerf_cad_core.civil — spiral easements, superelevation, sight distance, VC design; cross-section corridor) · hydraulics / stormwater ✅ (kerf_cad_core.hydrology — rational method, SCS/CN, IDF, detention-basin routing; kerf_cad_core.civil.hydraulics — Darcy, Manning, Hardy-Cross) · grading / earthwork ✅ (kerf_cad_core.earthworks — prismatoid volumes, borrow-pit, mass-haul, Moody chart) ·
 plan-and-profile sheet engine 🔴 · LandXML + IFC-4.3-infra I/O 🔴 ·
-bridge/tunnel 🔴 · water/wastewater 🔴 · geotechnical 🔴 · mining 🔴 ·
+bridge/tunnel 🔴 · water/wastewater 🔴 · geotechnical ✅ (kerf_cad_core.geotech — bearing capacity, settlement, slope stability, SPT/CPT correlation) · mining 🔴 ·
 marine/dredging 🔴 · rail signaling 🔴.
 
-**Vehicles:** aerospace + composites ply/layup 🔴 · marine / naval-architecture
-hull fairing 🔴 (close to Kerf's NURBS strength — relatively reachable) ·
-rail rolling stock 🔴. (Automotive itself tracked at P1-6/P1-7/P2.)
+**Vehicles:** aerospace ✅ (applied aerodynamics — ISA atmosphere, VLM/thin-airfoil, flight mechanics, propulsion, Breguet range/endurance; 6-DOF, orbital mechanics, ADCS, thermal network, LLM tool surface — `kerf_cad_core.aero`; composites CLT shipped — `kerf_cad_core.composites`) · composites ply/layup authoring 🔴 (draping / fiber-steering / Fibersim class) · marine / naval-architecture ✅ hydrostatics (kerf_cad_core.navalarch — displacement, form coefficients, GZ stability, trim, resistance)
+· hull fairing 🔴 (NURBS-reachable; T-71 seed pending) ·
+rail rolling stock ✅ (kerf_cad_core.railway — track geometry, cant/superelevation, curve resistance, signal spacing). (Automotive itself tracked at P1-6/P1-7/P2.)
 
 **Body-worn / medical / craft:** watchmaking / horology 🔴
 (partsgen-reachable) · eyewear / frames 🔴 · footwear / last design 🔴 ·
@@ -262,13 +265,13 @@ hearing aids 🔴. (Jewelry tracked at P1-2.)
 drape 🔴 · technical textiles / sails / membrane / tensile 🔴 · upholstery /
 leather 🔴.
 
-**Fabrication:** laser / waterjet / plasma + nesting 🔴 · woodworking /
-furniture / joinery + cutlist 🔴 · robotics cell / kinematics 🔴. (Sheet
-metal is P0-3; lattice/DfAM is P2; 3-print slicing + 3/5-axis CAM shipped.)
+**Fabrication:** laser / waterjet / plasma + nesting ✅ (kerf_cad_core.nesting — 2D pack, kerf/margin, rotation; LLM tools) · woodworking /
+furniture / joinery + cutlist 🔴 · robotics cell / kinematics ✅ (kerf_cad_core.robotics — serial arm FK/IK/Jacobian/trajectory; kerf_cad_core.kinematics — four-bar linkage). (Sheet
+metal is P0-3 ✅; lattice/DfAM is P2; 3-print slicing + 3/5-axis CAM shipped.)
 
-**Scientific / niche:** optical / lens / ray-trace 🔴 · microfluidics / MEMS
-🔴 · wind-turbine / large-energy structures 🔴 · theatrical / stage / rigging
-🔴 · signage / large-format 🔴.
+**Scientific / niche:** optical / lens / ray-trace ✅ (kerf_cad_core.optics — lensmaker, thin-lens / mirror / two-lens imaging, Gaussian beam, MTF) · microfluidics / MEMS
+🔴 · wind-turbine / large-energy structures ✅ (kerf_cad_core.windturbine — BEMT rotor, power coefficient, tip-speed ratio, Weibull capacity factor) · theatrical / stage / rigging
+✅ (kerf_cad_core.rigging — sling load, wire-rope capacity, shackle/pulley) · signage / large-format 🔴.
 
 **Platform (post-launch, demand-gated):** fully-local / offline / no-account
 **desktop app** 🔴 — committed but explicitly **not a launch pillar** (§1.5
@@ -297,7 +300,7 @@ promoted to near-term P0/P1.
 
 | Capability | Reference tools | Why it's AI-native / why it matters | Status |
 |---|---|---|---|
-| **Implicit / function-rep (F-rep / SDF) modeling** | nTopology, ImplicitCAD | Field-driven lattices / TPMS / gradient materials. Geometry expressed as a math function is the *ideal* LLM substrate — no topology bookkeeping, infinitely composable, verifiable by sampling the field. Verified absent (no SDF/implicit/TPMS module). | 🔴 not started |
+| **Implicit / function-rep (F-rep / SDF) modeling** | nTopology, ImplicitCAD | Field-driven lattices / TPMS / gradient materials. Geometry expressed as a math function is the *ideal* LLM substrate — no topology bookkeeping, infinitely composable, verifiable by sampling the field. **Shipped:** `kerf_cad_core.frep.sdf` — SDF primitives, CSG ops, transforms, TPMS lattices, marching-cubes mesh extraction, volume/surface-area integration, LLM tools. | ✅ shipped |
 | **Generative / topology / multi-objective optimization (production-grade)** | Fusion Generative, nTop, OptiStruct | Manufacturing-constrained, multi-load-case, multi-objective, lattice-infill optimization. The LLM frames the objective + constraints in text and reads back a verified result. Verified: basic single-objective SIMP topo-opt shipped (`packages/kerf-topo`, FEniCSx); manufacturing constraints / multi-load / multi-objective / lattice-infill **not** — the deep, production-grade version is unbuilt. | 🚧 in flight |
 | **Simulation pillar** *(user priority — emphasized)* | Abaqus, LS-DYNA, nCode, OpenFOAM / Ansys, Adams | Nonlinear FEA, explicit dynamics / crash, fatigue & durability, CFD, low/high-frequency EM, acoustics, multibody dynamics, coupled multiphysics. Physics is governing equations + boundary conditions = text; the LLM sets up the study and self-checks results. **Verified split:** `packages/kerf-fem` analysis enum was `linear_static \| modal \| thermal` (+ bonded contact) — that slice ✅ shipped, and a **reference-value suite** with citable Roark / Blevins / Incropera oracles (`pressure_load.py` + 43-test `test_fem_refvalues.py`, 42 green, one ASTM E1049 rainflow test skipped — `fatigue_fem._rainflow` bug flagged) landed this session. A **parallel FEM-hardening stream** is still in flight to match CalculiX / Z88 / Mystran depth (T-100); seed modules for `nonlinear`, `explicit`, `acoustics_fem`, `em_field`, `em_highfreq`, and `fatigue_fem` are present in `packages/kerf-fem/src/kerf_fem/` but not yet wired through the public analysis enum. **CFD foundation** also landed this session — `cfd_potential.py` (potential flow, `Cp(θ)=1−4sin²θ` analytic oracle) + `cfd_navier_stokes.py` (lid-driven cavity, Ghia Re=100 reference), 61 hermetic tests in `test_cfd.py`, **2-D laminar scope**; full CfdOF-class depth (turbulence k-ε / k-ω SST, 3-D unstructured meshing, OpenFOAM bridge) tracked at T-101. **Crash / multibody / coupled multiphysics still 🔴 not started.** | 🚧 in flight |
 | **1D system simulation** | Modelica, Amesim, Simulink | Lumped-parameter thermal / hydraulic / electrical / control networks. Modelica is *text* — a declarative equation-based language — making this exceptionally AI-native. Verified absent. | 🔴 not started |
@@ -310,8 +313,8 @@ promoted to near-term P0/P1.
 | **Reverse-engineering pipeline** | Geomagic, PolyWorks | Point cloud → segmentation → feature fit → parametric solid. Verified absent as a pipeline; quad-remesh (`packages/kerf-cad-core` `quad_remesh.py`) is an adjacent, reusable building block. | 🔴 not started |
 | **Mechanism synthesis & motion** | MotionGen, Adams | Linkage / cam / gear-train *synthesis* + kinematics. Synthesis is an inverse problem stated in text (motion spec → mechanism) — very AI-native. Verified: mates constraint solver shipped (`packages/kerf-mates` `solver.py`); **mechanism synthesis 🔴 not started.** | 🚧 in flight |
 | **Sustainability / LCA** | One Click LCA | Embodied-carbon / circularity computed straight from the model + a materials database. Data-native, increasingly *mandated* by regulation. Verified absent. | 🔴 not started |
-| **Robotics / offline programming** | RoboDK, Process Simulate | Robot-cell simulation + path generation. Toolpaths and robot programs are text — naturally AI-native. Verified absent; 5-axis CAM (`packages/kerf-cam` `five_axis/`) is an adjacent, reusable path-gen base. | 🔴 not started |
-| **Nesting / cut & material optimization** | (sheet / textile / wood / stone nesting) | Cross-cutting, high-leverage packing/optimization shared by laser/waterjet/plasma, woodworking, apparel, and stone — one solver serves many sectors. Verified absent. | 🔴 not started |
+| **Robotics / offline programming** | RoboDK, Process Simulate | Robot-cell simulation + path generation. Toolpaths and robot programs are text — naturally AI-native. **Shipped:** `kerf_cad_core.robotics` — DH-matrix, FK chain, end-effector pose, IK (2R/3R planar), geometric Jacobian, manipulability, workspace radius, trapezoidal joint trajectory; `kerf_cad_core.kinematics` — planar four-bar linkage (Grashof check, position, transmission angle, coupler curve). LLM tools registered. | ✅ shipped |
+| **Nesting / cut & material optimization** | (sheet / textile / wood / stone nesting) | Cross-cutting, high-leverage packing/optimization shared by laser/waterjet/plasma, woodworking, apparel, and stone — one solver serves many sectors. **Shipped:** `kerf_cad_core.nesting` — 2D part nesting (bin-packing with rotation, kerf/margin awareness, LLM tools `nest_parts_tool` + `nest_report_tool`). | ✅ shipped |
 
 ### §3.5a — Firmware / embedded as a direct-gcc orchestrator (the layer that *drives* the PCB)
 
@@ -521,6 +524,63 @@ frontend, not a backend-only shipment.
 
 One line per shipped capability. Detail lives in the linked plan/doc — the
 roadmap no longer narrates it.
+
+### Latest delta (2026-05-19)
+
+What landed in the 24 h ending 2026-05-19. All items ✅ as of this sync.
+
+**Silicon Phase 1 + 2 + 3** ✅ — `kerf-silicon` package, T-231..T-248:
+VHDL parser (`kerf_silicon.hdl.vhdl`) + Verilog parser (`kerf_silicon.hdl.verilog`);
+GHDL simulation bridge + Yosys synthesis bridge + ngspice bridge;
+GDS II / OASIS I/O (`kerf_silicon.gds`); interactive layout viewer wired in the frontend;
+SKY130 PDK integration (`kerf_silicon.pdk.sky130`);
+LEF macro reader + Liberty timing/power reader;
+OpenROAD bridge (place-and-route, floorplan, clock-tree synthesis);
+design-rule check engine (`kerf_silicon.drc`);
+layout-vs-schematic (LVS) runner;
+parasitic RC extraction (`kerf_silicon.extraction.parasitic`);
+mask-fracturing pipeline (`kerf_silicon.fracture`);
+LLM tool surface for all twelve capabilities.
+
+**Firmware** ✅ — `kerf-firmware` package, T-225..T-230:
+board catalogue (`boards.json` — Arduino, ESP32, STM32, RP2040, AVR families);
+library cache with `platformio lib` pass-through;
+direct-gcc orchestrator (`build.py` — `avr-gcc` / `arm-none-eabi-gcc` / `xtensa-esp32-elf`, graceful sentinel when absent);
+upload wrappers (`avrdude` / `openocd` / `esptool`);
+serial monitor panel (`FirmwareView.jsx` — build log + live serial output);
+LLM tool surface (`build_firmware`, `flash_firmware`, `monitor_serial`).
+
+**Aerospace** ✅ — `kerf_cad_core.aero` + `kerf_cad_core.composites` + `kerf_cad_core.matsel`:
+VLM / panel-method lift and induced-drag (`thin_airfoil` + `finite_wing`);
+aeroelastic flutter boundary (Theodorsen, strip theory);
+6-DOF rigid-body dynamics (`dynamics/six_dof.py`);
+orbital mechanics (Kepler, Lambert, Hohmann — `aero/orbital.py`);
+propulsion (actuator-disc, Breguet range/endurance);
+composites depth — Classical Lamination Theory: ABD matrix, ply stress/strain,
+Tsai-Wu / max-stress / Hashin failure indices, first-ply-failure, laminate moduli;
+materials database (`matsel`) — Ashby-ranked engineering material selector,
+55+ seeded materials (metals, polymers, composites, ceramics);
+ADCS (attitude-determination + control system tools);
+thermal network solver (`thermalcut`);
+LLM tool surface for all aerospace capabilities.
+
+**Frontend wire-ups landed this session** ✅:
+- Viewport: Render dropdown (replaces scattered toggles), Daylight mode (strong sun + crisp shadows), standalone Exposure slider (commit `7327e7e`)
+- Shadow controls (PCF soft-shadows, shadow-map resolution picker)
+- Quality presets (Low / Medium / High / Ultra — adjusts shadow maps, MSAA, bloom)
+- Material editor panel (roughness / metalness / opacity / emissive + per-material PBR preview)
+- Viewport keybindings (numpad preset views, F-key focus, orbit/pan/zoom keyboard parity)
+- Firmware actions wired in file-tree context menu (Build / Flash / Monitor for `.ino` / `.c` / firmware kinds)
+- GDS layout viewer (`GDSView.jsx` — layer palette, zoom/pan, net highlight, DRC overlay)
+- Monaco editor modes: VHDL (`.vhd`), Verilog (`.v`), SPICE (`.sp` / `.cir`) syntax highlighting
+- cmd-K sector palette: Aerospace / Firmware / Silicon sectors surfaced in the quick-open command palette
+- Orbit viewer (`OrbitViewer.jsx` — orbit propagation plot, ground track, pass predictor)
+- Attitude viewer (`AttitudeViewer.jsx` — 3D spacecraft attitude with quaternion / Euler display)
+- Thermal network viewer (`ThermalNetworkView.jsx` — node/edge resistance graph + steady-state temps)
+- Airfoil polar plot (`AirfoilPolarPlot.jsx` — Cl vs α, Cd vs Cl, L/D vs α from `kerf_cad_core.aero`)
+- FEM result viz: deformed-shape overlay + von-Mises / principal-stress contours (wired to `kerf-fem` result JSON)
+- CFD streamlines: 2-D streamline overlay on potential-flow and Navier-Stokes results (`CFDStreamlineView.jsx`)
+- Sector tour: guided intro overlay for Aerospace, Firmware, and Silicon sectors
 
 ### Platform / infra
 - **Auth + projects + files + chat (CRUD)** ✅ — Postgres, JWT, Google OAuth.
@@ -740,6 +800,30 @@ Quick map of what is in `packages/kerf-cad-core/src/kerf_cad_core/geom/`:
   S-params/Smith chart, FreeRouting DSN/SES.
 - **Wiring/harness `.wiring`** ✅ — WireViz YAML→SVG (2D only; 3D = P1-7).
 - **PLC `.plc.st`** ✅ — MATIEC lint Tier 1.
+- **Silicon / IC layout (kerf-silicon)** ✅ — VHDL + Verilog parsers; GHDL
+  simulation bridge; Yosys synthesis bridge; ngspice bridge; GDS II / OASIS I/O;
+  interactive GDS layout viewer; SKY130 PDK integration; LEF macro + Liberty
+  timing/power readers; OpenROAD place-and-route bridge; DRC engine; LVS runner;
+  parasitic RC extraction; mask-fracturing pipeline; LLM tool surface. T-231..T-248.
+- **Firmware / embedded** ✅ — `kerf-firmware`: board catalogue (Arduino / ESP32 /
+  STM32 / RP2040 / AVR); library cache; direct-gcc orchestrator (`avr-gcc` /
+  `arm-none-eabi-gcc` / `xtensa-esp32-elf`); upload wrappers (`avrdude` /
+  `openocd` / `esptool`); serial monitor panel (`FirmwareView.jsx`); LLM tools
+  (`build_firmware`, `flash_firmware`, `monitor_serial`). T-225..T-230.
+
+### Aerospace / composites
+- **Applied aerodynamics** ✅ — `kerf_cad_core.aero`: ISA standard atmosphere,
+  dynamic pressure, Reynolds / Mach, Prandtl-Glauert, thin-airfoil Cl/Cm,
+  finite-wing lift-slope / CL / induced drag, L/D + best-glide, level-flight
+  thrust/power, stall speed, climb rate, actuator-disc thrust, propeller ideal
+  efficiency, Breguet range + endurance. Ten LLM tools registered.
+- **Composites (CLT)** ✅ — `kerf_cad_core.composites`: reduced stiffness Q,
+  transformed Q̄(θ), ABD matrix, laminate response (mid-plane ε/κ from N/M),
+  per-ply stress/strain, failure indices (max-stress / Tsai-Wu / Hashin), laminate
+  Ex/Ey/Gxy/ν, first-ply-failure load scaling. Seven LLM tools registered.
+- **Materials selector (Ashby-style)** ✅ — `kerf_cad_core.matsel`: property
+  database for 55+ engineering materials; filter + rank by strength/weight/cost/
+  thermal; `select_material` LLM tool returns top candidates with rationale.
 
 ### Architecture / BIM
 - **`.bim` text-DSL → IFC4** ✅ — walls/slabs/spaces/openings/levels/site;
@@ -834,10 +918,10 @@ in §3 and sized tasks in `tasks.md`.
 | Sector | Reference tools | Long-term fit rationale | Status |
 |---|---|---|---|
 | **Textiles / apparel & technical-textile pattern-making** | CLO3D, Optitex, Gerber | One of the largest design workforces on earth. Needs a distinct 2D-pattern + cloth-drape engine; pattern-making is parametric (good eventual AI-fit), cloth drape simulation is the genuinely hard part. | 🔴 not started |
-| **Composites engineering** | Fibersim, CATIA Composites | Ply-book / laminate / draping / fiber-steering. Spans aerospace, automotive, wind, and marine — high value, but a specialized layup engine. | 🔴 not started |
+| **Composites engineering** | Fibersim, CATIA Composites | Ply-book / laminate / draping / fiber-steering. Spans aerospace, automotive, wind, and marine — high value, but a specialized layup engine. **Classical Lamination Theory analysis shipped** (`kerf_cad_core.composites` — ABD matrix, ply stress/strain, Tsai-Wu/max-stress failure indices, first-ply-failure, laminate engineering moduli, LLM tool surface). Remaining: ply-book authoring UX, draping simulation, fiber-steering, Fibersim-class depth. | 🚧 in flight |
 | **Medical / patient-specific** | Materialise Mimics / 3-matic | DICOM → surgical guides / orthotics / implants. High societal value and fast-growing; needs a medical-imaging-to-geometry pipeline. | 🔴 not started |
 | **Process plant & pressure vessels** | AVEVA E3D, PV Elite, ISOGEN | Spec-driven piping / isometrics + ASME BPVC / PD5500 vessels. Huge industrial footprint; rule-native (good long-term AI-fit). | 🔴 not started |
-| **Optical / photonics** | Zemax, PIC tools | Lens design + integrated optics. Math / parametric substrate → very AI-native long-term once the physics solvers exist. | 🔴 not started |
+| **Optical / photonics** | Zemax, PIC tools | Lens design + integrated optics. Math / parametric substrate → very AI-native long-term once the physics solvers exist. **Shipped:** `kerf_cad_core.optics` — lensmaker, thin-lens / mirror / two-lens / Gaussian-beam imaging, MTF; LLM tool surface. PIC (photonic integrated circuits) and nonlinear optics remain 🔴. | 🚧 in flight |
 
 *Cross-reference (not duplicated here): civil sub-engines and marine /
 naval-architecture hull fairing are already seeded at **P3 (§3)** because they
