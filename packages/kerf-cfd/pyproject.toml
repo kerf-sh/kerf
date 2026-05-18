@@ -1,0 +1,27 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "kerf-cfd"
+version = "0.1.0"
+license = { text = "MIT" }
+classifiers = ["License :: OSI Approved :: MIT License"]
+description = "CFD plugin for Kerf — OpenFOAM bridge + turbulence models"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi",
+    "asyncpg",
+    "aiohttp",
+]
+
+[project.optional-dependencies]
+openfoam = [
+    # simpleFoam / pimpleFoam — install via system package manager, not pip
+]
+
+[project.entry-points."kerf.plugins"]
+cfd = "kerf_cfd.plugin:register"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/kerf_cfd"]
