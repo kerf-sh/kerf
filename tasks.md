@@ -104,6 +104,12 @@ by tier below for reference, but the agent loop pulls in *this* sequence.
 | 64 | **T-129** Ladder logic / PLC — IEC 61131-3 LD editor (complements `plc_st`) | A | P2 sector depth: extends the existing `plc_st` (ST/MATIEC) kind to LD (Ladder Diagram) — the most widely used PLC language in manufacturing. Adds a ladder rung editor + MATIEC LD lint + IEC 61131-3 export. Unlocks the PLC/automation engineer segment. |
 | 65 | **T-130** Embedded/firmware programming — broader extensions + PlatformIO-reference toolchain | A | P2 sector depth: `.ino`/`.uno` (Arduino), `.c`/`.cpp`/`.h` (general embedded), plus PlatformIO as the reference integration model (board manifest, build targets, upload/monitor). Complements T-116 (plain highlight) and T-129 (PLC). Unlocks the embedded/firmware engineer segment. |
 | 66 | **T-131** Fully-local / offline desktop — PGlite WASM-Postgres spike + Tauri (P3, demand-gated) | B | P3 post-launch: spike PGlite (WASM Postgres) + a Tauri shell as the path to a fully-local/offline desktop app. **Explicitly NOT a launch pillar.** Only begin when there is validated demand signal; zero-dependency self-host (T-126) comes first. |
+| 67 | **T-132** LFS-format blob pointer module + tests | B | P1 foundational: parse/serialize the standard 3-line Git-LFS pointer (`version`/`oid sha256:`/`size`) so large files commit as tiny pointers and a future real-LFS option stays trivial. Self-contained, zero-dependency; unblocks T-124. |
+| 68 | **T-133** Large-file classifier + config threshold + tests | A | P1 foundational: the decided autodetect predicate — blob if size > 1 MiB (configurable) OR not valid UTF-8; **size dominates** (STEP is ASCII but huge). Pure function, sole owner of one new config setting; unblocks T-124. |
+| 69 | **T-134** Blob object ledger schema — oid ref-count (sole migration owner) | A | P1 foundational: clean-baseline `blob_objects` + `blob_refs` for oid ref-counting; the shared dependency of dedup-billing (T-135) and GC (T-136). The ONLY storage task that touches migrations. |
+| 70 | **T-135** Dedup billing attribution — design record | A | P1 revenue policy: decided model — the workspace that first uploads an oid bears its bytes; forks referencing an unchanged oid pay 0 ("forks are free"); Σ size by first-uploader into the existing GB-month meter. Design doc only. |
+| 71 | **T-136** Large-object GC — design record | B | P1 platform safety: oid ref-count + git-history reachability + grace-window sweep worker; never deletes a blob reachable from any fork/commit. Design doc only. |
+| 72 | **T-137** Vanilla-clone hydration UX — design record | B | P1 platform UX: bare `git clone` yields LFS-format stubs; documented next step `kerf hydrate`/`kerf pull-blobs`, and `kerf sync` hydrates implicitly. Design doc only. |
 
 > Sub-tasks within a sequenced group (e.g. 5a–5e, 10a–10d, 12a–12f) keep
 > their `Depends-on` chain; the loop completes a group's prerequisites in
@@ -2070,3 +2076,158 @@ are captured in the 2026-05-18 status comment above.
   extensions, missing pg functions) are enumerated; Tauri shell
   feasibility assessed; a go/no-go recommendation is present.
 - **Depends-on:** T-126
+
+---
+
+## Large-object storage — pointer / dedup / GC / threshold / hydration (T-132 … T-137)
+
+These six refine the P1 git-as-substrate block (T-124 / T-125): the resolved
+large-object decisions from the 2026-05-18 planning session. No Git LFS
+server is run — the existing `files.content` (inline → git) vs
+`files.storage_key` (blob → Tigris S3, sha256-addressed) seam IS the
+large-file mechanism; these tasks formalize the pointer, the autodetect
+predicate, the dedup ledger, and the billing / GC / hydration policies.
+T-132 / T-133 / T-134 are independently landable now (no git-substrate
+layer required); T-135 / T-136 / T-137 are design records.
+
+### T-132 LFS-format blob pointer module + tests
+- **Tier:** B
+- **Money/reach rationale:** Adopting the documented 3-line Git-LFS
+  pointer format (without running an LFS server) costs nothing, is
+  universally understood by git tooling, and keeps a future real-LFS
+  option trivial. Foundational to every large-object flow.
+- **Priority:** P1
+- **Status:** 🔴 not started
+- **Scope:** A pure module that parses and serializes the Git-LFS
+  pointer spec v1 exactly: `version https://git-lfs.github.com/spec/v1`,
+  `oid sha256:<64-hex>`, `size <bytes>` (strict validation, byte-exact
+  round-trip, typed errors). No I/O, no schema, no git layer.
+- **Target files/packages:**
+  `packages/kerf-core/src/kerf_core/storage/lfs_pointer.py` (new),
+  `packages/kerf-core/tests/test_lfs_pointer.py` (new).
+- **Definition of Done:** a valid pointer round-trips byte-exact;
+  malformed pointers (bad oid length, non-sha256, missing/extra keys,
+  non-integer size) raise a typed error; a fixture matches the
+  canonical git-lfs byte layout; pytest green.
+- **Depends-on:** none
+
+### T-133 Large-file classifier + config threshold + tests
+- **Tier:** A
+- **Money/reach rationale:** The autodetect predicate decides what
+  stays diff-able in git vs what becomes a Tigris blob — the load-
+  bearing call for every project. The STEP-is-ASCII-but-huge case
+  (size must dominate) prevents repo bloat across all sectors.
+- **Priority:** P1
+- **Status:** 🔴 not started
+- **Scope:** A pure function `should_store_as_blob(name, size_bytes,
+  sample: bytes, *, threshold) -> bool`: True if `size_bytes >
+  threshold` (default 1 MiB) OR `sample` is not valid UTF-8.
+  **Size dominates** — a 5 MB ASCII STEP file is a blob. One new
+  setting `git_inline_max_bytes` (default 1048576) in
+  `kerf_core/config.py`; this task is the SOLE editor of config.py
+  among the storage tasks.
+- **Target files/packages:**
+  `packages/kerf-core/src/kerf_core/storage/classify.py` (new), one
+  line in `packages/kerf-core/src/kerf_core/config.py`,
+  `packages/kerf-core/tests/test_classify.py` (new).
+- **Definition of Done:** small UTF-8 → inline; >1 MiB UTF-8 (STEP) →
+  blob; small non-UTF-8 → blob; threshold honoured from config;
+  exactly-threshold boundary tested; pytest green.
+- **Depends-on:** none
+
+### T-134 Blob object ledger schema — oid ref-count (sole migration owner)
+- **Tier:** A
+- **Money/reach rationale:** The ref-count ledger is the shared
+  substrate under dedup billing (T-135) and GC (T-136). Exactly one
+  task owns the migration so the clean-baseline rule isn't violated by
+  parallel agents.
+- **Priority:** P1
+- **Status:** 🔴 not started
+- **Scope:** Clean-baseline DDL folded into the appropriate
+  `00NN_*.sql` baseline CREATE TABLE (NO `alter table add column`
+  shims): `blob_objects(oid text primary key, size_bytes bigint not
+  null, first_workspace_id uuid references workspaces(id) on delete
+  set null, created_at timestamptz not null default now())` and
+  `blob_refs(oid text references blob_objects(oid) on delete cascade,
+  project_id uuid references projects(id) on delete cascade, path
+  text not null, created_at timestamptz not null default now(),
+  primary key (oid, project_id, path))`. A small asyncpg query module
+  (record_blob / add_ref / drop_ref / refcount / first_workspace).
+  Reset local DB + re-run migrations + verify (documented reset
+  workflow). The ONLY storage task touching migrations.
+- **Target files/packages:** the appropriate
+  `packages/kerf-core/src/kerf_core/db/migrations/00NN_*.sql` baseline
+  (fold in; do not add a shim file),
+  `packages/kerf-core/src/kerf_core/db/queries/blob_objects.py` (new),
+  `packages/kerf-core/tests/test_blob_objects.py` (new).
+- **Definition of Done:** fresh local schema reset applies all
+  migrations with 0 back-stamped; record / add-ref / drop-ref /
+  refcount behave; workspace/project delete cascades correctly;
+  pytest green.
+- **Depends-on:** none
+
+### T-135 Dedup billing attribution — design record
+- **Tier:** A
+- **Money/reach rationale:** "Forks are free" is a core product
+  promise; how shared-blob bytes are attributed is a real revenue /
+  fairness decision, not an implementation detail.
+- **Priority:** P1
+- **Status:** 🔴 not started
+- **Scope:** Decision record for the agreed policy: the workspace that
+  first uploads an oid (`blob_objects.first_workspace_id`) bears its
+  `size_bytes`; any workspace/fork referencing an unchanged oid pays
+  0; total billable storage for workspace W = Σ size_bytes where
+  first_workspace_id = W, fed into the existing `$0.20/GB-month`,
+  50 MB-free meter. Decide every edge case: first uploader deletes
+  their only ref while others still reference; original project
+  deleted; workspace transfer; interaction with `usage_events` /
+  `cloud_user_balances`. No code.
+- **Target files/packages:** `docs/plans/large-object-billing.md`
+  (new). References the T-134 schema.
+- **Definition of Done:** the doc states the rule unambiguously, gives
+  the SQL shape of the periodic attribution query, gives a decided
+  answer for every edge case, and names the exact meter integration
+  point.
+- **Depends-on:** T-134
+
+### T-136 Large-object GC — design record
+- **Tier:** B
+- **Money/reach rationale:** Without GC, dedup storage grows forever;
+  with wrong GC, a blob still reachable from a fork or old commit is
+  deleted and data is lost. Needs a signed-off design before any
+  sweep code exists.
+- **Priority:** P1
+- **Status:** 🔴 not started
+- **Scope:** Decision record: reclaim a Tigris object only when its
+  oid has zero `blob_refs` AND is unreachable from any project's git
+  history (a blob referenced by an old commit stays); a grace window
+  before deletion; an idempotent sweep worker gated like the existing
+  in-process workers (`KERF_INPROCESS_WORKERS`); safety invariants
+  (never delete reachable; dry-run mode; metrics). No code.
+- **Target files/packages:** `docs/plans/large-object-gc.md` (new).
+  References the T-134 schema.
+- **Definition of Done:** the doc defines the reachability predicate
+  (refs + git history), the grace window, the sweep cadence / worker
+  harness, and the safety invariants; explicitly states what is NOT
+  collected.
+- **Depends-on:** T-134
+
+### T-137 Vanilla-clone hydration UX — design record
+- **Tier:** B
+- **Money/reach rationale:** "You can clone with plain git" is the
+  anti-lock-in promise; the UX of "I cloned and got stubs, now what"
+  must be documented and frictionless or the promise rings hollow.
+- **Priority:** P1
+- **Status:** 🔴 not started
+- **Scope:** Decision record: bare `git clone` yields LFS-format
+  pointer stubs (T-132); the documented next step is `kerf hydrate` /
+  `kerf pull-blobs` (resolves stubs → bytes from Tigris via the API);
+  `kerf sync` hydrates implicitly; an optional opt-in git smudge/clean
+  filter for transparent hydration; exact CLI surface, auth, and
+  error messages for the cloned-but-not-hydrated state. No code.
+- **Target files/packages:** `docs/plans/large-object-hydration.md`
+  (new). References T-132 (pointer) and T-127 (`kerf sync`).
+- **Definition of Done:** the doc specifies the CLI commands + flags,
+  the stub→bytes resolution flow, the optional filter, and the exact
+  user-facing messages for the not-yet-hydrated state.
+- **Depends-on:** T-132
