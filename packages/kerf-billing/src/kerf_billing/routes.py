@@ -220,7 +220,12 @@ async def usage(
             "created_at": row["created_at"].isoformat() if row["created_at"] else None,
         })
 
-    return {"events": events, "from": from_time.isoformat(), "to": to_time.isoformat()}
+    return {
+        "events": events,
+        "from": from_time.isoformat(),
+        "to": to_time.isoformat(),
+        "summary": _summarize_usage(events),
+    }
 
 
 @router.post("/billing/webhook")
@@ -369,6 +374,73 @@ async def _load_recent_usage(pool, user_id: str, limit: int) -> list:
     return result
 
 
+def _empty_summary() -> dict:
+    return {
+        "by_model": [],
+        "by_category": {
+            "compute_usd": 0.0,
+            "storage_usd": 0.0,
+            "other_usd": 0.0,
+            "total_usd": 0.0,
+        },
+    }
+
+
+def _summarize_usage(events: list) -> dict:
+    """Aggregate raw usage events into a per-model + per-category summary.
+
+    Pure (no DB) so it's unit-testable. An event is **storage** if it
+    moved bytes (bytes_delta != 0) or its kind names storage; otherwise
+    a token-bearing / model event is **compute**; anything else
+    **other**.  by_model groups by model and is sorted by cost desc.
+    """
+    by_model: dict = {}
+    compute_usd = storage_usd = other_usd = 0.0
+
+    for ev in events or []:
+        cost = float(ev.get("usd_cost") or 0.0)
+        in_tok = int(ev.get("input_tokens") or 0)
+        out_tok = int(ev.get("output_tokens") or 0)
+        bytes_delta = int(ev.get("bytes_delta") or 0)
+        kind = (ev.get("kind") or "").lower()
+        model = ev.get("model")
+
+        is_storage = bytes_delta != 0 or "storage" in kind or "bytes" in kind
+        if is_storage:
+            storage_usd += cost
+        elif in_tok or out_tok or model or kind in ("chat", "compute", "llm", "completion"):
+            compute_usd += cost
+        else:
+            other_usd += cost
+
+        key = model if model else "—"
+        agg = by_model.get(key)
+        if agg is None:
+            agg = {
+                "model": model,
+                "input_tokens": 0,
+                "output_tokens": 0,
+                "usd_cost": 0.0,
+                "count": 0,
+            }
+            by_model[key] = agg
+        agg["input_tokens"] += in_tok
+        agg["output_tokens"] += out_tok
+        agg["usd_cost"] += cost
+        agg["count"] += 1
+
+    rows = sorted(by_model.values(), key=lambda r: r["usd_cost"], reverse=True)
+    return {
+        "by_model": rows,
+        "by_category": {
+            "compute_usd": compute_usd,
+            "storage_usd": storage_usd,
+            "other_usd": other_usd,
+            "total_usd": compute_usd + storage_usd + other_usd,
+        },
+    }
+
+
 def _parse_time_or_default(s: Optional[str], default: datetime) -> datetime:
     if not s:
         return default
@@ -414,5 +486,5 @@ async def _beta_me(payload: dict = Depends(require_auth)):
 @router_beta_inert.get("/billing/usage")
 async def _beta_usage(payload: dict = Depends(require_auth)):
     """Usage endpoint — still served during beta (read-only, empty)."""
-    return {"events": [], "from": None, "to": None}
+    return {"events": [], "from": None, "to": None, "summary": _empty_summary()}
 # <<< CLOUD-BETA
