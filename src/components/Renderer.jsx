@@ -1380,6 +1380,21 @@ function Renderer({
             • Exposure slider — direct write to
               renderer.toneMappingExposure.  Range 0.2…2.0, default 1.0. */}
       <div className="absolute top-12 right-3 z-10 flex flex-col gap-1.5 items-end">
+        <div className="flex items-center gap-1 px-2 py-1 rounded bg-ink-900/80 border border-ink-700 backdrop-blur">
+          <label className="text-[10px] font-mono text-ink-400" htmlFor="kerf-exposure-slider">EV</label>
+          <input
+            id="kerf-exposure-slider"
+            type="range"
+            min="0.2"
+            max="2.0"
+            step="0.05"
+            value={exposure}
+            onChange={(e) => setExposure(parseFloat(e.target.value) || DEFAULT_EXPOSURE)}
+            title="Tone-mapping exposure (ACES filmic)"
+            className="w-20 accent-kerf-300"
+          />
+          <span className="text-[10px] font-mono text-ink-300 w-8 text-right">{exposure.toFixed(2)}</span>
+        </div>
         <button
           type="button"
           onClick={async () => {
@@ -1429,21 +1444,6 @@ function Renderer({
         >
           HDRI bg
         </button>
-        <div className="flex items-center gap-1 px-2 py-1 rounded bg-ink-900/80 border border-ink-700 backdrop-blur">
-          <label className="text-[10px] font-mono text-ink-400" htmlFor="kerf-exposure-slider">EV</label>
-          <input
-            id="kerf-exposure-slider"
-            type="range"
-            min="0.2"
-            max="2.0"
-            step="0.05"
-            value={exposure}
-            onChange={(e) => setExposure(parseFloat(e.target.value) || DEFAULT_EXPOSURE)}
-            title="Tone-mapping exposure (ACES filmic)"
-            className="w-20 accent-kerf-300"
-          />
-          <span className="text-[10px] font-mono text-ink-300 w-8 text-right">{exposure.toFixed(2)}</span>
-        </div>
       </div>
     </div>
   )
