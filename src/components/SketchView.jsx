@@ -159,9 +159,11 @@ export default function SketchView({
     setLineDraft({ ...lineDraftRef.current })
   }, [])
 
-  // Right-inspector collapsed state — hidden by default on narrow viewports
-  // (< lg) so the canvas gets the full width on mobile/tablet.
-  const [inspectorOpen, setInspectorOpen] = useState(false)
+  // Right-inspector (Selection / Constraints) collapsible at ALL sizes,
+  // like the chat panel — toggle stays available on desktop too. Open by
+  // default so the panel is visible on first open; collapse to reclaim
+  // canvas width.
+  const [inspectorOpen, setInspectorOpen] = useState(true)
 
   // Pulse-on-click highlight for constraint rows. When the user clicks a row
   // in the constraint list, we set `pulseConstraintId` so the linked entities
@@ -1466,13 +1468,14 @@ export default function SketchView({
         )}
       </div>
 
-      {/* Inspector open/close toggle — visible only below lg breakpoint */}
+      {/* Inspector open/close toggle — available at all breakpoints so
+          Selection/Constraints can be collapsed like the chat panel. */}
       <button
         type="button"
         aria-label={inspectorOpen ? 'Close constraints panel' : 'Open constraints panel'}
         title={inspectorOpen ? 'Close constraints panel' : 'Open constraints panel'}
         onClick={() => setInspectorOpen((v) => !v)}
-        className="lg:hidden absolute top-1/2 -translate-y-1/2 z-[10]
+        className="absolute top-1/2 -translate-y-1/2 z-[10]
           w-5 h-10 flex items-center justify-center
           bg-ink-900/90 border border-ink-800 rounded-l-md
           text-ink-400 hover:text-kerf-300 hover:bg-ink-800/80 transition-colors
@@ -2988,10 +2991,9 @@ function SketchInspector({ sketch, files, selection, onSelect, onChange, onDelet
       aria-label="Sketch constraints and properties"
       className={`
         w-64 flex-shrink-0 border-l border-ink-800 flex flex-col min-h-0
-        lg:relative lg:translate-x-0
         absolute right-0 top-0 bottom-0 z-[9] transition-transform duration-200
         bg-ink-950
-        ${open ? 'translate-x-0' : 'translate-x-full lg:translate-x-0'}
+        ${open ? 'translate-x-0' : 'translate-x-full'}
       `}
     >
       <div className="p-2 border-b border-ink-800">
