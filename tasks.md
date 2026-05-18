@@ -3627,7 +3627,7 @@ User reported 2026-05-18: adding a "Sun" light in the Render panel has zero visi
 ### T-205 Procedural sky + sun-position atmospheric scattering
 - **Tier:** B
 - **Priority:** P1
-- **Status:** 🔴 not started
+- **Status:** ✅ shipped
 - **Scope:** add a `<Sky>` background option using `three/examples/jsm/objects/Sky.js`. Two new doc-level settings: `sky.kind ∈ {none|procedural|hdri}` and `sky.sun_position {elevation_deg, azimuth_deg}`. When procedural, the sun light's direction syncs from `sky.sun_position` (one source of truth). Picker UI in the Render dropdown alongside the existing Daylight toggle.
 - **Target files/packages:** `src/lib/sky.js` (NEW), `src/components/SkySettings.jsx` (NEW), additive into `src/components/Renderer.jsx` and `src/components/RenderView.jsx` (no deletion); vitest on the pure-logic.
 - **Definition of Done:** changing sun elevation/azimuth animates the sky colour + sun-light direction together; vitest on the elevation→direction math; `npm run build` clean.
@@ -3717,7 +3717,7 @@ User-direction 2026-05-18: "look at Blender and other CADs, I want variety of re
 ### T-213 Studio-lighting preset library — 3-point / 4-point / butterfly / Rembrandt / ring / softbox
 - **Tier:** B
 - **Priority:** P1
-- **Status:** 🔴 not started
+- **Status:** ✅ shipped
 - **Scope:** one-click lighting rigs that populate `doc.lights[]` with a complete preset. Six presets:
   1. **Three-point** (key + fill + back) — already in `presetThreePointLighting` (kept)
   2. **Four-point** (key + fill + back + kicker)
