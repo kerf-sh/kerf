@@ -210,7 +210,7 @@ def test_roundtrip_cube():
     """Write a cube and read it back — face count must survive."""
     body = make_box(size=(1.0, 1.0, 1.0))
     text = write(body)
-    recovered = _step_reader.read_string(text)  # type: ignore[attr-defined]
+    recovered = _step_reader.read_step(text)  # type: ignore[attr-defined]
     assert len(recovered.all_faces()) == 6, (
         "Round-trip face count mismatch"
     )

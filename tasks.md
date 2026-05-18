@@ -2956,7 +2956,7 @@ the detailed spec; these T-NN entries are the execution-queue handles.
 - **Tier:** B
 - **Money/reach rationale:** STEP is the universal mechanical exchange format. A pure-Python STEP reader decouples interop fidelity from OCCT, makes round-trip tests hermetic, and reduces the hard OCCT coupling for every persona. Cross-sector reach.
 - **Priority:** P2
-- **Status:** 🔴 not started
+- **Status:** ✅ shipped
 - **Scope:** Pure-Python `geom/io/step_read.py` — parse STEP AP203/214 `ADVANCED_BREP_SHAPE_REPRESENTATION` into a `validate_body`-clean `Body`. Bounded to the primitive + filleted-box matrix initially. Opus-class task (GK-47 in the kernel plan); run as an isolated worktree on the opus spine. No OCCT; no external binaries; hermetic tests.
 - **Target files/packages:** `packages/kerf-cad-core/src/kerf_cad_core/geom/io/step_read.py` (new), `packages/kerf-cad-core/tests/test_step_io.py` (new).
 - **Definition of Done:** read a STEP box (OCCT-exported fixture), `validate_body` ok, vertices match to `1e-9`; pytest hermetic (fixture file committed, no OCCT call in the test); ties GK-47.
