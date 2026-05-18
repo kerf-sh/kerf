@@ -12,6 +12,7 @@ import {
 import { LogoWordmark } from '../components/Logo.jsx'
 import { useAuth } from '../store/auth.js'
 import { api, ApiError } from '../lib/api.js'
+import { appVersion } from '../lib/appVersion.js'
 
 function fmtDate(s) {
   if (!s) return ''
@@ -220,7 +221,7 @@ export default function Settings() {
         <section>
           <h2 className="text-sm font-semibold text-ink-100 mb-1">About</h2>
           <div className="text-xs text-ink-400 space-y-1 max-w-md">
-            <Row k="Kerf version" v={`v${__APP_VERSION__}`} />
+            <Row k="Kerf version" v={`v${appVersion()}`} />
           </div>
         </section>
 
