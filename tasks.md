@@ -2339,3 +2339,23 @@ Intentionally unused to keep T-139+ stable.
   agent — needs user verification on dev (one change, then confirm),
   per the UI-polish loop convention.
 - **Depends-on:** none
+
+### T-143 Show app version number in the frontend (Settings)
+- **Tier:** B
+- **Money/reach rationale:** user-flagged **priority** (2026-05-18).
+  A visible version number is table-stakes for support/bug-reports
+  ("what version are you on") and trust — cheap, high-signal.
+- **Priority:** P0
+- **Status:** 🔴 not started
+- **Scope:** surface the build-time version in the UI — preferably on
+  the Settings page (and/or a subtle app footer). The value is ALREADY
+  wired: `vite.config.js` defines `__APP_VERSION__` from
+  `package.json`'s `version`. Just consume that global and render it;
+  no build-pipeline change needed. Frontend only (`src/`).
+- **Target files/packages:** `src/` — the Settings route/component
+  (+ optionally shared footer/chrome); reference `__APP_VERSION__`.
+- **Definition of Done:** the running app shows its version (matching
+  `package.json`) in Settings; vitest on any extracted helper where
+  testable; build clean. NOTE: UI change — needs user dev verification
+  per the UI-polish loop convention.
+- **Depends-on:** none
