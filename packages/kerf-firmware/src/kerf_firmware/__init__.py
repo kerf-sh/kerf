@@ -1,1 +1,2 @@
-# kerf-firmware — embedded/firmware build + flash + monitor plugin for Kerf
+"""kerf-firmware: board catalogue and library registry client."""
+__version__ = "0.1.0"

@@ -1,5 +1,5 @@
-"""Pytest config: add every plugin's src/ to sys.path so kerf_*.* imports
-resolve without requiring `pip install -e` of each plugin.
+"""Pytest bootstrap: add every kerf-* src/ directory to sys.path so imports
+resolve without requiring pip install -e of each package.
 """
 import os
 import sys

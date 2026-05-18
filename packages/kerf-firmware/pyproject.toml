@@ -5,22 +5,16 @@ build-backend = "hatchling.build"
 [project]
 name = "kerf-firmware"
 version = "0.1.0"
-description = "Embedded/firmware build + flash + monitor plugin for Kerf (.ino .cpp .c .h — PlatformIO-reference toolchain)"
-readme = "README.md"
+description = "Firmware toolchain integration for Kerf: board catalogue + library registry client"
 license = { text = "MIT" }
 classifiers = ["License :: OSI Approved :: MIT License"]
 requires-python = ">=3.11"
-dependencies = [
-    "fastapi",
-]
+dependencies = []
 
 [project.optional-dependencies]
-# PlatformIO Core (Apache-2.0) is invoked as a subprocess.
-# Installing this extra makes `pio` available on PATH.
-platformio = []
-
-[project.entry-points."kerf.plugins"]
-firmware = "kerf_firmware.plugin:register"
+dev = [
+    "pytest>=8.0.0",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/kerf_firmware"]
