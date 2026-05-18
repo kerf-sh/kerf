@@ -1,0 +1,12 @@
+IESNA:LM-63-1991
+[TEST] Synthetic fixture - downlight type B
+[MANUFAC] Kerf Synthetic
+[LUMCAT] DOWNLIGHT-B
+[LUMINAIRE] Recessed downlight, wide angle, 800lm
+[LAMP] 1 generic LED
+TILT=NONE
+1 800.0 1.0 10 1 1 1 0.15 0.15 0.0
+1.0
+0.0 15.0 30.0 45.0 60.0 75.0 90.0 105.0 120.0 135.0
+0.0
+700.0 680.0 630.0 540.0 400.0 240.0 90.0 20.0 5.0 0.0

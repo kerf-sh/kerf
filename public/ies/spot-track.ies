@@ -1,0 +1,12 @@
+IESNA:LM-63-1991
+[TEST] Synthetic fixture - track spot
+[MANUFAC] Kerf Synthetic
+[LUMCAT] SPOT-TRACK
+[LUMINAIRE] Track-mounted spotlight, 25 degree beam, 900lm
+[LAMP] 1 generic LED
+TILT=NONE
+1 900.0 1.0 13 1 1 1 0.06 0.06 0.0
+1.0
+0.0 5.0 10.0 15.0 20.0 25.0 30.0 40.0 50.0 60.0 70.0 80.0 90.0
+0.0
+860.0 840.0 800.0 730.0 600.0 440.0 280.0 100.0 30.0 8.0 2.0 0.0 0.0

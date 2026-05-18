@@ -1,0 +1,14 @@
+IESNA:LM-63-1991
+[TEST] Synthetic fixture - wall wash type A
+[MANUFAC] Kerf Synthetic
+[LUMCAT] WALLWASH-A
+[LUMINAIRE] Wall wash fixture, asymmetric, 600lm
+[LAMP] 1 generic LED
+TILT=NONE
+1 600.0 1.0 10 3 1 1 0.10 0.20 0.0
+1.0
+0.0 15.0 30.0 45.0 60.0 75.0 90.0 105.0 120.0 135.0
+0.0 90.0 180.0
+550.0 520.0 460.0 370.0 260.0 150.0 60.0 20.0 5.0 0.0
+300.0 280.0 240.0 190.0 130.0 70.0 30.0 10.0 2.0 0.0
+80.0 70.0 60.0 45.0 30.0 15.0 5.0 2.0 0.0 0.0

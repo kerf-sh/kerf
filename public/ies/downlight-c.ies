@@ -1,0 +1,12 @@
+IESNA:LM-63-1991
+[TEST] Synthetic fixture - downlight type C
+[MANUFAC] Kerf Synthetic
+[LUMCAT] DOWNLIGHT-C
+[LUMINAIRE] Recessed downlight, narrow beam, 1200lm
+[LAMP] 1 generic LED
+TILT=NONE
+1 1200.0 1.0 10 1 1 1 0.10 0.10 0.0
+1.0
+0.0 10.0 20.0 30.0 40.0 50.0 60.0 70.0 80.0 90.0
+0.0
+1100.0 1080.0 1010.0 880.0 680.0 440.0 220.0 80.0 20.0 5.0

@@ -1,0 +1,14 @@
+IESNA:LM-63-1991
+[TEST] Synthetic fixture - wall wash type B
+[MANUFAC] Kerf Synthetic
+[LUMCAT] WALLWASH-B
+[LUMINAIRE] Adjustable wall wash, oval beam, 750lm
+[LAMP] 1 generic LED
+TILT=NONE
+1 750.0 1.0 10 3 1 1 0.12 0.25 0.0
+1.0
+0.0 15.0 30.0 45.0 60.0 75.0 90.0 105.0 120.0 135.0
+0.0 90.0 180.0
+680.0 650.0 590.0 480.0 340.0 190.0 70.0 25.0 8.0 0.0
+420.0 400.0 360.0 290.0 200.0 110.0 40.0 12.0 3.0 0.0
+100.0 90.0 75.0 55.0 35.0 18.0 6.0 2.0 0.0 0.0

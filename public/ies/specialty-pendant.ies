@@ -1,0 +1,12 @@
+IESNA:LM-63-1991
+[TEST] Synthetic fixture - pendant
+[MANUFAC] Kerf Synthetic
+[LUMCAT] SPECIALTY-PENDANT
+[LUMINAIRE] Pendant globe, wide symmetric, 450lm
+[LAMP] 1 generic LED
+TILT=NONE
+1 450.0 1.0 10 1 1 1 0.15 0.15 0.0
+1.0
+0.0 20.0 40.0 60.0 80.0 100.0 120.0 140.0 160.0 180.0
+0.0
+420.0 415.0 400.0 370.0 330.0 280.0 210.0 140.0 70.0 20.0

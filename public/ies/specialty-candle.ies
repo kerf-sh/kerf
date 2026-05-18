@@ -1,0 +1,12 @@
+IESNA:LM-63-1991
+[TEST] Synthetic fixture - candle
+[MANUFAC] Kerf Synthetic
+[LUMCAT] SPECIALTY-CANDLE
+[LUMINAIRE] Candle-form omnidirectional, 200lm
+[LAMP] 1 generic LED
+TILT=NONE
+1 200.0 1.0 10 1 1 1 0.02 0.02 0.0
+1.0
+0.0 20.0 40.0 60.0 80.0 100.0 120.0 140.0 160.0 180.0
+0.0
+190.0 185.0 175.0 160.0 140.0 115.0 85.0 55.0 25.0 5.0
