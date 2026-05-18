@@ -1,0 +1,69 @@
+---
+slug: openplc
+competitor: OpenPLC
+category: cad-firmware
+left: kerf
+right: openplc
+hero_tagline: "OpenPLC brings IEC 61131-3 logic to open hardware — Kerf connects the logic to the PCB that runs it."
+---
+
+# Kerf + OpenPLC
+
+OpenPLC is not a competitor to Kerf. It is a complementary open-source PLC runtime and IDE that Kerf integrates with to bridge the gap between hardware design (PCB, enclosure) and the IEC 61131-3 control logic that runs on that hardware. This page explains what OpenPLC does, what Kerf adds on top, and why they are stronger together.
+
+## What OpenPLC is
+
+OpenPLC is an open-source IEC 61131-3 compliant PLC (Programmable Logic Controller) runtime and editor developed by Thiago Rodrigues Alves. It implements all five IEC 61131-3 programming languages:
+
+- **LD** — Ladder Diagram
+- **ST** — Structured Text
+- **FBD** — Function Block Diagram
+- **SFC** — Sequential Function Chart
+- **IL** — Instruction List (deprecated but supported)
+
+OpenPLC Runtime runs on Linux (Raspberry Pi, BeagleBone, industrial SBCs), Windows, and Arduino-compatible hardware. The OpenPLC Editor (based on Beremiz) is a cross-platform IDE for writing and compiling IEC 61131-3 programs. The runtime compiles to C++ and runs without a commercial PLC licence. It is used in industrial automation education, open hardware SCADA systems, and research.
+
+## Where they converge
+
+Both OpenPLC and Kerf target hardware engineers who are building control systems — whether for industrial automation, building management, or custom machinery. Both are open-source (OpenPLC: Apache 2.0; Kerf: MIT). Both acknowledge that the software and the hardware are not separate concerns: OpenPLC runs on real hardware (Raspberry Pi, ESP32, Arduino); Kerf designs that hardware (PCB schematic, layout, enclosure, pre-compliance simulation).
+
+## What Kerf adds
+
+Kerf integrates OpenPLC as a companion for hardware projects that include a programmable control element:
+
+- **PCB design for the hardware that runs OpenPLC.** Design the I/O board, the relay driver, the sensor frontend, or the custom SBC carrier in Kerf's PCB workspace. Pre-compliance simulate the power supply, the I/O bus isolation, and the EMC protection circuits before ordering. The PCB and the PLC program that runs on it live in the same Kerf project.
+- **Chat-native PLC logic generation.** Describe the control logic — "on rising edge of DI1, start FAN_MOTOR timer for 30s; stop if DI2 is active" — and the LLM generates OpenPLC Structured Text code backed by IEC 61131-3 doc-search.
+- **Enclosure design.** Model the DIN-rail enclosure or panel in Kerf's mechanical workspace. Sheet metal flat patterns, enclosure cutouts for I/O connectors, and DIN rail mounting geometry are all in the same project.
+- **Unified project and version control.** PLC program, PCB design, BOM, and enclosure model are in one Kerf project with cloud-git versioning — a complete machine build history.
+
+## Where OpenPLC is stronger on its own
+
+- **Runtime depth.** An experienced PLC programmer using OpenPLC directly has access to the full runtime configuration — scan cycle tuning, modbus mapping, I/O pin assignment, hardware driver configuration — without LLM abstraction.
+- **Hardware abstraction layer.** OpenPLC's HAL covers Raspberry Pi GPIO, Arduino analogWrite/digitalRead, and Modbus TCP/RTU slave — a broad set of hardware targets that Kerf's integration wraps at a higher level.
+- **Community and educational resources.** OpenPLC has a dedicated user community, instructional videos, and industrial automation curriculum built around it. Kerf's PLC integration is a bridge, not a replacement for that learning.
+- **CODESYS compatibility.** OpenPLC's code is importable/exportable in ways compatible with some CODESYS workflows. Kerf does not target full CODESYS interop.
+
+## Feature matrix
+
+| Feature | Kerf | OpenPLC (standalone) |
+|---|---|---|
+| License | MIT (Kerf) + Apache 2.0 (OpenPLC) | Apache 2.0 |
+| IEC 61131-3 languages | ST (chat-native generation) | LD, ST, FBD, SFC, IL |
+| Runtime targets | Via OpenPLC: RPi, Arduino, Linux | RPi, BeagleBone, Arduino, Linux, Windows |
+| Chat-native logic generation | Yes | No |
+| PCB design for target hardware | In-box (full Kerf PCB workflow) | Not included |
+| Enclosure / mechanical | In-box (Kerf mechanical) | Not included |
+| Pre-compliance simulation | In-box (SI/EMC/PDN/thermal) | Not included |
+| Hardware I/O pin mapping | Via OpenPLC config | OpenPLC Editor + HAL |
+| Modbus TCP/RTU | Via OpenPLC runtime | Yes (built-in) |
+| BOM management | In-box (Kerf BOM + distributors) | Not included |
+| Project version control | Cloud git (Kerf) | External (git manually) |
+| Python scripting | kerf-sdk on PyPI | None (runtime is C++) |
+| Open source | Yes (MIT + Apache) | Yes (Apache 2.0) |
+
+## Both produce IEC 61131-3 Structured Text
+
+OpenPLC and Kerf's OpenPLC integration both produce IEC 61131-3 Structured Text (ST) programs that compile to the OpenPLC runtime. ST programs generated by Kerf's chat interface are standard IEC 61131-3 text — open the `.st` file in the OpenPLC Editor directly, inspect it, modify it, and compile it independently of Kerf. No proprietary format or lock-in.
+
+---
+*Last reviewed: 2026-05-19. OpenPLC information sourced from openplcproject.com and the OpenPLC GitHub repository. Kerf capabilities reflect the current shipped product.*
