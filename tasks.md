@@ -3555,3 +3555,53 @@ User-requested 2026-05-18 — improve tscircuit editing (wires, placement, ratsn
 - **Target files/packages:** `packages/kerf-electronics/src/kerf_electronics/atopile/llm.py`, `packages/kerf-electronics/llm_docs/atopile.md`, `packages/kerf-electronics/tests/test_atopile_llm.py`.
 - **Definition of Done:** `make_atopile("voltage divider")` returns a parseable `.ato`; `make_atopile("RC low-pass 10kHz cutoff")` returns parseable + the cutoff value embedded as a parameter; pytest green.
 - **Depends-on:** T-194
+
+## Electronics authoring strategy (T-199 … T-203) — atopile + tscircuit pair
+
+User-direction 2026-05-18: ship the "two authoring styles, one fabrication target" stance. atopile and tscircuit converge at Circuit JSON / KiCad; we keep both because cognitive style differs (EE-code-first vs maker-visual-first). UI segregates by file extension; one renderer; one IR.
+
+### T-199 New-file dialog adds `.ato`; extension → editor routing
+- **Tier:** A
+- **Priority:** P1
+- **Status:** 🔴 not started
+- **Scope:** Surface `.ato` as a first-class file-type in the new-file dialog alongside `.tsx` / `.py` / `.md`. Add a small extension-router (`.ato` → `<AtopileEditor>` from T-196; `.tsx` → the existing tscircuit/JSX editor; everything else falls through to the default Monaco editor). Frontend only.
+- **Target files/packages:** `src/components/NewFileDialog.jsx` (additive only; preserve existing options), `src/lib/editorRouter.js` (NEW pure-logic), `src/components/EditorHost.jsx` if present (one-line additive `if (ext==='ato')`), vitest.
+- **Definition of Done:** new-file dialog shows a labelled "Atopile (.ato)" choice and creates a `module Foo: ... end Foo;` skeleton; opening any `.ato` file routes to AtopileEditor; opening `.tsx` still goes to the tscircuit editor; vitest on the router; `npm run build` clean.
+- **Depends-on:** T-196
+
+### T-200 Shared Circuit JSON preview pane (both editors)
+- **Tier:** A
+- **Priority:** P1
+- **Status:** 🔴 not started
+- **Scope:** A single `<CircuitPreviewPane circuitJson={…} />` component both the atopile editor (T-196) and the tscircuit-JSX editor mount. Reuses the `circuit-to-svg` rendering path already wired in `CircuitJsonPreview.jsx` (T-192). Visual parity = no UX confusion.
+- **Target files/packages:** `src/components/CircuitPreviewPane.jsx` (NEW), `src/components/CircuitPreviewPane.test.jsx` (NEW vitest). TODO comments for parent integration into the two editor hosts.
+- **Definition of Done:** the component renders identically for a Circuit JSON whether the source was atopile-compiled or tscircuit-emitted; pan/zoom works; vitest renders without errors; `npm run build` clean.
+- **Depends-on:** T-192
+
+### T-201 atopile → tscircuit JSX one-way converter
+- **Tier:** B
+- **Priority:** P1
+- **Status:** 🔴 not started
+- **Scope:** Walk an atopile AST (T-194) and emit a `.tsx` source string usable in the tscircuit JSX editor. One-way only — reverse is intentionally NOT shipped (JSX side effects). Useful for "I prototyped visually, let me put it in version control as `.ato`" (wait — that's the wrong direction; the value is "I wrote it as `.ato` and want a quick visual sketch as `.tsx`"). Pure Python.
+- **Target files/packages:** `packages/kerf-electronics/src/kerf_electronics/atopile/to_tscircuit.py` (NEW), `packages/kerf-electronics/tests/test_atopile_to_tscircuit.py` (NEW).
+- **Definition of Done:** voltage_divider.ato → a `.tsx` source string that, when parsed by `@tscircuit/core` (or by our own validator), produces the same Circuit JSON as the atopile compiler does; pytest oracles against the 4 fixtures from T-194; `npm run build` clean.
+- **Depends-on:** T-194, T-195
+
+### T-202 Comparison page — "tscircuit vs atopile" personas
+- **Tier:** B
+- **Priority:** P1
+- **Status:** 🔴 not started
+- **Scope:** A `src/routes/compare/TscircuitVsAtopile.jsx` page that lays out the two authoring styles side-by-side. Two columns ("Visual-first" vs "Code-first"); same Circuit JSON example rendered as JSX on the left and `.ato` on the right; "Both produce KiCad" callout below. No "winner"; both are first-class. Add it to the existing compare-page registry (`src/routes/compare/index.jsx`) — additive only.
+- **Target files/packages:** `src/routes/compare/TscircuitVsAtopile.jsx` (NEW), `src/routes/compare/TscircuitVsAtopile.test.jsx` (NEW vitest), append the route + nav entry in `src/routes/compare/index.jsx` (additive, do not delete existing entries).
+- **Definition of Done:** the page renders at `/compare/tscircuit-vs-atopile`; both code examples are visible; "Both produce KiCad" callout present; vitest; `npm run build` clean.
+- **Depends-on:** none
+
+### T-203 Landing-page Electronics section — pair messaging
+- **Tier:** B
+- **Priority:** P1
+- **Status:** 🔴 not started
+- **Scope:** Surface BOTH authoring styles equally on the Electronics-section of `src/routes/Landing.jsx`. New tagline near the Electronics card: "Two authoring styles, one fabrication target." Mention atopile + tscircuit by name with file-extension hints. Add a small `public/docs/electronics-authoring.md` (or similar — check `public/docs-manifest.json` source) that explains the pair from the user's standpoint.
+- **Target files/packages:** `src/routes/Landing.jsx` (additive — DO NOT remove existing sectors), `public/docs/electronics-authoring.md` (NEW; DO NOT commit `public/docs-manifest.json`), tests assert the tagline text appears in the Electronics card.
+- **Definition of Done:** Landing's Electronics section names both authoring styles; doc renders in the in-app docs viewer; vitest; `npm run build` clean.
+- **Depends-on:** none
+
