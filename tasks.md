@@ -1285,7 +1285,7 @@ Tier A (single persona unlock), render / SubD / direct-edit → Tier B
   ship today, but **no SubD creation / edit / crease workflow** —
   Rhino 8's SubD is the reference.
 - **Priority:** P2
-- **Status:** 🔴 not started
+- **Status:** ✅ shipped (integrated this session)
 - **Scope:** Author-time SubD: create from primitives or convert from
   mesh; edge / vertex / face edit ops with crease weights; round-trip
   to the existing Catmull-Clark evaluator; UX surface.
