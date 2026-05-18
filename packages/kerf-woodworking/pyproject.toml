@@ -1,0 +1,21 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "kerf-woodworking"
+version = "0.1.0"
+license = { text = "MIT" }
+classifiers = ["License :: OSI Approved :: MIT License"]
+description = "Woodworking / furniture / joinery + cut-list plugin for Kerf"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.entry-points."kerf.plugins"]
+woodworking = "kerf_woodworking.plugin:register"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/kerf_woodworking"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
