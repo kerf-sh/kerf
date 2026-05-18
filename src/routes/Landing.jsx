@@ -58,6 +58,7 @@ import {
 import { useState } from 'react'
 import Header from '../components/Header.jsx'
 import Footer from '../components/Footer.jsx'
+import { useAuth } from '../store/auth.js'
 import Button from '../components/Button.jsx'
 import { useCloudConfig } from '../cloud/useCloudConfig.js'
 import DomainSpotlights from '../components/landing/DomainSpotlights.jsx'
@@ -99,6 +100,7 @@ const RUN_CMD = 'kerf-server --migrate'
 /* -------------------------------------------------------------------------- */
 
 function Hero() {
+  const authed = useAuth((s) => !!s.accessToken)
   return (
     <section className="relative overflow-hidden">
       <HeroBackdrop />
@@ -156,10 +158,17 @@ function Hero() {
             </ul>
 
             <div className="mt-5 flex flex-wrap items-center gap-3">
-              <Button as={Link} to="/signup" variant="primary" size="lg">
-                Try it free
-                <ArrowRight size={16} />
-              </Button>
+              {authed ? (
+                <Button as={Link} to="/projects" variant="primary" size="lg">
+                  Open Kerf
+                  <ArrowRight size={16} />
+                </Button>
+              ) : (
+                <Button as={Link} to="/signup" variant="primary" size="lg">
+                  Try it free
+                  <ArrowRight size={16} />
+                </Button>
+              )}
               <Button as={Link} to="/docs/getting-started" variant="outline" size="lg">
                 Read the docs
               </Button>
@@ -190,7 +199,7 @@ function Hero() {
             </ul>
           </div>
 
-          <div className="relative hidden md:block overflow-hidden rounded-[2rem] p-6 -m-6">
+          <div className="relative hidden md:block rounded-[2rem] p-6 -m-6">
             <div className="relative rounded-2xl border border-ink-800 bg-ink-900/40 backdrop-blur shadow-2xl shadow-black/60 overflow-hidden aspect-[3/2]">
               <HeroIllustration className="block w-full h-full" />
             </div>
@@ -1363,6 +1372,7 @@ function TeaserPlan({ label, price, note, bullets, ctaTo, ctaText, highlighted }
 /* -------------------------------------------------------------------------- */
 
 function CTAStrip() {
+  const authed = useAuth((s) => !!s.accessToken)
   return (
     <section className="relative border-t border-ink-900">
       <div className="mx-auto max-w-7xl px-6 py-12 lg:py-14">
@@ -1382,10 +1392,17 @@ function CTAStrip() {
               </p>
             </div>
             <div className="flex flex-wrap gap-3">
-              <Button as={Link} to="/signup" variant="primary" size="lg">
-                Try it free
-                <ArrowRight size={16} />
-              </Button>
+              {authed ? (
+                <Button as={Link} to="/projects" variant="primary" size="lg">
+                  Open Kerf
+                  <ArrowRight size={16} />
+                </Button>
+              ) : (
+                <Button as={Link} to="/signup" variant="primary" size="lg">
+                  Try it free
+                  <ArrowRight size={16} />
+                </Button>
+              )}
               <Button as={Link} to="/library" variant="outline" size="lg">
                 Browse the library
               </Button>

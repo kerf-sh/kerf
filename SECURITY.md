@@ -3,7 +3,7 @@
 ## Reporting a vulnerability
 
 If you discover a security issue in Kerf, **do not open a public GitHub
-issue**. Email **`security@kerf.sh`** with details. PGP key on request.
+issue**. Email **`kerfcad@gmail.com`** with details. PGP key on request.
 
 Include:
 
