@@ -37,6 +37,7 @@ from kerf_core.plugin import (
     WorkerRegistry,
 )
 from kerf_core.storage.factory import create_storage as _create_storage
+from kerf_core.storage import set_storage as _set_storage
 from kerf_core.utils.topo_sort import topo_sort
 
 
@@ -186,6 +187,12 @@ async def _load_plugins(app: FastAPI, config: Config) -> None:
 
     storage = _wire_storage(config)
     app.state.storage = storage
+    # Initialise the module-level storage singleton too. Handlers call
+    # get_storage_required() (the singleton), not app.state.storage —
+    # without this every storage-touching endpoint (chat-with-parts,
+    # thumbnails for ALL kinds, uploads, derived artifacts) 500s with
+    # "Storage not initialized". set_storage() was never called anywhere.
+    _set_storage(storage)
 
     tools = ToolRegistry()
     workers = WorkerRegistry()
