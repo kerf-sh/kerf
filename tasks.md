@@ -1062,7 +1062,7 @@ Template:
   mechanical) — a coordination capability that helps any multi-discipline
   project. P2.
 - **Priority:** P2
-- **Status:** 🔴 not started
+- **Status:** ✅ shipped (integrated this session)
 - **Scope:** Pairwise interference check across assembly components /
   IFC elements, producing a clash report.
 - **Target files/packages:** new module + LLM tool + report view.
