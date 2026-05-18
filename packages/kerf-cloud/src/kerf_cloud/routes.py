@@ -961,3 +961,159 @@ async def github_auth_revoke(
         )
 
     return Response(status_code=204)
+
+
+# ---------------------------------------------------------------------------
+# Git provider settings endpoints (T-146)
+# ---------------------------------------------------------------------------
+
+_KERF_GIT_NOTE = (
+    "Kerf's hosted git is always retained as the system of record. "
+    "This only configures an optional additional external mirror."
+)
+
+
+def _provider_registry():
+    """Return the default ProviderRegistry built from current settings."""
+    from kerf_cloud.git_providers.registry import _build_default_registry
+    return _build_default_registry(settings)
+
+
+@router.get("/git/providers")
+async def list_git_providers(
+    payload: dict = Depends(require_auth),
+):
+    """List all git providers that are configured (env-gated).
+
+    Only providers whose app credentials are present in the server environment
+    are returned. Unconfigured providers are never exposed.
+    """
+    registry = _provider_registry()
+    names = registry.available_names()
+    return {
+        "providers": names,
+        "note": _KERF_GIT_NOTE,
+    }
+
+
+class ProviderConnectRequest(BaseModel):
+    provider: str
+    github_owner: Optional[str] = None
+    github_repo: Optional[str] = None
+
+
+@router.post("/projects/{pid}/git/provider/connect")
+async def git_provider_connect(
+    request: Request,
+    payload: dict = Depends(require_auth),
+    pid: Optional[str] = None,
+):
+    """Connect a project's optional external mirror to a configured provider.
+
+    The caller must be an editor or owner of the project. Only providers
+    reported by GET /git/providers (i.e. env-configured) may be used.
+    Kerf's hosted git is always retained regardless of this setting.
+    """
+    user_id = payload.get("sub")
+    await require_editor(request, pid, user_id)
+
+    body = await request.json()
+    provider_name = (body.get("provider") or "").strip()
+    if not provider_name:
+        raise HTTPException(status_code=400, detail="provider is required")
+
+    pool = await get_pool_required()
+    registry = _provider_registry()
+    provider = registry.get(provider_name, pool=pool)
+    if provider is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"provider '{provider_name}' is not available (not configured or unknown)",
+        )
+
+    kwargs = {k: v for k, v in body.items() if k != "provider"}
+    try:
+        result = await provider.connect(pid, **kwargs)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    return {
+        **result,
+        "kerf_git_retained": True,
+        "note": _KERF_GIT_NOTE,
+    }
+
+
+@router.post("/projects/{pid}/git/provider/disconnect")
+async def git_provider_disconnect(
+    request: Request,
+    payload: dict = Depends(require_auth),
+    pid: Optional[str] = None,
+):
+    """Disconnect a project's optional external mirror.
+
+    Kerf's hosted git is always retained — this only removes the mirror link.
+    """
+    user_id = payload.get("sub")
+    await require_editor(request, pid, user_id)
+
+    body = await request.json() if (await request.body()) else {}
+    provider_name = (body.get("provider") or "").strip()
+    if not provider_name:
+        raise HTTPException(status_code=400, detail="provider is required")
+
+    pool = await get_pool_required()
+    registry = _provider_registry()
+    provider = registry.get(provider_name, pool=pool)
+    if provider is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"provider '{provider_name}' is not available (not configured or unknown)",
+        )
+
+    kwargs = {k: v for k, v in body.items() if k != "provider"}
+    try:
+        await provider.disconnect(pid, **kwargs)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    return {
+        "provider": provider_name,
+        "project_id": pid,
+        "disconnected": True,
+        "kerf_git_retained": True,
+        "note": _KERF_GIT_NOTE,
+    }
+
+
+@router.get("/projects/{pid}/git/provider/status")
+async def git_provider_status(
+    request: Request,
+    payload: dict = Depends(require_auth),
+    pid: Optional[str] = None,
+):
+    """Return connection and last-sync status for all configured providers.
+
+    Any project member (not just editors) may query status. The response
+    always includes a note confirming Kerf's hosted git is retained.
+    """
+    user_id = payload.get("sub")
+    await require_role(request, pid, user_id)
+
+    pool = await get_pool_required()
+    registry = _provider_registry()
+
+    statuses = []
+    for provider in registry.configured_providers(pool=pool):
+        try:
+            pstatus = await provider.status(pid, user_id=user_id)
+        except Exception:
+            pstatus = {"provider": provider.name, "connected": False, "error": "status_unavailable"}
+        statuses.append(pstatus)
+
+    return {
+        "project_id": pid,
+        "providers": statuses,
+        "kerf_git_retained": True,
+        "note": _KERF_GIT_NOTE,
+    }
