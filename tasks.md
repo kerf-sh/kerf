@@ -1340,7 +1340,7 @@ Tier A (single persona unlock), render / SubD / direct-edit → Tier B
 ### T-106b Cycles worker (subprocess harness + job lifecycle + cache)
 - **Tier:** B
 - **Priority:** P2
-- **Status:** 🔴 not started
+- **Status:** ✅ shipped (code pre-landed; stale migration test reconciled this session)
 - **Scope:** Worker process that consumes render jobs from the Postgres
   queue, drives `bpy` in an isolated subprocess (so a crash doesn't
   take the harness down), streams tile progress via SSE/WebSocket,
