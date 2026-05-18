@@ -1,0 +1,21 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "kerf-mold"
+version = "0.1.0"
+license = { text = "MIT" }
+classifiers = ["License :: OSI Approved :: MIT License"]
+description = "Injection-mold tooling design plugin for Kerf"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.entry-points."kerf.plugins"]
+mold = "kerf_mold.plugin:register"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/kerf_mold"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
