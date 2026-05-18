@@ -1612,7 +1612,7 @@ are captured in the 2026-05-18 status comment above.
   breadth per unit of effort. Unblocks the firmware/embedded segment
   as a readable first step.
 - **Priority:** P0
-- **Status:** 🔴 not started
+- **Status:** ✅ shipped (integrated this session)
 - **Scope:** In the file editor / viewer, detect files whose `kind` or
   extension matches the plain-highlight set (`.txt .md .c .cpp .h .hpp
   .py .js .ts .json .yaml .yml .toml .ini .cfg .sh .ino .uno .ld .v
@@ -1641,7 +1641,7 @@ are captured in the 2026-05-18 status comment above.
   or blocks paying users. Affects all cloud personas. P0 platform
   correctness.
 - **Priority:** P0
-- **Status:** 🔴 not started
+- **Status:** ✅ shipped (integrated this session)
 - **Scope:** Hermetic pytest suite covering all three billing buckets:
   `kerf_free` (cheap-models-only enforcement), `kerf_paid` (credits,
   any model, debit path), `byo` (own key, zero billing, no quota
@@ -1666,7 +1666,7 @@ are captured in the 2026-05-18 status comment above.
   hit revenue. Blocked previously by the missing `cloud_invoices` DDL
   (fixed in commit 1c1127b); that fix is now in HEAD.
 - **Priority:** P0
-- **Status:** 🔴 not started
+- **Status:** ✅ shipped (integrated this session)
 - **Scope:** Pytest suite for the billing collection state machine
   using a simulated wall clock: advance the clock through billing
   cycle boundaries and assert that `cloud_invoices` rows are created,
@@ -1691,7 +1691,7 @@ are captured in the 2026-05-18 status comment above.
   markup is the live pricing model; a silent FX drift bug directly
   loses or overcharges revenue. P0 platform correctness.
 - **Priority:** P0
-- **Status:** 🔴 not started
+- **Status:** ✅ shipped (integrated this session)
 - **Scope:** Hermetic pytest suite asserting: (a) the USD→ZAR
   conversion applies the documented 20% markup correctly; (b) display
   amounts are always in USD regardless of settlement currency; (c) the
@@ -1714,7 +1714,7 @@ are captured in the 2026-05-18 status comment above.
   catches regressions on any fresh deploy. Cross-sector platform
   health.
 - **Priority:** P0
-- **Status:** 🔴 not started
+- **Status:** ✅ shipped (integrated this session)
 - **Scope:** A single-file pytest smoke suite
   (`packages/kerf-api/tests/test_smoke.py`) that hits the critical
   happy-path endpoints in order: bootstrap-local auth → create
@@ -1737,7 +1737,7 @@ are captured in the 2026-05-18 status comment above.
   required by the auth spec (password-reset tokens in particular).
   Affects every cloud persona.
 - **Priority:** P0
-- **Status:** 🔴 not started
+- **Status:** ✅ shipped (integrated this session)
 - **Scope:** Hermetic pytest security suite covering: (a) IDOR — user
   A cannot GET/PUT/DELETE user B's project, file, or workspace; (b)
   cross-workspace authz — workspace member cannot access a project in
@@ -1761,7 +1761,7 @@ are captured in the 2026-05-18 status comment above.
   isolation but regressions slip through on real deploys. Cross-
   sector platform health.
 - **Priority:** P0
-- **Status:** 🔴 not started
+- **Status:** ✅ shipped (integrated this session)
 - **Scope:** Two thin shell scripts:
   `scripts/loop_local.sh` — runs the full Phase-1 suite (T-117..T-121
   + T-120 smoke) against a local Postgres (`postgres://pc@localhost:
@@ -1788,7 +1788,7 @@ are captured in the 2026-05-18 status comment above.
   of those builds its own ad-hoc file-tree walk. Gets anti-lock-in
   correct once, reused by every platform persona. P0 foundational.
 - **Priority:** P0
-- **Status:** 🔴 not started
+- **Status:** ✅ shipped (integrated this session)
 - **Scope:** Extend the existing `GET /projects/{pid}/export` route
   (≈L3622 in `packages/kerf-api/src/kerf_api/routes.py`) — do NOT
   create a duplicate route — to: (a) autodetect inline vs stored files
@@ -1825,7 +1825,7 @@ are captured in the 2026-05-18 status comment above.
   object store already gives standard clone + cheap forks; LFS is
   optional later only for pathological repos.
 - **Priority:** P1
-- **Status:** 🔴 not started
+- **Status:** ✅ shipped (integrated this session)
 - **Scope:** On every file write/commit, run the autodetect predicate
   from T-123 (NOT valid UTF-8 OR size > ~1 MiB configurable via
   `KERF_LARGE_FILE_THRESHOLD_BYTES` env, default 1 MiB). If large:
@@ -1859,7 +1859,7 @@ are captured in the 2026-05-18 status comment above.
   layer. Standard `git clone` working is a table-stakes requirement
   for any developer-facing CAD platform.
 - **Priority:** P1
-- **Status:** 🔴 not started
+- **Status:** ✅ shipped (integrated this session)
 - **Scope:** Wire the shared server-side git object store (the cloud
   git Storer already exists — see MEMORY cloud_git_storer_motivation)
   so that when a project is forked the new git repo shares pack
@@ -1891,7 +1891,7 @@ are captured in the 2026-05-18 status comment above.
   provisioned Postgres (unnecessary + cross-platform maintenance
   liability); Electron bundling server+Postgres (hides infra).
 - **Priority:** P1
-- **Status:** 🔴 not started
+- **Status:** ✅ shipped (integrated this session)
 - **Scope:** Restructure the Python package so: `pip install kerf`
   installs the thin client (no server deps, `KERF_API_URL` defaults
   to `https://app.kerf.io`); `pip install 'kerf[server]'` installs
@@ -1924,7 +1924,7 @@ are captured in the 2026-05-18 status comment above.
   "can I get my files out?" — which is the single biggest objection
   to any SaaS CAD tool.
 - **Priority:** P1
-- **Status:** 🔴 not started
+- **Status:** ✅ shipped (integrated this session)
 - **Scope:** `kerf sync <project-id> <local-dir>` — pull changed
   files from the cloud project to the local directory and push local
   changes back up. Change detection: server-side `updated_at` vs
@@ -1954,7 +1954,7 @@ are captured in the 2026-05-18 status comment above.
   reconstitute it on a different Kerf instance. Low effort (builds on
   T-123). Needed by every persona who values data portability.
 - **Priority:** P1
-- **Status:** 🔴 not started
+- **Status:** ✅ shipped (integrated this session)
 - **Scope:** `kerf export <project-id> [--output file.zip]` — calls
   the T-123 export route and writes the zip/tar to disk; `kerf import
   <file.zip> [--project-name name]` — POST the archive to
@@ -2097,7 +2097,7 @@ layer required); T-135 / T-136 / T-137 are design records.
   universally understood by git tooling, and keeps a future real-LFS
   option trivial. Foundational to every large-object flow.
 - **Priority:** P1
-- **Status:** 🔴 not started
+- **Status:** ✅ shipped (integrated this session)
 - **Scope:** A pure module that parses and serializes the Git-LFS
   pointer spec v1 exactly: `version https://git-lfs.github.com/spec/v1`,
   `oid sha256:<64-hex>`, `size <bytes>` (strict validation, byte-exact
@@ -2118,7 +2118,7 @@ layer required); T-135 / T-136 / T-137 are design records.
   bearing call for every project. The STEP-is-ASCII-but-huge case
   (size must dominate) prevents repo bloat across all sectors.
 - **Priority:** P1
-- **Status:** 🔴 not started
+- **Status:** ✅ shipped (integrated this session)
 - **Scope:** A pure function `should_store_as_blob(name, size_bytes,
   sample: bytes, *, threshold) -> bool`: True if `size_bytes >
   threshold` (default 1 MiB) OR `sample` is not valid UTF-8.
@@ -2142,7 +2142,7 @@ layer required); T-135 / T-136 / T-137 are design records.
   task owns the migration so the clean-baseline rule isn't violated by
   parallel agents.
 - **Priority:** P1
-- **Status:** 🔴 not started
+- **Status:** ✅ shipped (integrated this session)
 - **Scope:** Clean-baseline DDL folded into the appropriate
   `00NN_*.sql` baseline CREATE TABLE (NO `alter table add column`
   shims): `blob_objects(oid text primary key, size_bytes bigint not
@@ -2172,7 +2172,7 @@ layer required); T-135 / T-136 / T-137 are design records.
   promise; how shared-blob bytes are attributed is a real revenue /
   fairness decision, not an implementation detail.
 - **Priority:** P1
-- **Status:** 🔴 not started
+- **Status:** ✅ shipped (integrated this session)
 - **Scope:** Decision record for the agreed policy: the workspace that
   first uploads an oid (`blob_objects.first_workspace_id`) bears its
   `size_bytes`; any workspace/fork referencing an unchanged oid pays
@@ -2197,7 +2197,7 @@ layer required); T-135 / T-136 / T-137 are design records.
   deleted and data is lost. Needs a signed-off design before any
   sweep code exists.
 - **Priority:** P1
-- **Status:** 🔴 not started
+- **Status:** ✅ shipped (integrated this session)
 - **Scope:** Decision record: reclaim a Tigris object only when its
   oid has zero `blob_refs` AND is unreachable from any project's git
   history (a blob referenced by an old commit stays); a grace window
@@ -2218,7 +2218,7 @@ layer required); T-135 / T-136 / T-137 are design records.
   anti-lock-in promise; the UX of "I cloned and got stubs, now what"
   must be documented and frictionless or the promise rings hollow.
 - **Priority:** P1
-- **Status:** 🔴 not started
+- **Status:** ✅ shipped (integrated this session)
 - **Scope:** Decision record: bare `git clone` yields LFS-format
   pointer stubs (T-132); the documented next step is `kerf hydrate` /
   `kerf pull-blobs` (resolves stubs → bytes from Tigris via the API);
@@ -2249,7 +2249,7 @@ Intentionally unused to keep T-139+ stable.
   for every self-host + cloud-client user; it must actually work from a
   clean machine, not just as a workspace stub.
 - **Priority:** P1
-- **Status:** 🔴 not started
+- **Status:** ✅ shipped (integrated this session)
 - **Scope:** make `packages/kerf-cli` a first-class workspace member:
   verify the `kerf` console entry installs onto PATH from a clean
   `pip install kerf`; the `[server]` extra pulls every required
@@ -2271,7 +2271,7 @@ Intentionally unused to keep T-139+ stable.
   exist server-side, so the anti-lock-in hydrate flow is non-functional
   end-to-end until this lands.
 - **Priority:** P1
-- **Status:** 🔴 not started
+- **Status:** ✅ shipped (integrated this session)
 - **Scope:** add an authed, ownership-checked `GET
   /api/projects/{pid}/blobs/{oid}` to kerf-api that streams the
   content-addressed object (via `blob_storage_key`) for an oid the
@@ -2291,7 +2291,7 @@ Intentionally unused to keep T-139+ stable.
   correctness — must be fixed as one coordinated pass with exclusive DB
   access (requires a schema reset) before further storage work.
 - **Priority:** P0
-- **Status:** 🚧 in progress (parent-owned, sequential — DB now free)
+- **Status:** ✅ shipped (integrated this session)
 - **Scope:** (a) `kerf_billing/spend.py` `_commit_paid`
   `VALUES ($1, -$2)` → `-$2::numeric` (KerfPaid debit currently raises
   AmbiguousFunctionError and never executes) + flip the 2
@@ -2326,7 +2326,7 @@ Intentionally unused to keep T-139+ stable.
   interaction that the Chat panel handles correctly — inconsistent,
   feels broken, hurts the core editor experience every git user hits.
 - **Priority:** P0
-- **Status:** 🔴 not started
+- **Status:** ✅ shipped (integrated this session)
 - **Scope:** find how the Chat panel implements collapse/expand (the
   correct reference — state, animation, width persistence, the
   panel/layout store) and apply the same behavior to the Git panel so
@@ -2346,7 +2346,7 @@ Intentionally unused to keep T-139+ stable.
   A visible version number is table-stakes for support/bug-reports
   ("what version are you on") and trust — cheap, high-signal.
 - **Priority:** P0
-- **Status:** 🔴 not started
+- **Status:** ✅ shipped (integrated this session)
 - **Scope:** surface the build-time version in the UI — preferably on
   the Settings page (and/or a subtle app footer). The value is ALREADY
   wired: `vite.config.js` defines `__APP_VERSION__` from
@@ -2377,7 +2377,7 @@ frontend tasks (T-147/T-148) serialize behind other frontend work.
   second provider plug in without forking the sync path. Keeps "our git
   is SoR; external = optional mirror" explicit.
 - **Priority:** P1
-- **Status:** 🔴 not started
+- **Status:** ✅ shipped (integrated this session)
 - **Scope:** extract the existing GitHub-app push/pull into a
   `GitSyncProvider` interface (`name`, `is_configured(settings)`,
   `connect/disconnect`, `push(repo)`, `pull(repo)`, `status`). Implement
@@ -2396,7 +2396,7 @@ frontend tasks (T-147/T-148) serialize behind other frontend work.
 - **Money/reach rationale:** doubles the addressable "sync to my forge"
   audience; GitLab is the dominant self-hosted forge in enterprise.
 - **Priority:** P1
-- **Status:** 🔴 not started
+- **Status:** ✅ shipped (integrated this session)
 - **Scope:** `GitLabProvider` (OAuth app or PAT; push/pull mirror) +
   `cloud_gitlab_*` settings. Keys absent now → provider reports
   unconfigured and is hidden; code path still exercised by tests with
@@ -2413,7 +2413,7 @@ frontend tasks (T-147/T-148) serialize behind other frontend work.
 ### T-146 Git provider settings API
 - **Tier:** B
 - **Priority:** P1
-- **Status:** 🔴 not started
+- **Status:** ✅ shipped (integrated this session)
 - **Scope:** endpoints to list env-available providers, connect/
   disconnect a project's external mirror, and report sync status —
   copy must make clear Kerf git is always retained; this only toggles
@@ -2428,7 +2428,7 @@ frontend tasks (T-147/T-148) serialize behind other frontend work.
 ### T-147 Frontend — Git Settings UI (choose provider)
 - **Tier:** B
 - **Priority:** P1
-- **Status:** 🔴 not started
+- **Status:** ✅ shipped (integrated this session)
 - **Scope:** a Git settings surface (in the Git panel) to pick/connect
   GitHub or GitLab — only providers the backend reports as configured
   are shown; clear "our git is always kept" framing; show sync status.
@@ -2446,7 +2446,7 @@ frontend tasks (T-147/T-148) serialize behind other frontend work.
   view (branches/commits DAG) instead of the minimal panel; makes the
   cloud-git substrate legible and trustworthy.
 - **Priority:** P1
-- **Status:** 🔴 not started
+- **Status:** ✅ shipped (integrated this session)
 - **Scope:** render a commit graph in the Git panel from the cloud-git
   data (`cloud_git_commits`/`cloud_git_branches`, landed via T-125/
   T-141) — branch lanes, commit nodes, messages, HEAD. Builds on the
@@ -2462,7 +2462,7 @@ frontend tasks (T-147/T-148) serialize behind other frontend work.
 ### T-149 Robust multi-provider sync — E2E + hardening
 - **Tier:** A
 - **Priority:** P1
-- **Status:** 🔴 not started
+- **Status:** ✅ shipped (integrated this session)
 - **Scope:** end-to-end coverage: Kerf git is SoR; pushing/pulling an
   optional GitHub *and* GitLab mirror; env-gating; auth failure,
   network error, partial-sync, and re-sync idempotency are robust and
@@ -2481,7 +2481,7 @@ frontend tasks (T-147/T-148) serialize behind other frontend work.
   ever reclaimed → dedup storage grows unbounded. Closing this makes the
   storage substrate fully self-maintaining.
 - **Priority:** P1
-- **Status:** 🔴 not started
+- **Status:** ✅ shipped (integrated this session)
 - **Scope:** implement a `GitReachabilityOracle` that, given an oid,
   reports whether ANY commit reachable from ANY ref of the project's
   bare repo contains an LFS pointer for it (must include history, not
@@ -2503,7 +2503,7 @@ frontend tasks (T-147/T-148) serialize behind other frontend work.
   `/projects/{pid}/git/log` returns no `parent_shas`; merge lanes only
   appear once parents are recorded. Small, completes the git-graph UX.
 - **Priority:** P1
-- **Status:** 🔴 not started
+- **Status:** ✅ shipped (integrated this session)
 - **Scope:** add parent tracking to `cloud_git_commits` (clean-baseline:
   a `parent_shas text[]` column folded into `0012_cloud_git.sql`, NOT
   an alter shim); record real parents in the materialize/commit handler
@@ -2526,7 +2526,7 @@ frontend tasks (T-147/T-148) serialize behind other frontend work.
   has no GitLab columns/token table. Until this lands, a GitLab mirror
   can't be durably attached to a project.
 - **Priority:** P1
-- **Status:** 🔴 not started
+- **Status:** ✅ shipped (integrated this session)
 - **Scope:** clean-baseline DDL — add `gitlab_host`/`gitlab_namespace`/
   `gitlab_project` to `cloud_git_repos` (folded into `0012_cloud_git.sql`,
   NOT an alter shim) and a `cloud_gitlab_tokens` table analogous to
