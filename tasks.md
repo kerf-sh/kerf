@@ -1246,7 +1246,7 @@ Tier A (single persona unlock), render / SubD / direct-edit → Tier B
   Allegro / PADS / gEDA / Eagle. Each adapter unlocks a real workforce
   slice for the same persona.
 - **Priority:** P1
-- **Status:** 🔴 not started
+- **Status:** ✅ shipped (already landed pre-session 474de59/63a406d/6496bd1; reconciled)
 - **Scope:** Per-vendor adapter under `packages/kerf-imports/` that
   parses each vendor's design exchange format (or its open subset) into
   the same CircuitJSON / schematic / footprint shape KiCad imports
