@@ -949,11 +949,37 @@ async def create_project(req: CreateProjectRequest, payload: dict = Depends(requ
         if ws:
             ws_id = str(ws["id"])
 
-    if not ws_id:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="workspace_id or workspace_slug required")
-
     pool = await get_pool_required()
     async with pool.acquire() as conn:
+        # No explicit workspace? Resolve the caller's default workspace
+        # (self-healing if somehow absent) instead of 400. The server is
+        # the authority on workspace membership, so forcing the client to
+        # echo an id back was fragile coupling: a transient client-side
+        # workspace-load failure (cold autoscaled machine / token race
+        # right after OAuth) would otherwise make project creation
+        # permanently impossible for the session. This is the root cause
+        # of the recurring "workspace_id or workspace_slug required".
+        if not ws_id:
+            default_ws, exists = await get_default_workspace(conn, user_id)
+            if not exists:
+                urow = await conn.fetchrow(
+                    "SELECT name, email FROM users WHERE id = $1", user_id
+                )
+                display = (urow["name"].strip() if urow and urow["name"] else "")
+                if not display:
+                    email = urow["email"] if urow and urow["email"] else ""
+                    at = email.find("@")
+                    display = email[:at] if at > 0 else "My"
+                default_ws = await create_personal_workspace(conn, user_id, display)
+            if default_ws:
+                ws_id = str(default_ws["id"])
+
+        if not ws_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="no workspace available for user",
+            )
+
         role = await get_user_workspace_role(conn, ws_id, user_id)
         if not role:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="workspace not found")
