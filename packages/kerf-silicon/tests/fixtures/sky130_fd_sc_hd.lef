@@ -1,0 +1,514 @@
+# Sky130 High-Density standard cell library — selected cells
+# Simplified abstracts for parser testing.
+# Real sky130_fd_sc_hd.lef is available at:
+#   https://github.com/google/skywater-pdk-libs-sky130_fd_sc_hd
+
+VERSION 5.8 ;
+
+NAMESCASESENSITIVE ON ;
+BUSBITCHARS "[]" ;
+DIVIDERCHAR "/" ;
+
+UNITS
+  DATABASE MICRONS 1000 ;
+END UNITS
+
+# -----------------------------------------------------------------------
+# Technology layers (subset)
+# -----------------------------------------------------------------------
+LAYER nwell
+  TYPE MASTERSLICE ;
+END nwell
+
+LAYER pwell
+  TYPE MASTERSLICE ;
+END pwell
+
+LAYER li1
+  TYPE ROUTING ;
+  DIRECTION HORIZONTAL ;
+  PITCH 0.460 ;
+  WIDTH 0.170 ;
+  SPACING 0.170 ;
+END li1
+
+LAYER met1
+  TYPE ROUTING ;
+  DIRECTION HORIZONTAL ;
+  PITCH 0.340 ;
+  WIDTH 0.140 ;
+  SPACING 0.140 ;
+END met1
+
+LAYER met2
+  TYPE ROUTING ;
+  DIRECTION VERTICAL ;
+  PITCH 0.460 ;
+  WIDTH 0.140 ;
+  SPACING 0.140 ;
+END met2
+
+LAYER mcon
+  TYPE CUT ;
+END mcon
+
+LAYER via
+  TYPE CUT ;
+END via
+
+# -----------------------------------------------------------------------
+# Sites
+# -----------------------------------------------------------------------
+SITE unithd
+  CLASS CORE ;
+  SYMMETRY Y ;
+  SIZE 0.460 BY 2.720 ;
+END unithd
+
+# -----------------------------------------------------------------------
+# VIAs (subset)
+# -----------------------------------------------------------------------
+VIA M1M2_PR DEFAULT
+  LAYER met1 ;
+    RECT -0.070 -0.070 0.070 0.070 ;
+  LAYER via ;
+    RECT -0.070 -0.070 0.070 0.070 ;
+  LAYER met2 ;
+    RECT -0.070 -0.070 0.070 0.070 ;
+END M1M2_PR
+
+# -----------------------------------------------------------------------
+# sky130_fd_sc_hd__inv_1 — Inverter (drive strength 1)
+# -----------------------------------------------------------------------
+MACRO sky130_fd_sc_hd__inv_1
+  CLASS CORE ;
+  ORIGIN 0.000 0.000 ;
+  SIZE 1.380 BY 2.720 ;
+  SYMMETRY X Y R90 ;
+  SITE unithd ;
+
+  PIN A
+    DIRECTION INPUT ;
+    USE SIGNAL ;
+    ANTENNAGATEAREA 0.0576 ;
+    PORT
+      LAYER li1 ;
+        RECT 0.000 1.245 0.510 1.415 ;
+    END PORT
+  END A
+
+  PIN Y
+    DIRECTION OUTPUT ;
+    USE SIGNAL ;
+    PORT
+      LAYER li1 ;
+        RECT 0.690 1.245 1.380 1.415 ;
+    END PORT
+  END Y
+
+  PIN VPWR
+    DIRECTION INOUT ;
+    USE POWER ;
+    PORT
+      LAYER met1 ;
+        RECT 0.000 2.580 1.380 2.720 ;
+      LAYER li1 ;
+        RECT 0.000 2.400 1.380 2.580 ;
+    END PORT
+  END VPWR
+
+  PIN VGND
+    DIRECTION INOUT ;
+    USE GROUND ;
+    PORT
+      LAYER met1 ;
+        RECT 0.000 0.000 1.380 0.140 ;
+      LAYER li1 ;
+        RECT 0.000 0.140 1.380 0.320 ;
+    END PORT
+  END VGND
+
+  OBS
+    LAYER li1 ;
+      RECT 0.000 0.320 1.380 2.400 ;
+  END OBS
+
+END sky130_fd_sc_hd__inv_1
+
+# -----------------------------------------------------------------------
+# sky130_fd_sc_hd__inv_2 — Inverter (drive strength 2)
+# -----------------------------------------------------------------------
+MACRO sky130_fd_sc_hd__inv_2
+  CLASS CORE ;
+  ORIGIN 0.000 0.000 ;
+  SIZE 1.840 BY 2.720 ;
+  SYMMETRY X Y R90 ;
+  SITE unithd ;
+
+  PIN A
+    DIRECTION INPUT ;
+    USE SIGNAL ;
+    ANTENNAGATEAREA 0.1152 ;
+    PORT
+      LAYER li1 ;
+        RECT 0.000 1.245 0.510 1.415 ;
+    END PORT
+  END A
+
+  PIN Y
+    DIRECTION OUTPUT ;
+    USE SIGNAL ;
+    PORT
+      LAYER li1 ;
+        RECT 0.690 1.245 1.840 1.415 ;
+    END PORT
+  END Y
+
+  PIN VPWR
+    DIRECTION INOUT ;
+    USE POWER ;
+    PORT
+      LAYER met1 ;
+        RECT 0.000 2.580 1.840 2.720 ;
+    END PORT
+  END VPWR
+
+  PIN VGND
+    DIRECTION INOUT ;
+    USE GROUND ;
+    PORT
+      LAYER met1 ;
+        RECT 0.000 0.000 1.840 0.140 ;
+    END PORT
+  END VGND
+
+  OBS
+    LAYER li1 ;
+      RECT 0.000 0.320 1.840 2.400 ;
+  END OBS
+
+END sky130_fd_sc_hd__inv_2
+
+# -----------------------------------------------------------------------
+# sky130_fd_sc_hd__and2_1 — 2-input AND gate (drive strength 1)
+# -----------------------------------------------------------------------
+MACRO sky130_fd_sc_hd__and2_1
+  CLASS CORE ;
+  ORIGIN 0.000 0.000 ;
+  SIZE 1.840 BY 2.720 ;
+  SYMMETRY X Y R90 ;
+  SITE unithd ;
+
+  PIN A
+    DIRECTION INPUT ;
+    USE SIGNAL ;
+    ANTENNAGATEAREA 0.0648 ;
+    PORT
+      LAYER li1 ;
+        RECT 0.000 1.335 0.510 1.505 ;
+    END PORT
+  END A
+
+  PIN B
+    DIRECTION INPUT ;
+    USE SIGNAL ;
+    ANTENNAGATEAREA 0.0648 ;
+    PORT
+      LAYER li1 ;
+        RECT 0.000 0.975 0.510 1.145 ;
+    END PORT
+  END B
+
+  PIN X
+    DIRECTION OUTPUT ;
+    USE SIGNAL ;
+    PORT
+      LAYER li1 ;
+        RECT 1.010 1.155 1.840 1.325 ;
+    END PORT
+  END X
+
+  PIN VPWR
+    DIRECTION INOUT ;
+    USE POWER ;
+    PORT
+      LAYER met1 ;
+        RECT 0.000 2.580 1.840 2.720 ;
+    END PORT
+  END VPWR
+
+  PIN VGND
+    DIRECTION INOUT ;
+    USE GROUND ;
+    PORT
+      LAYER met1 ;
+        RECT 0.000 0.000 1.840 0.140 ;
+    END PORT
+  END VGND
+
+  OBS
+    LAYER li1 ;
+      RECT 0.000 0.320 1.840 2.400 ;
+  END OBS
+
+END sky130_fd_sc_hd__and2_1
+
+# -----------------------------------------------------------------------
+# sky130_fd_sc_hd__or2_1 — 2-input OR gate (drive strength 1)
+# -----------------------------------------------------------------------
+MACRO sky130_fd_sc_hd__or2_1
+  CLASS CORE ;
+  ORIGIN 0.000 0.000 ;
+  SIZE 1.840 BY 2.720 ;
+  SYMMETRY X Y R90 ;
+  SITE unithd ;
+
+  PIN A
+    DIRECTION INPUT ;
+    USE SIGNAL ;
+    ANTENNAGATEAREA 0.0648 ;
+    PORT
+      LAYER li1 ;
+        RECT 0.000 1.335 0.510 1.505 ;
+    END PORT
+  END A
+
+  PIN B
+    DIRECTION INPUT ;
+    USE SIGNAL ;
+    ANTENNAGATEAREA 0.0648 ;
+    PORT
+      LAYER li1 ;
+        RECT 0.000 0.975 0.510 1.145 ;
+    END PORT
+  END B
+
+  PIN X
+    DIRECTION OUTPUT ;
+    USE SIGNAL ;
+    PORT
+      LAYER li1 ;
+        RECT 1.010 1.155 1.840 1.325 ;
+    END PORT
+  END X
+
+  PIN VPWR
+    DIRECTION INOUT ;
+    USE POWER ;
+    PORT
+      LAYER met1 ;
+        RECT 0.000 2.580 1.840 2.720 ;
+    END PORT
+  END VPWR
+
+  PIN VGND
+    DIRECTION INOUT ;
+    USE GROUND ;
+    PORT
+      LAYER met1 ;
+        RECT 0.000 0.000 1.840 0.140 ;
+    END PORT
+  END VGND
+
+  OBS
+    LAYER li1 ;
+      RECT 0.000 0.320 1.840 2.400 ;
+  END OBS
+
+END sky130_fd_sc_hd__or2_1
+
+# -----------------------------------------------------------------------
+# sky130_fd_sc_hd__nand2_1 — 2-input NAND gate (drive strength 1)
+# -----------------------------------------------------------------------
+MACRO sky130_fd_sc_hd__nand2_1
+  CLASS CORE ;
+  ORIGIN 0.000 0.000 ;
+  SIZE 1.380 BY 2.720 ;
+  SYMMETRY X Y R90 ;
+  SITE unithd ;
+
+  PIN A
+    DIRECTION INPUT ;
+    USE SIGNAL ;
+    ANTENNAGATEAREA 0.0576 ;
+    PORT
+      LAYER li1 ;
+        RECT 0.000 1.335 0.510 1.505 ;
+    END PORT
+  END A
+
+  PIN B
+    DIRECTION INPUT ;
+    USE SIGNAL ;
+    ANTENNAGATEAREA 0.0576 ;
+    PORT
+      LAYER li1 ;
+        RECT 0.000 0.975 0.510 1.145 ;
+    END PORT
+  END B
+
+  PIN Y
+    DIRECTION OUTPUT ;
+    USE SIGNAL ;
+    PORT
+      LAYER li1 ;
+        RECT 0.690 1.155 1.380 1.325 ;
+    END PORT
+  END Y
+
+  PIN VPWR
+    DIRECTION INOUT ;
+    USE POWER ;
+    PORT
+      LAYER met1 ;
+        RECT 0.000 2.580 1.380 2.720 ;
+    END PORT
+  END VPWR
+
+  PIN VGND
+    DIRECTION INOUT ;
+    USE GROUND ;
+    PORT
+      LAYER met1 ;
+        RECT 0.000 0.000 1.380 0.140 ;
+    END PORT
+  END VGND
+
+  OBS
+    LAYER li1 ;
+      RECT 0.000 0.320 1.380 2.400 ;
+  END OBS
+
+END sky130_fd_sc_hd__nand2_1
+
+# -----------------------------------------------------------------------
+# sky130_fd_sc_hd__nor2_1 — 2-input NOR gate (drive strength 1)
+# -----------------------------------------------------------------------
+MACRO sky130_fd_sc_hd__nor2_1
+  CLASS CORE ;
+  ORIGIN 0.000 0.000 ;
+  SIZE 1.380 BY 2.720 ;
+  SYMMETRY X Y R90 ;
+  SITE unithd ;
+
+  PIN A
+    DIRECTION INPUT ;
+    USE SIGNAL ;
+    ANTENNAGATEAREA 0.0576 ;
+    PORT
+      LAYER li1 ;
+        RECT 0.000 1.335 0.510 1.505 ;
+    END PORT
+  END A
+
+  PIN B
+    DIRECTION INPUT ;
+    USE SIGNAL ;
+    ANTENNAGATEAREA 0.0576 ;
+    PORT
+      LAYER li1 ;
+        RECT 0.000 0.975 0.510 1.145 ;
+    END PORT
+  END B
+
+  PIN Y
+    DIRECTION OUTPUT ;
+    USE SIGNAL ;
+    PORT
+      LAYER li1 ;
+        RECT 0.690 1.155 1.380 1.325 ;
+    END PORT
+  END Y
+
+  PIN VPWR
+    DIRECTION INOUT ;
+    USE POWER ;
+    PORT
+      LAYER met1 ;
+        RECT 0.000 2.580 1.380 2.720 ;
+    END PORT
+  END VPWR
+
+  PIN VGND
+    DIRECTION INOUT ;
+    USE GROUND ;
+    PORT
+      LAYER met1 ;
+        RECT 0.000 0.000 1.380 0.140 ;
+    END PORT
+  END VGND
+
+  OBS
+    LAYER li1 ;
+      RECT 0.000 0.320 1.380 2.400 ;
+  END OBS
+
+END sky130_fd_sc_hd__nor2_1
+
+# -----------------------------------------------------------------------
+# sky130_fd_sc_hd__dff_1 — D flip-flop (drive strength 1)
+# -----------------------------------------------------------------------
+MACRO sky130_fd_sc_hd__dff_1
+  CLASS CORE ;
+  ORIGIN 0.000 0.000 ;
+  SIZE 3.680 BY 2.720 ;
+  SYMMETRY X Y R90 ;
+  SITE unithd ;
+
+  PIN D
+    DIRECTION INPUT ;
+    USE SIGNAL ;
+    ANTENNAGATEAREA 0.1296 ;
+    PORT
+      LAYER li1 ;
+        RECT 0.000 1.245 0.510 1.415 ;
+    END PORT
+  END D
+
+  PIN CLK
+    DIRECTION INPUT ;
+    USE SIGNAL ;
+    ANTENNAGATEAREA 0.2592 ;
+    PORT
+      LAYER li1 ;
+        RECT 0.000 0.885 0.510 1.055 ;
+    END PORT
+  END CLK
+
+  PIN Q
+    DIRECTION OUTPUT ;
+    USE SIGNAL ;
+    PORT
+      LAYER li1 ;
+        RECT 3.170 1.245 3.680 1.415 ;
+    END PORT
+  END Q
+
+  PIN VPWR
+    DIRECTION INOUT ;
+    USE POWER ;
+    PORT
+      LAYER met1 ;
+        RECT 0.000 2.580 3.680 2.720 ;
+    END PORT
+  END VPWR
+
+  PIN VGND
+    DIRECTION INOUT ;
+    USE GROUND ;
+    PORT
+      LAYER met1 ;
+        RECT 0.000 0.000 3.680 0.140 ;
+    END PORT
+  END VGND
+
+  OBS
+    LAYER li1 ;
+      RECT 0.000 0.320 3.680 2.400 ;
+    LAYER met1 ;
+      RECT 0.140 0.320 3.540 2.400 ;
+  END OBS
+
+END sky130_fd_sc_hd__dff_1
+
+END LIBRARY

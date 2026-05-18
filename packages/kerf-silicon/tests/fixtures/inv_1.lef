@@ -1,0 +1,86 @@
+# Simple inverter cell — inv_1 — LEF abstract
+# Used by test_lef_parser.py
+
+VERSION 5.8 ;
+
+BUSBITCHARS "[]" ;
+DIVIDERCHAR "/" ;
+
+UNITS
+  DATABASE MICRONS 1000 ;
+END UNITS
+
+LAYER li1
+  TYPE ROUTING ;
+  DIRECTION HORIZONTAL ;
+  PITCH 0.460 ;
+  WIDTH 0.170 ;
+  SPACING 0.170 ;
+END li1
+
+LAYER met1
+  TYPE ROUTING ;
+  DIRECTION HORIZONTAL ;
+  PITCH 0.340 ;
+  WIDTH 0.140 ;
+  SPACING 0.140 ;
+END met1
+
+SITE unithd
+  CLASS CORE ;
+  SYMMETRY Y ;
+  SIZE 0.460 BY 2.720 ;
+END unithd
+
+MACRO inv_1
+  CLASS CORE ;
+  ORIGIN 0.000 0.000 ;
+  SIZE 1.380 BY 2.720 ;
+  SYMMETRY X Y R90 ;
+  SITE unithd ;
+
+  PIN A
+    DIRECTION INPUT ;
+    USE SIGNAL ;
+    ANTENNAGATEAREA 0.0576 ;
+    PORT
+      LAYER li1 ;
+        RECT 0.000 1.245 0.510 1.415 ;
+    END PORT
+  END A
+
+  PIN Y
+    DIRECTION OUTPUT ;
+    USE SIGNAL ;
+    PORT
+      LAYER li1 ;
+        RECT 0.690 1.245 1.380 1.415 ;
+    END PORT
+  END Y
+
+  PIN VPWR
+    DIRECTION INOUT ;
+    USE POWER ;
+    PORT
+      LAYER met1 ;
+        RECT 0.000 2.580 1.380 2.720 ;
+    END PORT
+  END VPWR
+
+  PIN VGND
+    DIRECTION INOUT ;
+    USE GROUND ;
+    PORT
+      LAYER met1 ;
+        RECT 0.000 0.000 1.380 0.140 ;
+    END PORT
+  END VGND
+
+  OBS
+    LAYER li1 ;
+      RECT 0.000 0.000 1.380 2.720 ;
+  END OBS
+
+END inv_1
+
+END LIBRARY
