@@ -3034,7 +3034,7 @@ depth and listed in ROADMAP §3 P2 / §3.5.
 - **Tier:** A
 - **Money/reach rationale:** Robotics programming (offline path generation, cell simulation, kinematics) is a growing manufacturing workforce segment with high AI-native fit (robot programs are text). 5-axis CAM (`packages/kerf-cam`) is an adjacent, reusable path-gen base. P2 moat (ROADMAP §3 P2).
 - **Priority:** P2
-- **Status:** 🔴 not started
+- **Status:** ✅ shipped
 - **Scope:** Seed `packages/kerf-robotics/` with: (a) a `RobotCell` data model (6-DOF serial robot with DH parameters, workspace, joint limits, end-effector); (b) forward kinematics (FK) and inverse kinematics (IK, analytic 6-DOF solution for common arm families: ABB, KUKA, Fanuc); (c) trajectory planning (point-to-point, linear, spline) with collision-free path via swept-volume check against a simple scene; (d) offline program generation for ABB RAPID / KUKA KRL / Fanuc LS. Reference tests: FK of a known configuration vs analytic; IK solve → FK round-trip to `1e-6`; RAPID output parses structurally. No simulation GUI in this task — numeric/programmatic only.
 - **Target files/packages:** `packages/kerf-robotics/src/kerf_robotics/` (new package — `robot.py`, `kinematics.py`, `trajectory.py`, `codegen/rapid.py`, `codegen/krl.py`, `codegen/fanuc_ls.py`), `packages/kerf-robotics/tests/` (new), migration for `robot_cell` kind, `packages/kerf-robotics/llm_docs/robotics.md`.
 - **Definition of Done:** FK/IK round-trip exact to `1e-6`; trajectory from A to B is collision-free against a simple box obstacle; RAPID/KRL/LS output are structurally valid programs; pytest analytic oracles.
