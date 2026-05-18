@@ -77,7 +77,10 @@ CREATE TABLE IF NOT EXISTS cloud_git_repos (
     github_repo       text,
     last_pushed_at    timestamptz,
     last_fetched_at   timestamptz,
-    created_at        timestamptz NOT NULL DEFAULT now()
+    created_at        timestamptz NOT NULL DEFAULT now(),
+    gitlab_host       text,
+    gitlab_namespace  text,
+    gitlab_project    text
 );
 CREATE TABLE IF NOT EXISTS cloud_git_branches (
     project_id uuid NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
@@ -94,6 +97,7 @@ CREATE TABLE IF NOT EXISTS cloud_git_commits (
     author_name  text NOT NULL DEFAULT '',
     author_email text NOT NULL DEFAULT '',
     branch       text NOT NULL DEFAULT 'main',
+    parent_shas  text[] NOT NULL DEFAULT '{}',
     created_at   timestamptz NOT NULL DEFAULT now()
 );
 """
@@ -321,12 +325,14 @@ def test_commit_produces_real_tree_and_records_real_sha(conn, storage, workdir):
 
     # cloud_git_commits recorded the REAL sha (ordering: git first).
     row = run(conn.fetchrow(
-        "SELECT sha, message, branch FROM cloud_git_commits WHERE project_id = $1",
+        "SELECT sha, message, branch, parent_shas FROM cloud_git_commits WHERE project_id = $1",
         pid,
     ))
     assert row["sha"] == sha
     assert row["message"] == "first real commit"
     assert row["branch"] == "main"
+    # First commit — no parents.
+    assert list(row["parent_shas"]) == []
 
     # Branch + repo head advanced to the real sha.
     b = run(conn.fetchval(
@@ -478,3 +484,110 @@ def test_empty_message_rejected(conn, storage):
     finally:
         for c in reversed(cms):
             c.stop()
+
+
+# ---------------------------------------------------------------------------
+# 5. T-151 — parent_shas recorded in cloud_git_commits + returned by /git/log
+# ---------------------------------------------------------------------------
+
+def test_parent_shas_empty_on_first_commit_populated_on_second(conn, storage, workdir):
+    """First commit has no parents; second commit records the first's sha."""
+    uid = run(_make_user(conn))
+    ws = run(_make_workspace(conn, uid))
+    pid = run(_make_project(conn, ws))
+
+    run(_add_file(conn, pid, "README.md", b"v1\n", storage=storage))
+
+    cms = _patches(conn, uid=uid)
+    for c in cms:
+        c.start()
+    try:
+        r1 = run(routes.git_commit(
+            _body_request({"message": "root commit"}),
+            payload={"sub": str(uid)},
+            pid=str(pid),
+        ))
+        run(conn.execute("UPDATE files SET content = 'v2\n' WHERE project_id = $1", pid))
+        r2 = run(routes.git_commit(
+            _body_request({"message": "second commit"}),
+            payload={"sub": str(uid)},
+            pid=str(pid),
+        ))
+    finally:
+        for c in reversed(cms):
+            c.stop()
+
+    rows = run(conn.fetch(
+        "SELECT sha, parent_shas FROM cloud_git_commits WHERE project_id = $1 ORDER BY created_at ASC",
+        pid,
+    ))
+    assert len(rows) == 2
+    first_row = rows[0]
+    second_row = rows[1]
+
+    # Root commit has no parents.
+    assert list(first_row["parent_shas"]) == []
+    assert first_row["sha"] == r1["sha"]
+
+    # Second commit records the first commit's sha as its parent.
+    assert list(second_row["parent_shas"]) == [r1["sha"]]
+    assert second_row["sha"] == r2["sha"]
+
+
+def test_git_log_returns_parent_shas(conn, storage, workdir):
+    """GET /projects/{pid}/git/log includes parent_shas in each entry."""
+    uid = run(_make_user(conn))
+    ws = run(_make_workspace(conn, uid))
+    pid = run(_make_project(conn, ws))
+
+    run(_add_file(conn, pid, "README.md", b"hello\n", storage=storage))
+
+    cms = _patches(conn, uid=uid)
+    for c in cms:
+        c.start()
+    try:
+        r1 = run(routes.git_commit(
+            _body_request({"message": "first"}),
+            payload={"sub": str(uid)},
+            pid=str(pid),
+        ))
+        run(conn.execute("UPDATE files SET content = 'world\n' WHERE project_id = $1", pid))
+        r2 = run(routes.git_commit(
+            _body_request({"message": "second"}),
+            payload={"sub": str(uid)},
+            pid=str(pid),
+        ))
+    finally:
+        for c in reversed(cms):
+            c.stop()
+
+    # Build a fake Request for git_log (query_params: branch=None, limit=50).
+    req = MagicMock()
+    _qp = MagicMock()
+    _qp.get = lambda k, d=None: {"limit": "50"}.get(k, d)
+    req.query_params = _qp
+    pool = _pool_for(conn)
+
+    log_patches = [
+        patch("kerf_cloud.routes.get_pool_required", AsyncMock(return_value=pool)),
+        patch("kerf_cloud.routes.require_role",
+              AsyncMock(return_value=(str(uid), "owner"))),
+    ]
+    for p in log_patches:
+        p.start()
+    try:
+        log = run(routes.git_log(req, payload={"sub": str(uid)}, pid=str(pid)))
+    finally:
+        for p in reversed(log_patches):
+            p.stop()
+
+    # log is ordered newest-first
+    by_sha = {entry["sha"]: entry for entry in log}
+    assert r1["sha"] in by_sha
+    assert r2["sha"] in by_sha
+
+    # parent_shas must be present and correct
+    assert "parent_shas" in by_sha[r1["sha"]]
+    assert "parent_shas" in by_sha[r2["sha"]]
+    assert by_sha[r1["sha"]]["parent_shas"] == []
+    assert by_sha[r2["sha"]]["parent_shas"] == [r1["sha"]]

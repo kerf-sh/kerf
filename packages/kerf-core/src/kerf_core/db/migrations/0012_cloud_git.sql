@@ -23,7 +23,10 @@ CREATE TABLE IF NOT EXISTS cloud_git_repos (
     github_repo       text,
     last_pushed_at    timestamptz,
     last_fetched_at   timestamptz,
-    created_at        timestamptz NOT NULL DEFAULT now()
+    created_at        timestamptz NOT NULL DEFAULT now(),
+    gitlab_host       text,
+    gitlab_namespace  text,
+    gitlab_project    text
 );
 
 CREATE TABLE IF NOT EXISTS cloud_git_branches (
@@ -42,6 +45,7 @@ CREATE TABLE IF NOT EXISTS cloud_git_commits (
     author_name  text NOT NULL DEFAULT '',
     author_email text NOT NULL DEFAULT '',
     branch       text NOT NULL DEFAULT 'main',
+    parent_shas  text[] NOT NULL DEFAULT '{}',
     created_at   timestamptz NOT NULL DEFAULT now()
 );
 

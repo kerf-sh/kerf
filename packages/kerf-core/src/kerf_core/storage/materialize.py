@@ -106,6 +106,8 @@ class MaterializeResult:
     blobs: dict[str, str] = field(default_factory=dict)
     # paths that were stored inline in the git tree verbatim
     inlined: list[str] = field(default_factory=list)
+    # shas of the commit's parents (empty list for a root commit)
+    parent_shas: list[str] = field(default_factory=list)
 
 
 def _normalize_path(path: str) -> str:
@@ -250,7 +252,7 @@ async def materialize_and_commit(
 
     # pygit2 is synchronous and CPU/IO bound; run the tree+commit build off
     # the event loop so we never block other coroutines.
-    def _commit() -> tuple[str, str]:
+    def _commit() -> tuple[str, str, list[str]]:
         repo = _ensure_bare_repo(repo_dir)
         tree_oid = _build_tree(repo, tree_content)
 
@@ -261,6 +263,8 @@ async def materialize_and_commit(
             parents = [parent_ref.target]
         except KeyError:
             parents = []
+
+        parent_sha_strs = [str(p) for p in parents]
 
         signature = pygit2.Signature(author_name, author_email)
         commit_oid = repo.create_commit(
@@ -276,13 +280,14 @@ async def materialize_and_commit(
             repo.set_head(ref_name)
         except (pygit2.GitError, ValueError):
             pass
-        return str(commit_oid), str(tree_oid)
+        return str(commit_oid), str(tree_oid), parent_sha_strs
 
-    commit_sha, tree_sha = await asyncio.get_event_loop().run_in_executor(
+    commit_sha, tree_sha, parent_shas = await asyncio.get_event_loop().run_in_executor(
         None, _commit
     )
     result.commit_sha = commit_sha
     result.tree_sha = tree_sha
+    result.parent_shas = parent_shas
     return result
 
 

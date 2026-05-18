@@ -628,12 +628,24 @@ class TestGitLabProviderName:
 # ---------------------------------------------------------------------------
 
 
+def _make_gitlab_pool(conn):
+    pool = MagicMock()
+    pool.acquire = MagicMock()
+    pool.acquire.return_value.__aenter__ = AsyncMock(return_value=conn)
+    pool.acquire.return_value.__aexit__ = AsyncMock(return_value=False)
+    return pool
+
+
 class TestGitLabProviderConnect:
     @pytest.mark.asyncio
-    async def test_connect_returns_correct_shape(self):
+    async def test_connect_persists_to_db_and_returns_correct_shape(self):
         from kerf_cloud.git_providers.gitlab import GitLabProvider
 
-        p = GitLabProvider(_gitlab_configured_settings())
+        conn = AsyncMock()
+        conn.execute = AsyncMock()
+        pool = _make_gitlab_pool(conn)
+
+        p = GitLabProvider(_gitlab_configured_settings(), pool=pool)
         result = await p.connect(
             "proj-gl-1",
             gitlab_namespace="acme",
@@ -646,14 +658,19 @@ class TestGitLabProviderConnect:
         assert result["gitlab_project"] == "my-design"
         assert "acme/my-design.git" in result["remote_url"]
         assert "gitlab.com" in result["remote_url"]
-        # persistence note must be present (deferred migration)
-        assert "persistence_note" in result
+        # persistence_note removed — we now persist
+        assert "persistence_note" not in result
+        conn.execute.assert_called()
 
     @pytest.mark.asyncio
     async def test_connect_uses_custom_host(self):
         from kerf_cloud.git_providers.gitlab import GitLabProvider
 
-        p = GitLabProvider(_gitlab_configured_settings())
+        conn = AsyncMock()
+        conn.execute = AsyncMock()
+        pool = _make_gitlab_pool(conn)
+
+        p = GitLabProvider(_gitlab_configured_settings(), pool=pool)
         result = await p.connect(
             "proj-gl-2",
             gitlab_namespace="corp",
@@ -668,7 +685,9 @@ class TestGitLabProviderConnect:
     async def test_connect_raises_on_missing_namespace(self):
         from kerf_cloud.git_providers.gitlab import GitLabProvider
 
-        p = GitLabProvider(_gitlab_configured_settings())
+        conn = AsyncMock()
+        pool = _make_gitlab_pool(conn)
+        p = GitLabProvider(_gitlab_configured_settings(), pool=pool)
         with pytest.raises(ValueError, match="gitlab_namespace"):
             await p.connect("proj-gl-1", gitlab_project="my-design")
 
@@ -676,9 +695,19 @@ class TestGitLabProviderConnect:
     async def test_connect_raises_on_missing_project(self):
         from kerf_cloud.git_providers.gitlab import GitLabProvider
 
-        p = GitLabProvider(_gitlab_configured_settings())
+        conn = AsyncMock()
+        pool = _make_gitlab_pool(conn)
+        p = GitLabProvider(_gitlab_configured_settings(), pool=pool)
         with pytest.raises(ValueError, match="gitlab_project"):
             await p.connect("proj-gl-1", gitlab_namespace="acme")
+
+    @pytest.mark.asyncio
+    async def test_connect_raises_without_pool(self):
+        from kerf_cloud.git_providers.gitlab import GitLabProvider
+
+        p = GitLabProvider(_gitlab_configured_settings(), pool=None)
+        with pytest.raises(RuntimeError, match="pool"):
+            await p.connect("proj-gl-1", gitlab_namespace="acme", gitlab_project="widget")
 
 
 # ---------------------------------------------------------------------------
@@ -688,19 +717,25 @@ class TestGitLabProviderConnect:
 
 class TestGitLabProviderDisconnect:
     @pytest.mark.asyncio
-    async def test_disconnect_completes_without_error(self):
+    async def test_disconnect_clears_db_row(self):
         from kerf_cloud.git_providers.gitlab import GitLabProvider
 
-        # disconnect is a no-op until persistence columns land; must not raise
-        p = GitLabProvider(_gitlab_configured_settings())
+        conn = AsyncMock()
+        conn.execute = AsyncMock()
+        pool = _make_gitlab_pool(conn)
+
+        p = GitLabProvider(_gitlab_configured_settings(), pool=pool)
         await p.disconnect("proj-gl-1")
 
+        conn.execute.assert_called()
+
     @pytest.mark.asyncio
-    async def test_disconnect_without_pool_does_not_raise(self):
+    async def test_disconnect_raises_without_pool(self):
         from kerf_cloud.git_providers.gitlab import GitLabProvider
 
         p = GitLabProvider(_gitlab_configured_settings(), pool=None)
-        await p.disconnect("proj-gl-1")  # should complete gracefully
+        with pytest.raises(RuntimeError, match="pool"):
+            await p.disconnect("proj-gl-1")
 
 
 # ---------------------------------------------------------------------------
@@ -825,15 +860,51 @@ class TestGitLabProviderPull:
 
 class TestGitLabProviderStatus:
     @pytest.mark.asyncio
-    async def test_status_returns_disconnected_no_token(self):
+    async def test_status_returns_disconnected_no_pool(self):
         from kerf_cloud.git_providers.gitlab import GitLabProvider
 
-        p = GitLabProvider(_gitlab_configured_settings())
+        # Without a pool, status returns connected=False (graceful degradation).
+        p = GitLabProvider(_gitlab_configured_settings(), pool=None)
         result = await p.status("proj-gl-6")
 
         assert result["provider"] == "gitlab"
         assert result["connected"] is False
-        assert "persistence_pending" in result.get("reason", "")
+        # no longer emits persistence_pending — that was the deferred placeholder
+        assert "persistence_pending" not in result.get("reason", "")
+
+    @pytest.mark.asyncio
+    async def test_status_connected_when_db_row_present(self):
+        from kerf_cloud.git_providers.gitlab import GitLabProvider
+
+        conn = AsyncMock()
+        conn.fetchrow = AsyncMock(return_value={
+            "gitlab_host": "https://gitlab.com",
+            "gitlab_namespace": "acme",
+            "gitlab_project": "my-design",
+        })
+        pool = _make_gitlab_pool(conn)
+
+        p = GitLabProvider(_gitlab_configured_settings(), pool=pool)
+        result = await p.status("proj-gl-6")
+
+        assert result["provider"] == "gitlab"
+        assert result["connected"] is True
+        assert result["gitlab_namespace"] == "acme"
+        assert result["gitlab_project"] == "my-design"
+
+    @pytest.mark.asyncio
+    async def test_status_disconnected_when_no_db_row(self):
+        from kerf_cloud.git_providers.gitlab import GitLabProvider
+
+        conn = AsyncMock()
+        conn.fetchrow = AsyncMock(return_value=None)
+        pool = _make_gitlab_pool(conn)
+
+        p = GitLabProvider(_gitlab_configured_settings(), pool=pool)
+        result = await p.status("proj-gl-6")
+
+        assert result["provider"] == "gitlab"
+        assert result["connected"] is False
 
     @pytest.mark.asyncio
     async def test_status_with_valid_token_includes_user(self):
@@ -842,7 +913,11 @@ class TestGitLabProviderStatus:
 
         fake_user = {"username": "acmebot", "id": 42}
 
-        p = GitLabProvider(_gitlab_configured_settings())
+        conn = AsyncMock()
+        conn.fetchrow = AsyncMock(return_value=None)
+        pool = _make_gitlab_pool(conn)
+
+        p = GitLabProvider(_gitlab_configured_settings(), pool=pool)
 
         async def _fake_verify(token):
             assert token == "glpat-valid"
@@ -860,7 +935,11 @@ class TestGitLabProviderStatus:
         from kerf_cloud.git_providers.gitlab import GitLabProvider
         from unittest.mock import patch
 
-        p = GitLabProvider(_gitlab_configured_settings())
+        conn = AsyncMock()
+        conn.fetchrow = AsyncMock(return_value=None)
+        pool = _make_gitlab_pool(conn)
+
+        p = GitLabProvider(_gitlab_configured_settings(), pool=pool)
 
         async def _bad_verify(token):
             raise ValueError("GitLab token validation failed: HTTP 401")

@@ -25,3 +25,19 @@ CREATE TABLE IF NOT EXISTS workshop_likes (
 );
 
 CREATE INDEX IF NOT EXISTS workshop_likes_project_id_idx ON workshop_likes (project_id);
+
+-- ════════════ folded: cloud_gitlab_tokens (T-152) ════════════
+
+-- Persisted GitLab OAuth / PAT credentials, analogous to cloud_github_tokens.
+-- One row per user; token encrypted at rest; upserted on connect, deleted on
+-- disconnect.  gitlab_host defaults to https://gitlab.com but may be
+-- overridden for self-hosted instances.
+CREATE TABLE IF NOT EXISTS cloud_gitlab_tokens (
+    user_id                 uuid PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    access_token_encrypted  bytea NOT NULL DEFAULT ''::bytea,
+    scope                   text NOT NULL DEFAULT '',
+    gitlab_user_id          bigint,
+    gitlab_login            text NOT NULL DEFAULT '',
+    gitlab_host             text NOT NULL DEFAULT 'https://gitlab.com',
+    updated_at              timestamptz NOT NULL DEFAULT now()
+);

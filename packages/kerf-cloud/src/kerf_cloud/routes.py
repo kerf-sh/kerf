@@ -294,7 +294,7 @@ async def git_log(
     async with pool.acquire() as conn:
         rows = await conn.fetch(
             """
-            SELECT sha, message, author_name, author_email, created_at
+            SELECT sha, message, author_name, author_email, created_at, parent_shas
             FROM cloud_git_commits
             WHERE project_id = $1 AND ($2::text IS NULL OR branch = $2)
             ORDER BY created_at DESC
@@ -309,6 +309,7 @@ async def git_log(
                 "author_name": row["author_name"],
                 "author_email": row["author_email"],
                 "created_at": row["created_at"].isoformat() if row["created_at"] else None,
+                "parent_shas": list(row["parent_shas"]) if row["parent_shas"] else [],
             }
             for row in rows
         ]
@@ -498,10 +499,10 @@ async def git_commit(
 
         await conn.execute(
             """
-            INSERT INTO cloud_git_commits (project_id, sha, message, author_name, author_email, branch)
-            VALUES ($1, $2, $3, $4, $5, $6)
+            INSERT INTO cloud_git_commits (project_id, sha, message, author_name, author_email, branch, parent_shas)
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
             """,
-            pid, sha, message, user_row["name"], user_row["email"], branch,
+            pid, sha, message, user_row["name"], user_row["email"], branch, mat.parent_shas,
         )
 
         await conn.execute(
