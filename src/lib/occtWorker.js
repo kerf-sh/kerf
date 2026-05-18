@@ -6203,6 +6203,204 @@ function opSheetFlange(oc, _prev, node, _sk, tracker) {
 }
 
 // ---------------------------------------------------------------------------
+// T-153  opHarnessTubeSweep — 3D wiring harness tube-sweep.
+// ---------------------------------------------------------------------------
+//
+// Consumes a HarnessSegment-shaped input node (produced by
+// kerf_wiring.harness3d.HarnessSegment and serialised to JSON by
+// segment_to_dict / the route_harness_3d LLM tool) and renders it as
+// a swept circular tube along the waypoint polyline.
+//
+// Node schema (matching HarnessSegment / segment_to_dict output):
+//   waypoints           — [[x,y,z], ...] mm,  ≥ 2 distinct points
+//   bundle_diameter_mm  — outer tube diameter (already includes packing slack)
+//   length_mm           — total arc-length (informational, not used for geometry)
+//   segment_lengths_mm  — per-segment lengths (informational)
+//
+// Geometry strategy:
+//   1. Build a polyline path wire from the waypoints using
+//      BRepBuilderAPI_MakeEdge_3 (point-to-point) + BRepBuilderAPI_MakeWire_1.
+//   2. Build a circular profile disc at the first waypoint, centred on that
+//      point with its normal aligned to the first segment tangent.
+//      Profile: closed wire approximated by N_CIRCLE_PTS line segments (16-gon).
+//   3. Sweep the disc along the path wire via BRepOffsetAPI_MakePipeShell.
+//   4. MakeSolid() to cap both ends.
+//
+// Frenet vs corrected_frenet: a polyline path has discontinuous tangents at
+// each waypoint. We use the default (auto) pipe mode — OpenCASCADE resolves
+// the twist automatically for piecewise-linear spines.  No corrected_frenet
+// is needed here because a straight-segment polyline has zero geometric
+// torsion between kinks; only the kinks themselves cause frame jumps, and
+// OCCT's default joining is correct for practical harness routing.
+//
+// Deferred (T-154+): formboard flatten, per-wire annotation overlays.
+
+/**
+ * Approximate a circle as a polygon wire for use as a sweep profile.
+ *
+ * @param {object} oc        — OpenCASCADE.js binding
+ * @param {number} cx        — centre X (mm)
+ * @param {number} cy        — centre Y (mm)
+ * @param {number} cz        — centre Z (mm)
+ * @param {number} r         — radius (mm)
+ * @param {number[]} tangent — unit tangent of the first path segment [tx,ty,tz]
+ * @param {number} nPts      — polygon vertex count (default 16)
+ * @param {object} tracker
+ * @returns {object} TopoDS_Wire
+ */
+export function harnessBuildCircleWire(oc, cx, cy, cz, r, tangent, nPts, tracker) {
+  // Build a local 2D frame in the plane perpendicular to `tangent`.
+  // We need two unit vectors u, v such that {u, v, tangent} is right-handed.
+  const [tx, ty, tz] = tangent
+  // Pick an up-vector that is not parallel to tangent.
+  const up = Math.abs(tz) < 0.9 ? [0, 0, 1] : [0, 1, 0]
+  // u = up × tangent, normalised.
+  const ux0 = up[1] * tz - up[2] * ty
+  const uy0 = up[2] * tx - up[0] * tz
+  const uz0 = up[0] * ty - up[1] * tx
+  const ulen = Math.sqrt(ux0 * ux0 + uy0 * uy0 + uz0 * uz0)
+  const ux = ux0 / ulen, uy = uy0 / ulen, uz = uz0 / ulen
+  // v = tangent × u
+  const vx = ty * uz - tz * uy
+  const vy = tz * ux - tx * uz
+  const vz = tx * uy - ty * ux
+
+  const wBuilder = track(tracker, new oc.BRepBuilderAPI_MakeWire_1())
+  for (let i = 0; i < nPts; i++) {
+    const a0 = (2 * Math.PI * i)       / nPts
+    const a1 = (2 * Math.PI * (i + 1)) / nPts
+    const c0 = Math.cos(a0), s0 = Math.sin(a0)
+    const c1 = Math.cos(a1), s1 = Math.sin(a1)
+    const p0 = track(tracker, new oc.gp_Pnt_3(
+      cx + r * (c0 * ux + s0 * vx),
+      cy + r * (c0 * uy + s0 * vy),
+      cz + r * (c0 * uz + s0 * vz),
+    ))
+    const p1 = track(tracker, new oc.gp_Pnt_3(
+      cx + r * (c1 * ux + s1 * vx),
+      cy + r * (c1 * uy + s1 * vy),
+      cz + r * (c1 * uz + s1 * vz),
+    ))
+    const edge = track(tracker, new oc.BRepBuilderAPI_MakeEdge_3(p0, p1))
+    edge.Build()
+    if (!edge.IsDone()) throw new Error('harness_tube_sweep: circle edge build failed')
+    wBuilder.Add_1(edge.Shape())
+  }
+  wBuilder.Build()
+  if (!wBuilder.IsDone()) throw new Error('harness_tube_sweep: circle wire build failed')
+  return wBuilder.Shape()
+}
+
+/**
+ * Compute the first-segment unit tangent from a waypoints array.
+ *
+ * @param {number[][]} waypoints — [[x,y,z], ...]  ≥ 2 points
+ * @returns {number[]} [tx, ty, tz] unit vector
+ */
+export function harnessFirstTangent(waypoints) {
+  // Walk forward until we find a non-degenerate segment.
+  for (let i = 0; i + 1 < waypoints.length; i++) {
+    const [x0, y0, z0] = waypoints[i]
+    const [x1, y1, z1] = waypoints[i + 1]
+    const dx = x1 - x0, dy = y1 - y0, dz = z1 - z0
+    const len = Math.sqrt(dx * dx + dy * dy + dz * dz)
+    if (len > 1e-9) return [dx / len, dy / len, dz / len]
+  }
+  // Degenerate path — fall back to +Z.
+  return [0, 0, 1]
+}
+
+/**
+ * Compute per-segment arc lengths from a waypoints array.
+ *
+ * @param {number[][]} waypoints — [[x,y,z], ...] ≥ 2 points
+ * @returns {number[]} lengths, length == waypoints.length - 1
+ */
+export function harnessSegmentLengths(waypoints) {
+  const lengths = []
+  for (let i = 0; i + 1 < waypoints.length; i++) {
+    const [x0, y0, z0] = waypoints[i]
+    const [x1, y1, z1] = waypoints[i + 1]
+    const dx = x1 - x0, dy = y1 - y0, dz = z1 - z0
+    lengths.push(Math.sqrt(dx * dx + dy * dy + dz * dz))
+  }
+  return lengths
+}
+
+/**
+ * opHarnessTubeSweep — render a HarnessSegment as an OCCT tube-sweep.
+ *
+ * @param {object} oc       — OpenCASCADE.js binding
+ * @param {object} _prev    — ignored (always starts a fresh body)
+ * @param {object} node     — feature tree node (see schema above)
+ * @param {object} _sk      — sketches map (unused — harness needs no sketch)
+ * @param {object} tracker  — OCCT shape tracker
+ * @returns {object} TopoDS_Shape (solid)
+ */
+function opHarnessTubeSweep(oc, _prev, node, _sk, tracker) {
+  const rawWpts = node.waypoints
+  if (!Array.isArray(rawWpts) || rawWpts.length < 2) {
+    throw new Error('harness_tube_sweep: waypoints must be an array of ≥ 2 [x,y,z] points')
+  }
+  // Normalise waypoints — accept either flat [x,y,z] or {x,y,z} forms.
+  const wpts = rawWpts.map((p, i) => {
+    if (Array.isArray(p) && p.length >= 3) return [Number(p[0]), Number(p[1]), Number(p[2])]
+    if (p && typeof p === 'object' && 'x' in p) return [Number(p.x), Number(p.y), Number(p.z)]
+    throw new Error(`harness_tube_sweep: waypoint[${i}] must be [x,y,z] or {x,y,z}`)
+  })
+  const diameter = Math.max(0.01, Number(node.bundle_diameter_mm) || 5)
+  const radius = diameter / 2
+  const N_CIRCLE_PTS = 16  // 16-gon approximation of the circular cross-section
+
+  // --- 1. Build the polyline path wire ---
+  const pathBuilder = track(tracker, new oc.BRepBuilderAPI_MakeWire_1())
+  for (let i = 0; i + 1 < wpts.length; i++) {
+    const [x0, y0, z0] = wpts[i]
+    const [x1, y1, z1] = wpts[i + 1]
+    // Skip degenerate (zero-length) segments.
+    const dx = x1 - x0, dy = y1 - y0, dz = z1 - z0
+    if (Math.sqrt(dx * dx + dy * dy + dz * dz) < 1e-9) continue
+    const p0 = track(tracker, new oc.gp_Pnt_3(x0, y0, z0))
+    const p1 = track(tracker, new oc.gp_Pnt_3(x1, y1, z1))
+    const edge = track(tracker, new oc.BRepBuilderAPI_MakeEdge_3(p0, p1))
+    edge.Build()
+    if (!edge.IsDone()) throw new Error(`harness_tube_sweep: path edge ${i}->${i + 1} build failed`)
+    pathBuilder.Add_1(edge.Shape())
+  }
+  pathBuilder.Build()
+  if (!pathBuilder.IsDone()) throw new Error('harness_tube_sweep: path wire build failed')
+  const pathWire = pathBuilder.Shape()
+
+  // --- 2. Build the circular profile wire at the first waypoint ---
+  const tangent = harnessFirstTangent(wpts)
+  const [cx, cy, cz] = wpts[0]
+  const profileWire = harnessBuildCircleWire(oc, cx, cy, cz, radius, tangent, N_CIRCLE_PTS, tracker)
+
+  // --- 3. Sweep profile along path ---
+  const pipe = track(tracker, new oc.BRepOffsetAPI_MakePipeShell(pathWire))
+  // Default auto mode (no SetMode call) — suitable for a piecewise-linear
+  // harness path with no twist requirement.
+  try {
+    if (typeof pipe.Add_1 === 'function') {
+      pipe.Add_1(profileWire, false, false)
+    } else if (typeof pipe.Add === 'function') {
+      pipe.Add(profileWire, false, false)
+    } else {
+      throw new Error('no Add overload')
+    }
+  } catch (err) {
+    throw new Error(`harness_tube_sweep: profile add failed: ${err?.message || err}`)
+  }
+  pipe.Build(new oc.Message_ProgressRange_1())
+  if (!pipe.IsDone()) throw new Error('harness_tube_sweep: pipe build failed')
+
+  // --- 4. Cap the ends to form a closed solid ---
+  try { pipe.MakeSolid() } catch { /* tolerate if caps fail */ }
+
+  return pipe.Shape()
+}
+
+// ---------------------------------------------------------------------------
 // Tree evaluation.
 //
 // The evaluator walks the feature tree top-to-bottom, threading the
@@ -6924,6 +7122,17 @@ function evaluateTree(oc, tree, sketches) {
           currentFaceNamer = null
           break
         }
+        // T-153  Wiring harness — tube-sweep along polyline waypoints.
+        case 'harness_tube_sweep': {
+          if (current) {
+            pushCurrentMesh(`body-${meshes.length}`)
+            cleanupShape(oc, current)
+            current = null
+          }
+          next = opHarnessTubeSweep(oc, null, node, sketches, tracker)
+          currentFaceNamer = null
+          break
+        }
         default:
           throw new Error(`unknown feature op '${node.op}'`)
       }
@@ -7437,6 +7646,13 @@ async function evaluateToFinalShape(oc, tree, sketches) {
           if (current) cleanupShape(oc, current)
           current = null
           next = opSheetFlange(oc, null, node, sketches, tracker)
+          currentFaceNamer = null
+          break
+        // T-153  Wiring harness — tube-sweep along polyline waypoints.
+        case 'harness_tube_sweep':
+          if (current) cleanupShape(oc, current)
+          current = null
+          next = opHarnessTubeSweep(oc, null, node, sketches, tracker)
           currentFaceNamer = null
           break
         default: throw new Error(`unknown feature op '${node.op}'`)
