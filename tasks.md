@@ -1351,7 +1351,7 @@ Tier A (single persona unlock), render / SubD / direct-edit → Tier B
   jewelry "cut a stone-setting window into a shank" and automotive
   panel-trim workflows; testable in-process (no WASM).
 - **Priority:** P1
-- **Status:** 🔴 not started
+- **Status:** ✅ shipped
 - **Scope:** Pure-Python **trim face by a projected / SSI curve**:
   given a `Face` whose surface is in the analytic carrier matrix
   (plane / world-axis cylinder / sphere) and a 3D cutter curve, build
