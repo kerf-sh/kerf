@@ -1,0 +1,213 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  garage_door.plc — PLCopen XML v2.01
+  Residential/light-commercial garage door operator.
+
+  Operating principle (single push-button toggle):
+  - First press while CLOSED → opens door
+  - Press while opening → stops door
+  - Press while stopped mid-travel → closes door
+  - Press while closing → reverses to open (safety)
+  - Full-open limit switch stops motor and starts auto-close timer (30 s)
+
+  Safety features:
+  - IR photo-beam across door opening — reverses if obstructed while closing
+  - Obstruction during opening stops motor
+  - Maximum travel time (20 s) cuts power if limit switch not reached
+-->
+<project xmlns="http://www.plcopen.org/xml/tc6_0201">
+
+  <fileHeader
+    companyName="Kerf Examples"
+    productName="kerf-plc"
+    productVersion="0.1.0"
+    creationDateTime="2026-05-18T00:00:00"/>
+
+  <contentHeader name="GarageDoor">
+    <coordinateInfo>
+      <ld><scaling x="1" y="1"/></ld>
+      <fbd><scaling x="1" y="1"/></fbd>
+      <sfc><scaling x="1" y="1"/></sfc>
+    </coordinateInfo>
+  </contentHeader>
+
+  <types>
+    <pous>
+      <pou name="GarageDoor" pouType="program">
+
+        <interface>
+          <!-- ── Inputs ── -->
+          <inputVars>
+            <varList>
+              <variable name="push_button">
+                <type><BOOL/></type>
+                <documentation><xhtml>Wall push-button or remote RF — rising edge toggles door state</xhtml></documentation>
+              </variable>
+              <variable name="limit_open">
+                <type><BOOL/></type>
+                <documentation><xhtml>Full-open limit switch — TRUE when door panels are fully retracted</xhtml></documentation>
+              </variable>
+              <variable name="limit_closed">
+                <type><BOOL/></type>
+                <documentation><xhtml>Full-closed limit switch — TRUE when door is fully down and latched</xhtml></documentation>
+              </variable>
+              <variable name="photo_beam">
+                <type><BOOL/></type>
+                <documentation><xhtml>IR photo-beam across door opening — TRUE when beam is clear (safe to close)</xhtml></documentation>
+              </variable>
+            </varList>
+          </inputVars>
+
+          <!-- ── Outputs ── -->
+          <outputVars>
+            <varList>
+              <variable name="motor_open">
+                <type><BOOL/></type>
+                <documentation><xhtml>Motor relay — energise to drive door in opening direction</xhtml></documentation>
+              </variable>
+              <variable name="motor_close">
+                <type><BOOL/></type>
+                <documentation><xhtml>Motor relay — energise to drive door in closing direction</xhtml></documentation>
+              </variable>
+              <variable name="light">
+                <type><BOOL/></type>
+                <documentation><xhtml>Courtesy light — on during motion and for 90 s after door stops</xhtml></documentation>
+              </variable>
+              <variable name="fault_output">
+                <type><BOOL/></type>
+                <documentation><xhtml>Fault output — asserted on travel timeout or repeated obstruction</xhtml></documentation>
+              </variable>
+            </varList>
+          </outputVars>
+
+          <!-- ── Local variables ── -->
+          <localVars>
+            <varList>
+              <variable name="state">
+                <type><INT/></type>
+                <documentation><xhtml>Door state: 0=CLOSED, 1=OPENING, 2=OPEN, 3=CLOSING, 4=STOPPED</xhtml></documentation>
+              </variable>
+              <variable name="btn_trigger">
+                <type><derived name="R_TRIG"/></type>
+                <documentation><xhtml>Rising-edge detector on push_button to detect single press</xhtml></documentation>
+              </variable>
+              <variable name="auto_close_timer">
+                <type><derived name="TON"/></type>
+                <documentation><xhtml>Auto-close timer — initiates close after T#30s at full-open position</xhtml></documentation>
+              </variable>
+              <variable name="travel_watchdog">
+                <type><derived name="TON"/></type>
+                <documentation><xhtml>Travel watchdog — cuts motor if limit not reached within T#20s</xhtml></documentation>
+              </variable>
+              <variable name="fault_latch">
+                <type><BOOL/></type>
+                <documentation><xhtml>Latched travel-timeout fault — requires manual reset</xhtml></documentation>
+              </variable>
+            </varList>
+          </localVars>
+        </interface>
+
+        <body>
+          <LD>
+
+            <!-- Rung 1: OPENING — drive motor open until limit_open, no fault -->
+            <rung localId="1">
+              <comment><content>Drive motor in open direction when state=OPENING; stop on limit_open or fault</content></comment>
+              <contact localId="10" negated="false">
+                <position x="0" y="0"/>
+                <variable>state</variable>
+              </contact>
+              <contact localId="11" negated="true">
+                <position x="100" y="0"/>
+                <variable>limit_open</variable>
+              </contact>
+              <contact localId="12" negated="true">
+                <position x="200" y="0"/>
+                <variable>fault_latch</variable>
+              </contact>
+              <coil localId="13" negated="false">
+                <position x="350" y="0"/>
+                <variable>motor_open</variable>
+              </coil>
+            </rung>
+
+            <!-- Rung 2: CLOSING — drive motor close, inhibited by photo-beam -->
+            <rung localId="2">
+              <comment><content>Drive motor in close direction when state=CLOSING; reverse immediately if photo_beam broken</content></comment>
+              <contact localId="20" negated="false">
+                <position x="0" y="0"/>
+                <variable>state</variable>
+              </contact>
+              <contact localId="21" negated="false">
+                <position x="100" y="0"/>
+                <variable>photo_beam</variable>
+              </contact>
+              <contact localId="22" negated="true">
+                <position x="200" y="0"/>
+                <variable>limit_closed</variable>
+              </contact>
+              <coil localId="23" negated="false">
+                <position x="350" y="0"/>
+                <variable>motor_close</variable>
+              </coil>
+            </rung>
+
+            <!-- Rung 3: Courtesy light — on during motion -->
+            <rung localId="3">
+              <comment><content>Courtesy light: on whenever motor is running in either direction</content></comment>
+              <contact localId="30" negated="false">
+                <position x="0" y="0"/>
+                <variable>motor_open</variable>
+              </contact>
+              <contact localId="31" negated="false">
+                <position x="0" y="50"/>
+                <variable>motor_close</variable>
+              </contact>
+              <coil localId="32" negated="false">
+                <position x="200" y="0"/>
+                <variable>light</variable>
+              </coil>
+            </rung>
+
+            <!-- Rung 4: Travel watchdog fault -->
+            <rung localId="4">
+              <comment><content>Latch travel fault when travel_watchdog times out before a limit switch is reached</content></comment>
+              <contact localId="40" negated="false">
+                <position x="0" y="0"/>
+                <variable>travel_watchdog.Q</variable>
+              </contact>
+              <coil localId="41" negated="false">
+                <position x="200" y="0"/>
+                <variable>fault_latch</variable>
+              </coil>
+              <coil localId="42" negated="false">
+                <position x="300" y="0"/>
+                <variable>fault_output</variable>
+              </coil>
+            </rung>
+
+            <!-- Rung 5: Auto-close after dwell at open position -->
+            <rung localId="5">
+              <comment><content>Initiate auto-close when door has been fully open for T#30s and photo_beam is clear</content></comment>
+              <contact localId="50" negated="false">
+                <position x="0" y="0"/>
+                <variable>auto_close_timer.Q</variable>
+              </contact>
+              <contact localId="51" negated="false">
+                <position x="100" y="0"/>
+                <variable>photo_beam</variable>
+              </contact>
+              <coil localId="52" negated="false">
+                <position x="250" y="0"/>
+                <variable>state</variable>
+              </coil>
+            </rung>
+
+          </LD>
+        </body>
+
+      </pou>
+    </pous>
+  </types>
+
+</project>

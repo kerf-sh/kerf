@@ -1,0 +1,222 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  conveyor_sort.plc — PLCopen XML v2.01
+  Conveyor belt with optical sorting — divert packages to 3 chutes by size.
+
+  Sensors:
+  - photo_eye_entry  : package detection at entry point
+  - size_small       : diffuse sensor triggered by small packages (h < 80 mm)
+  - size_medium      : diffuse sensor triggered by medium packages (h < 150 mm)
+  - photo_eye_chute1 : position trigger for chute 1 diverter
+  - photo_eye_chute2 : position trigger for chute 2 diverter
+  - photo_eye_chute3 : position trigger for chute 3 (default / large)
+
+  Diverters:
+  - divert_1 : pneumatic pusher → chute 1 (small)
+  - divert_2 : pneumatic pusher → chute 2 (medium)
+  - divert_3 : pneumatic pusher → chute 3 (large, reject)
+-->
+<project xmlns="http://www.plcopen.org/xml/tc6_0201">
+
+  <fileHeader
+    companyName="Kerf Examples"
+    productName="kerf-plc"
+    productVersion="0.1.0"
+    creationDateTime="2026-05-18T00:00:00"/>
+
+  <contentHeader name="ConveyorSort">
+    <coordinateInfo>
+      <ld><scaling x="1" y="1"/></ld>
+      <fbd><scaling x="1" y="1"/></fbd>
+      <sfc><scaling x="1" y="1"/></sfc>
+    </coordinateInfo>
+  </contentHeader>
+
+  <types>
+    <pous>
+      <pou name="ConveyorSort" pouType="program">
+
+        <interface>
+          <!-- ── Inputs ── -->
+          <inputVars>
+            <varList>
+              <variable name="run_cmd">
+                <type><BOOL/></type>
+                <documentation><xhtml>Run command from HMI — energises belt motor and enables sorting</xhtml></documentation>
+              </variable>
+              <variable name="e_stop">
+                <type><BOOL/></type>
+                <documentation><xhtml>Emergency stop — de-energises belt and all diverters immediately</xhtml></documentation>
+              </variable>
+              <variable name="photo_eye_entry">
+                <type><BOOL/></type>
+                <documentation><xhtml>Entry photo-eye — rising edge captures size classification of arriving package</xhtml></documentation>
+              </variable>
+              <variable name="size_small">
+                <type><BOOL/></type>
+                <documentation><xhtml>Small-package sensor — TRUE while a small package is under sensor beam</xhtml></documentation>
+              </variable>
+              <variable name="size_medium">
+                <type><BOOL/></type>
+                <documentation><xhtml>Medium-package sensor — TRUE while a medium package is under sensor beam</xhtml></documentation>
+              </variable>
+              <variable name="photo_eye_chute1">
+                <type><BOOL/></type>
+                <documentation><xhtml>Chute-1 position trigger — TRUE when package is aligned with diverter 1</xhtml></documentation>
+              </variable>
+              <variable name="photo_eye_chute2">
+                <type><BOOL/></type>
+                <documentation><xhtml>Chute-2 position trigger — TRUE when package is aligned with diverter 2</xhtml></documentation>
+              </variable>
+              <variable name="photo_eye_chute3">
+                <type><BOOL/></type>
+                <documentation><xhtml>Chute-3 position trigger — TRUE when package is aligned with diverter 3</xhtml></documentation>
+              </variable>
+              <variable name="jam_sensor">
+                <type><BOOL/></type>
+                <documentation><xhtml>Jam detection — TRUE when a package remains on belt beyond timeout</xhtml></documentation>
+              </variable>
+            </varList>
+          </inputVars>
+
+          <!-- ── Outputs ── -->
+          <outputVars>
+            <varList>
+              <variable name="belt_motor">
+                <type><BOOL/></type>
+                <documentation><xhtml>Belt drive motor contactor</xhtml></documentation>
+              </variable>
+              <variable name="divert_1">
+                <type><BOOL/></type>
+                <documentation><xhtml>Pneumatic pusher — deflects small packages to chute 1</xhtml></documentation>
+              </variable>
+              <variable name="divert_2">
+                <type><BOOL/></type>
+                <documentation><xhtml>Pneumatic pusher — deflects medium packages to chute 2</xhtml></documentation>
+              </variable>
+              <variable name="divert_3">
+                <type><BOOL/></type>
+                <documentation><xhtml>Pneumatic pusher — deflects large/reject packages to chute 3</xhtml></documentation>
+              </variable>
+              <variable name="jam_alarm">
+                <type><BOOL/></type>
+                <documentation><xhtml>Jam alarm output — signals operator and stops belt</xhtml></documentation>
+              </variable>
+            </varList>
+          </outputVars>
+
+          <!-- ── Local variables ── -->
+          <localVars>
+            <varList>
+              <variable name="pkg_class">
+                <type><INT/></type>
+                <documentation><xhtml>Classified package size: 1=small, 2=medium, 3=large; set at entry</xhtml></documentation>
+              </variable>
+              <variable name="entry_trigger">
+                <type><derived name="R_TRIG"/></type>
+                <documentation><xhtml>Rising-edge detector on photo_eye_entry to capture size at arrival</xhtml></documentation>
+              </variable>
+              <variable name="divert_pulse_timer">
+                <type><derived name="TP"/></type>
+                <documentation><xhtml>Pulse timer holds diverter extended for 200 ms per actuation</xhtml></documentation>
+              </variable>
+            </varList>
+          </localVars>
+        </interface>
+
+        <body>
+          <LD>
+
+            <!-- Rung 1: Belt motor — run when commanded, no e-stop, no jam -->
+            <rung localId="1">
+              <comment><content>Belt motor: energise when run_cmd is TRUE, e_stop is clear, and no jam detected</content></comment>
+              <contact localId="10" negated="false">
+                <position x="0" y="0"/>
+                <variable>run_cmd</variable>
+              </contact>
+              <contact localId="11" negated="true">
+                <position x="100" y="0"/>
+                <variable>e_stop</variable>
+              </contact>
+              <contact localId="12" negated="true">
+                <position x="200" y="0"/>
+                <variable>jam_sensor</variable>
+              </contact>
+              <coil localId="13" negated="false">
+                <position x="350" y="0"/>
+                <variable>belt_motor</variable>
+              </coil>
+            </rung>
+
+            <!-- Rung 2: Classify package — capture size at entry -->
+            <rung localId="2">
+              <comment><content>On rising edge of entry photo-eye, latch package class from size sensors (small=1, medium=2, large=3)</content></comment>
+              <contact localId="20" negated="false">
+                <position x="0" y="0"/>
+                <variable>entry_trigger.Q</variable>
+              </contact>
+              <contact localId="21" negated="false">
+                <position x="100" y="0"/>
+                <variable>size_small</variable>
+              </contact>
+              <coil localId="22" negated="false">
+                <position x="250" y="0"/>
+                <variable>pkg_class</variable>
+              </coil>
+            </rung>
+
+            <!-- Rung 3: Actuate diverter 1 for small packages -->
+            <rung localId="3">
+              <comment><content>Fire diverter 1 when pkg_class=1 (small) and package is at chute-1 position sensor</content></comment>
+              <contact localId="30" negated="false">
+                <position x="0" y="0"/>
+                <variable>photo_eye_chute1</variable>
+              </contact>
+              <contact localId="31" negated="false">
+                <position x="100" y="0"/>
+                <variable>pkg_class</variable>
+              </contact>
+              <coil localId="32" negated="false">
+                <position x="250" y="0"/>
+                <variable>divert_1</variable>
+              </coil>
+            </rung>
+
+            <!-- Rung 4: Actuate diverter 2 for medium packages -->
+            <rung localId="4">
+              <comment><content>Fire diverter 2 when pkg_class=2 (medium) and package is at chute-2 position sensor</content></comment>
+              <contact localId="40" negated="false">
+                <position x="0" y="0"/>
+                <variable>photo_eye_chute2</variable>
+              </contact>
+              <contact localId="41" negated="false">
+                <position x="100" y="0"/>
+                <variable>pkg_class</variable>
+              </contact>
+              <coil localId="42" negated="false">
+                <position x="250" y="0"/>
+                <variable>divert_2</variable>
+              </coil>
+            </rung>
+
+            <!-- Rung 5: Jam detection alarm -->
+            <rung localId="5">
+              <comment><content>Jam alarm: energise when jam_sensor is active; also stops belt via Rung 1</content></comment>
+              <contact localId="50" negated="false">
+                <position x="0" y="0"/>
+                <variable>jam_sensor</variable>
+              </contact>
+              <coil localId="51" negated="false">
+                <position x="200" y="0"/>
+                <variable>jam_alarm</variable>
+              </coil>
+            </rung>
+
+          </LD>
+        </body>
+
+      </pou>
+    </pous>
+  </types>
+
+</project>

@@ -1,0 +1,234 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  parking_gate.plc — PLCopen XML v2.01
+  Automated barrier gate for a parking facility.
+
+  Operation:
+  - Entry side: vehicle detector triggers ticket dispenser; gate opens on ticket taken.
+  - Exit side: reader validates ticket/card; gate opens on valid read.
+  - Gate closes automatically after vehicle clears the under-beam sensor.
+  - Anti-crush: if obstacle detected while closing, gate reverses to open.
+  - Maximum open time: gate closes after 10 s even if vehicle not detected.
+  - Full-open and full-closed limit switches confirm gate position.
+-->
+<project xmlns="http://www.plcopen.org/xml/tc6_0201">
+
+  <fileHeader
+    companyName="Kerf Examples"
+    productName="kerf-plc"
+    productVersion="0.1.0"
+    creationDateTime="2026-05-18T00:00:00"/>
+
+  <contentHeader name="ParkingGate">
+    <coordinateInfo>
+      <ld><scaling x="1" y="1"/></ld>
+      <fbd><scaling x="1" y="1"/></fbd>
+      <sfc><scaling x="1" y="1"/></sfc>
+    </coordinateInfo>
+  </contentHeader>
+
+  <types>
+    <pous>
+      <pou name="ParkingGate" pouType="program">
+
+        <interface>
+          <!-- ── Inputs ── -->
+          <inputVars>
+            <varList>
+              <variable name="vehicle_detect_entry">
+                <type><BOOL/></type>
+                <documentation><xhtml>Inductive loop detector at entry lane — TRUE while vehicle is over loop</xhtml></documentation>
+              </variable>
+              <variable name="ticket_taken">
+                <type><BOOL/></type>
+                <documentation><xhtml>Micro-switch in ticket dispenser — TRUE when driver has taken ticket</xhtml></documentation>
+              </variable>
+              <variable name="card_valid">
+                <type><BOOL/></type>
+                <documentation><xhtml>Card reader output — TRUE for 500 ms when valid card/barcode presented</xhtml></documentation>
+              </variable>
+              <variable name="vehicle_cleared">
+                <type><BOOL/></type>
+                <documentation><xhtml>Under-beam infrared sensor — FALSE while vehicle is under barrier</xhtml></documentation>
+              </variable>
+              <variable name="gate_open_limit">
+                <type><BOOL/></type>
+                <documentation><xhtml>Limit switch — TRUE when barrier is fully raised</xhtml></documentation>
+              </variable>
+              <variable name="gate_closed_limit">
+                <type><BOOL/></type>
+                <documentation><xhtml>Limit switch — TRUE when barrier is fully lowered</xhtml></documentation>
+              </variable>
+              <variable name="obstacle_sensor">
+                <type><BOOL/></type>
+                <documentation><xhtml>IR obstacle sensor on barrier arm — TRUE when obstruction detected during closing</xhtml></documentation>
+              </variable>
+              <variable name="manual_open">
+                <type><BOOL/></type>
+                <documentation><xhtml>Operator manual-open key — holds gate open while pressed</xhtml></documentation>
+              </variable>
+            </varList>
+          </inputVars>
+
+          <!-- ── Outputs ── -->
+          <outputVars>
+            <varList>
+              <variable name="gate_motor_open">
+                <type><BOOL/></type>
+                <documentation><xhtml>Gate motor contactor — run motor in open direction</xhtml></documentation>
+              </variable>
+              <variable name="gate_motor_close">
+                <type><BOOL/></type>
+                <documentation><xhtml>Gate motor contactor — run motor in close direction</xhtml></documentation>
+              </variable>
+              <variable name="ticket_dispense">
+                <type><BOOL/></type>
+                <documentation><xhtml>Ticket dispenser solenoid — energise to advance one ticket</xhtml></documentation>
+              </variable>
+              <variable name="entry_green_light">
+                <type><BOOL/></type>
+                <documentation><xhtml>Green entry indicator — illuminates when gate is open</xhtml></documentation>
+              </variable>
+              <variable name="entry_red_light">
+                <type><BOOL/></type>
+                <documentation><xhtml>Red stop indicator — illuminates when gate is closed</xhtml></documentation>
+              </variable>
+            </varList>
+          </outputVars>
+
+          <!-- ── Local variables ── -->
+          <localVars>
+            <varList>
+              <variable name="open_latch">
+                <type><BOOL/></type>
+                <documentation><xhtml>Open command latch — set by ticket_taken or card_valid; cleared when gate fully opens</xhtml></documentation>
+              </variable>
+              <variable name="max_open_timer">
+                <type><derived name="TON"/></type>
+                <documentation><xhtml>Maximum open timer (T#10s) — initiates close if vehicle_cleared does not confirm</xhtml></documentation>
+              </variable>
+              <variable name="anti_crush_reverse">
+                <type><BOOL/></type>
+                <documentation><xhtml>Anti-crush flag — set when obstacle detected while closing; forces re-open</xhtml></documentation>
+              </variable>
+            </varList>
+          </localVars>
+        </interface>
+
+        <body>
+          <LD>
+
+            <!-- Rung 1: Dispense ticket on vehicle detection -->
+            <rung localId="1">
+              <comment><content>Dispense entry ticket when vehicle detected; dispenser retracts automatically after ticket taken</content></comment>
+              <contact localId="10" negated="false">
+                <position x="0" y="0"/>
+                <variable>vehicle_detect_entry</variable>
+              </contact>
+              <contact localId="11" negated="true">
+                <position x="100" y="0"/>
+                <variable>ticket_taken</variable>
+              </contact>
+              <coil localId="12" negated="false">
+                <position x="250" y="0"/>
+                <variable>ticket_dispense</variable>
+              </coil>
+            </rung>
+
+            <!-- Rung 2: Latch open command on ticket taken or valid card -->
+            <rung localId="2">
+              <comment><content>Latch gate open command when ticket is taken or a valid card is presented at exit</content></comment>
+              <contact localId="20" negated="false">
+                <position x="0" y="0"/>
+                <variable>ticket_taken</variable>
+              </contact>
+              <contact localId="21" negated="false">
+                <position x="0" y="50"/>
+                <variable>card_valid</variable>
+              </contact>
+              <contact localId="22" negated="false">
+                <position x="0" y="100"/>
+                <variable>manual_open</variable>
+              </contact>
+              <coil localId="23" negated="false">
+                <position x="200" y="0"/>
+                <variable>open_latch</variable>
+              </coil>
+            </rung>
+
+            <!-- Rung 3: Open gate motor — run when open_latch, not already fully open -->
+            <rung localId="3">
+              <comment><content>Drive gate open when open_latch is set and gate has not yet reached the full-open limit switch</content></comment>
+              <contact localId="30" negated="false">
+                <position x="0" y="0"/>
+                <variable>open_latch</variable>
+              </contact>
+              <contact localId="31" negated="true">
+                <position x="100" y="0"/>
+                <variable>gate_open_limit</variable>
+              </contact>
+              <coil localId="32" negated="false">
+                <position x="250" y="0"/>
+                <variable>gate_motor_open</variable>
+              </coil>
+            </rung>
+
+            <!-- Rung 4: Anti-crush — reverse to open on obstacle while closing -->
+            <rung localId="4">
+              <comment><content>Anti-crush: if obstacle detected while closing, set anti_crush_reverse flag to re-open gate</content></comment>
+              <contact localId="40" negated="false">
+                <position x="0" y="0"/>
+                <variable>obstacle_sensor</variable>
+              </contact>
+              <contact localId="41" negated="false">
+                <position x="100" y="0"/>
+                <variable>gate_motor_close</variable>
+              </contact>
+              <coil localId="42" negated="false">
+                <position x="250" y="0"/>
+                <variable>anti_crush_reverse</variable>
+              </coil>
+            </rung>
+
+            <!-- Rung 5: Close gate — vehicle cleared and max open timer elapsed -->
+            <rung localId="5">
+              <comment><content>Close gate when vehicle_cleared is TRUE and max_open_timer has elapsed; inhibited by anti-crush</content></comment>
+              <contact localId="50" negated="false">
+                <position x="0" y="0"/>
+                <variable>vehicle_cleared</variable>
+              </contact>
+              <contact localId="51" negated="false">
+                <position x="100" y="0"/>
+                <variable>gate_open_limit</variable>
+              </contact>
+              <contact localId="52" negated="true">
+                <position x="200" y="0"/>
+                <variable>anti_crush_reverse</variable>
+              </contact>
+              <coil localId="53" negated="false">
+                <position x="350" y="0"/>
+                <variable>gate_motor_close</variable>
+              </coil>
+            </rung>
+
+            <!-- Rung 6: Traffic light indicators -->
+            <rung localId="6">
+              <comment><content>Green entry light on when gate is fully open; red stop light when gate is closed</content></comment>
+              <contact localId="60" negated="false">
+                <position x="0" y="0"/>
+                <variable>gate_open_limit</variable>
+              </contact>
+              <coil localId="61" negated="false">
+                <position x="200" y="0"/>
+                <variable>entry_green_light</variable>
+              </coil>
+            </rung>
+
+          </LD>
+        </body>
+
+      </pou>
+    </pous>
+  </types>
+
+</project>

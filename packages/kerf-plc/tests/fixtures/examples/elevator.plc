@@ -1,0 +1,223 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  elevator.plc — PLCopen XML v2.01
+  Single-car elevator controller for a 4-floor building.
+
+  Logic overview:
+  - Floor call buttons (up/down per floor) and car call buttons register requests.
+  - The dispatcher selects the nearest floor in the current direction of travel.
+  - Door open/close controlled by a timer; safety edge on door close.
+  - Emergency stop de-energises drive and holds doors open.
+-->
+<project xmlns="http://www.plcopen.org/xml/tc6_0201">
+
+  <fileHeader
+    companyName="Kerf Examples"
+    productName="kerf-plc"
+    productVersion="0.1.0"
+    creationDateTime="2026-05-18T00:00:00"/>
+
+  <contentHeader name="Elevator">
+    <coordinateInfo>
+      <ld><scaling x="1" y="1"/></ld>
+      <fbd><scaling x="1" y="1"/></fbd>
+      <sfc><scaling x="1" y="1"/></sfc>
+    </coordinateInfo>
+  </contentHeader>
+
+  <types>
+    <pous>
+      <pou name="ElevatorControl" pouType="program">
+
+        <interface>
+          <!-- ── Inputs ── -->
+          <inputVars>
+            <varList>
+              <variable name="emergency_stop">
+                <type><BOOL/></type>
+                <documentation><xhtml>Emergency stop button — latching; cuts drive power immediately</xhtml></documentation>
+              </variable>
+              <variable name="door_safety_edge">
+                <type><BOOL/></type>
+                <documentation><xhtml>Light-curtain / safety edge on door — TRUE when obstruction detected</xhtml></documentation>
+              </variable>
+              <variable name="floor_sensor_1">
+                <type><BOOL/></type>
+                <documentation><xhtml>Proximity sensor — TRUE when car is level with floor 1</xhtml></documentation>
+              </variable>
+              <variable name="floor_sensor_2">
+                <type><BOOL/></type>
+                <documentation><xhtml>Proximity sensor — TRUE when car is level with floor 2</xhtml></documentation>
+              </variable>
+              <variable name="floor_sensor_3">
+                <type><BOOL/></type>
+                <documentation><xhtml>Proximity sensor — TRUE when car is level with floor 3</xhtml></documentation>
+              </variable>
+              <variable name="floor_sensor_4">
+                <type><BOOL/></type>
+                <documentation><xhtml>Proximity sensor — TRUE when car is level with floor 4</xhtml></documentation>
+              </variable>
+              <variable name="call_up_1">
+                <type><BOOL/></type>
+                <documentation><xhtml>Hall call UP button at floor 1</xhtml></documentation>
+              </variable>
+              <variable name="call_up_2">
+                <type><BOOL/></type>
+                <documentation><xhtml>Hall call UP button at floor 2</xhtml></documentation>
+              </variable>
+              <variable name="call_up_3">
+                <type><BOOL/></type>
+                <documentation><xhtml>Hall call UP button at floor 3</xhtml></documentation>
+              </variable>
+              <variable name="call_down_2">
+                <type><BOOL/></type>
+                <documentation><xhtml>Hall call DOWN button at floor 2</xhtml></documentation>
+              </variable>
+              <variable name="call_down_3">
+                <type><BOOL/></type>
+                <documentation><xhtml>Hall call DOWN button at floor 3</xhtml></documentation>
+              </variable>
+              <variable name="call_down_4">
+                <type><BOOL/></type>
+                <documentation><xhtml>Hall call DOWN button at floor 4</xhtml></documentation>
+              </variable>
+            </varList>
+          </inputVars>
+
+          <!-- ── Outputs ── -->
+          <outputVars>
+            <varList>
+              <variable name="drive_up">
+                <type><BOOL/></type>
+                <documentation><xhtml>Motor contactor — energise to drive car upward</xhtml></documentation>
+              </variable>
+              <variable name="drive_down">
+                <type><BOOL/></type>
+                <documentation><xhtml>Motor contactor — energise to drive car downward</xhtml></documentation>
+              </variable>
+              <variable name="door_open">
+                <type><BOOL/></type>
+                <documentation><xhtml>Door open solenoid — energise to open doors</xhtml></documentation>
+              </variable>
+              <variable name="door_close">
+                <type><BOOL/></type>
+                <documentation><xhtml>Door close solenoid — energise to close doors (inhibited by safety edge)</xhtml></documentation>
+              </variable>
+            </varList>
+          </outputVars>
+
+          <!-- ── Local variables ── -->
+          <localVars>
+            <varList>
+              <variable name="current_floor">
+                <type><INT/></type>
+                <documentation><xhtml>Current car position: 1..4; updated by floor sensors</xhtml></documentation>
+              </variable>
+              <variable name="target_floor">
+                <type><INT/></type>
+                <documentation><xhtml>Next destination floor selected by dispatcher</xhtml></documentation>
+              </variable>
+              <variable name="direction">
+                <type><INT/></type>
+                <documentation><xhtml>Travel direction: 1=UP, -1=DOWN, 0=IDLE</xhtml></documentation>
+              </variable>
+              <variable name="door_timer">
+                <type><derived name="TON"/></type>
+                <documentation><xhtml>Door-open dwell timer (T#5s default)</xhtml></documentation>
+              </variable>
+              <variable name="fault_latch">
+                <type><BOOL/></type>
+                <documentation><xhtml>Latched fault state — cleared only by maintenance reset</xhtml></documentation>
+              </variable>
+            </varList>
+          </localVars>
+        </interface>
+
+        <body>
+          <LD>
+
+            <!-- Rung 1: Emergency stop — de-energise all drive outputs immediately -->
+            <rung localId="1">
+              <comment><content>Emergency stop: latch fault, inhibit all drive and door-close outputs</content></comment>
+              <contact localId="10" negated="false">
+                <position x="0" y="0"/>
+                <variable>emergency_stop</variable>
+              </contact>
+              <coil localId="11" negated="false">
+                <position x="200" y="0"/>
+                <variable>fault_latch</variable>
+              </coil>
+            </rung>
+
+            <!-- Rung 2: Update current floor from level sensors -->
+            <rung localId="2">
+              <comment><content>Update current_floor register from the active floor proximity sensor</content></comment>
+              <contact localId="20" negated="false">
+                <position x="0" y="0"/>
+                <variable>floor_sensor_1</variable>
+              </contact>
+              <coil localId="21" negated="false">
+                <position x="200" y="0"/>
+                <variable>current_floor</variable>
+              </coil>
+            </rung>
+
+            <!-- Rung 3: Drive UP — target floor above current, no fault -->
+            <rung localId="3">
+              <comment><content>Enable upward drive when target_floor > current_floor and no fault or door-open condition</content></comment>
+              <contact localId="30" negated="false">
+                <position x="0" y="0"/>
+                <variable>fault_latch</variable>
+              </contact>
+              <contact localId="31" negated="true">
+                <position x="100" y="0"/>
+                <variable>door_open</variable>
+              </contact>
+              <coil localId="32" negated="false">
+                <position x="300" y="0"/>
+                <variable>drive_up</variable>
+              </coil>
+            </rung>
+
+            <!-- Rung 4: Drive DOWN — target floor below current, no fault -->
+            <rung localId="4">
+              <comment><content>Enable downward drive when target_floor lt current_floor and no fault or door-open condition</content></comment>
+              <contact localId="40" negated="false">
+                <position x="0" y="0"/>
+                <variable>fault_latch</variable>
+              </contact>
+              <contact localId="41" negated="true">
+                <position x="100" y="0"/>
+                <variable>door_open</variable>
+              </contact>
+              <coil localId="42" negated="false">
+                <position x="300" y="0"/>
+                <variable>drive_down</variable>
+              </coil>
+            </rung>
+
+            <!-- Rung 5: Door close — inhibited by safety edge -->
+            <rung localId="5">
+              <comment><content>Close doors when door_timer.Q elapsed and safety edge is clear</content></comment>
+              <contact localId="50" negated="false">
+                <position x="0" y="0"/>
+                <variable>door_timer.Q</variable>
+              </contact>
+              <contact localId="51" negated="true">
+                <position x="100" y="0"/>
+                <variable>door_safety_edge</variable>
+              </contact>
+              <coil localId="52" negated="false">
+                <position x="300" y="0"/>
+                <variable>door_close</variable>
+              </coil>
+            </rung>
+
+          </LD>
+        </body>
+
+      </pou>
+    </pous>
+  </types>
+
+</project>

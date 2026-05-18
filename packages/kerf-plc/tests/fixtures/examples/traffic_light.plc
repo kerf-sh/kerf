@@ -1,0 +1,177 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  traffic_light.plc — PLCopen XML v2.01
+  Classic 3-phase traffic light sequencer.
+
+  Phases:
+    State 0  → GREEN  (30 s)
+    State 1  → YELLOW (5 s)
+    State 2  → RED    (30 s)
+
+  The phase timer (TON) advances the state machine on each timeout.
+  Pedestrian crossing input forces a transition to RED immediately.
+-->
+<project xmlns="http://www.plcopen.org/xml/tc6_0201">
+
+  <fileHeader
+    companyName="Kerf Examples"
+    productName="kerf-plc"
+    productVersion="0.1.0"
+    creationDateTime="2026-05-18T00:00:00"/>
+
+  <contentHeader name="TrafficLight">
+    <coordinateInfo>
+      <ld><scaling x="1" y="1"/></ld>
+      <fbd><scaling x="1" y="1"/></fbd>
+      <sfc><scaling x="1" y="1"/></sfc>
+    </coordinateInfo>
+  </contentHeader>
+
+  <types>
+    <pous>
+      <pou name="TrafficLight" pouType="program">
+
+        <interface>
+          <!-- ── Inputs ── -->
+          <inputVars>
+            <varList>
+              <variable name="pedestrian_btn">
+                <type><BOOL/></type>
+                <documentation><xhtml>Pedestrian crossing request button — rising edge forces RED phase</xhtml></documentation>
+              </variable>
+              <variable name="fault_reset">
+                <type><BOOL/></type>
+                <documentation><xhtml>Manual fault-reset pushbutton — clears flash-mode and restarts sequence</xhtml></documentation>
+              </variable>
+            </varList>
+          </inputVars>
+
+          <!-- ── Outputs ── -->
+          <outputVars>
+            <varList>
+              <variable name="light_green">
+                <type><BOOL/></type>
+                <documentation><xhtml>Green light output — energise to illuminate green lamp</xhtml></documentation>
+              </variable>
+              <variable name="light_yellow">
+                <type><BOOL/></type>
+                <documentation><xhtml>Yellow/amber light output</xhtml></documentation>
+              </variable>
+              <variable name="light_red">
+                <type><BOOL/></type>
+                <documentation><xhtml>Red light output</xhtml></documentation>
+              </variable>
+              <variable name="walk_signal">
+                <type><BOOL/></type>
+                <documentation><xhtml>Pedestrian WALK indicator — energised during RED phase</xhtml></documentation>
+              </variable>
+            </varList>
+          </outputVars>
+
+          <!-- ── Local variables ── -->
+          <localVars>
+            <varList>
+              <variable name="phase">
+                <type><INT/></type>
+                <documentation><xhtml>Current phase: 0=GREEN, 1=YELLOW, 2=RED</xhtml></documentation>
+              </variable>
+              <variable name="phase_timer">
+                <type><derived name="TON"/></type>
+                <documentation><xhtml>On-delay timer that drives phase transitions</xhtml></documentation>
+              </variable>
+              <variable name="phase_preset">
+                <type><TIME/></type>
+                <documentation><xhtml>Preset duration for current phase (T#30s / T#5s / T#30s)</xhtml></documentation>
+              </variable>
+              <variable name="ped_latch">
+                <type><BOOL/></type>
+                <documentation><xhtml>Latched pedestrian request — cleared when RED phase starts</xhtml></documentation>
+              </variable>
+            </varList>
+          </localVars>
+        </interface>
+
+        <body>
+          <LD>
+
+            <!-- Rung 1: Latch pedestrian request on rising edge -->
+            <rung localId="1">
+              <comment><content>Latch pedestrian crossing request until RED phase begins</content></comment>
+              <contact localId="10" negated="false">
+                <position x="0" y="0"/>
+                <variable>pedestrian_btn</variable>
+              </contact>
+              <coil localId="11" negated="false">
+                <position x="200" y="0"/>
+                <variable>ped_latch</variable>
+              </coil>
+            </rung>
+
+            <!-- Rung 2: Phase 0 (GREEN) — active when phase = 0 and no ped request -->
+            <rung localId="2">
+              <comment><content>Phase 0 GREEN: illuminate green, start 30 s phase timer</content></comment>
+              <contact localId="20" negated="false">
+                <position x="0" y="0"/>
+                <variable>phase</variable>
+              </contact>
+              <coil localId="21" negated="false">
+                <position x="200" y="0"/>
+                <variable>light_green</variable>
+              </coil>
+            </rung>
+
+            <!-- Rung 3: Phase transition GREEN→YELLOW on timer elapsed OR pedestrian -->
+            <rung localId="3">
+              <comment><content>Advance GREEN→YELLOW when phase_timer.Q or pedestrian latch is set</content></comment>
+              <contact localId="30" negated="false">
+                <position x="0" y="0"/>
+                <variable>phase_timer.Q</variable>
+              </contact>
+              <contact localId="31" negated="false">
+                <position x="100" y="0"/>
+                <variable>ped_latch</variable>
+              </contact>
+              <coil localId="32" negated="false">
+                <position x="300" y="0"/>
+                <variable>phase</variable>
+              </coil>
+            </rung>
+
+            <!-- Rung 4: Phase 1 (YELLOW) — 5 s amber warning -->
+            <rung localId="4">
+              <comment><content>Phase 1 YELLOW: illuminate amber lamp for 5-second warning interval</content></comment>
+              <contact localId="40" negated="false">
+                <position x="0" y="0"/>
+                <variable>phase</variable>
+              </contact>
+              <coil localId="41" negated="false">
+                <position x="200" y="0"/>
+                <variable>light_yellow</variable>
+              </coil>
+            </rung>
+
+            <!-- Rung 5: Phase 2 (RED) — stop traffic, allow pedestrians -->
+            <rung localId="5">
+              <comment><content>Phase 2 RED: stop traffic and energise pedestrian WALK signal</content></comment>
+              <contact localId="50" negated="false">
+                <position x="0" y="0"/>
+                <variable>phase</variable>
+              </contact>
+              <coil localId="51" negated="false">
+                <position x="200" y="0"/>
+                <variable>light_red</variable>
+              </coil>
+              <coil localId="52" negated="false">
+                <position x="300" y="0"/>
+                <variable>walk_signal</variable>
+              </coil>
+            </rung>
+
+          </LD>
+        </body>
+
+      </pou>
+    </pous>
+  </types>
+
+</project>

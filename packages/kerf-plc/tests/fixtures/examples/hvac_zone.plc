@@ -1,0 +1,217 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  hvac_zone.plc — PLCopen XML v2.01
+  Single HVAC zone controller — heating, cooling, and ventilation.
+
+  Control strategy:
+  - Thermostat dead-band: ±1 °C around setpoint.
+  - Below (setpoint - 1): enable heating; above (setpoint + 1): enable cooling.
+  - Ventilation fan runs whenever heating or cooling is active, or CO2 > limit.
+  - Occupancy sensor extends the HVAC run-on time after the zone is vacated.
+  - Night setback: if occupancy absent for > 30 min, setpoint shifts by ±3 °C.
+  - High-temperature trip (e.g. 40 °C) closes all dampers and raises alarm.
+-->
+<project xmlns="http://www.plcopen.org/xml/tc6_0201">
+
+  <fileHeader
+    companyName="Kerf Examples"
+    productName="kerf-plc"
+    productVersion="0.1.0"
+    creationDateTime="2026-05-18T00:00:00"/>
+
+  <contentHeader name="HVACZone">
+    <coordinateInfo>
+      <ld><scaling x="1" y="1"/></ld>
+      <fbd><scaling x="1" y="1"/></fbd>
+      <sfc><scaling x="1" y="1"/></sfc>
+    </coordinateInfo>
+  </contentHeader>
+
+  <types>
+    <pous>
+      <pou name="HVACZone" pouType="program">
+
+        <interface>
+          <!-- ── Inputs ── -->
+          <inputVars>
+            <varList>
+              <variable name="temp_pv">
+                <type><REAL/></type>
+                <documentation><xhtml>Zone temperature process variable (°C) from wall thermostat sensor</xhtml></documentation>
+              </variable>
+              <variable name="temp_sp">
+                <type><REAL/></type>
+                <documentation><xhtml>Zone temperature setpoint (°C) — set by BMS or local HMI</xhtml></documentation>
+              </variable>
+              <variable name="co2_ppm">
+                <type><INT/></type>
+                <documentation><xhtml>CO2 concentration (ppm) from wall sensor — ventilation forced above 1000 ppm</xhtml></documentation>
+              </variable>
+              <variable name="occupancy">
+                <type><BOOL/></type>
+                <documentation><xhtml>PIR occupancy sensor — TRUE while motion detected in zone</xhtml></documentation>
+              </variable>
+              <variable name="high_temp_trip">
+                <type><BOOL/></type>
+                <documentation><xhtml>High-temperature safety thermostat — closes all dampers above 40 °C</xhtml></documentation>
+              </variable>
+              <variable name="enable">
+                <type><BOOL/></type>
+                <documentation><xhtml>BMS zone enable — FALSE isolates this zone from all HVAC outputs</xhtml></documentation>
+              </variable>
+            </varList>
+          </inputVars>
+
+          <!-- ── Outputs ── -->
+          <outputVars>
+            <varList>
+              <variable name="heat_valve">
+                <type><BOOL/></type>
+                <documentation><xhtml>Heating hot-water valve — open to supply heat to zone air-handling unit</xhtml></documentation>
+              </variable>
+              <variable name="cool_valve">
+                <type><BOOL/></type>
+                <documentation><xhtml>Cooling chilled-water valve — open to supply cooling to zone AHU</xhtml></documentation>
+              </variable>
+              <variable name="vent_fan">
+                <type><BOOL/></type>
+                <documentation><xhtml>Zone ventilation fan — runs when heating/cooling active or CO2 elevated</xhtml></documentation>
+              </variable>
+              <variable name="hvac_alarm">
+                <type><BOOL/></type>
+                <documentation><xhtml>High-temperature alarm output — signals BMS when trip is active</xhtml></documentation>
+              </variable>
+            </varList>
+          </outputVars>
+
+          <!-- ── Local variables ── -->
+          <localVars>
+            <varList>
+              <variable name="call_heat">
+                <type><BOOL/></type>
+                <documentation><xhtml>Heating call — TRUE when temp_pv is below (temp_sp - deadband)</xhtml></documentation>
+              </variable>
+              <variable name="call_cool">
+                <type><BOOL/></type>
+                <documentation><xhtml>Cooling call — TRUE when temp_pv is above (temp_sp + deadband)</xhtml></documentation>
+              </variable>
+              <variable name="run_on_timer">
+                <type><derived name="TOF"/></type>
+                <documentation><xhtml>Off-delay timer — keeps fan running for 2 min after heating/cooling stops</xhtml></documentation>
+              </variable>
+              <variable name="vacancy_timer">
+                <type><derived name="TON"/></type>
+                <documentation><xhtml>Vacancy timer — triggers night-setback after 30 min without occupancy</xhtml></documentation>
+              </variable>
+              <variable name="fault_latch">
+                <type><BOOL/></type>
+                <documentation><xhtml>High-temperature fault latch — requires BMS reset to clear</xhtml></documentation>
+              </variable>
+            </varList>
+          </localVars>
+        </interface>
+
+        <body>
+          <LD>
+
+            <!-- Rung 1: High-temperature safety trip — close all valves, raise alarm -->
+            <rung localId="1">
+              <comment><content>Safety trip: latch fault when high_temp_trip activates; inhibits heat and cool valves</content></comment>
+              <contact localId="10" negated="false">
+                <position x="0" y="0"/>
+                <variable>high_temp_trip</variable>
+              </contact>
+              <coil localId="11" negated="false">
+                <position x="200" y="0"/>
+                <variable>fault_latch</variable>
+              </coil>
+              <coil localId="12" negated="false">
+                <position x="300" y="0"/>
+                <variable>hvac_alarm</variable>
+              </coil>
+            </rung>
+
+            <!-- Rung 2: Heating call — open heat valve when below setpoint and no fault -->
+            <rung localId="2">
+              <comment><content>Open heating valve when call_heat is active, zone is enabled, and no high-temp fault</content></comment>
+              <contact localId="20" negated="false">
+                <position x="0" y="0"/>
+                <variable>call_heat</variable>
+              </contact>
+              <contact localId="21" negated="false">
+                <position x="100" y="0"/>
+                <variable>enable</variable>
+              </contact>
+              <contact localId="22" negated="true">
+                <position x="200" y="0"/>
+                <variable>fault_latch</variable>
+              </contact>
+              <coil localId="23" negated="false">
+                <position x="350" y="0"/>
+                <variable>heat_valve</variable>
+              </coil>
+            </rung>
+
+            <!-- Rung 3: Cooling call — open cool valve when above setpoint and no fault -->
+            <rung localId="3">
+              <comment><content>Open cooling valve when call_cool is active, zone is enabled, and no high-temp fault</content></comment>
+              <contact localId="30" negated="false">
+                <position x="0" y="0"/>
+                <variable>call_cool</variable>
+              </contact>
+              <contact localId="31" negated="false">
+                <position x="100" y="0"/>
+                <variable>enable</variable>
+              </contact>
+              <contact localId="32" negated="true">
+                <position x="200" y="0"/>
+                <variable>fault_latch</variable>
+              </contact>
+              <coil localId="33" negated="false">
+                <position x="350" y="0"/>
+                <variable>cool_valve</variable>
+              </coil>
+            </rung>
+
+            <!-- Rung 4: Ventilation fan — runs on heat/cool call or high CO2 -->
+            <rung localId="4">
+              <comment><content>Run ventilation fan when heating or cooling is active, or CO2 exceeds 1000 ppm limit</content></comment>
+              <contact localId="40" negated="false">
+                <position x="0" y="0"/>
+                <variable>heat_valve</variable>
+              </contact>
+              <contact localId="41" negated="false">
+                <position x="0" y="50"/>
+                <variable>cool_valve</variable>
+              </contact>
+              <contact localId="42" negated="false">
+                <position x="0" y="100"/>
+                <variable>run_on_timer.Q</variable>
+              </contact>
+              <coil localId="43" negated="false">
+                <position x="200" y="0"/>
+                <variable>vent_fan</variable>
+              </coil>
+            </rung>
+
+            <!-- Rung 5: Vacancy timer — start counting when occupancy lost -->
+            <rung localId="5">
+              <comment><content>Start vacancy_timer when zone is unoccupied; night setback activates after 30 min</content></comment>
+              <contact localId="50" negated="true">
+                <position x="0" y="0"/>
+                <variable>occupancy</variable>
+              </contact>
+              <coil localId="51" negated="false">
+                <position x="200" y="0"/>
+                <variable>vacancy_timer.IN</variable>
+              </coil>
+            </rung>
+
+          </LD>
+        </body>
+
+      </pou>
+    </pous>
+  </types>
+
+</project>

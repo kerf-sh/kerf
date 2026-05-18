@@ -1,0 +1,227 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  pick_and_place.plc — PLCopen XML v2.01
+  Pneumatic pick-and-place robot — 2-axis (X, Z) with vacuum gripper.
+
+  Sequence (one cycle):
+    Step 0  HOME       — both axes retracted, vacuum off
+    Step 1  EXTEND_X   — extend horizontal arm to pick position
+    Step 2  EXTEND_Z   — extend vertical arm down to part
+    Step 3  VACUUM_ON  — energise vacuum generator; confirm grip
+    Step 4  RETRACT_Z  — lift part
+    Step 5  RETRACT_X  — move to place position
+    Step 6  EXTEND_Z2  — lower part onto destination
+    Step 7  VACUUM_OFF — release part; confirm release
+    Step 8  RETRACT_Z2 — return to home height → loop to step 1
+
+  Sensors: reed switches on each cylinder confirm extended/retracted.
+  Safety: vacuum loss mid-cycle latches a FAULT.
+-->
+<project xmlns="http://www.plcopen.org/xml/tc6_0201">
+
+  <fileHeader
+    companyName="Kerf Examples"
+    productName="kerf-plc"
+    productVersion="0.1.0"
+    creationDateTime="2026-05-18T00:00:00"/>
+
+  <contentHeader name="PickAndPlace">
+    <coordinateInfo>
+      <ld><scaling x="1" y="1"/></ld>
+      <fbd><scaling x="1" y="1"/></fbd>
+      <sfc><scaling x="1" y="1"/></sfc>
+    </coordinateInfo>
+  </contentHeader>
+
+  <types>
+    <pous>
+      <pou name="PickAndPlace" pouType="program">
+
+        <interface>
+          <!-- ── Inputs ── -->
+          <inputVars>
+            <varList>
+              <variable name="cycle_start">
+                <type><BOOL/></type>
+                <documentation><xhtml>Operator cycle-start button — initiates one pick-and-place cycle</xhtml></documentation>
+              </variable>
+              <variable name="e_stop">
+                <type><BOOL/></type>
+                <documentation><xhtml>Emergency stop — de-energises all outputs immediately</xhtml></documentation>
+              </variable>
+              <variable name="x_extended_sw">
+                <type><BOOL/></type>
+                <documentation><xhtml>X-axis extended reed switch — TRUE when horizontal cylinder is fully extended</xhtml></documentation>
+              </variable>
+              <variable name="x_retracted_sw">
+                <type><BOOL/></type>
+                <documentation><xhtml>X-axis retracted reed switch — TRUE when horizontal cylinder is fully retracted</xhtml></documentation>
+              </variable>
+              <variable name="z_extended_sw">
+                <type><BOOL/></type>
+                <documentation><xhtml>Z-axis extended reed switch — TRUE when vertical cylinder is fully down</xhtml></documentation>
+              </variable>
+              <variable name="z_retracted_sw">
+                <type><BOOL/></type>
+                <documentation><xhtml>Z-axis retracted reed switch — TRUE when vertical cylinder is fully up</xhtml></documentation>
+              </variable>
+              <variable name="vacuum_ok">
+                <type><BOOL/></type>
+                <documentation><xhtml>Vacuum pressure switch — TRUE when vacuum level confirms part gripped</xhtml></documentation>
+              </variable>
+              <variable name="part_present">
+                <type><BOOL/></type>
+                <documentation><xhtml>Inductive sensor at pick position — TRUE when a part is present</xhtml></documentation>
+              </variable>
+              <variable name="fault_reset">
+                <type><BOOL/></type>
+                <documentation><xhtml>Fault reset pushbutton — clears FAULT latch and returns to HOME step</xhtml></documentation>
+              </variable>
+            </varList>
+          </inputVars>
+
+          <!-- ── Outputs ── -->
+          <outputVars>
+            <varList>
+              <variable name="x_extend">
+                <type><BOOL/></type>
+                <documentation><xhtml>Solenoid valve — extend horizontal X-axis cylinder</xhtml></documentation>
+              </variable>
+              <variable name="z_extend">
+                <type><BOOL/></type>
+                <documentation><xhtml>Solenoid valve — extend vertical Z-axis cylinder (down)</xhtml></documentation>
+              </variable>
+              <variable name="vacuum_on">
+                <type><BOOL/></type>
+                <documentation><xhtml>Vacuum generator solenoid — energise to create vacuum at suction cup</xhtml></documentation>
+              </variable>
+              <variable name="cycle_complete">
+                <type><BOOL/></type>
+                <documentation><xhtml>Cycle-complete output — one-shot pulse to upstream system on each successful cycle</xhtml></documentation>
+              </variable>
+              <variable name="fault_lamp">
+                <type><BOOL/></type>
+                <documentation><xhtml>Fault indicator lamp — illuminates on vacuum loss or step timeout</xhtml></documentation>
+              </variable>
+            </varList>
+          </outputVars>
+
+          <!-- ── Local variables ── -->
+          <localVars>
+            <varList>
+              <variable name="step">
+                <type><INT/></type>
+                <documentation><xhtml>Current sequence step (0–8); incremented on step completion</xhtml></documentation>
+              </variable>
+              <variable name="fault_latch">
+                <type><BOOL/></type>
+                <documentation><xhtml>Latched fault condition — requires operator reset to clear</xhtml></documentation>
+              </variable>
+              <variable name="step_timer">
+                <type><derived name="TON"/></type>
+                <documentation><xhtml>Step watchdog timer — latches fault if step does not complete within T#5s</xhtml></documentation>
+              </variable>
+            </varList>
+          </localVars>
+        </interface>
+
+        <body>
+          <LD>
+
+            <!-- Rung 1: E-stop — de-energise all solenoids, freeze step -->
+            <rung localId="1">
+              <comment><content>Emergency stop: inhibit all solenoid outputs when e_stop is active</content></comment>
+              <contact localId="10" negated="false">
+                <position x="0" y="0"/>
+                <variable>e_stop</variable>
+              </contact>
+              <coil localId="11" negated="false">
+                <position x="200" y="0"/>
+                <variable>fault_latch</variable>
+              </coil>
+            </rung>
+
+            <!-- Rung 2: Step 1 EXTEND_X — extend when at step 1, part present, no fault -->
+            <rung localId="2">
+              <comment><content>Step 1: extend X-axis cylinder toward pick position when part_present is confirmed</content></comment>
+              <contact localId="20" negated="false">
+                <position x="0" y="0"/>
+                <variable>step</variable>
+              </contact>
+              <contact localId="21" negated="false">
+                <position x="100" y="0"/>
+                <variable>part_present</variable>
+              </contact>
+              <contact localId="22" negated="true">
+                <position x="200" y="0"/>
+                <variable>fault_latch</variable>
+              </contact>
+              <coil localId="23" negated="false">
+                <position x="350" y="0"/>
+                <variable>x_extend</variable>
+              </coil>
+            </rung>
+
+            <!-- Rung 3: Step 3 VACUUM_ON — grip part after Z fully extended -->
+            <rung localId="3">
+              <comment><content>Step 3: energise vacuum when Z-axis is fully extended; confirm grip via vacuum_ok before advancing</content></comment>
+              <contact localId="30" negated="false">
+                <position x="0" y="0"/>
+                <variable>step</variable>
+              </contact>
+              <contact localId="31" negated="false">
+                <position x="100" y="0"/>
+                <variable>z_extended_sw</variable>
+              </contact>
+              <contact localId="32" negated="true">
+                <position x="200" y="0"/>
+                <variable>fault_latch</variable>
+              </contact>
+              <coil localId="33" negated="false">
+                <position x="350" y="0"/>
+                <variable>vacuum_on</variable>
+              </coil>
+            </rung>
+
+            <!-- Rung 4: Vacuum loss fault — latch if vacuum drops while step >= 3 -->
+            <rung localId="4">
+              <comment><content>Latch FAULT when vacuum is lost mid-cycle (part dropped); stops cycle and illuminates fault lamp</content></comment>
+              <contact localId="40" negated="true">
+                <position x="0" y="0"/>
+                <variable>vacuum_ok</variable>
+              </contact>
+              <contact localId="41" negated="false">
+                <position x="100" y="0"/>
+                <variable>vacuum_on</variable>
+              </contact>
+              <coil localId="42" negated="false">
+                <position x="250" y="0"/>
+                <variable>fault_latch</variable>
+              </coil>
+            </rung>
+
+            <!-- Rung 5: Cycle complete pulse -->
+            <rung localId="5">
+              <comment><content>Generate cycle_complete one-shot when step returns to HOME (step=0) after a full cycle</content></comment>
+              <contact localId="50" negated="false">
+                <position x="0" y="0"/>
+                <variable>x_retracted_sw</variable>
+              </contact>
+              <contact localId="51" negated="false">
+                <position x="100" y="0"/>
+                <variable>z_retracted_sw</variable>
+              </contact>
+              <coil localId="52" negated="false">
+                <position x="250" y="0"/>
+                <variable>cycle_complete</variable>
+              </coil>
+            </rung>
+
+          </LD>
+        </body>
+
+      </pou>
+    </pous>
+  </types>
+
+</project>

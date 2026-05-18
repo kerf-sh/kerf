@@ -1,0 +1,200 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  water_treatment.plc — PLCopen XML v2.01
+  Municipal water treatment plant — filtration and chlorination stage.
+
+  Process overview:
+  1. Raw water enters the settling tank; a float switch signals HIGH level.
+  2. The sand filter feed pump runs when level is HIGH and the filter is not bypassed.
+  3. A chlorine dosing pump injects at a rate proportional to the measured flow.
+  4. An outlet turbidity sensor triggers a backwash cycle when turbidity exceeds limit.
+  5. Chemical feed alarms and low-pressure alarms stop dosing and raise a fault.
+-->
+<project xmlns="http://www.plcopen.org/xml/tc6_0201">
+
+  <fileHeader
+    companyName="Kerf Examples"
+    productName="kerf-plc"
+    productVersion="0.1.0"
+    creationDateTime="2026-05-18T00:00:00"/>
+
+  <contentHeader name="WaterTreatment">
+    <coordinateInfo>
+      <ld><scaling x="1" y="1"/></ld>
+      <fbd><scaling x="1" y="1"/></fbd>
+      <sfc><scaling x="1" y="1"/></sfc>
+    </coordinateInfo>
+  </contentHeader>
+
+  <types>
+    <pous>
+      <pou name="WaterTreatment" pouType="program">
+
+        <interface>
+          <!-- ── Inputs ── -->
+          <inputVars>
+            <varList>
+              <variable name="level_high">
+                <type><BOOL/></type>
+                <documentation><xhtml>Float switch — TRUE when settling tank level is above HIGH setpoint</xhtml></documentation>
+              </variable>
+              <variable name="level_low">
+                <type><BOOL/></type>
+                <documentation><xhtml>Float switch — TRUE when settling tank level is below LOW setpoint (pump protect)</xhtml></documentation>
+              </variable>
+              <variable name="filter_bypass">
+                <type><BOOL/></type>
+                <documentation><xhtml>Manual bypass switch — routes flow around sand filter for maintenance</xhtml></documentation>
+              </variable>
+              <variable name="turbidity_alarm">
+                <type><BOOL/></type>
+                <documentation><xhtml>Turbidity sensor — TRUE when outlet turbidity exceeds 1 NTU limit</xhtml></documentation>
+              </variable>
+              <variable name="chlorine_low">
+                <type><BOOL/></type>
+                <documentation><xhtml>Chlorine tank low-level switch — halts dosing and raises chemical alarm</xhtml></documentation>
+              </variable>
+              <variable name="flow_pulse">
+                <type><BOOL/></type>
+                <documentation><xhtml>Pulse train from the flow meter — one pulse per litre</xhtml></documentation>
+              </variable>
+              <variable name="fault_reset">
+                <type><BOOL/></type>
+                <documentation><xhtml>Operator reset — clears latched faults after cause is rectified</xhtml></documentation>
+              </variable>
+            </varList>
+          </inputVars>
+
+          <!-- ── Outputs ── -->
+          <outputVars>
+            <varList>
+              <variable name="feed_pump">
+                <type><BOOL/></type>
+                <documentation><xhtml>Sand-filter feed pump contactor</xhtml></documentation>
+              </variable>
+              <variable name="chlorine_pump">
+                <type><BOOL/></type>
+                <documentation><xhtml>Chlorine dosing pump — on/off; future: PWM duty ∝ flow</xhtml></documentation>
+              </variable>
+              <variable name="backwash_valve">
+                <type><BOOL/></type>
+                <documentation><xhtml>Backwash inlet valve — opens to initiate filter backwash cycle</xhtml></documentation>
+              </variable>
+              <variable name="alarm_light">
+                <type><BOOL/></type>
+                <documentation><xhtml>Panel alarm indicator — illuminates on any active fault</xhtml></documentation>
+              </variable>
+            </varList>
+          </outputVars>
+
+          <!-- ── Local variables ── -->
+          <localVars>
+            <varList>
+              <variable name="fault_latch">
+                <type><BOOL/></type>
+                <documentation><xhtml>Latched process fault — requires operator reset to clear</xhtml></documentation>
+              </variable>
+              <variable name="backwash_timer">
+                <type><derived name="TON"/></type>
+                <documentation><xhtml>Backwash cycle duration timer (T#3m)</xhtml></documentation>
+              </variable>
+              <variable name="flow_counter">
+                <type><derived name="CTU"/></type>
+                <documentation><xhtml>Counts flow pulses for dosing proportionality calculation</xhtml></documentation>
+              </variable>
+            </varList>
+          </localVars>
+        </interface>
+
+        <body>
+          <LD>
+
+            <!-- Rung 1: Feed pump enable — run when level high, not in fault, not backwashing -->
+            <rung localId="1">
+              <comment><content>Feed pump: run when settling-tank level is HIGH, filter not in backwash, and no fault</content></comment>
+              <contact localId="10" negated="false">
+                <position x="0" y="0"/>
+                <variable>level_high</variable>
+              </contact>
+              <contact localId="11" negated="true">
+                <position x="100" y="0"/>
+                <variable>fault_latch</variable>
+              </contact>
+              <contact localId="12" negated="true">
+                <position x="200" y="0"/>
+                <variable>backwash_valve</variable>
+              </contact>
+              <coil localId="13" negated="false">
+                <position x="350" y="0"/>
+                <variable>feed_pump</variable>
+              </coil>
+            </rung>
+
+            <!-- Rung 2: Chlorine dosing — enable when feed pump running and chlorine not low -->
+            <rung localId="2">
+              <comment><content>Chlorine dosing: enable when feed pump is running and chlorine tank is not empty</content></comment>
+              <contact localId="20" negated="false">
+                <position x="0" y="0"/>
+                <variable>feed_pump</variable>
+              </contact>
+              <contact localId="21" negated="true">
+                <position x="100" y="0"/>
+                <variable>chlorine_low</variable>
+              </contact>
+              <coil localId="22" negated="false">
+                <position x="250" y="0"/>
+                <variable>chlorine_pump</variable>
+              </coil>
+            </rung>
+
+            <!-- Rung 3: Initiate backwash cycle on high turbidity -->
+            <rung localId="3">
+              <comment><content>Start backwash: open valve and start backwash_timer when turbidity_alarm is active</content></comment>
+              <contact localId="30" negated="false">
+                <position x="0" y="0"/>
+                <variable>turbidity_alarm</variable>
+              </contact>
+              <contact localId="31" negated="true">
+                <position x="100" y="0"/>
+                <variable>backwash_timer.Q</variable>
+              </contact>
+              <coil localId="32" negated="false">
+                <position x="250" y="0"/>
+                <variable>backwash_valve</variable>
+              </coil>
+            </rung>
+
+            <!-- Rung 4: Latch fault on chemical low or pump failure -->
+            <rung localId="4">
+              <comment><content>Latch process fault when chlorine tank is empty; clears only on operator reset</content></comment>
+              <contact localId="40" negated="false">
+                <position x="0" y="0"/>
+                <variable>chlorine_low</variable>
+              </contact>
+              <coil localId="41" negated="false">
+                <position x="200" y="0"/>
+                <variable>fault_latch</variable>
+              </coil>
+            </rung>
+
+            <!-- Rung 5: Alarm light — any active fault -->
+            <rung localId="5">
+              <comment><content>Illuminate panel alarm for any active fault condition</content></comment>
+              <contact localId="50" negated="false">
+                <position x="0" y="0"/>
+                <variable>fault_latch</variable>
+              </contact>
+              <coil localId="51" negated="false">
+                <position x="200" y="0"/>
+                <variable>alarm_light</variable>
+              </coil>
+            </rung>
+
+          </LD>
+        </body>
+
+      </pou>
+    </pous>
+  </types>
+
+</project>

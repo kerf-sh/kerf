@@ -1,0 +1,254 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  batch_reactor.plc — PLCopen XML v2.01
+  Chemical batch reactor — heat-up / react / cool-down sequence.
+
+  Batch phases (ISA-88 inspired):
+    Phase 0  IDLE       — await operator START command
+    Phase 1  CHARGE     — open feed valves; fill reactor to weight setpoint
+    Phase 2  HEAT_UP    — enable steam jacket; ramp to reaction temperature
+    Phase 3  REACT      — hold temperature; run agitator at reaction speed
+    Phase 4  COOL_DOWN  — switch to cooling water; ramp down to 40 °C
+    Phase 5  DISCHARGE  — open outlet valve; empty reactor
+    Phase 6  COMPLETE   — batch done; await unload acknowledgement
+
+  Safety: high-pressure and high-temperature trips latch a FAULT state that
+  inhibits all outputs and requires an operator reset.
+-->
+<project xmlns="http://www.plcopen.org/xml/tc6_0201">
+
+  <fileHeader
+    companyName="Kerf Examples"
+    productName="kerf-plc"
+    productVersion="0.1.0"
+    creationDateTime="2026-05-18T00:00:00"/>
+
+  <contentHeader name="BatchReactor">
+    <coordinateInfo>
+      <ld><scaling x="1" y="1"/></ld>
+      <fbd><scaling x="1" y="1"/></fbd>
+      <sfc><scaling x="1" y="1"/></sfc>
+    </coordinateInfo>
+  </contentHeader>
+
+  <types>
+    <pous>
+      <pou name="BatchReactor" pouType="program">
+
+        <interface>
+          <!-- ── Inputs ── -->
+          <inputVars>
+            <varList>
+              <variable name="op_start">
+                <type><BOOL/></type>
+                <documentation><xhtml>Operator START command — begins a new batch from IDLE phase</xhtml></documentation>
+              </variable>
+              <variable name="op_abort">
+                <type><BOOL/></type>
+                <documentation><xhtml>Operator ABORT — safe-state all outputs, go to FAULT</xhtml></documentation>
+              </variable>
+              <variable name="fault_reset">
+                <type><BOOL/></type>
+                <documentation><xhtml>Maintenance reset — clears FAULT latch after cause is rectified</xhtml></documentation>
+              </variable>
+              <variable name="temp_pv">
+                <type><REAL/></type>
+                <documentation><xhtml>Reactor temperature process variable (°C) from thermocouple</xhtml></documentation>
+              </variable>
+              <variable name="pressure_high">
+                <type><BOOL/></type>
+                <documentation><xhtml>High-pressure trip switch — latches FAULT when TRUE</xhtml></documentation>
+              </variable>
+              <variable name="temp_high_trip">
+                <type><BOOL/></type>
+                <documentation><xhtml>Independent high-temperature thermoswitch — latches FAULT</xhtml></documentation>
+              </variable>
+              <variable name="weight_ok">
+                <type><BOOL/></type>
+                <documentation><xhtml>Load cell signal — TRUE when reactor contents reach target weight</xhtml></documentation>
+              </variable>
+              <variable name="level_empty">
+                <type><BOOL/></type>
+                <documentation><xhtml>Low-level switch — TRUE when reactor is empty (discharge complete)</xhtml></documentation>
+              </variable>
+            </varList>
+          </inputVars>
+
+          <!-- ── Outputs ── -->
+          <outputVars>
+            <varList>
+              <variable name="feed_valve">
+                <type><BOOL/></type>
+                <documentation><xhtml>Raw material feed valve — open during CHARGE phase</xhtml></documentation>
+              </variable>
+              <variable name="steam_valve">
+                <type><BOOL/></type>
+                <documentation><xhtml>Steam jacket inlet valve — open during HEAT_UP and REACT phases</xhtml></documentation>
+              </variable>
+              <variable name="cooling_valve">
+                <type><BOOL/></type>
+                <documentation><xhtml>Cooling water jacket valve — open during COOL_DOWN phase</xhtml></documentation>
+              </variable>
+              <variable name="agitator_run">
+                <type><BOOL/></type>
+                <documentation><xhtml>Agitator motor run command — active from HEAT_UP through COOL_DOWN</xhtml></documentation>
+              </variable>
+              <variable name="outlet_valve">
+                <type><BOOL/></type>
+                <documentation><xhtml>Bottom outlet valve — open during DISCHARGE phase</xhtml></documentation>
+              </variable>
+              <variable name="fault_alarm">
+                <type><BOOL/></type>
+                <documentation><xhtml>Fault annunciator — active whenever fault_latch is set</xhtml></documentation>
+              </variable>
+            </varList>
+          </outputVars>
+
+          <!-- ── Local variables ── -->
+          <localVars>
+            <varList>
+              <variable name="batch_phase">
+                <type><INT/></type>
+                <documentation><xhtml>Current ISA-88 batch phase: 0=IDLE 1=CHARGE 2=HEAT_UP 3=REACT 4=COOL_DOWN 5=DISCHARGE 6=COMPLETE</xhtml></documentation>
+              </variable>
+              <variable name="fault_latch">
+                <type><BOOL/></type>
+                <documentation><xhtml>Latched safety fault — inhibits all process outputs</xhtml></documentation>
+              </variable>
+              <variable name="react_timer">
+                <type><derived name="TON"/></type>
+                <documentation><xhtml>Reaction hold timer — preset = recipe reaction time</xhtml></documentation>
+              </variable>
+              <variable name="temp_sp">
+                <type><REAL/></type>
+                <documentation><xhtml>Temperature setpoint (°C) — set by recipe during HEAT_UP and REACT</xhtml></documentation>
+              </variable>
+            </varList>
+          </localVars>
+        </interface>
+
+        <body>
+          <LD>
+
+            <!-- Rung 1: Safety trip — latch FAULT on pressure or temperature trip -->
+            <rung localId="1">
+              <comment><content>Safety interlock: latch FAULT on high-pressure trip or high-temperature thermoswitch; inhibits all outputs</content></comment>
+              <contact localId="10" negated="false">
+                <position x="0" y="0"/>
+                <variable>pressure_high</variable>
+              </contact>
+              <contact localId="11" negated="false">
+                <position x="0" y="50"/>
+                <variable>temp_high_trip</variable>
+              </contact>
+              <contact localId="12" negated="false">
+                <position x="0" y="100"/>
+                <variable>op_abort</variable>
+              </contact>
+              <coil localId="13" negated="false">
+                <position x="200" y="0"/>
+                <variable>fault_latch</variable>
+              </coil>
+            </rung>
+
+            <!-- Rung 2: CHARGE phase — feed valve open until weight target reached -->
+            <rung localId="2">
+              <comment><content>CHARGE: open feed valve when batch_phase=1 and reactor has not reached target weight</content></comment>
+              <contact localId="20" negated="false">
+                <position x="0" y="0"/>
+                <variable>batch_phase</variable>
+              </contact>
+              <contact localId="21" negated="true">
+                <position x="100" y="0"/>
+                <variable>weight_ok</variable>
+              </contact>
+              <contact localId="22" negated="true">
+                <position x="200" y="0"/>
+                <variable>fault_latch</variable>
+              </contact>
+              <coil localId="23" negated="false">
+                <position x="350" y="0"/>
+                <variable>feed_valve</variable>
+              </coil>
+            </rung>
+
+            <!-- Rung 3: HEAT_UP and REACT — steam jacket + agitator -->
+            <rung localId="3">
+              <comment><content>HEAT_UP / REACT: enable steam jacket valve and agitator; inhibited by fault</content></comment>
+              <contact localId="30" negated="false">
+                <position x="0" y="0"/>
+                <variable>batch_phase</variable>
+              </contact>
+              <contact localId="31" negated="true">
+                <position x="100" y="0"/>
+                <variable>fault_latch</variable>
+              </contact>
+              <coil localId="32" negated="false">
+                <position x="250" y="0"/>
+                <variable>steam_valve</variable>
+              </coil>
+              <coil localId="33" negated="false">
+                <position x="350" y="0"/>
+                <variable>agitator_run</variable>
+              </coil>
+            </rung>
+
+            <!-- Rung 4: COOL_DOWN — cooling water on, steam off -->
+            <rung localId="4">
+              <comment><content>COOL_DOWN: switch to cooling water; agitator remains on to ensure uniform cooling</content></comment>
+              <contact localId="40" negated="false">
+                <position x="0" y="0"/>
+                <variable>batch_phase</variable>
+              </contact>
+              <contact localId="41" negated="true">
+                <position x="100" y="0"/>
+                <variable>fault_latch</variable>
+              </contact>
+              <coil localId="42" negated="false">
+                <position x="250" y="0"/>
+                <variable>cooling_valve</variable>
+              </coil>
+            </rung>
+
+            <!-- Rung 5: DISCHARGE — open outlet valve until reactor empty -->
+            <rung localId="5">
+              <comment><content>DISCHARGE: open outlet valve; close when level_empty sensor confirms reactor is drained</content></comment>
+              <contact localId="50" negated="false">
+                <position x="0" y="0"/>
+                <variable>batch_phase</variable>
+              </contact>
+              <contact localId="51" negated="true">
+                <position x="100" y="0"/>
+                <variable>level_empty</variable>
+              </contact>
+              <contact localId="52" negated="true">
+                <position x="200" y="0"/>
+                <variable>fault_latch</variable>
+              </contact>
+              <coil localId="53" negated="false">
+                <position x="350" y="0"/>
+                <variable>outlet_valve</variable>
+              </coil>
+            </rung>
+
+            <!-- Rung 6: Fault alarm output -->
+            <rung localId="6">
+              <comment><content>Drive fault annunciator whenever fault_latch is set</content></comment>
+              <contact localId="60" negated="false">
+                <position x="0" y="0"/>
+                <variable>fault_latch</variable>
+              </contact>
+              <coil localId="61" negated="false">
+                <position x="200" y="0"/>
+                <variable>fault_alarm</variable>
+              </coil>
+            </rung>
+
+          </LD>
+        </body>
+
+      </pou>
+    </pous>
+  </types>
+
+</project>

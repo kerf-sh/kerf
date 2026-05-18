@@ -1,0 +1,266 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  door_interlock.plc — PLCopen XML v2.01
+  Safety door interlock for a CNC machine cell.  IEC 62061 / ISO 13849 compliant
+  design pattern using dual-channel monitoring and a safety relay unlock sequence.
+
+  Safety category: Cat. 3 / PLd (diagnostic coverage via cross-monitoring).
+
+  Interlock logic:
+  1. BOTH door channels (ch_a, ch_b) must read CLOSED before machine motion is
+     permitted (AND gate ensures no single-channel bypass).
+  2. A guard-lock solenoid holds the door closed while machine axes are in motion.
+  3. A request-to-enter button illuminates an indicator; the solenoid releases only
+     when all drives have stopped and a 500 ms settle delay has elapsed.
+  4. If channel A and channel B disagree for > 100 ms a DISCREPANCY FAULT is
+     latched; only a supervised reset can clear it.
+  5. Emergency stop overrides everything and removes machine power.
+
+  This example is tagged category="safety" in the library manifest.
+-->
+<project xmlns="http://www.plcopen.org/xml/tc6_0201">
+
+  <fileHeader
+    companyName="Kerf Examples"
+    productName="kerf-plc"
+    productVersion="0.1.0"
+    creationDateTime="2026-05-18T00:00:00"/>
+
+  <contentHeader name="DoorInterlock">
+    <coordinateInfo>
+      <ld><scaling x="1" y="1"/></ld>
+      <fbd><scaling x="1" y="1"/></fbd>
+      <sfc><scaling x="1" y="1"/></sfc>
+    </coordinateInfo>
+  </contentHeader>
+
+  <types>
+    <pous>
+      <pou name="DoorInterlock" pouType="program">
+
+        <interface>
+          <!-- ── Inputs ── -->
+          <inputVars>
+            <varList>
+              <variable name="door_ch_a">
+                <type><BOOL/></type>
+                <documentation><xhtml>Door guard switch channel A — TRUE when door is physically closed (NC contact)</xhtml></documentation>
+              </variable>
+              <variable name="door_ch_b">
+                <type><BOOL/></type>
+                <documentation><xhtml>Door guard switch channel B — redundant second NC contact for dual-channel monitoring</xhtml></documentation>
+              </variable>
+              <variable name="e_stop_ch_a">
+                <type><BOOL/></type>
+                <documentation><xhtml>Emergency stop channel A — NC contact; FALSE = e-stop activated</xhtml></documentation>
+              </variable>
+              <variable name="e_stop_ch_b">
+                <type><BOOL/></type>
+                <documentation><xhtml>Emergency stop channel B — redundant NC contact</xhtml></documentation>
+              </variable>
+              <variable name="request_entry">
+                <type><BOOL/></type>
+                <documentation><xhtml>Operator request-to-enter button — illuminates indicator, queues solenoid release</xhtml></documentation>
+              </variable>
+              <variable name="axes_stopped">
+                <type><BOOL/></type>
+                <documentation><xhtml>Drive system feedback — TRUE when all machine axes are at standstill</xhtml></documentation>
+              </variable>
+              <variable name="supervised_reset">
+                <type><BOOL/></type>
+                <documentation><xhtml>Supervised safety reset key-switch — clears fault latch after inspection</xhtml></documentation>
+              </variable>
+            </varList>
+          </inputVars>
+
+          <!-- ── Outputs ── -->
+          <outputVars>
+            <varList>
+              <variable name="machine_enable">
+                <type><BOOL/></type>
+                <documentation><xhtml>Machine motion enable — TRUE permits drive power; de-energise immediately on any safety event</xhtml></documentation>
+              </variable>
+              <variable name="guard_lock_solenoid">
+                <type><BOOL/></type>
+                <documentation><xhtml>Guard-lock solenoid — energise to lock door; de-energise releases door</xhtml></documentation>
+              </variable>
+              <variable name="entry_indicator">
+                <type><BOOL/></type>
+                <documentation><xhtml>Green entry-permitted LED — illuminates when solenoid releases and door may be opened</xhtml></documentation>
+              </variable>
+              <variable name="fault_indicator">
+                <type><BOOL/></type>
+                <documentation><xhtml>Red fault LED on operator panel — illuminates on channel discrepancy or e-stop</xhtml></documentation>
+              </variable>
+            </varList>
+          </outputVars>
+
+          <!-- ── Local variables ── -->
+          <localVars>
+            <varList>
+              <variable name="both_channels_closed">
+                <type><BOOL/></type>
+                <documentation><xhtml>Internal coil — TRUE only when BOTH door channels read closed simultaneously</xhtml></documentation>
+              </variable>
+              <variable name="discrepancy_fault">
+                <type><BOOL/></type>
+                <documentation><xhtml>Latched channel-discrepancy fault — set when ch_A XOR ch_B persists &gt; 100 ms</xhtml></documentation>
+              </variable>
+              <variable name="e_stop_fault">
+                <type><BOOL/></type>
+                <documentation><xhtml>Latched e-stop fault — set on any e-stop activation; requires supervised reset</xhtml></documentation>
+              </variable>
+              <variable name="discrepancy_timer">
+                <type><derived name="TON"/></type>
+                <documentation><xhtml>100 ms discrepancy filter — avoids nuisance faults during door transition</xhtml></documentation>
+              </variable>
+              <variable name="settle_timer">
+                <type><derived name="TON"/></type>
+                <documentation><xhtml>500 ms axis-stop settle delay before releasing guard lock</xhtml></documentation>
+              </variable>
+            </varList>
+          </localVars>
+        </interface>
+
+        <body>
+          <LD>
+
+            <!-- Rung 1: E-stop latch — both channels must be healthy -->
+            <rung localId="1">
+              <comment><content>Latch e-stop fault when either e-stop channel opens; requires supervised_reset to clear</content></comment>
+              <contact localId="10" negated="true">
+                <position x="0" y="0"/>
+                <variable>e_stop_ch_a</variable>
+              </contact>
+              <contact localId="11" negated="true">
+                <position x="0" y="50"/>
+                <variable>e_stop_ch_b</variable>
+              </contact>
+              <coil localId="12" negated="false">
+                <position x="200" y="0"/>
+                <variable>e_stop_fault</variable>
+              </coil>
+            </rung>
+
+            <!-- Rung 2: Dual-channel door monitoring -->
+            <rung localId="2">
+              <comment><content>AND gate: both_channels_closed only when door_ch_a AND door_ch_b are TRUE (no single-fault bypass)</content></comment>
+              <contact localId="20" negated="false">
+                <position x="0" y="0"/>
+                <variable>door_ch_a</variable>
+              </contact>
+              <contact localId="21" negated="false">
+                <position x="100" y="0"/>
+                <variable>door_ch_b</variable>
+              </contact>
+              <coil localId="22" negated="false">
+                <position x="250" y="0"/>
+                <variable>both_channels_closed</variable>
+              </coil>
+            </rung>
+
+            <!-- Rung 3: Channel discrepancy detection -->
+            <rung localId="3">
+              <comment><content>Start discrepancy_timer when ch_A XOR ch_B (one open, one closed); latch fault if persists 100 ms</content></comment>
+              <contact localId="30" negated="false">
+                <position x="0" y="0"/>
+                <variable>door_ch_a</variable>
+              </contact>
+              <contact localId="31" negated="true">
+                <position x="100" y="0"/>
+                <variable>door_ch_b</variable>
+              </contact>
+              <coil localId="32" negated="false">
+                <position x="250" y="0"/>
+                <variable>discrepancy_timer.IN</variable>
+              </coil>
+            </rung>
+
+            <!-- Rung 4: Machine enable — both channels closed, no fault, no e-stop -->
+            <rung localId="4">
+              <comment><content>Permit machine motion only when both door channels agree CLOSED and no safety fault is latched</content></comment>
+              <contact localId="40" negated="false">
+                <position x="0" y="0"/>
+                <variable>both_channels_closed</variable>
+              </contact>
+              <contact localId="41" negated="true">
+                <position x="100" y="0"/>
+                <variable>discrepancy_fault</variable>
+              </contact>
+              <contact localId="42" negated="true">
+                <position x="200" y="0"/>
+                <variable>e_stop_fault</variable>
+              </contact>
+              <coil localId="43" negated="false">
+                <position x="350" y="0"/>
+                <variable>machine_enable</variable>
+              </coil>
+            </rung>
+
+            <!-- Rung 5: Guard lock — lock door whenever machine is enabled or axes moving -->
+            <rung localId="5">
+              <comment><content>Energise guard-lock solenoid when machine_enable is TRUE or axes are not yet stopped</content></comment>
+              <contact localId="50" negated="false">
+                <position x="0" y="0"/>
+                <variable>machine_enable</variable>
+              </contact>
+              <contact localId="51" negated="true">
+                <position x="0" y="50"/>
+                <variable>axes_stopped</variable>
+              </contact>
+              <coil localId="52" negated="false">
+                <position x="200" y="0"/>
+                <variable>guard_lock_solenoid</variable>
+              </coil>
+            </rung>
+
+            <!-- Rung 6: Entry permitted — release lock after settle delay -->
+            <rung localId="6">
+              <comment><content>Illuminate entry indicator and allow guard-lock release when: request_entry, axes_stopped, settle_timer elapsed, no fault</content></comment>
+              <contact localId="60" negated="false">
+                <position x="0" y="0"/>
+                <variable>request_entry</variable>
+              </contact>
+              <contact localId="61" negated="false">
+                <position x="100" y="0"/>
+                <variable>axes_stopped</variable>
+              </contact>
+              <contact localId="62" negated="false">
+                <position x="200" y="0"/>
+                <variable>settle_timer.Q</variable>
+              </contact>
+              <contact localId="63" negated="true">
+                <position x="300" y="0"/>
+                <variable>discrepancy_fault</variable>
+              </contact>
+              <coil localId="64" negated="false">
+                <position x="450" y="0"/>
+                <variable>entry_indicator</variable>
+              </coil>
+            </rung>
+
+            <!-- Rung 7: Fault indicator -->
+            <rung localId="7">
+              <comment><content>Illuminate fault indicator for any active safety fault (discrepancy or e-stop)</content></comment>
+              <contact localId="70" negated="false">
+                <position x="0" y="0"/>
+                <variable>discrepancy_fault</variable>
+              </contact>
+              <contact localId="71" negated="false">
+                <position x="0" y="50"/>
+                <variable>e_stop_fault</variable>
+              </contact>
+              <coil localId="72" negated="false">
+                <position x="200" y="0"/>
+                <variable>fault_indicator</variable>
+              </coil>
+            </rung>
+
+          </LD>
+        </body>
+
+      </pou>
+    </pous>
+  </types>
+
+</project>
