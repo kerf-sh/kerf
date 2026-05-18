@@ -1,0 +1,113 @@
+[
+  {
+    "type": "source_component",
+    "source_component_id": "sc_r1",
+    "name": "R1",
+    "value": "10k",
+    "footprint": "R_0402"
+  },
+  {
+    "type": "source_component",
+    "source_component_id": "sc_r2",
+    "name": "R2",
+    "value": "4k7",
+    "footprint": "R_0402"
+  },
+  {
+    "type": "source_port",
+    "source_port_id": "sp_r1_1",
+    "source_component_id": "sc_r1",
+    "name": "1",
+    "pin_type": "passive"
+  },
+  {
+    "type": "source_port",
+    "source_port_id": "sp_r1_2",
+    "source_component_id": "sc_r1",
+    "name": "2",
+    "pin_type": "passive"
+  },
+  {
+    "type": "source_port",
+    "source_port_id": "sp_r2_1",
+    "source_component_id": "sc_r2",
+    "name": "1",
+    "pin_type": "passive"
+  },
+  {
+    "type": "source_port",
+    "source_port_id": "sp_r2_2",
+    "source_component_id": "sc_r2",
+    "name": "2",
+    "pin_type": "passive"
+  },
+  {
+    "type": "source_net",
+    "source_net_id": "sn_vcc",
+    "name": "VCC"
+  },
+  {
+    "type": "source_net",
+    "source_net_id": "sn_mid",
+    "name": "MID"
+  },
+  {
+    "type": "source_net",
+    "source_net_id": "sn_gnd",
+    "name": "GND"
+  },
+  {
+    "type": "source_trace",
+    "source_trace_id": "st_1",
+    "connected_source_port_ids": ["sp_r1_1"],
+    "connected_source_net_ids": ["sn_vcc"]
+  },
+  {
+    "type": "source_trace",
+    "source_trace_id": "st_2",
+    "connected_source_port_ids": ["sp_r1_2", "sp_r2_1"],
+    "connected_source_net_ids": ["sn_mid"]
+  },
+  {
+    "type": "source_trace",
+    "source_trace_id": "st_3",
+    "connected_source_port_ids": ["sp_r2_2"],
+    "connected_source_net_ids": ["sn_gnd"]
+  },
+  {
+    "type": "pcb_board",
+    "width": 50.0,
+    "height": 30.0,
+    "center_x": 25.0,
+    "center_y": 15.0
+  },
+  {
+    "type": "pcb_component",
+    "pcb_component_id": "pcb_r1",
+    "source_component_id": "sc_r1",
+    "x": 10.0,
+    "y": 15.0,
+    "rotation": 0.0,
+    "layer": "top_copper"
+  },
+  {
+    "type": "pcb_component",
+    "pcb_component_id": "pcb_r2",
+    "source_component_id": "sc_r2",
+    "x": 35.0,
+    "y": 15.0,
+    "rotation": 0.0,
+    "layer": "top_copper"
+  },
+  {
+    "type": "pcb_trace",
+    "pcb_trace_id": "pcbt_1",
+    "source_trace_id": "st_2",
+    "route": [
+      {"x": 10.5, "y": 15.0},
+      {"x": 34.5, "y": 15.0}
+    ],
+    "width": 0.2,
+    "layer": "top_copper"
+  }
+]
