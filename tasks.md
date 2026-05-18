@@ -2976,7 +2976,7 @@ the detailed spec; these T-NN entries are the execution-queue handles.
 - **Tier:** B
 - **Money/reach rationale:** SubD↔NURBS is the missing bridge for jewelry (organic shapes), industrial design, and marine hull fairing — cross-sector quality signal that incumbents gate behind premium licenses.
 - **Priority:** P2
-- **Status:** 🔴 not started
+- **Status:** ✅ shipped
 - **Scope:** `geom/subd.py` extension — Catmull-Clark limit-surface → bicubic NURBS patch per quad face, sew patches into a watertight `Body` (extraordinary-point handling via a local G1 patch). Also the reverse: NURBS `Body` → SubD cage. Opus-class (GK-52/53); limit-surface deviation from Stam evaluation ≤ `1e-6`. No OCCT; hermetic tests.
 - **Target files/packages:** `packages/kerf-cad-core/src/kerf_cad_core/geom/subd.py` (extend), `geom/brep_build.py` / `geom/sew.py` (reuse), `packages/kerf-cad-core/tests/test_subd_nurbs.py` (new).
 - **Definition of Done:** SubD cube → smooth `validate_body`-clean NURBS body; limit-surface deviation ≤ `1e-6` vs Stam; reverse round-trip for a cube returns original cage to `1e-7`; pytest; ties GK-52/53.
