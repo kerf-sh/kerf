@@ -1,0 +1,48 @@
+{
+  "_comment": "Blinker: TON 500ms self-toggling output. enable=true held throughout. Three rungs: (1) contacts set ton_in_wire, (2) TON FB reads ton_in_wire, (3) coil mirrors blink_q to blink_out.",
+  "variables": {
+    "enable":       true,
+    "blink_q":      false,
+    "ton_et":       0.0,
+    "ton_in_wire":  false,
+    "blink_out":    false
+  },
+  "pous": [
+    {
+      "kind": "LD",
+      "rungs": [
+        {
+          "_comment": "Rung 1: ton_in_wire = enable AND NOT blink_q",
+          "elements": [
+            {"type": "contact", "var": "enable",   "negate": false},
+            {"type": "contact", "var": "blink_q",  "negate": true}
+          ],
+          "coil": "ton_in_wire"
+        },
+        {
+          "_comment": "Rung 2: TON FB — reads ton_in_wire (just set by rung 1), writes blink_q / ton_et",
+          "elements": [
+            {
+              "type":    "fb_call",
+              "fb_type": "TON",
+              "instance": "blink_ton",
+              "params": {
+                "IN": "ton_in_wire",
+                "PT": 500,
+                "Q":  "blink_q",
+                "ET": "ton_et"
+              }
+            }
+          ]
+        },
+        {
+          "_comment": "Rung 3: output coil mirrors blink_q",
+          "elements": [
+            {"type": "contact", "var": "blink_q", "negate": false}
+          ],
+          "coil": "blink_out"
+        }
+      ]
+    }
+  ]
+}
