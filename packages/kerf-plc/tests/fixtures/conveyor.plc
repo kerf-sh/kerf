@@ -1,0 +1,127 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://www.plcopen.org/xml/tc6_0201"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://www.plcopen.org/xml/tc6_0201 http://www.plcopen.org/xml/tc6_0201/tc6_xml_v201.xsd">
+  <contentHeader name="Conveyor" version="1.0">
+    <productInfo productName="Kerf" productVersion="1.0" productRelease="1.0"/>
+    <description>Conveyor motor control: start/stop + emergency-stop latch</description>
+  </contentHeader>
+  <types>
+    <pous>
+      <pou name="Conveyor" pouType="program">
+        <interface>
+          <localVars>
+            <variable name="btn_start">
+              <type><BOOL/></type>
+            </variable>
+            <variable name="btn_stop">
+              <type><BOOL/></type>
+            </variable>
+            <variable name="btn_estop">
+              <type><BOOL/></type>
+            </variable>
+            <variable name="motor_run">
+              <type><BOOL/></type>
+            </variable>
+            <variable name="motor_latch">
+              <type><BOOL/></type>
+            </variable>
+            <variable name="estop_latch">
+              <type><BOOL/></type>
+            </variable>
+          </localVars>
+        </interface>
+        <body>
+          <LD>
+            <!-- Rung 1: Start latch — (btn_start OR motor_latch) AND NOT btn_stop → motor_latch -->
+            <rung>
+              <leftPowerRail localId="10">
+                <position x="0" y="0"/>
+              </leftPowerRail>
+              <contact localId="11" negated="false">
+                <position x="100" y="0"/>
+                <expression>btn_start</expression>
+              </contact>
+              <coil localId="12" negated="false">
+                <position x="400" y="0"/>
+                <expression>motor_latch</expression>
+              </coil>
+              <rightPowerRail localId="13">
+                <position x="500" y="0"/>
+              </rightPowerRail>
+            </rung>
+            <!-- Rung 2: Self-hold — motor_latch feeds back to itself via stop contact -->
+            <rung>
+              <leftPowerRail localId="20">
+                <position x="0" y="60"/>
+              </leftPowerRail>
+              <contact localId="21" negated="false">
+                <position x="100" y="60"/>
+                <expression>motor_latch</expression>
+              </contact>
+              <contact localId="22" negated="true">
+                <position x="220" y="60"/>
+                <expression>btn_stop</expression>
+              </contact>
+              <coil localId="23" negated="false">
+                <position x="400" y="60"/>
+                <expression>motor_latch</expression>
+              </coil>
+              <rightPowerRail localId="24">
+                <position x="500" y="60"/>
+              </rightPowerRail>
+            </rung>
+            <!-- Rung 3: E-stop latch -->
+            <rung>
+              <leftPowerRail localId="30">
+                <position x="0" y="120"/>
+              </leftPowerRail>
+              <contact localId="31" negated="false">
+                <position x="100" y="120"/>
+                <expression>btn_estop</expression>
+              </contact>
+              <coil localId="32" negated="false">
+                <position x="400" y="120"/>
+                <expression>estop_latch</expression>
+              </coil>
+              <rightPowerRail localId="33">
+                <position x="500" y="120"/>
+              </rightPowerRail>
+            </rung>
+            <!-- Rung 4: Motor output — motor_latch AND NOT estop_latch → motor_run -->
+            <rung>
+              <leftPowerRail localId="40">
+                <position x="0" y="180"/>
+              </leftPowerRail>
+              <contact localId="41" negated="false">
+                <position x="100" y="180"/>
+                <expression>motor_latch</expression>
+              </contact>
+              <contact localId="42" negated="true">
+                <position x="220" y="180"/>
+                <expression>estop_latch</expression>
+              </contact>
+              <coil localId="43" negated="false">
+                <position x="400" y="180"/>
+                <expression>motor_run</expression>
+              </coil>
+              <rightPowerRail localId="44">
+                <position x="500" y="180"/>
+              </rightPowerRail>
+            </rung>
+          </LD>
+        </body>
+      </pou>
+    </pous>
+  </types>
+  <instances>
+    <configurations>
+      <configuration name="ConveyorConfig">
+        <resource name="PLC_PRG" typeName="PLC">
+          <task name="MainTask" interval="T#10ms" priority="0"/>
+          <programConfiguration name="ConveyorInst" typeName="Conveyor" taskName="MainTask"/>
+        </resource>
+      </configuration>
+    </configurations>
+  </instances>
+</project>

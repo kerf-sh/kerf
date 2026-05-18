@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://www.plcopen.org/xml/tc6_0201"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://www.plcopen.org/xml/tc6_0201 http://www.plcopen.org/xml/tc6_0201/tc6_xml_v201.xsd">
+  <contentHeader name="Blinker" version="1.0">
+    <productInfo productName="Kerf" productVersion="1.0" productRelease="1.0"/>
+    <description>Blinker program: 5-second TON pulse generator</description>
+  </contentHeader>
+  <types>
+    <pous>
+      <pou name="Blinker" pouType="program">
+        <interface>
+          <localVars>
+            <variable name="clock_in">
+              <type><BOOL/></type>
+            </variable>
+            <variable name="timer">
+              <type><derived name="TON"/></type>
+            </variable>
+            <variable name="pulse_out">
+              <type><BOOL/></type>
+            </variable>
+          </localVars>
+        </interface>
+        <body>
+          <LD>
+            <rung>
+              <leftPowerRail localId="1">
+                <position x="0" y="0"/>
+              </leftPowerRail>
+              <contact localId="2" negated="false">
+                <position x="100" y="0"/>
+                <expression>clock_in</expression>
+              </contact>
+              <block localId="3" typeName="TON" instanceName="timer">
+                <position x="220" y="0"/>
+              </block>
+              <coil localId="4" negated="false">
+                <position x="380" y="0"/>
+                <expression>pulse_out</expression>
+              </coil>
+              <rightPowerRail localId="5">
+                <position x="500" y="0"/>
+              </rightPowerRail>
+            </rung>
+          </LD>
+        </body>
+      </pou>
+    </pous>
+  </types>
+  <instances>
+    <configurations>
+      <configuration name="BlinkerConfig">
+        <resource name="PLC_PRG" typeName="PLC">
+          <task name="MainTask" interval="T#100ms" priority="0"/>
+          <programConfiguration name="BlinkerInst" typeName="Blinker" taskName="MainTask"/>
+        </resource>
+      </configuration>
+    </configurations>
+  </instances>
+</project>
