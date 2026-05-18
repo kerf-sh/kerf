@@ -2807,7 +2807,7 @@ graceful degrade when the binary is absent (same pattern as CuraEngine).
 - **Tier:** A
 - **Money/reach rationale:** Mechanical + automotive nonlinear / crash analysis. The seed modules exist; they are invisible to the LLM tool surface until wired through `tools.py`.
 - **Priority:** P2
-- **Status:** 🔴 not started
+- **Status:** ✅ shipped
 - **Scope:** Extend `packages/kerf-fem/src/kerf_fem/tools.py` `analysis_type` enum to accept `nonlinear` and `explicit`. Route each type to the corresponding seed module (`nonlinear.py`, `explicit.py`). Publish capability tags in `GET /health/capabilities`. Add analytic reference tests: nonlinear cantilever yielding (compare elastic-plastic tip deflection to analytical J2 plasticity solution); explicit impact pulse (kinetic-energy conservation to 1%). Binary-absent → graceful sentinel.
 - **Target files/packages:** `packages/kerf-fem/src/kerf_fem/tools.py`, `nonlinear.py`, `explicit.py`, `packages/kerf-fem/tests/test_fem_refvalues.py` (extend).
 - **Definition of Done:** `run_fem(analysis_type='nonlinear', ...)` and `run_fem(analysis_type='explicit', ...)` execute when the solver binary is present; graceful sentinel when absent; capability tags in `/health/capabilities`; reference tests green; pytest.
@@ -2817,7 +2817,7 @@ graceful degrade when the binary is absent (same pattern as CuraEngine).
 - **Tier:** A
 - **Money/reach rationale:** Mechanical + electronics simulation depth (vibro-acoustics, EM shielding, RF PCB — 2+ personas). Three seed modules wired in one task (they share the same enum-extension pattern as T-100b).
 - **Priority:** P2
-- **Status:** 🔴 not started
+- **Status:** ✅ shipped
 - **Scope:** Extend `tools.py` enum for `acoustics_fem`, `em_field`, `em_highfreq`. Route to seed modules. Publish capability tags. Reference tests: `acoustics_fem` — room-mode frequency for a rectangular cavity vs analytic formula; `em_field` — E-field in a parallel-plate capacitor vs V/d; `em_highfreq` — resonant frequency of a rectangular waveguide TE10 mode vs analytic formula. Each: binary-absent → sentinel.
 - **Target files/packages:** `packages/kerf-fem/src/kerf_fem/tools.py`, `acoustics_fem.py`, `em_field.py`, `em_highfreq.py`, `packages/kerf-fem/tests/test_fem_refvalues.py` (extend).
 - **Definition of Done:** all three analysis types run with binary present, sentinel with absent; capability tags published; three analytic-oracle reference tests green; pytest.
@@ -2827,7 +2827,7 @@ graceful degrade when the binary is absent (same pattern as CuraEngine).
 - **Tier:** A
 - **Money/reach rationale:** Mechanical + automotive fatigue life analysis. Completing fatigue_fem wiring unlocks durability/life estimates — a key simulation type for both personas.
 - **Priority:** P2
-- **Status:** 🔴 not started
+- **Status:** ✅ shipped
 - **Scope:** Extend `tools.py` enum for `fatigue` / `fatigue_fem`. Route to the fixed `fatigue_fem.py` (after T-100a). Add reference tests: S-N Wöhler curve fatigue life estimate for a steel specimen vs the BS 7608 / Miner's rule table (cite the specific table). Publish capability tag. Binary-absent → sentinel.
 - **Target files/packages:** `packages/kerf-fem/src/kerf_fem/tools.py`, `fatigue_fem.py`, `packages/kerf-fem/tests/test_fem_refvalues.py` (extend).
 - **Definition of Done:** `run_fem(analysis_type='fatigue', ...)` executes; BS 7608 reference case matches to ±10%; capability tag published; pytest green.
@@ -2867,7 +2867,7 @@ graceful degrade when the binary is absent (same pattern as CuraEngine).
 - **Tier:** A
 - **Money/reach rationale:** The full FEM analysis suite is worthless if the LLM cannot discover and invoke it. This task makes every wired analysis type accessible from the chat interface.
 - **Priority:** P2
-- **Status:** 🔴 not started
+- **Status:** ✅ shipped
 - **Scope:** Extend `GET /health/capabilities` to advertise all active FEM analysis types (from T-100b/c/d). Update the `run_fem` LLM tool description and JSON schema so the LLM can enumerate available types and their required parameters. Add an `explain_fem_result` LLM tool that renders a plain-language summary of the result (displacement, stress, frequency, cycles) with citable values. Update `packages/kerf-fem/llm_docs/fem.md`.
 - **Target files/packages:** `packages/kerf-fem/src/kerf_fem/tools.py` (LLM tool surface), `packages/kerf-fem/llm_docs/fem.md`, `packages/kerf-api/` health endpoint, `packages/kerf-fem/tests/` (LLM tool dispatch tests).
 - **Definition of Done:** `/health/capabilities` lists all wired types; `run_fem` tool accepts and routes all types; `explain_fem_result` produces a readable summary; LLM doc updated; dispatch tests green; pytest.
