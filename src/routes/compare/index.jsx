@@ -1154,6 +1154,270 @@ const DCC_FEATURES = [
   },
 ]
 
+/* — Silicon / EDA: Cadence / Synopsys + Kerf. 10 rows. */
+const SILICON_COMPETITORS = [
+  { slug: 'cadence-synopsys', label: 'Cadence / Synopsys' },
+]
+
+const SILICON_FEATURES = [
+  {
+    group: 'Licensing & cost',
+    name: 'License',
+    cells: {
+      'cadence-synopsys': `${WEAK} Proprietary; NDA-gated PDK access`,
+      kerf: `${GOOD} MIT open-core`,
+    },
+  },
+  {
+    group: 'Licensing & cost',
+    name: 'Cost',
+    cells: {
+      'cadence-synopsys': `${WEAK} Six-figure USD/yr per seat per tool`,
+      kerf: `${GOOD} Free local; pay-as-you-go hosted`,
+    },
+  },
+  {
+    group: 'Chip design (IC)',
+    name: 'Full-custom IC layout',
+    cells: {
+      'cadence-synopsys': `${GOOD} Virtuoso Layout Suite — industry reference`,
+      kerf: `${GAP} No IC layout editor`,
+    },
+  },
+  {
+    group: 'Chip design (IC)',
+    name: 'Digital place-and-route',
+    cells: {
+      'cadence-synopsys': `${GOOD} Innovus / IC Compiler II`,
+      kerf: `${GAP} No P&R`,
+    },
+  },
+  {
+    group: 'Chip design (IC)',
+    name: 'Static timing analysis',
+    cells: {
+      'cadence-synopsys': `${GOOD} PrimeTime / Tempus — sign-off STA`,
+      kerf: `${GAP} No gate-level STA`,
+    },
+  },
+  {
+    group: 'Simulation',
+    name: 'SPICE / circuit simulation',
+    cells: {
+      'cadence-synopsys': `${GOOD} Spectre / HSPICE — industry gold standard`,
+      kerf: `${GOOD} SPICE + Monte-Carlo corners + model library`,
+    },
+  },
+  {
+    group: 'Simulation',
+    name: 'Monte-Carlo corners',
+    cells: {
+      'cadence-synopsys': `${GOOD} ADE XL sweeps with foundry models`,
+      kerf: `${GOOD} sim_corner — min/typ/max + yield estimate`,
+    },
+  },
+  {
+    group: 'Interoperability',
+    name: 'GDS-II import / export',
+    cells: {
+      'cadence-synopsys': `${GOOD} Native — tape-out format`,
+      kerf: `${GOOD} GDS-II import/export for interop`,
+    },
+  },
+  {
+    group: 'Board & package',
+    name: 'PCB layout (board-level)',
+    cells: {
+      'cadence-synopsys': `${WEAK} Allegro PCB (separate Cadence product)`,
+      kerf: `${GOOD} Integrated PCB schematic + routing + DRC`,
+    },
+  },
+  {
+    group: 'Ecosystem & AI',
+    name: 'Chat / LLM editing',
+    cells: {
+      'cadence-synopsys': `${GAP} None`,
+      kerf: `${GOOD} Chat-native + BYO API key`,
+    },
+  },
+]
+
+/* — Firmware / Embedded: PlatformIO + Kerf. 10 rows. */
+const FIRMWARE_COMPETITORS = [
+  { slug: 'platformio', label: 'PlatformIO' },
+]
+
+const FIRMWARE_FEATURES = [
+  {
+    group: 'Licensing & platform',
+    name: 'License',
+    cells: {
+      platformio: `${GOOD} Apache 2.0 (Core); Plus from ~$15/mo`,
+      kerf: `${GOOD} MIT open-core`,
+    },
+  },
+  {
+    group: 'Firmware build',
+    name: 'Build system / toolchain mgmt',
+    cells: {
+      platformio: `${GOOD} Unified build — auto-downloads toolchains for 50+ platforms`,
+      kerf: `${GAP} No firmware build system`,
+    },
+  },
+  {
+    group: 'Firmware build',
+    name: 'Platform / board support',
+    cells: {
+      platformio: `${GOOD} 50+ platforms, 900+ boards (AVR, ESP32, STM32, RP2040, …)`,
+      kerf: `${GAP} Not applicable`,
+    },
+  },
+  {
+    group: 'Firmware build',
+    name: 'Firmware output (.hex / .bin / .uf2)',
+    cells: {
+      platformio: `${GOOD} Generates .hex / .bin / .uf2 / .elf`,
+      kerf: `${GAP} No firmware toolchain`,
+    },
+  },
+  {
+    group: 'Testing & debug',
+    name: 'On-device unit testing',
+    cells: {
+      platformio: `${GOOD} Unity / GoogleTest / doctest on target`,
+      kerf: `${GAP} Not applicable`,
+    },
+  },
+  {
+    group: 'Hardware design',
+    name: 'PCB schematic + layout',
+    cells: {
+      platformio: `${GAP} Separate tool required`,
+      kerf: `${GOOD} Integrated schematic + routing + DRC`,
+    },
+  },
+  {
+    group: 'Hardware design',
+    name: 'Fabrication output (Gerber / IPC-2581)',
+    cells: {
+      platformio: `${GAP} Not applicable`,
+      kerf: `${GOOD} Gerber / Excellon / IPC-2581 / ODB++`,
+    },
+  },
+  {
+    group: 'Hardware design',
+    name: 'Mechanical CAD (enclosure)',
+    cells: {
+      platformio: `${GAP} Separate tool required`,
+      kerf: `${GOOD} OCCT B-rep + sketcher + sheet metal`,
+    },
+  },
+  {
+    group: 'Simulation',
+    name: 'SPICE / circuit simulation',
+    cells: {
+      platformio: `${GAP} Not included`,
+      kerf: `${GOOD} SPICE + Monte-Carlo corners + model library`,
+    },
+  },
+  {
+    group: 'Ecosystem & AI',
+    name: 'Chat / LLM editing (hardware-aware)',
+    cells: {
+      platformio: `${WEAK} Generic Copilot in VS Code (not hardware-aware)`,
+      kerf: `${GOOD} Chat-native — edits hardware source per turn`,
+    },
+  },
+]
+
+/* — Aerospace: ANSYS Fluent + Kerf. 10 rows. */
+const AEROSPACE_COMPETITORS = [
+  { slug: 'ansys-fluent', label: 'ANSYS Fluent / Mechanical' },
+]
+
+const AEROSPACE_FEATURES = [
+  {
+    group: 'Licensing & cost',
+    name: 'License',
+    cells: {
+      'ansys-fluent': `${WEAK} Proprietary; annual licence + maintenance`,
+      kerf: `${GOOD} MIT open-core`,
+    },
+  },
+  {
+    group: 'Simulation',
+    name: 'CFD (Navier-Stokes solver)',
+    cells: {
+      'ansys-fluent': `${GOOD} Fluent — industry-leading RANS / LES / DES`,
+      kerf: `${GAP} No CFD solver`,
+    },
+  },
+  {
+    group: 'Simulation',
+    name: 'Structural FEM',
+    cells: {
+      'ansys-fluent': `${GOOD} ANSYS Mechanical — static / modal / fatigue`,
+      kerf: `${GAP} No structural FEM`,
+    },
+  },
+  {
+    group: 'Simulation',
+    name: 'FSI (fluid-structure interaction)',
+    cells: {
+      'ansys-fluent': `${GOOD} Two-way Fluent + Mechanical coupling`,
+      kerf: `${GAP} Not applicable`,
+    },
+  },
+  {
+    group: 'CAD geometry',
+    name: 'Parametric B-rep CAD',
+    cells: {
+      'ansys-fluent': `${WEAK} SpaceClaim bundled — direct modelling, limited history`,
+      kerf: `${GOOD} OCCT feature tree — full parametric history`,
+    },
+  },
+  {
+    group: 'CAD geometry',
+    name: 'STEP export (for CFD pre-processing)',
+    cells: {
+      'ansys-fluent': `${GOOD} STEP import as mesh source`,
+      kerf: `${GOOD} STEP export to feed ANSYS Meshing`,
+    },
+  },
+  {
+    group: 'Drawings & docs',
+    name: 'GD&T / 2D technical drawings',
+    cells: {
+      'ansys-fluent': `${WEAK} Not a primary ANSYS function`,
+      kerf: `${GOOD} ASME Y14.5 + multi-sheet drawings`,
+    },
+  },
+  {
+    group: 'Avionics',
+    name: 'PCB + MCAD co-design',
+    cells: {
+      'ansys-fluent': `${GAP} Separate tool required`,
+      kerf: `${GOOD} Integrated PCB + STEP + IDF MCAD bridge`,
+    },
+  },
+  {
+    group: 'Avionics',
+    name: 'SI / PDN / EMC pre-compliance',
+    cells: {
+      'ansys-fluent': `${WEAK} HFSS / SIwave — separate ANSYS products`,
+      kerf: `${GOOD} si_eye_wizard / pdn_wizard / emc_wizard (analytical)`,
+    },
+  },
+  {
+    group: 'Ecosystem & AI',
+    name: 'Chat / LLM editing',
+    cells: {
+      'ansys-fluent': `${GAP} None`,
+      kerf: `${GOOD} Chat-native + BYO API key`,
+    },
+  },
+]
+
 /* -------------------------------------------------------------------------- */
 /* Per-category section definitions                                           */
 /* -------------------------------------------------------------------------- */
