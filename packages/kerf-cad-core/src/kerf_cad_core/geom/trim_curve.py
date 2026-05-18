@@ -565,6 +565,312 @@ def trim_face(
 
 
 # ---------------------------------------------------------------------------
+# GK-40: Analytic carrier matrix — exact plane×cylinder trim loop
+# ---------------------------------------------------------------------------
+#
+# For analytic surface pairs whose intersection curve can be derived
+# symbolically (without sampling + Newton iteration), the "carrier matrix"
+# method computes exact UV-parameter loops at floating-point precision.
+#
+# Supported pairs (analytic matrix path):
+#   (Plane, CylinderSurface)  →  sinusoidal v(u) on the cylinder; degenerate
+#                                (plane normal ∥ cylinder axis) gives a
+#                                constant-v circle exact to machine epsilon.
+#
+# All other pairs return {"ok": False, "reason": "unsupported-input: ..."}
+# — never raise.
+#
+# Public symbols added by this section
+# -------------------------------------
+# AnalyticTrimLoop  — dataclass carrying the exact intersection metadata
+# trim_face_analytic(surface_a, surface_b, *, samples, tol) -> dict
+#     ok           : bool
+#     reason       : str      (empty on success; "unsupported-input: ..." on mismatch)
+#     loop         : AnalyticTrimLoop | None
+#     uv_on_a      : list[(u,v)]   — UV coordinates on surface_a
+#     uv_on_b      : list[(u,v)]   — UV coordinates on surface_b
+#     residual_max : float         — max |srf_a(uv) - srf_b(uv)| over all samples
+# ---------------------------------------------------------------------------
+
+@dataclass
+class AnalyticTrimLoop:
+    """Exact intersection loop produced by the analytic carrier matrix.
+
+    For a plane×cylinder pair:
+      - ``circle_center``  : 3-D centre of the intersection ellipse/circle
+      - ``circle_normal``  : unit normal of the plane containing the loop
+      - ``semi_axis_a``    : semi-axis a (≥ semi_axis_b)  — radius if circular
+      - ``semi_axis_b``    : semi-axis b
+      - ``is_circle``      : True when both semi-axes are equal (plane ⊥ cyl axis)
+      - ``num_samples``    : number of UV samples stored in uv_on_* lists
+    """
+    circle_center: "np.ndarray"
+    circle_normal: "np.ndarray"
+    semi_axis_a: float
+    semi_axis_b: float
+    is_circle: bool
+    num_samples: int
+
+
+def _analytic_plane_cylinder(
+    plane: "object",
+    cylinder: "object",
+    *,
+    samples: int = 256,
+    tol: float = 1e-7,
+) -> dict:
+    """Analytic intersection of a Plane with a CylinderSurface.
+
+    The cylinder is parameterised as::
+
+        P(u, v) = C + r*cos(u)*X + r*sin(u)*Y + v*A
+
+    where ``C`` = center, ``A`` = axis (unit), ``r`` = radius,
+    ``X`` = x_ref (unit ⊥ A), ``Y`` = cross(A, X) (unit).
+
+    The plane is ``n · (P - p0) = 0`` (normal ``n``, point ``p0`` = origin).
+
+    Substituting and solving for v::
+
+        v(u) = -(n·(C - p0) + r*(n·X)*cos(u) + r*(n·Y)*sin(u)) / (n·A)
+
+    When ``n·A == 0`` the plane is parallel to the cylinder axis; the
+    intersection is a pair of lines (or a tangent line), not a loop —
+    returned as ``unsupported-input: plane parallel to cylinder axis``.
+
+    When ``n·A ≠ 0`` the curve is a sinusoidal (elliptic) v(u) path on
+    the cylinder — a closed loop parameterised on u ∈ [0, 2π].
+
+    The semi-axes of the resulting ellipse are:
+      - semi_axis_a = r  (along the axis perpendicular to A in the plane)
+      - semi_axis_b = r / sin(θ)  where θ = angle between n and A-perp
+      But more directly: the 3-D loop is a planar ellipse.  We compute its
+      axes analytically.
+
+    Returns a dict matching the ``trim_face_analytic`` contract.
+    """
+    try:
+        from kerf_cad_core.geom.brep import Plane as _Plane, CylinderSurface as _CylSurf  # noqa: PLC0415
+    except ImportError:
+        return {
+            "ok": False,
+            "reason": "unsupported-input: brep module unavailable",
+            "loop": None,
+            "uv_on_a": [],
+            "uv_on_b": [],
+            "residual_max": float("inf"),
+        }
+
+    if not isinstance(plane, _Plane) or not isinstance(cylinder, _CylSurf):
+        return {
+            "ok": False,
+            "reason": (
+                "unsupported-input: _analytic_plane_cylinder called with wrong types "
+                f"({type(plane).__name__}, {type(cylinder).__name__})"
+            ),
+            "loop": None,
+            "uv_on_a": [],
+            "uv_on_b": [],
+            "residual_max": float("inf"),
+        }
+
+    # Extract geometry
+    p0 = np.asarray(plane.origin, dtype=float)   # a point on the plane
+    n = np.asarray(plane._n, dtype=float)         # unit normal (set in __post_init__)
+    C = np.asarray(cylinder.center, dtype=float)
+    A = np.asarray(cylinder.axis, dtype=float)    # unit axis
+    r = float(cylinder.radius)
+    X = np.asarray(cylinder.x_ref, dtype=float)  # unit, ⊥ A
+    Y = np.asarray(cylinder._y, dtype=float)      # unit, ⊥ A, ⊥ X
+
+    # Coefficients in v(u) = -(d0 + d1*cos(u) + d2*sin(u)) / dA
+    dA = float(np.dot(n, A))
+    d0 = float(np.dot(n, C - p0))
+    d1 = r * float(np.dot(n, X))
+    d2 = r * float(np.dot(n, Y))
+
+    if abs(dA) < 1e-12:
+        return {
+            "ok": False,
+            "reason": "unsupported-input: plane parallel to cylinder axis (intersection is lines, not a loop)",
+            "loop": None,
+            "uv_on_a": [],
+            "uv_on_b": [],
+            "residual_max": float("inf"),
+        }
+
+    # Sample the exact loop in cylinder UV space
+    n_samples = max(4, int(samples))
+    us = np.linspace(0.0, 2.0 * math.pi, n_samples, endpoint=False)
+    vs = -(d0 + d1 * np.cos(us) + d2 * np.sin(us)) / dA
+
+    # UV samples on cylinder: (u, v) pairs
+    uv_on_cyl = [(float(u), float(v)) for u, v in zip(us, vs)]
+
+    # Compute 3-D points on the cylinder
+    pts_3d = np.array([
+        C + r * math.cos(u) * X + r * math.sin(u) * Y + v * A
+        for u, v in zip(us, vs)
+    ])  # shape (n_samples, 3)
+
+    # Map onto plane UV: plane.evaluate(u_p, v_p) = p0 + u_p*x_axis + v_p*y_axis
+    # Invert: u_p = (P - p0) · x_axis,  v_p = (P - p0) · y_axis
+    dx = pts_3d - p0[np.newaxis, :]
+    uv_on_plane = [
+        (float(np.dot(dx[i], plane.x_axis)), float(np.dot(dx[i], plane.y_axis)))
+        for i in range(n_samples)
+    ]
+
+    # Residual: max |cyl(u,v) - plane_point| — should be ≤ machine ε
+    plane_pts = np.array([
+        p0 + uv_on_plane[i][0] * plane.x_axis + uv_on_plane[i][1] * plane.y_axis
+        for i in range(n_samples)
+    ])
+    residuals = np.linalg.norm(pts_3d - plane_pts, axis=1)
+    residual_max = float(np.max(residuals))
+
+    # Analytic loop metadata: the 3-D intersection is a planar ellipse.
+    # Its centre is the projection of C onto the plane along A.
+    # centre = C + t_c * A where t_c = -(n·(C - p0)) / (n·A) = -d0 / dA
+    t_c = -d0 / dA
+    loop_centre = C + t_c * A
+
+    # Semi-axes of the ellipse:
+    #
+    #   The intersection of a plane with a cylinder of radius r is an ellipse
+    #   whose semi-axes depend on the angle phi between the cutting plane and
+    #   the cylinder axis.
+    #
+    #   Let theta = angle between the plane NORMAL n and the axis A:
+    #     cos(theta) = |n·A| = |dA|
+    #
+    #   The angle between the plane itself and the axis is (90° - theta), so
+    #     sin(phi) = cos(theta) = |dA|
+    #
+    #   The shorter semi-axis (in the plane, perpendicular to the tilt direction):
+    #     semi_b = r
+    #   The longer semi-axis (in the tilt direction):
+    #     semi_a = r / |dA|
+    #
+    #   Circle when |dA| = 1 (plane perpendicular to axis) → both = r.
+    #   |dA| > 0 is already enforced above.
+    abs_dA = abs(dA)
+    semi_axis_long = r / abs_dA   # r / |dA| ; = r when |dA|=1 (circle case)
+    semi_axis_short = r           # always r
+    is_circle = abs(abs_dA - 1.0) < 1e-9
+
+    loop = AnalyticTrimLoop(
+        circle_center=loop_centre,
+        circle_normal=n.copy(),
+        semi_axis_a=float(semi_axis_long),   # a ≥ b by construction
+        semi_axis_b=float(semi_axis_short),
+        is_circle=is_circle,
+        num_samples=n_samples,
+    )
+
+    return {
+        "ok": True,
+        "reason": "",
+        "loop": loop,
+        "uv_on_a": uv_on_plane,   # surface_a = Plane
+        "uv_on_b": uv_on_cyl,     # surface_b = CylinderSurface
+        "residual_max": residual_max,
+    }
+
+
+def trim_face_analytic(
+    surface_a: object,
+    surface_b: object,
+    *,
+    samples: int = 256,
+    tol: float = 1e-7,
+) -> dict:
+    """Compute the exact intersection loop between two analytic surfaces using
+    the carrier matrix method (GK-40).
+
+    This is the **pure-analytic** path for surface pairs whose intersection
+    can be solved in closed form.  It complements ``trim_face`` (which uses
+    UV projection + Newton iteration on NURBS surfaces).
+
+    Supported input matrix
+    ----------------------
+    (Plane, CylinderSurface)    exact sinusoidal loop on cylinder UV; when the
+                                plane is perpendicular to the cylinder axis the
+                                result is a perfect circle exact to machine ε.
+
+    All other pairs are returned as a structured error — never raised::
+
+        {"ok": False, "reason": "unsupported-input: <description>", ...}
+
+    Parameters
+    ----------
+    surface_a : analytic surface
+        First surface (e.g. ``Plane`` from ``kerf_cad_core.geom.brep``).
+    surface_b : analytic surface
+        Second surface (e.g. ``CylinderSurface``).
+    samples : int
+        Number of UV sample points on the intersection loop (default 256).
+    tol : float
+        Residual tolerance — returned result is flagged ``ok=False`` if
+        ``residual_max`` exceeds this value (default 1e-7).
+
+    Returns
+    -------
+    dict with keys:
+        ok           : bool
+        reason       : str        empty on success; "unsupported-input: ..." otherwise
+        loop         : AnalyticTrimLoop | None
+        uv_on_a      : list of (u, v)   — parameters on surface_a
+        uv_on_b      : list of (u, v)   — parameters on surface_b
+        residual_max : float            — max 3-D distance between loop pts on srf_a vs srf_b
+
+    Never raises.
+    """
+    try:
+        from kerf_cad_core.geom.brep import Plane as _Plane, CylinderSurface as _CylSurf  # noqa: PLC0415
+    except ImportError:
+        return {
+            "ok": False,
+            "reason": "unsupported-input: brep module unavailable",
+            "loop": None,
+            "uv_on_a": [],
+            "uv_on_b": [],
+            "residual_max": float("inf"),
+        }
+
+    # --- Dispatch on surface pair type ----------------------------------------
+    if isinstance(surface_a, _Plane) and isinstance(surface_b, _CylSurf):
+        result = _analytic_plane_cylinder(surface_a, surface_b, samples=samples, tol=tol)
+    elif isinstance(surface_a, _CylSurf) and isinstance(surface_b, _Plane):
+        # Commutative: swap roles, then swap uv lists back
+        result = _analytic_plane_cylinder(surface_b, surface_a, samples=samples, tol=tol)
+        if result["ok"]:
+            result["uv_on_a"], result["uv_on_b"] = result["uv_on_b"], result["uv_on_a"]
+    else:
+        type_names = f"({type(surface_a).__name__}, {type(surface_b).__name__})"
+        return {
+            "ok": False,
+            "reason": (
+                f"unsupported-input: no analytic carrier matrix for surface pair "
+                f"{type_names}; supported: (Plane, CylinderSurface)"
+            ),
+            "loop": None,
+            "uv_on_a": [],
+            "uv_on_b": [],
+            "residual_max": float("inf"),
+        }
+
+    # --- Residual gate --------------------------------------------------------
+    if result["ok"] and result["residual_max"] > tol:
+        result["ok"] = False
+        result["reason"] = (
+            f"analytic loop residual {result['residual_max']:.3e} exceeds tol {tol:.3e}"
+        )
+
+    return result
+
+
+# ---------------------------------------------------------------------------
 # LLM tool registration
 # ---------------------------------------------------------------------------
 

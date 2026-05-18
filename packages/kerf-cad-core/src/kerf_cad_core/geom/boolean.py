@@ -107,6 +107,7 @@ __all__ = [
     "body_union",
     "body_difference",
     "body_intersection",
+    "imprint_plane_cylinder_loop",
 ]
 
 
@@ -1193,3 +1194,85 @@ def body_difference(a: Body, b: Body, tol: float = 1e-6) -> Body:
         "AAB-box\\AAB-box, AAB-box\\(axis-aligned cyl pierces box), "
         "sphere\\sphere (disjoint or containment only)"
     )
+
+
+# ---------------------------------------------------------------------------
+# GK-40 imprint helper — plane×cylinder circular loop (additive, no modify)
+# ---------------------------------------------------------------------------
+
+
+def imprint_plane_cylinder_loop(
+    cyl: _CylShape,
+    plane_normal: np.ndarray,
+    plane_origin: np.ndarray,
+    tol: float = 1e-7,
+) -> Optional[Tuple[Edge, Vertex]]:
+    """Build the exact circular or elliptic rim edge where a plane cuts a cylinder.
+
+    This is the **topology-level** companion to the geometry computed by
+    ``trim_curve.trim_face_analytic``.  It reuses the exact same
+    ``CircleArc3`` / ``Vertex`` / ``Edge`` construction that
+    ``_box_minus_cyl_through`` uses for the rim circles, but without
+    requiring an enclosing box.
+
+    Parameters
+    ----------
+    cyl : _CylShape
+        Recognised cylinder geometry (from ``_try_recognise_cylinder``).
+    plane_normal : array-like (3,)
+        Unit normal of the cutting plane.
+    plane_origin : array-like (3,)
+        A point on the cutting plane.
+    tol : float
+        Tolerance propagated to the produced topology elements.
+
+    Returns
+    -------
+    (rim_edge, seam_vertex) when the plane intersects the cylinder in a
+    full circle, or ``None`` when the plane is parallel to the cylinder
+    axis (no loop).
+
+    The returned ``Edge`` is a closed ``CircleArc3`` arc from 0 to 2π.
+    The returned ``Vertex`` is the seam point (where the arc "closes").
+
+    Notes
+    -----
+    Only the **perpendicular** case (plane normal ∥ cylinder axis) is
+    supported for topology construction; an oblique plane yields a 3-D
+    ellipse that cannot be faithfully represented as a single
+    ``CircleArc3`` — return ``None`` in that case so callers can fall
+    back to the sampled UV path in ``trim_face_analytic``.
+    """
+    n = _unit(np.asarray(plane_normal, dtype=float))
+    p0 = np.asarray(plane_origin, dtype=float)
+    ax = cyl.axis_dir  # already unit
+
+    n_dot_a = float(np.dot(n, ax))
+
+    if abs(n_dot_a) < 1e-12:
+        # Plane parallel to axis — no closed loop
+        return None
+
+    # Height along axis where the plane intersects the axis line
+    # C + t*A lies on the plane when n·(C + t*A - p0) = 0
+    # t = -n·(C - p0) / (n·A)
+    t_intersect = -float(np.dot(n, cyl.axis_pt - p0)) / n_dot_a
+
+    if abs(abs(n_dot_a) - 1.0) > 1e-9:
+        # Oblique — ellipse, not circle; not representable as CircleArc3
+        return None
+
+    # Perpendicular plane: the intersection is a perfect circle at height t_intersect
+    # along the cylinder axis from axis_pt.
+    rim_centre = cyl.axis_pt + t_intersect * ax
+    r = cyl.radius
+    xref = _perp(ax)
+    yref = _unit(np.cross(ax, xref))
+
+    seam_pt = rim_centre + r * xref
+    v_seam = Vertex(seam_pt, tol)
+
+    rim_curve = CircleArc3(rim_centre, r, xref, yref, 0.0, 2.0 * math.pi)
+    e_rim = Edge(rim_curve, 0.0, 2.0 * math.pi, v_seam, v_seam, tol)
+
+    return (e_rim, v_seam)
