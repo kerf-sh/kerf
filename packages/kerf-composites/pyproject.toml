@@ -1,0 +1,20 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "kerf-composites"
+version = "0.1.0"
+license = { text = "MIT" }
+classifiers = ["License :: OSI Approved :: MIT License"]
+description = "Aerospace composites plugin for Kerf — ply/layup CLT solver + failure analysis + drape simulation"
+requires-python = ">=3.11"
+dependencies = [
+    "numpy",
+]
+
+[project.entry-points."kerf.plugins"]
+composites = "kerf_composites.plugin:register"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/kerf_composites"]
