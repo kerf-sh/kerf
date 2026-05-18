@@ -3613,7 +3613,7 @@ User reported 2026-05-18: adding a "Sun" light in the Render panel has zero visi
 ### T-204 Wire `doc.lights[]` into the live Three.js scene (FIX)
 - **Tier:** A
 - **Priority:** P1
-- **Status:** 🔴 not started
+- **Status:** ✅ shipped
 - **Scope:** consume `doc.lights[]` from `src/lib/render.js` inside `src/components/Renderer.jsx`. Each entry becomes the corresponding `THREE.*Light`:
   - `sun` → `DirectionalLight` (use `direction[]` to set position from target); enable shadow casting when the light's `cast_shadow` flag is true.
   - `area` → `RectAreaLight` (needs `RectAreaLightUniformsLib.init()` once at scene setup).
@@ -3693,7 +3693,7 @@ User-direction 2026-05-18: "look at Blender and other CADs, I want variety of re
 ### T-211 IES light profiles library — architectural lighting realism
 - **Tier:** B
 - **Priority:** P1
-- **Status:** 🔴 not started
+- **Status:** ✅ shipped
 - **Scope:** support **IES photometric profiles** (industry-standard `.ies` files). Add a "Photometric" light kind to `doc.lights[]` carrying an IES filename + intensity. Three.js has `IESLoader` from examples. Ship 12+ curated free profiles (covering downlight, wall-wash, batwing, narrow-spot, flood). Per-light picker UI with a small polar-plot preview.
 - **Target files/packages:** `src/lib/iesLoader.js` (NEW — wrap three's IESLoader), `src/lib/iesPresets.js` (NEW — 12 profile catalogue), `public/ies/*.ies` (NEW assets), `src/components/IesProfilePicker.jsx` (NEW). Vitest on the preset catalogue + a polar-plot sampler.
 - **Definition of Done:** assigning an IES profile to a point/spot light produces the characteristic photometric distribution; preset picker swaps profiles live; vitest; `npm run build` clean.
@@ -3702,7 +3702,7 @@ User-direction 2026-05-18: "look at Blender and other CADs, I want variety of re
 ### T-212 Camera lens variety — perspective, ortho, fisheye, two-point, panoramic 360
 - **Tier:** B
 - **Priority:** P1
-- **Status:** 🔴 not started
+- **Status:** ✅ shipped
 - **Scope:** camera-projection switcher. Five modes:
   1. **Perspective** (current default)
   2. **Orthographic** (engineering / drawings)
