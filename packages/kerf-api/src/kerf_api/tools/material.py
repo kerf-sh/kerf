@@ -5,24 +5,10 @@ from kerf_chat.tools.registry import ToolSpec, err_payload, ok_payload, register
 from kerf_core.utils.context import ProjectCtx
 from kerf_core.revisions import write_revision as _write_revision
 
-
-async def resolve_path(ctx: ProjectCtx, path: str) -> dict:
-    clean = path.rstrip("/")
-    if not clean.startswith("/"):
-        return {"exists": False}
-    row = await ctx.pool.fetchrow(
-        "SELECT id, parent_id, name, kind FROM files WHERE project_id = $1 AND path = $2 AND deleted_at IS NULL",
-        ctx.project_id, clean,
-    )
-    if not row:
-        return {"exists": False}
-    return {
-        "exists": True,
-        "id": row["id"],
-        "parent_id": row["parent_id"],
-        "name": row["name"],
-        "kind": row["kind"],
-    }
+# Centralised tree-walking path resolver. The `files` table has no
+# `path` column; the duplicate-and-broken queries in this module used
+# to 500 every call. See file_ops.resolve_path.
+from kerf_api.tools.file_ops import resolve_path  # noqa: F401  (re-exported)
 
 
 async def path_from_file_id(ctx: ProjectCtx, file_id: uuid.UUID) -> str:

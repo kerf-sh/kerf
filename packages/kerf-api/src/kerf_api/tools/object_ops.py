@@ -343,23 +343,10 @@ def js_rename_id_in_entry(entry_text: str, old_id: str, new_id: str) -> tuple:
     return "", False
 
 
-async def resolve_path(ctx: ProjectCtx, path: str) -> dict:
-    clean = path.rstrip("/")
-    if not clean.startswith("/"):
-        return {"exists": False}
-    row = await ctx.pool.fetchrow(
-        "SELECT id, parent_id, name, kind FROM files WHERE project_id = $1 AND path = $2 AND deleted_at IS NULL",
-        ctx.project_id, clean,
-    )
-    if not row:
-        return {"exists": False}
-    return {
-        "exists": True,
-        "id": row["id"],
-        "parent_id": row["parent_id"],
-        "name": row["name"],
-        "kind": row["kind"],
-    }
+# Tree-walking path resolver lives in file_ops — re-export so existing
+# callers keep their import path. The previous local copy queried a
+# non-existent `path` column, 500'ing every object_ops tool call.
+from kerf_api.tools.file_ops import resolve_path  # noqa: F401
 
 
 async def record_revision_for_file(ctx: ProjectCtx, file_id: uuid.UUID, content: str, source: str):

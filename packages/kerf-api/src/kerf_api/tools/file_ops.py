@@ -19,16 +19,45 @@ def split_path(path: str) -> list[str]:
 
 
 async def resolve_path(ctx: ProjectCtx, path: str) -> dict[str, Any]:
+    """Resolve an absolute path like '/dir/main.jscad' to a files row.
+
+    The `files` table stores rows tree-shaped (parent_id + name) — there
+    is NO `path` column. Previous versions of this helper queried
+    `WHERE path = $2` and silently 500'd every read_file / write_file /
+    edit_file / scaffold tool call with `column "path" does not exist`.
+    Visible to users as "It seems the project's file-system layer is
+    returning an error" — the assistant then hallucinated a paste-this-
+    instead workaround. Fixed by walking parent_id + name segment by
+    segment.
+    """
     clean, err = normalize_path(path)
     if err:
         return {"exists": False, "error": err}
 
-    row = await ctx.pool.fetchrow(
-        "SELECT id, parent_id, name, kind FROM files WHERE project_id = $1 AND path = $2 AND deleted_at IS NULL",
-        ctx.project_id, clean,
-    )
-    if not row:
+    parts = [p for p in clean.split("/") if p]
+    if not parts:
+        # The project root itself — no file row, just a synthetic "exists" hit.
         return {"exists": False}
+
+    parent_id: Optional[uuid.UUID] = None
+    row = None
+    for i, segment in enumerate(parts):
+        row = await ctx.pool.fetchrow(
+            "SELECT id, parent_id, name, kind "
+            "FROM files "
+            "WHERE project_id = $1 AND name = $2 "
+            "  AND parent_id IS NOT DISTINCT FROM $3 "
+            "  AND deleted_at IS NULL",
+            ctx.project_id, segment, parent_id,
+        )
+        if not row:
+            return {"exists": False}
+        # Walk further IF there are more segments; non-final segments
+        # must be folders.
+        if i < len(parts) - 1 and row["kind"] != "folder":
+            return {"exists": False}
+        parent_id = row["id"]
+
     return {
         "exists": True,
         "id": row["id"],
@@ -41,21 +70,16 @@ async def resolve_path(ctx: ProjectCtx, path: str) -> dict[str, Any]:
 async def ensure_folders(ctx: ProjectCtx, parts: list[str]) -> Optional[uuid.UUID]:
     if not parts:
         return None
-    parent_id = None
+    parent_id: Optional[uuid.UUID] = None
     for i in range(len(parts)):
         folder_name = parts[i]
-        parent_path = "/" + "/".join(parts[:i]) if i > 0 else "/"
-        if parent_path == "/":
-            parent_id = None
-        else:
-            parent_row = await ctx.pool.fetchrow(
-                "SELECT id FROM files WHERE project_id = $1 AND path = $2 AND kind = 'folder' AND deleted_at IS NULL",
-                ctx.project_id, parent_path,
-            )
-            parent_id = parent_row["id"] if parent_row else None
-
+        # Each non-leaf segment must be a folder rooted at the previous
+        # parent_id. Tree-shaped resolution — no `path` column.
         existing = await ctx.pool.fetchrow(
-            "SELECT id, kind FROM files WHERE project_id = $1 AND name = $2 AND parent_id IS NOT DISTINCT FROM $3 AND deleted_at IS NULL",
+            "SELECT id, kind FROM files "
+            "WHERE project_id = $1 AND name = $2 "
+            "  AND parent_id IS NOT DISTINCT FROM $3 "
+            "  AND deleted_at IS NULL",
             ctx.project_id, folder_name, parent_id,
         )
         if existing:
@@ -64,7 +88,8 @@ async def ensure_folders(ctx: ProjectCtx, parts: list[str]) -> Optional[uuid.UUI
             parent_id = existing["id"]
         else:
             new_id = await ctx.pool.fetchval(
-                "INSERT INTO files(project_id, parent_id, name, kind, content) VALUES ($1, $2, $3, 'folder', '{}') RETURNING id",
+                "INSERT INTO files(project_id, parent_id, name, kind, content) "
+                "VALUES ($1, $2, $3, 'folder', '{}') RETURNING id",
                 ctx.project_id, parent_id, folder_name,
             )
             parent_id = new_id

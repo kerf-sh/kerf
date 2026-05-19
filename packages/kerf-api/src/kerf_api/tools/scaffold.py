@@ -5,57 +5,10 @@ from kerf_chat.tools.registry import ToolSpec, err_payload, ok_payload, register
 from kerf_core.utils.context import ProjectCtx
 from kerf_core.revisions import write_revision as _write_revision
 
-
-async def resolve_path(ctx: ProjectCtx, path: str) -> dict:
-    clean = path.rstrip("/")
-    if not clean.startswith("/"):
-        return {"exists": False}
-    row = await ctx.pool.fetchrow(
-        "SELECT id, parent_id, name, kind FROM files WHERE project_id = $1 AND path = $2 AND deleted_at IS NULL",
-        ctx.project_id, clean,
-    )
-    if not row:
-        return {"exists": False}
-    return {
-        "exists": True,
-        "id": row["id"],
-        "parent_id": row["parent_id"],
-        "name": row["name"],
-        "kind": row["kind"],
-    }
-
-
-async def ensure_folders(ctx: ProjectCtx, parts: list) -> uuid.UUID:
-    if not parts:
-        return None
-    parent_id = None
-    for i in range(len(parts)):
-        folder_name = parts[i]
-        parent_path = "/" + "/".join(parts[:i]) if i > 0 else "/"
-        if parent_path == "/":
-            parent_id = None
-        else:
-            parent_row = await ctx.pool.fetchrow(
-                "SELECT id FROM files WHERE project_id = $1 AND path = $2 AND kind = 'folder' AND deleted_at IS NULL",
-                ctx.project_id, parent_path,
-            )
-            parent_id = parent_row["id"] if parent_row else None
-
-        existing = await ctx.pool.fetchrow(
-            "SELECT id, kind FROM files WHERE project_id = $1 AND name = $2 AND parent_id IS NOT DISTINCT FROM $3 AND deleted_at IS NULL",
-            ctx.project_id, folder_name, parent_id,
-        )
-        if existing:
-            if existing["kind"] != "folder":
-                return None
-            parent_id = existing["id"]
-        else:
-            new_id = await ctx.pool.fetchval(
-                "INSERT INTO files(project_id, parent_id, name, kind, content) VALUES ($1, $2, $3, 'folder', '{}') RETURNING id",
-                ctx.project_id, parent_id, folder_name,
-            )
-            parent_id = new_id
-    return parent_id
+# Path-resolution helpers live in file_ops — re-export so the rest of
+# this module is unchanged. The local copies queried a non-existent
+# `path` column on `files` and 500'd every scaffold tool call.
+from kerf_api.tools.file_ops import resolve_path, ensure_folders  # noqa: F401
 
 
 async def record_revision_for_file(ctx: ProjectCtx, file_id: uuid.UUID, content: str, source: str):
