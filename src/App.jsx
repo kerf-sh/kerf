@@ -73,6 +73,9 @@ const MoldPage = lazy(() => import('./routes/domains/Mold.jsx'))
 const WoodworkingPage = lazy(() => import('./routes/domains/Woodworking.jsx'))
 const MarinePage = lazy(() => import('./routes/domains/Marine.jsx'))
 const CivilPage = lazy(() => import('./routes/domains/Civil.jsx'))
+const SiliconPage = lazy(() => import('./routes/domains/Silicon.jsx'))
+const FirmwarePage = lazy(() => import('./routes/domains/Firmware.jsx'))
+const AerospacePage = lazy(() => import('./routes/domains/Aerospace.jsx'))
 
 // Cloud surface — these come from the cloud/ open-core split and may be
 // stubs on OSS builds. useCloudConfig stays eager (we need it before any
@@ -222,6 +225,9 @@ export default function App() {
       <Route path="/domains/woodworking" element={<WoodworkingPage />} />
       <Route path="/domains/marine" element={<MarinePage />} />
       <Route path="/domains/civil" element={<CivilPage />} />
+      <Route path="/domains/silicon" element={<SiliconPage />} />
+      <Route path="/domains/firmware" element={<FirmwarePage />} />
+      <Route path="/domains/aerospace" element={<AerospacePage />} />
 
       <Route element={<ProtectedRoute />}>
         <Route path="/profile" element={<Profile />} />
