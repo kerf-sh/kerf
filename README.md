@@ -145,6 +145,34 @@ The same source tree runs both. Cloud-only plugins (`kerf-billing`, `kerf-cloud`
 
 Full schema: see [`kerf.example.toml`](./kerf.example.toml).
 
+## Domains
+
+Kerf is a single chat-driven tool across 19 engineering disciplines. Each
+domain has a dedicated page (`/domains/<slug>`) with a hero illustration,
+file types, capability grid, and an LLM-prompt example.
+
+| Domain | File types | Highlights |
+|---|---|---|
+| **Mechanical** (`/domains/mechanical`) | `.feature` `.step` `.sketch` | Feature tree, OCCT B-rep, sheet metal, drawings, 3- and 5-axis CAM |
+| **Electronics** (`/domains/electronics`) | `.tsx` `.ato` `.kicad_pcb` | tscircuit JSX + atopile + KiCad — schematic, PCB, 3D board viewer |
+| **Architecture** (`/domains/architecture`) | `.bim` `.ifc` `.dxf` | Walls, slabs, doors, windows, schedules, sheets — IFC4 round-trip |
+| **Jewelry** (`/domains/jewelry`) | `.feature` `.gem` `.step` | Gem cuts, ring/shank/seat/setting library, composites, Workshop sharing |
+| **Automotive** (`/domains/automotive`) | `.feature` `.step` | Class-A surfacing, zebra-stripe continuity, NURBS Phase-4 trim |
+| **Aerospace** (`/domains/aerospace`) | `.airfoil` `.orbit` `.bdf` `.step` | Airfoils, VLM + flutter, orbital mechanics, propulsion, ADCS, thermal |
+| **Silicon / IC** (`/domains/silicon`) | `.vhd` `.v` `.gds` `.lef` `.lib` | RTL synthesis (Yosys), PnR (OpenROAD), DRC/LVS, GDS-II, Sky130 PDK |
+| **Firmware** (`/domains/firmware`) | `.ino` `.c` `.cpp` `.fw.json` | Arduino + ESP32 + RP2040 + STM32 — build, upload, monitor, OTA |
+| **PLC / Industrial** (`/domains/plc`) | `.plc` `.st` `.iec` | Ladder + ST + FBD + simulator + HMI tester, PLCopen XML |
+| **Composites** (`/domains/composites`) | `.layup` `.cmh17` | CFRP/GFRP layup, ABD matrix, Tsai-Wu/Hill, drape sim |
+| **Dental** (`/domains/dental`) | `.feature` `.stl` | Crowns, aligners, surgical guides, DICOM ingest |
+| **Optics** (`/domains/optics`) | `.lens` `.zmx` | Lens design, paraxial + real ray-trace, Zemax import |
+| **Horology** (`/domains/horology`) | `.feature` `.step` | Swiss-lever escapement, gear train, mainspring barrel |
+| **Marine** (`/domains/marine`) | `.feature` `.iges` | Hull hydrostatics, GZ stability, IMO criteria |
+| **Woodworking** (`/domains/woodworking`) | `.feature` `.dxf` | Joinery, cabinet designer, CNC router, cut list |
+| **Textiles** (`/domains/textiles`) | `.pat` `.dxf` `.svg` | Pattern blocks, grading, marker making, drape sim |
+| **Civil** (`/domains/civil`) | `.civ` `.ifc` `.dxf` | Horizontal/vertical alignment, corridor sweep, earthwork |
+| **Motion sim** (`/domains/motion`) | `.motion` `.urdf` | Multibody dynamics (RK4), 6 joint types, IK/FK |
+| **FEM + CFD** (`/domains/femcfd`) | `.fem` `.cfd` `.bdf` | Linear/modal/nonlinear FEM, k-ω SST CFD, OpenFOAM bridge |
+
 ## What you can do today
 
 | Capability | Status |
