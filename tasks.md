@@ -155,7 +155,7 @@ Sequenced for parallel execution across 5 Sonnet agents.
 
 ### T-300 Drop History tab from right drawer; preserve Cmd+Z plumbing
 
-🔴 not started · **Tier A · P0**
+✅ shipped (2026-05-19) · **Tier A · P0**
 
 - **Why:** Right drawer just gained a History tab on top of `file_revisions`.
   With git becoming the user-facing snapshot story, this surface is
@@ -173,7 +173,7 @@ Sequenced for parallel execution across 5 Sonnet agents.
 
 ### T-301 Activity feed: hide keystroke-level edits
 
-🔴 not started · **Tier A · P0**
+✅ shipped (2026-05-19) · **Tier A · P0**
 
 - **Why:** With file_revisions invisible, the activity feed should stop
   spamming per-keystroke `'edit'` rows. Keep meaningful tool/llm/restore
@@ -190,7 +190,7 @@ Sequenced for parallel execution across 5 Sonnet agents.
 
 ### T-302 Revisions: size estimator endpoint + Git-tab badge
 
-🔴 not started · **Tier A · P0**
+✅ shipped (2026-05-19) · **Tier A · P0**
 
 - **Why:** Before a destructive purge (T-303), users need to see how much
   space file_revisions are taking. A small read-only endpoint + UI badge
@@ -211,7 +211,7 @@ Sequenced for parallel execution across 5 Sonnet agents.
 
 ### T-303 Revisions: purge endpoint + confirmation modal
 
-🔴 not started · **Tier A · P0**
+✅ shipped (2026-05-19) · **Tier A · P0**
 
 - **Why:** Users want to free DB space after their work is committed to
   git. Must be loud and safe — purging is unrecoverable, so the modal
@@ -238,7 +238,7 @@ Sequenced for parallel execution across 5 Sonnet agents.
 
 ### T-304 Git: commit graph + per-commit diff viewer
 
-🔴 not started · **Tier A · P0**
+✅ shipped (2026-05-19) · **Tier A · P0**
 
 - **Why:** Comprehensive git UX starts with a clear visual of branches /
   merges and a way to inspect what each commit changed.
@@ -260,7 +260,7 @@ Sequenced for parallel execution across 5 Sonnet agents.
 
 ### T-305 Git: staged-changes view + per-file diff before commit
 
-🔴 not started · **Tier A · P0**
+✅ shipped (2026-05-19) · **Tier A · P0**
 
 - **Why:** Today the Git tab has a bare "commit message + commit" button.
   Users want to SEE what's changing before they commit — diff per file.
@@ -281,7 +281,7 @@ Sequenced for parallel execution across 5 Sonnet agents.
 
 ### T-307 Clean baseline migrations: fold all alter/drop into CREATE TABLE
 
-🔴 not started · **Tier A · P0**
+✅ shipped (2026-05-19) · **Tier A · P0**
 
 - **Why:** The 12 consolidated migrations still carry dozens of
   `alter table … add column`, `alter table … drop constraint`, and
@@ -320,7 +320,7 @@ Sequenced for parallel execution across 5 Sonnet agents.
 
 ### T-308 Tool-architecture collapse: 30+ narrow → ~12 sharp tools
 
-🔴 not started · **Tier A · P0**
+✅ shipped (2026-05-19) · **Tier A · P0**
 
 - **Why:** Per the claude-code-guide research (in
   `docs/architecture/runtime-state-audit.md` followups), Claude Code
@@ -360,9 +360,91 @@ Sequenced for parallel execution across 5 Sonnet agents.
 - **Depends-on:** none (frontend chat UI is unchanged — it just receives
   fewer tool_use blocks; same render path)
 
-### T-309 IndexedDB localStash wiring (crash-recovery for unsaved edits)
+### T-310 Distributed rate limiting (Postgres-first, Redis later)
 
 🔴 not started · **Tier A · P0**
+
+- **Why:** Public-SaaS Kerf bills credits per LLM call and proxies
+  Anthropic tokens. Without rate limiting, a single user (malicious or
+  buggy script) can drain credits, exhaust the Anthropic per-key
+  rate limit (affecting *every* other user), or DoS expensive endpoints.
+  The architecture audit (`docs/architecture/runtime-state-audit.md`)
+  flagged this as missing.
+- **Design:** Postgres-first sliding window. Single dependency function
+  `enforce_rate_limit(key, max_requests, window_seconds)` used as a
+  FastAPI dependency on the hot endpoints. Storage in a new tiny table
+  with TTL-style cleanup. Multi-machine safe by definition (Postgres
+  is the shared store). Migrate to Fly-managed Upstash Redis only when
+  observed QPS proves Postgres can't keep up — same call site, swap
+  the backend.
+- **Target files:**
+  - `packages/kerf-core/src/kerf_core/db/migrations/0001_core_identity.sql`
+    — fold a `rate_limit_buckets` table into baseline (NO alter shim):
+    ```
+    create table if not exists rate_limit_buckets (
+        bucket_key  text not null,
+        window_start timestamptz not null,
+        count       integer not null default 0,
+        primary key (bucket_key, window_start)
+    );
+    create index rate_limit_buckets_window_idx
+        on rate_limit_buckets(window_start);
+    ```
+  - `packages/kerf-core/src/kerf_core/rate_limit.py` (new) — helper:
+    ```python
+    async def enforce(pool, key: str, max_per_window: int,
+                      window_seconds: int = 60) -> None:
+        # Sliding window via INSERT ... ON CONFLICT (bucket_key,
+        # window_start) DO UPDATE SET count = count + 1 RETURNING count.
+        # window_start truncates to window_seconds. On count > max,
+        # raises HTTPException 429 with Retry-After header.
+    ```
+  - `packages/kerf-core/src/kerf_core/dependencies.py` (or kerf-api
+    equivalent) — `rate_limit_dependency(max=..., window=...)` factory
+    that builds a FastAPI dependency function keyed on
+    `user_id`-or-`ip`. Compose into existing `require_auth` dependency
+    chain.
+  - **Hot endpoints to gate:**
+    - `POST /auth/login` → 10/min per IP
+    - `POST /auth/register` → 5/hour per IP
+    - `POST /projects/{pid}/threads/{tid}/messages` → 30/min per user
+      (LLM token burn; also subject to the byo-vs-paid bucket gate)
+    - `POST /api/projects/{pid}/files/{fid}/photos` → 60/min per user
+      (uploads)
+    - `POST /api/projects/{pid}/git/push` → 10/min per project
+- **GC worker:** existing `kerf-billing.BlobGCWorker` pattern — add a
+  small `RateLimitGCWorker` that deletes rate_limit_buckets rows older
+  than 24 hours, runs every 15 min. Or use a Postgres TRIGGER on insert
+  to clean up older windows for the same key.
+- **Definition of Done:**
+  - `rate_limit_buckets` table present in baseline 0001 (no alter shim)
+  - `enforce_rate_limit` helper exists with full test coverage:
+    - first request under limit returns immediately
+    - request that crosses the limit raises HTTPException 429 with
+      Retry-After header
+    - concurrent requests from same key are correctly serialised by
+      Postgres (no over-allowance)
+    - windowing is sliding (a request 61 s after the first counts in
+      a fresh window)
+  - The 5 hot endpoints listed above are gated, each with a clear
+    per-route limit constant
+  - Integration test: 11 rapid requests to `/auth/login` from the same
+    IP — the 11th returns 429
+  - 429 responses carry a useful body: `{detail: "rate limit exceeded",
+    retry_after: 12}` so the frontend can show a sensible toast
+  - Frontend: `src/lib/api.js` `request()` handles 429 — surfaces a
+    toast "Too many requests — try again in N seconds" rather than
+    failing silently
+  - GC worker registered + tested (single row written, then 24h+
+    later the cleanup pass removes it)
+  - Docs: brief note in `docs/architecture/rate-limiting.md` explaining
+    the design + when to migrate to Redis
+- **Effort:** M
+- **Depends-on:** T-307 (clean baseline for the new column)
+
+### T-309 IndexedDB localStash wiring (crash-recovery for unsaved edits)
+
+✅ shipped (2026-05-19) · **Tier A · P0**
 
 - **Why:** Per the architecture audit (`docs/architecture/runtime-state-audit.md`),
   the localStash infrastructure (`src/lib/localStash.js` + auto-save
@@ -400,7 +482,7 @@ Sequenced for parallel execution across 5 Sonnet agents.
 
 ### T-306 Git: branch picker + push/pull state polish
 
-🔴 not started · **Tier A · P0**
+✅ shipped (2026-05-19) · **Tier A · P0**
 
 - **Why:** The branch picker is a flat dropdown today. Add visual cues for
   diverging commits, sync state, "create new branch" affordance.
