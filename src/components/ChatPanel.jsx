@@ -216,14 +216,44 @@ function ThreadSwitcher({ threads, currentThreadId, onSelect, onCreate, onToggle
 
 // ---------- markdown renderer ----------
 
+// Flatten a React-node children value (string | element | array thereof) down
+// to its concatenated text content. Used to detect "is this code block long
+// enough to warrant the block treatment?" without naively String()ing the
+// React tree — that's how we got `[object Object],[object Object],…` in the
+// rendered output. We do NOT use this for rendering; rendering passes the
+// real `children` so syntax-highlight spans survive.
+export function childrenToText(node) {
+  if (node == null || node === false) return ''
+  if (typeof node === 'string' || typeof node === 'number') return String(node)
+  if (Array.isArray(node)) return node.map(childrenToText).join('')
+  if (typeof node === 'object' && node.props && 'children' in node.props) {
+    return childrenToText(node.props.children)
+  }
+  return ''
+}
+
 const MD_COMPONENTS = {
   // ReactMarkdown 9+ tells us inline vs block by checking children for newlines
   // / className. We detect block-ness by the presence of a `language-*` class.
-  code({ inline, className, children, ...rest }) {
-    const text = String(children || '').replace(/\n$/, '')
+  code({ inline, className, children, node: _node, ...rest }) {  // eslint-disable-line no-unused-vars
+    // ^ `node` is react-markdown's hast AST node — if we let it through
+    //   `...rest` it ends up as a DOM attribute serialising to
+    //   `node="[object Object]"` (the exact symptom users saw).
+    // ReactMarkdown 9+ in combination with rehype-highlight passes an
+    // ARRAY of React nodes (one <span> per syntax-highlighted token) as
+    // `children` for fenced code blocks. The previous implementation did
+    // `String(children || '')` which converts the array to
+    // "[object Object],[object Object],…" — the exact unreadable output
+    // users saw in the chat. We must NOT stringify the React tree.
+    //
+    // Detect block-ness from the className (language-X) or by flattening
+    // children to text only for the "looks like a block?" heuristic — but
+    // when we render, we always render the React `children` directly so
+    // the hljs spans (and any other rehype-injected markup) survive.
+    const flatText = childrenToText(children)
     const langMatch = /language-([\w-]+)/.exec(className || '')
     const lang = langMatch ? langMatch[1] : ''
-    const looksBlock = !inline && (lang || text.includes('\n'))
+    const looksBlock = !inline && (lang || flatText.includes('\n'))
     if (!looksBlock) {
       return (
         <code className="px-1 py-0.5 rounded bg-ink-800 text-ink-100 font-mono text-[12px]" {...rest}>
@@ -240,7 +270,9 @@ const MD_COMPONENTS = {
           </span>
         </div>
         <pre className="p-2 m-0 text-[12px] font-mono text-ink-100 overflow-x-auto whitespace-pre">
-          <code className="font-mono">{text}</code>
+          <code className={`font-mono ${className || ''}`} {...rest}>
+            {children}
+          </code>
         </pre>
       </div>
     )
@@ -302,7 +334,7 @@ const MD_COMPONENTS = {
   hr() { return <hr className="my-3 border-ink-700" /> },
 }
 
-function Markdown({ text }) {
+export function Markdown({ text }) {
   if (!text) return null
   return (
     <ReactMarkdown
