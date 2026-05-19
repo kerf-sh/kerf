@@ -32,13 +32,26 @@ const DOMAIN_PAGES = {
 /* -------------------------------------------------------------------------- */
 
 describe('DOMAIN_TABS', () => {
-  it('contains exactly the five live domains in order', () => {
+  it('contains every live domain in canonical order', () => {
     expect(DOMAIN_TABS.map((t) => t.slug)).toEqual([
       'jewelry',
       'mechanical',
       'electronics',
       'architecture',
       'automotive',
+      'civil',
+      'composites',
+      'dental',
+      'optics',
+      'horology',
+      'piping',
+      'packaging',
+      'mold',
+      'woodworking',
+      'marine',
+      'silicon',
+      'firmware',
+      'aerospace',
     ])
   })
 

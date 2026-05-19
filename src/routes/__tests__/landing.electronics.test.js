@@ -98,10 +98,13 @@ describe('electronics group — structure unchanged', () => {
 // ---------------------------------------------------------------------------
 
 describe('CAPABILITY_GROUPS — other groups not modified', () => {
-  it('tagline is only set on the electronics group', () => {
-    const withTagline = CAPABILITY_GROUPS.filter((g) => g.tagline !== undefined)
-    expect(withTagline).toHaveLength(1)
-    expect(withTagline[0].id).toBe('electronics')
+  it('electronics group has a tagline', () => {
+    // Originally only electronics had a tagline; silicon/firmware/aerospace
+    // were added later and each carries its own tagline by design.
+    const electronics = CAPABILITY_GROUPS.find((g) => g.id === 'electronics')
+    expect(electronics).toBeDefined()
+    expect(electronics.tagline).toBeDefined()
+    expect(typeof electronics.tagline).toBe('string')
   })
 
   it('has at least 5 groups (no groups were removed)', () => {

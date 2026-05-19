@@ -91,11 +91,11 @@ describe('DOMAINS', () => {
     }
   })
 
-  it('marks civil and product as in-progress, pointing at /roadmap', () => {
-    for (const slug of ['civil', 'product']) {
-      const d = DOMAINS.find((x) => x.slug === slug)
-      expect(d).toBeDefined()
-      expect(d.status).toBe('in-progress')
+  it('keeps in-progress domains pointing at /roadmap', () => {
+    // The in-progress set shrinks over time as more domains land their pages.
+    // Civil shipped its own page; product remains in-progress.
+    const inProgress = DOMAINS.filter((d) => d.status === 'in-progress')
+    for (const d of inProgress) {
       expect(d.to).toBe('/roadmap')
     }
   })
@@ -169,8 +169,8 @@ describe('Domains hub module', () => {
   })
 
   it('points the in-progress domains at /roadmap, not fabricated pages', () => {
+    // Civil has its own page now; the only remaining in-progress slug is `product`.
     expect(HUB_SRC).toMatch(/\/roadmap/)
-    expect(HUB_SRC).not.toMatch(/\/domains\/civil/)
     expect(HUB_SRC).not.toMatch(/\/domains\/product/)
   })
 

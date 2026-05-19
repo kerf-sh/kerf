@@ -864,6 +864,30 @@ const DOMAINS = [
     color: 'text-stone-400',
     bg: 'bg-stone-400/10 border-stone-400/30 group-hover:bg-stone-400/20',
   },
+  {
+    icon: Cpu,
+    label: 'Silicon',
+    sub: 'RTL · synth · PnR · DRC/LVS · GDS-II · open PDKs',
+    href: '/domains/silicon',
+    color: 'text-fuchsia-400',
+    bg: 'bg-fuchsia-400/10 border-fuchsia-400/30 group-hover:bg-fuchsia-400/20',
+  },
+  {
+    icon: Terminal,
+    label: 'Firmware',
+    sub: 'arm-none-eabi · cargo · FreeRTOS · OpenOCD',
+    href: '/domains/firmware',
+    color: 'text-green-400',
+    bg: 'bg-green-400/10 border-green-400/30 group-hover:bg-green-400/20',
+  },
+  {
+    icon: Activity,
+    label: 'Aerospace',
+    sub: 'Parametric airframes · FEM · composites · STEP/Mystran',
+    href: '/domains/aerospace',
+    color: 'text-blue-300',
+    bg: 'bg-blue-300/10 border-blue-300/30 group-hover:bg-blue-300/20',
+  },
 ]
 
 function PerDomain() {

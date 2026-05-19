@@ -37,6 +37,9 @@ import {
   Anchor,
   Mountain,
   TreePine,
+  Cpu,
+  Terminal,
+  Activity,
 } from 'lucide-react'
 import Header from '../../components/Header.jsx'
 import Footer from '../../components/Footer.jsx'
@@ -51,7 +54,7 @@ const GITHUB_URL = 'https://github.com/kerf-sh/kerf'
 export const DOMAINS_META = {
   title: 'CAD domains — jewelry to aerospace — Kerf',
   description:
-    'One chat-driven, open-source CAD tool across 14 disciplines: jewelry, mechanical, electronics, architecture, automotive, civil, composites, dental, optics, horology, piping, packaging, mold, marine, and woodworking.',
+    'One chat-driven, open-source CAD tool across 18 disciplines from jewelry to silicon, firmware and aerospace.',
   canonicalUrl: 'https://kerf.sh/domains',
   ogImage: 'https://kerf.sh/og/domains.png',
 }
@@ -197,9 +200,9 @@ export const DOMAINS = [
     Icon: TreePine,
     accent: 'kerf-300',
     blurb:
-      'Parametric joinery, cabinet designer, CNC router toolpaths, and sheet-goods nesting. Module in development.',
+      'Parametric joinery, cabinet designer, CNC router toolpaths, and sheet-goods nesting.',
     to: '/domains/woodworking',
-    status: 'in-progress',
+    status: 'live',
   },
   {
     slug: 'marine',
