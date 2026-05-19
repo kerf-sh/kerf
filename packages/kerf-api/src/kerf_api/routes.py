@@ -1044,7 +1044,10 @@ async def create_project(req: CreateProjectRequest, payload: dict = Depends(requ
                 pass
 
         async with conn.transaction():
-            project = await projects_queries.create_project(conn, ws_id, name, req.description, default_visibility, tags)
+            project = await projects_queries.create_project(
+                conn, ws_id, name, req.description, default_visibility, tags,
+                created_by=payload.get("sub"),
+            )
 
             if starter_name and starter_content:
                 await files_queries.create_file(conn, project["id"], starter_name, starter_kind, None, starter_content)
@@ -2405,12 +2408,15 @@ async def get_project_activity(
 
                 UNION ALL
 
-                -- (d) chat messages (role='user')
+                -- (d) chat messages (role='user'). user_id comes from the
+                -- chat_messages row itself; chat_messages.user_id was added
+                -- in the consolidated baseline so the activity feed can
+                -- attribute "<user> asked …" instead of showing Unknown.
                 SELECT
                     'chat'::text                                AS kind,
                     NULL::text                                  AS source,
                     cm.created_at                               AS created_at,
-                    NULL::uuid                                  AS user_id,
+                    cm.user_id                                  AS user_id,
                     NULL::uuid                                  AS file_id,
                     NULL::text                                  AS file_name,
                     ct.id                                       AS thread_id,
@@ -2423,12 +2429,14 @@ async def get_project_activity(
 
                 UNION ALL
 
-                -- (e) project creation
+                -- (e) project creation. user comes from projects.created_by
+                -- (consolidated baseline) so the row attributes "<user>
+                -- created the project" instead of "Unknown created …".
                 SELECT
                     'project_created'::text AS kind,
                     NULL::text              AS source,
                     p.created_at            AS created_at,
-                    NULL::uuid              AS user_id,
+                    p.created_by            AS user_id,
                     NULL::uuid              AS file_id,
                     NULL::text              AS file_name,
                     NULL::uuid              AS thread_id,
@@ -2532,11 +2540,11 @@ async def create_thread(pid: str, req: CreateThreadRequest, payload: dict = Depe
 
         row = await conn.fetchrow(
             """
-            INSERT INTO chat_threads (project_id, file_id, title, model)
-            VALUES ($1, $2, $3, $4)
+            INSERT INTO chat_threads (project_id, file_id, title, model, created_by)
+            VALUES ($1, $2, $3, $4, $5)
             RETURNING *
             """,
-            pid, req.file_id, req.title, req.model,
+            pid, req.file_id, req.title, req.model, user_id,
         )
         return dict(row)
 
@@ -2786,15 +2794,16 @@ async def post_message(pid: str, tid: str, req: PostMessageRequest, payload: dic
     else:
         chosen_model = settings.default_model
 
-    # Insert user message
+    # Insert user message — attribute it to the caller so the activity
+    # feed can render "<user> asked …" instead of "Unknown asked …".
     async with pool.acquire() as conn:
         user_row = await conn.fetchrow(
             """
-            INSERT INTO chat_messages (thread_id, role, content, part_refs)
-            VALUES ($1, 'user', $2, $3::jsonb)
+            INSERT INTO chat_messages (thread_id, role, content, part_refs, user_id)
+            VALUES ($1, 'user', $2, $3::jsonb, $4)
             RETURNING *
             """,
-            tid, req.content, json.dumps(part_refs),
+            tid, req.content, json.dumps(part_refs), user_id,
         )
     user_msg = dict(user_row)
 

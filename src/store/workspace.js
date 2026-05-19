@@ -282,12 +282,20 @@ const initial = {
   redoStack: [],
   editorFocused: false,
 
+  // ---- Unified right drawer ----
+  // Single overlay drawer on the right side of the editor that surfaces
+  // Chat, Activity, and Git as tabs. Replaces the three independent
+  // open/collapsed flags that caused the panels to move independently.
+  // `tab` is the last-active tab so re-opening returns to where the user was.
+  rightDrawer: { open: false, tab: 'chat' },
+
   // ---- Git (cloud-only) ----
   // Owned by the GitPanel. `gitRepoState` is 'unknown' until we probe; the
   // panel renders an empty-state CTA when it's 'absent' and the graph + branch
   // selector when 'ready'. `gitError` surfaces the last failed op as an inline
   // banner — the panel has its own dedicated real estate, so we deliberately
   // don't route git failures through the global `toast` channel.
+  // NOTE: `gitOpen` is a backward-compat derived getter — see openGitPanel().
   gitOpen: false,
   gitRepoState: 'unknown',
   gitBranch: '',
@@ -302,6 +310,7 @@ const initial = {
   // user never opens the panel for don't pay the round-trip cost.
   // `activityNextCursor` is the oldest ISO timestamp on the current page,
   // returned by the backend; nil means "no more pages".
+  // NOTE: `activityOpen` is a backward-compat derived getter — see openActivity().
   activityOpen: false,
   activityEvents: [],
   activityLoading: false,
@@ -2700,8 +2709,34 @@ export const useWorkspace = create((set, get) => ({
   // calls loadGitState() on mount, so projects without a backing repo never
   // pay the round-trip cost when the user doesn't open the panel.
 
-  openGitPanel: () => set({ gitOpen: true }),
-  closeGitPanel: () => set({ gitOpen: false }),
+  // ---- Unified right-drawer actions ----
+  // All three panel buttons (chat, activity, git) funnel into these.
+  openRightDrawer: (tab) => {
+    const next = tab || get().rightDrawer.tab || 'chat'
+    set({ rightDrawer: { open: true, tab: next } })
+    // Keep backward-compat flags in sync.
+    if (next === 'activity') set({ activityOpen: true })
+    if (next === 'git') set({ gitOpen: true })
+  },
+  closeRightDrawer: () => {
+    set({ rightDrawer: { ...get().rightDrawer, open: false } })
+    set({ activityOpen: false, gitOpen: false })
+  },
+  setRightDrawerTab: (tab) => {
+    set({ rightDrawer: { open: true, tab } })
+    if (tab === 'activity') set({ activityOpen: true })
+    if (tab === 'git') set({ gitOpen: true })
+  },
+
+  openGitPanel: () => {
+    // Backward-compat shim — opens the drawer on the git tab.
+    set({ gitOpen: true, rightDrawer: { open: true, tab: 'git' } })
+  },
+  closeGitPanel: () => {
+    set({ gitOpen: false })
+    const rd = get().rightDrawer
+    if (rd.tab === 'git') set({ rightDrawer: { ...rd, open: false } })
+  },
   dismissGitError: () => set({ gitError: null }),
 
   // Probe /branches; on 404 we mark the repo absent (empty-state UI). On
@@ -2886,7 +2921,7 @@ export const useWorkspace = create((set, get) => ({
   // appends the next page using the in-state cursor; `loadActivity(false)`
   // (or no arg) refreshes from the top.
   openActivity: () => {
-    set({ activityOpen: true })
+    set({ activityOpen: true, rightDrawer: { open: true, tab: 'activity' } })
     // Refresh from the top each time the user re-opens; cheap and avoids the
     // panel showing stale entries after a long idle.
     const { activityEvents, activityLoading } = useWorkspace.getState()
@@ -2897,7 +2932,11 @@ export const useWorkspace = create((set, get) => ({
       void useWorkspace.getState().loadActivity(false)
     }
   },
-  closeActivity: () => set({ activityOpen: false }),
+  closeActivity: () => {
+    set({ activityOpen: false })
+    const rd = get().rightDrawer
+    if (rd.tab === 'activity') set({ rightDrawer: { ...rd, open: false } })
+  },
 
   loadActivity: async (more = false) => {
     const { projectId, activityLoading, activityNextCursor, activityEvents } = get()

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { Share2, Save, Loader2, ArrowLeft, Check, History, X, RotateCcw, Undo2, Redo2, GitBranch, Clock, MessageSquare, PanelRightClose, PanelRightOpen, PanelLeftOpen, PanelLeftClose, Plus, Box, SlidersHorizontal, ChevronDown, ArrowRight, RotateCw, MoreHorizontal } from 'lucide-react'
+import { Share2, Save, Loader2, ArrowLeft, Check, History, X, RotateCcw, Undo2, Redo2, GitBranch, Clock, MessageSquare, PanelRightClose, PanelRightOpen, PanelLeftOpen, PanelLeftClose, Plus, Box, SlidersHorizontal, ChevronDown, ArrowRight, RotateCw, MoreHorizontal, Activity as ActivityIcon, LogOut, UserCog } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import { LogoWordmark } from '../components/Logo.jsx'
 import FileTree from '../components/FileTree.jsx'
 import Renderer from '../components/Renderer.jsx'
@@ -51,7 +52,7 @@ import { distance, formatDistance } from '../lib/measure.js'
 import { extractDisplayGeometryFromParts } from '../lib/femDisplacement.js'
 import { exportSvg, exportPng, exportPdf } from '../lib/svgExport.js'
 import { api } from '../lib/api.js'
-import { readCollapsed, writeCollapsed, editorGridCols, CHAT_COLLAPSE_KEY, GIT_COLLAPSE_KEY } from '../lib/panelCollapse.js'
+import { readCollapsed, CHAT_COLLAPSE_KEY, GIT_COLLAPSE_KEY } from '../lib/panelCollapse.js'
 import { mateRefFromPick, parseAssembly } from '../lib/assembly.js'
 import { _internalLoops } from '../lib/sketchGeom2.js'
 import FileEditor from '../components/FileEditor.jsx'
@@ -232,6 +233,111 @@ function Build3DDropdown({ sketch, sketchName, onBuild, disabled }) {
 // `role="menuitem"` onto each child via the menu-item recipe applied
 // inline below.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// EditorUserMenu — the avatar pill in the Editor's topbar with a working
+// drop-down. Before this it was an inert <div> so "click profile → sign
+// out" did literally nothing. Uses the same stable-listener pattern as
+// src/components/Layout.jsx UserMenu (React 19 click-outside race fix).
+// ---------------------------------------------------------------------------
+function EditorUserMenu({ user }) {
+  const [open, setOpen] = useState(false)
+  const wrapRef = useRef(null)
+  const openRef = useRef(false)
+  const navigate = useNavigate()
+  const logout = useAuth((s) => s.logout)
+
+  // Keep openRef in sync so the stable listener reads the latest value
+  // without depending on `open` (and thus avoiding re-registration races
+  // that were hiding the Layout.jsx dropdown — same root cause).
+  useEffect(() => { openRef.current = open }, [open])
+
+  useEffect(() => {
+    function onClick(e) {
+      if (!openRef.current) return
+      if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false)
+    }
+    function onKey(e) {
+      if (e.key === 'Escape' && openRef.current) setOpen(false)
+    }
+    document.addEventListener('click', onClick, true)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('click', onClick, true)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [])
+
+  const onSignOut = async () => {
+    setOpen(false)
+    try { await api.logout() } catch { /* tolerate network error */ }
+    logout()
+    navigate('/login', { replace: true })
+  }
+
+  const initial = ((user?.name || user?.email || '?').slice(0, 1) || '?').toUpperCase()
+
+  return (
+    <div className="relative" ref={wrapRef}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-controls="editor-user-menu"
+        title={user?.email || 'Account'}
+        className="w-7 h-7 rounded-full bg-ink-700 flex items-center justify-center text-[11px] text-ink-100 font-semibold flex-shrink-0 hover:bg-ink-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-kerf-300/50"
+      >
+        {user?.avatar_url
+          ? <img src={user.avatar_url} alt="" className="w-full h-full rounded-full object-cover" />
+          : initial}
+      </button>
+
+      {open && (
+        <div
+          id="editor-user-menu"
+          role="menu"
+          data-testid="editor-user-menu"
+          className="absolute right-0 mt-2 w-56 rounded-xl border border-ink-800 bg-ink-900/95 backdrop-blur shadow-xl shadow-black/40 py-1.5 z-50"
+        >
+          <div className="px-3 py-2.5 border-b border-ink-800">
+            <p className="text-sm text-ink-100 truncate">{user?.name || 'Signed in'}</p>
+            <p className="text-xs text-ink-400 truncate font-mono">{user?.email || ''}</p>
+          </div>
+          <Link
+            to="/profile"
+            role="menuitem"
+            onClick={() => setOpen(false)}
+            className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-ink-100 hover:bg-ink-800/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-kerf-300/50"
+          >
+            <UserCog size={14} className="text-ink-300" />
+            Profile
+          </Link>
+          <Link
+            to="/projects"
+            role="menuitem"
+            onClick={() => setOpen(false)}
+            className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-ink-100 hover:bg-ink-800/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-kerf-300/50"
+          >
+            <ArrowLeft size={14} className="text-ink-300" />
+            All projects
+          </Link>
+          <div className="py-1 border-t border-ink-800">
+            <button
+              type="button"
+              role="menuitem"
+              onClick={onSignOut}
+              className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-ink-100 hover:bg-ink-800/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-kerf-300/50"
+            >
+              <LogOut size={14} className="text-ink-300" />
+              Sign out
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function TopBarMoreMenu({ children }) {
   const [open, setOpen] = useState(false)
   const wrapRef = useRef(null)
@@ -506,6 +612,24 @@ function isPrintFile(file) {
   if (file.kind === 'print') return true
   const n = (file.name || '').toLowerCase()
   return n.endsWith('.print')
+}
+
+// ---------------------------------------------------------------------------
+// ActivityTimelineBody — the ActivityTimeline panel body without its own outer
+// drawer wrapper. Rendered inside the unified right drawer's content area when
+// the activity tab is active. All data comes from the workspace store.
+// ---------------------------------------------------------------------------
+function ActivityTimelineBody({ projectId }) {
+  // Render the full ActivityTimeline but pass `open={true}` so it always shows
+  // its content. The onClose callback routes to the unified drawer close action.
+  const closeRightDrawer = useWorkspace((s) => s.closeRightDrawer)
+  return (
+    <ActivityTimeline
+      projectId={projectId}
+      open={true}
+      onClose={closeRightDrawer}
+    />
+  )
 }
 
 export default function Editor() {
@@ -838,8 +962,25 @@ export default function Editor() {
   }
 
   const [showShare, setShowShare] = useState(false)
-  const [chatCollapsed, setChatCollapsed] = useState(() => readCollapsed(CHAT_COLLAPSE_KEY, false))
-  const [gitCollapsed, setGitCollapsed] = useState(() => readCollapsed(GIT_COLLAPSE_KEY, true))
+  // Unified right drawer — canonical state lives in the workspace store so
+  // activity, chat, and git all share one open/tab pair.
+  const rightDrawer = useWorkspace((s) => s.rightDrawer)
+  const openRightDrawer = useWorkspace((s) => s.openRightDrawer)
+  const closeRightDrawer = useWorkspace((s) => s.closeRightDrawer)
+  const setRightDrawerTab = useWorkspace((s) => s.setRightDrawerTab)
+  // Backward-compat: seed "chat" tab from the old localStorage key so repeat
+  // visitors who had chat open still see it open. One-time migration.
+  useEffect(() => {
+    const wasOpen = !readCollapsed(CHAT_COLLAPSE_KEY, false)
+    if (wasOpen && !rightDrawer.open) {
+      openRightDrawer('chat')
+    }
+    // intentionally run only once at mount
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+  // Keep the old git collapsed key around (read-only compat for tests that
+  // probe GIT_COLLAPSE_KEY) — we no longer write it.
+  void GIT_COLLAPSE_KEY
   // ----- Responsive drawer state -----
   // T-L1: on < md (phone) the file-tree and chat collapse into off-canvas
   // drawers; on md ≤ width < lg (tablet) the file-tree is a drawer and chat is
@@ -932,8 +1073,6 @@ export default function Editor() {
   const captureSnapshotFn = useCallback(async (opts) => {
     return currentViewRef.current?.snapshot?.(opts || { size: 512, quality: 0.7 }) ?? null
   }, [])
-  useEffect(() => { writeCollapsed(CHAT_COLLAPSE_KEY, chatCollapsed) }, [chatCollapsed])
-  useEffect(() => { writeCollapsed(GIT_COLLAPSE_KEY, gitCollapsed) }, [gitCollapsed])
   const { cloudEnabled } = useCloudConfig()
 
   const editorErrors = useMemo(
@@ -1261,28 +1400,27 @@ export default function Editor() {
 
         <button
           type="button"
-          onClick={() => w.openActivity()}
+          onClick={() => {
+            if (rightDrawer.open && rightDrawer.tab === 'activity') {
+              closeRightDrawer()
+            } else {
+              setRightDrawerTab('activity')
+            }
+          }}
           disabled={!projectId}
           title="Activity"
           aria-label="Activity timeline"
-          className="hidden md:inline-flex p-1.5 rounded hover:bg-ink-800 text-ink-300 hover:text-kerf-300 disabled:opacity-40 disabled:hover:bg-transparent"
+          aria-expanded={rightDrawer.open && rightDrawer.tab === 'activity'}
+          className={`hidden md:inline-flex p-1.5 rounded hover:bg-ink-800 disabled:opacity-40 disabled:hover:bg-transparent ${rightDrawer.open && rightDrawer.tab === 'activity' ? 'text-kerf-300' : 'text-ink-300 hover:text-kerf-300'}`}
         >
           <Clock size={14} />
         </button>
 
-        {cloudEnabled && (
-          <button
-            type="button"
-            onClick={() => setGitCollapsed((v) => !v)}
-            disabled={!projectId}
-            title={gitCollapsed ? 'Open Git panel' : 'Hide Git panel'}
-            aria-label={gitCollapsed ? 'Open Git panel' : 'Hide Git panel'}
-            aria-expanded={!gitCollapsed}
-            className={`hidden lg:inline-flex p-1.5 rounded hover:bg-ink-800 disabled:opacity-40 disabled:hover:bg-transparent ${gitCollapsed ? 'text-ink-300 hover:text-kerf-300' : 'text-kerf-300'}`}
-          >
-            <GitBranch size={14} />
-          </button>
-        )}
+        {/* Git toggle removed from topbar — the unified right drawer's
+            Git tab (below) is now the single entry-point. The topbar
+            previously had a duplicate GitBranch button + a tab in the
+            drawer; they fought each other and the duplicate was
+            confusing. */}
 
         <ExportButton onCaptureHero={() => rendererRef.current?.captureHeroShot?.({})} />
 
@@ -1329,23 +1467,22 @@ export default function Editor() {
           type="button"
           ref={chatOpenerRef}
           onClick={() => {
-            // T-L1: at < lg the inline chat aside is hidden — the chat toggle
-            // opens/closes the off-canvas drawer instead so chat is still
-            // reachable on tablet/phone. At ≥ lg behaviour is unchanged
-            // (toggle the inline pane via chatCollapsed).
+            // On < lg we still use the off-canvas chat drawer for mobile.
             if (typeof window !== 'undefined' && window.matchMedia
                 && !window.matchMedia('(min-width: 1024px)').matches) {
               setChatDrawerOpen((v) => !v)
+            } else if (rightDrawer.open && rightDrawer.tab === 'chat') {
+              closeRightDrawer()
             } else {
-              setChatCollapsed((v) => !v)
+              setRightDrawerTab('chat')
             }
           }}
-          title={chatCollapsed ? 'Open chat' : 'Hide chat'}
-          aria-label={chatCollapsed ? 'Open chat panel' : 'Hide chat panel'}
-          aria-expanded={!chatCollapsed || chatDrawerOpen}
-          className={`inline-flex p-1.5 rounded hover:bg-ink-800 ${chatCollapsed ? 'text-ink-300 hover:text-kerf-300' : 'text-kerf-300'}`}
+          title={rightDrawer.open && rightDrawer.tab === 'chat' ? 'Hide chat' : 'Open chat'}
+          aria-label={rightDrawer.open && rightDrawer.tab === 'chat' ? 'Hide chat panel' : 'Open chat panel'}
+          aria-expanded={rightDrawer.open && rightDrawer.tab === 'chat' || chatDrawerOpen}
+          className={`inline-flex p-1.5 rounded hover:bg-ink-800 ${rightDrawer.open && rightDrawer.tab === 'chat' ? 'text-kerf-300' : 'text-ink-300 hover:text-kerf-300'}`}
         >
-          {chatCollapsed ? <PanelRightOpen size={14} /> : <PanelRightClose size={14} />}
+          {rightDrawer.open && rightDrawer.tab === 'chat' ? <PanelRightClose size={14} /> : <PanelRightOpen size={14} />}
         </button>
 
         {/* ---------- T-L2 Overflow menu ----------
@@ -1372,7 +1509,10 @@ export default function Editor() {
           <button
             type="button"
             role="menuitem"
-            onClick={() => w.openActivity()}
+            onClick={() => {
+              if (rightDrawer.open && rightDrawer.tab === 'activity') closeRightDrawer()
+              else setRightDrawerTab('activity')
+            }}
             disabled={!projectId}
             className="inline-flex md:hidden w-full items-center gap-2 px-3 py-1.5 text-xs text-ink-100 hover:bg-ink-700 text-left disabled:opacity-40"
           >
@@ -1383,12 +1523,15 @@ export default function Editor() {
             <button
               type="button"
               role="menuitem"
-              onClick={() => setGitCollapsed((v) => !v)}
+              onClick={() => {
+                if (rightDrawer.open && rightDrawer.tab === 'git') closeRightDrawer()
+                else setRightDrawerTab('git')
+              }}
               disabled={!projectId}
               className="inline-flex lg:hidden w-full items-center gap-2 px-3 py-1.5 text-xs text-ink-100 hover:bg-ink-700 text-left disabled:opacity-40"
             >
               <GitBranch size={12} className="text-ink-400" />
-              <span>{gitCollapsed ? 'Open Git panel' : 'Hide Git panel'}</span>
+              <span>{rightDrawer.open && rightDrawer.tab === 'git' ? 'Hide Git panel' : 'Open Git panel'}</span>
             </button>
           )}
           {cloudEnabled && w.project && (
@@ -1433,14 +1576,7 @@ export default function Editor() {
           Share
         </button>
 
-        <div
-          className="w-7 h-7 rounded-full bg-ink-700 flex items-center justify-center text-[11px] text-ink-100 font-semibold flex-shrink-0"
-          title={user?.email}
-        >
-          {user?.avatar_url
-            ? <img src={user.avatar_url} alt="" className="w-full h-full rounded-full object-cover" />
-            : ((user?.name || user?.email || '?').slice(0, 1).toUpperCase())}
-        </div>
+        <EditorUserMenu user={user} />
       </header>
 
       {/* ---------- Main grid ----------
@@ -1457,11 +1593,10 @@ export default function Editor() {
             are kept separate so neither interferes with the other.
           - < md: same as md — canvas only, both panes as drawers.
           The `relative` here anchors the `fixed`-positioned drawers below. */}
+      {/* The right drawer is an overlay — grid is always file-tree + canvas.
+          The CSS rule in index.css sets 240px 1fr at ≥ lg. */}
       <div
         className="flex-1 grid min-h-0 relative grid-cols-1 kerf-editor-grid"
-        style={{
-          '--kerf-editor-cols': editorGridCols(chatCollapsed, gitCollapsed).replace(/_/g, ' '),
-        }}
       >
         {/* Left: file tree (top) + objects panel (bottom).
             ≥ lg: inline aside, occupies the first grid column.
@@ -2106,39 +2241,6 @@ export default function Editor() {
           )}
         </main>
 
-        {/* Right: chat (hidden entirely when collapsed — center expands into the space).
-            ≥ lg only — at smaller widths chat is reachable via the chat-drawer
-            overlay rendered at the bottom of this component. */}
-        {!chatCollapsed && (
-          <aside className="hidden lg:block min-h-0 overflow-hidden">
-            <ChatPanel
-              ref={inputRef}
-              threads={w.threads}
-              currentThreadId={w.currentThreadId}
-              messages={w.messages}
-              pendingPartRefs={w.pendingPartRefs}
-              sending={w.sending}
-              loadingMessages={w.loadingMessages}
-              onSelectThread={(id) => w.selectThread(id)}
-              onCreateThread={() => w.createThread({ file_id: w.currentFileId })}
-              onToggleStar={(id) => w.toggleStar(id)}
-              onDeleteThread={(id) => {
-                if (confirm('Delete this thread?')) w.deleteThread(id)
-              }}
-              onRemovePartRef={(i) => w.removePartRef(i)}
-              onSend={(content, opts) => w.sendMessage(content, opts)}
-            />
-          </aside>
-        )}
-
-        {/* Right: Git panel — inline aside, same collapse/expand mechanism as Chat.
-            Only rendered when cloudEnabled; hidden entirely when collapsed so
-            the grid column collapses and the canvas expands into the space. */}
-        {cloudEnabled && !gitCollapsed && projectId && (
-          <aside className="hidden lg:block min-h-0 overflow-hidden border-l border-ink-800">
-            <GitPanel projectId={projectId} onClose={() => setGitCollapsed(true)} />
-          </aside>
-        )}
       </div>
 
       {/* ---------- Off-canvas drawers (< lg only) ----------
@@ -2277,6 +2379,101 @@ export default function Editor() {
         </div>
       )}
 
+      {/* ---------- Unified right drawer (desktop overlay) ----------
+          Positioned absolutely from the top of the main-area (below the 48px
+          topbar) as a fixed-width panel on the right side. Slides in/out via
+          CSS transition. Only rendered at ≥ lg — mobile uses the existing
+          chat-drawer below. */}
+      {rightDrawer.open && (
+        <div
+          data-testid="right-drawer"
+          className="hidden lg:flex absolute top-12 right-0 bottom-0 w-[420px] z-30 bg-ink-900 border-l border-ink-800 shadow-2xl flex-col"
+        >
+          {/* Tab strip */}
+          <div className="flex items-center border-b border-ink-800 flex-shrink-0 bg-ink-900">
+            <button
+              type="button"
+              data-testid="right-drawer-tab-chat"
+              onClick={() => setRightDrawerTab('chat')}
+              className={`flex items-center gap-1.5 px-4 h-10 text-[11px] uppercase tracking-wider font-medium border-b-2 transition-colors ${
+                rightDrawer.tab === 'chat'
+                  ? 'border-kerf-300 text-kerf-300'
+                  : 'border-transparent text-ink-400 hover:text-ink-200'
+              }`}
+            >
+              <MessageSquare size={12} /> Chat
+            </button>
+            <button
+              type="button"
+              data-testid="right-drawer-tab-activity"
+              onClick={() => setRightDrawerTab('activity')}
+              className={`flex items-center gap-1.5 px-4 h-10 text-[11px] uppercase tracking-wider font-medium border-b-2 transition-colors ${
+                rightDrawer.tab === 'activity'
+                  ? 'border-kerf-300 text-kerf-300'
+                  : 'border-transparent text-ink-400 hover:text-ink-200'
+              }`}
+            >
+              <ActivityIcon size={12} /> Activity
+            </button>
+            {cloudEnabled && (
+              <button
+                type="button"
+                data-testid="right-drawer-tab-git"
+                onClick={() => setRightDrawerTab('git')}
+                className={`flex items-center gap-1.5 px-4 h-10 text-[11px] uppercase tracking-wider font-medium border-b-2 transition-colors ${
+                  rightDrawer.tab === 'git'
+                    ? 'border-kerf-300 text-kerf-300'
+                    : 'border-transparent text-ink-400 hover:text-ink-200'
+                }`}
+              >
+                <GitBranch size={12} /> Git
+              </button>
+            )}
+            <div className="flex-1" />
+            <button
+              type="button"
+              onClick={() => closeRightDrawer()}
+              className="mr-2 p-1 rounded text-ink-400 hover:text-ink-100 hover:bg-ink-800"
+              aria-label="Close panel"
+            >
+              <X size={14} />
+            </button>
+          </div>
+
+          {/* Panel body — only the active tab renders */}
+          <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
+            {rightDrawer.tab === 'chat' && (
+              <ChatPanel
+                ref={inputRef}
+                threads={w.threads}
+                currentThreadId={w.currentThreadId}
+                messages={w.messages}
+                pendingPartRefs={w.pendingPartRefs}
+                sending={w.sending}
+                loadingMessages={w.loadingMessages}
+                onSelectThread={(id) => w.selectThread(id)}
+                onCreateThread={() => w.createThread({ file_id: w.currentFileId })}
+                onToggleStar={(id) => w.toggleStar(id)}
+                onDeleteThread={(id) => {
+                  if (confirm('Delete this thread?')) w.deleteThread(id)
+                }}
+                onRemovePartRef={(i) => w.removePartRef(i)}
+                onSend={(content, opts) => w.sendMessage(content, opts)}
+              />
+            )}
+            {rightDrawer.tab === 'activity' && projectId && (
+              <ActivityTimelineBody projectId={projectId} />
+            )}
+            {rightDrawer.tab === 'git' && cloudEnabled && projectId && (
+              <GitPanel
+                projectId={projectId}
+                onClose={() => closeRightDrawer()}
+              />
+            )}
+          </div>
+        </div>
+      )}
+
       {showShare && projectId && (
         <ShareModal projectId={projectId} onClose={() => setShowShare(false)} />
       )}
@@ -2287,14 +2484,6 @@ export default function Editor() {
           loading={w.loadingRevisions}
           onRestore={(id) => w.restoreRevision(id)}
           onClose={() => w.closeRevisionDrawer()}
-        />
-      )}
-
-      {projectId && (
-        <ActivityTimeline
-          projectId={projectId}
-          open={w.activityOpen}
-          onClose={() => w.closeActivity()}
         />
       )}
     </div>

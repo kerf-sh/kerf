@@ -10,7 +10,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import {
   AlertCircle, ArrowDownToLine, ArrowUpFromLine, Check, ChevronDown,
   GitBranch, GitCommit, GitMerge, Github, Link2, Loader2, MoreVertical,
-  Plus, RefreshCw, Settings, Trash2, X,
+  Plus, RefreshCw, Settings, Trash2,
 } from 'lucide-react'
 import Button from '../components/Button.jsx'
 import { useAuth } from '../store/auth.js'
@@ -667,11 +667,9 @@ export function GitPanel({ projectId, onClose }) {
 
   return (
     <div className="h-full bg-ink-900 flex flex-col">
-      {/* Header */}
-      <div className="flex items-center justify-between h-10 px-3 border-b border-ink-800 flex-shrink-0">
-        <div className="flex items-center gap-2 text-xs font-medium text-ink-200 uppercase tracking-wider">
-          <GitBranch size={13} className="text-kerf-300" /> Git
-        </div>
+      {/* Action bar — the drawer tab strip already shows "Git" and the close
+          button; we only expose the Refresh + Settings shortcuts here. */}
+      <div className="flex items-center justify-end h-8 px-3 border-b border-ink-800 flex-shrink-0">
         <div className="flex items-center gap-1">
           <button
             type="button"
@@ -689,14 +687,6 @@ export function GitPanel({ projectId, onClose }) {
             title="Git settings"
           >
             <Settings size={13} />
-          </button>
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-1 rounded text-ink-400 hover:text-ink-100 hover:bg-ink-800"
-            title="Close"
-          >
-            <X size={14} />
           </button>
         </div>
       </div>

@@ -12,11 +12,12 @@ async def create_project(
     description: str = "",
     visibility: str = "private",
     tags: Optional[List[str]] = None,
+    created_by: Optional[uuid.UUID] = None,
 ) -> Dict[str, Any]:
     row = await conn.fetchrow(
         """
-        INSERT INTO projects (workspace_id, name, description, visibility, tags)
-        VALUES ($1, $2, $3, $4, $5)
+        INSERT INTO projects (workspace_id, name, description, visibility, tags, created_by)
+        VALUES ($1, $2, $3, $4, $5, $6)
         RETURNING *
         """,
         workspace_id,
@@ -24,6 +25,7 @@ async def create_project(
         description,
         visibility,
         tags or [],
+        created_by,
     )
     return dict(row)
 

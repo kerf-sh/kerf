@@ -185,6 +185,62 @@ def test_chat_event_has_thread_and_preview():
     assert "source" not in ev
 
 
+def test_chat_event_is_attributed_to_the_user():
+    """Regression: every chat event used to render as 'Unknown asked …'
+    because the SQL didn't carry user_id through for chat rows. After
+    folding chat_messages.user_id into the consolidated baseline, the
+    activity feed must surface the user's name."""
+    import datetime as dt
+
+    ts = dt.datetime(2024, 3, 15, 11, 0, 0, tzinfo=dt.timezone.utc)
+    row = {
+        "kind": "chat",
+        "source": None,
+        "created_at": ts,
+        "user_id": "u-imran",
+        "user_name": "Imran",
+        "user_avatar_url": None,
+        "file_id": None,
+        "file_name": None,
+        "thread_id": "t-1",
+        "thread_title": "Box with lid",
+        "content_preview": "i want box with lid",
+    }
+
+    result = _call_activity(rows=[row])
+    ev = result["events"][0]
+    assert ev["user"]["id"] == "u-imran"
+    assert ev["user"]["name"] == "Imran"
+
+
+def test_project_created_event_is_attributed():
+    """Regression: project_created events used to be anonymous because
+    projects.created_by didn't exist. After folding it into baseline 0001,
+    the activity feed must show '<user> created the project'."""
+    import datetime as dt
+
+    ts = dt.datetime(2024, 3, 15, 9, 0, 0, tzinfo=dt.timezone.utc)
+    row = {
+        "kind": "project_created",
+        "source": None,
+        "created_at": ts,
+        "user_id": "u-imran",
+        "user_name": "Imran",
+        "user_avatar_url": None,
+        "file_id": None,
+        "file_name": None,
+        "thread_id": None,
+        "thread_title": None,
+        "content_preview": None,
+    }
+
+    result = _call_activity(rows=[row])
+    ev = result["events"][0]
+    assert ev["kind"] == "project_created"
+    assert ev["user"]["id"] == "u-imran"
+    assert ev["user"]["name"] == "Imran"
+
+
 def test_next_cursor_set_when_full_page():
     """When exactly limit+1 rows are returned, next_cursor == oldest event ts."""
     import datetime as dt

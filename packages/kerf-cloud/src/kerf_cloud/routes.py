@@ -75,25 +75,36 @@ class PullRequest(BaseModel):
 
 
 async def require_role(request: Request, project_id: str, uid: str) -> tuple[str, str]:
+    """Resolve the caller's role on the given project.
+
+    Projects are workspace-scoped: the `projects` table has no `owner_id`
+    column, and there is no `project_members` table. Membership lives on
+    `workspace_members(workspace_id, user_id, role)` per the consolidated
+    baseline migrations (0001_core_identity, 0002_project_ingestion). The
+    old implementation queried `projects.owner_id` and `project_members.*`,
+    both of which don't exist — every /api/projects/{pid}/git/* call (and
+    the chat tool dispatch path that touches cloud routes) returned 500
+    with `UndefinedColumnError: column "owner_id" does not exist`.
+
+    Mirrors the auth pattern used in kerf-api routes.py post_message and
+    git_branches: project_workspace_id → get_user_workspace_role.
+    """
     pool = await get_pool_required()
     async with pool.acquire() as conn:
-        row = await conn.fetchrow(
-            "SELECT owner_id FROM projects WHERE id = $1",
+        ws_id = await conn.fetchval(
+            "SELECT workspace_id FROM projects WHERE id = $1",
             project_id,
         )
-        if not row:
+        if not ws_id:
             raise HTTPException(status_code=404, detail="project not found")
 
-        if str(row["owner_id"]) == uid:
-            return uid, "owner"
-
-        member_row = await conn.fetchrow(
-            "SELECT role FROM project_members WHERE project_id = $1 AND user_id = $2",
-            project_id, uid,
+        role_row = await conn.fetchrow(
+            "SELECT role FROM workspace_members WHERE workspace_id = $1 AND user_id = $2",
+            ws_id, uid,
         )
-        if not member_row:
+        if not role_row:
             raise HTTPException(status_code=404, detail="project not found")
-        return uid, member_row["role"]
+        return uid, role_row["role"]
 
 
 async def require_editor(request: Request, project_id: str, uid: str) -> str:

@@ -791,7 +791,7 @@ const ChatPanel = forwardRef(function ChatPanel({
   const renderItems = useMemo(() => buildRenderItems(messages), [messages])
 
   return (
-    <div className="h-full w-[380px] flex flex-col bg-ink-900 border-l border-ink-800 min-h-0 overflow-hidden">
+    <div className="h-full w-full flex flex-col bg-ink-900 min-h-0 overflow-hidden">
       <ThreadSwitcher
         threads={threads}
         currentThreadId={currentThreadId}

@@ -4,10 +4,15 @@
 /* Editor 3-pane grid columns at ≥ lg. Driven by an inline `--kerf-editor-cols`
  * custom property the JS sets on the container (Editor.jsx). Tailwind cannot
  * emit arbitrary utility classes from runtime-interpolated strings — this CSS
- * rule is the source of truth for the editor grid columns. */
+ * rule is the source of truth for the editor grid columns.
+ *
+ * With the unified right drawer (chat/activity/git as a single overlay),
+ * the grid no longer needs right-panel columns. The drawer overlays the canvas
+ * so the grid is always `240px 1fr` at ≥ lg. The CSS var is kept for backward
+ * compat (still set on the element) but the right-panel columns are dropped. */
 @media (min-width: 1024px) {
   .kerf-editor-grid {
-    grid-template-columns: var(--kerf-editor-cols);
+    grid-template-columns: 240px 1fr;
   }
 }
 

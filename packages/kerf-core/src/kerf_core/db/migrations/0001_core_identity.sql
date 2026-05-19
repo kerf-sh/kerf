@@ -60,11 +60,16 @@ create table if not exists projects (
     -- (null = original). on delete set null so deleting the source
     -- never cascade-deletes its forks.
     forked_from_project_id uuid references projects(id) on delete set null,
+    -- Who created this project. Activity feed joins through this to render
+    -- "<user> created the project" rows. on delete set null preserves the
+    -- project's history if the user is later deleted (becomes anon).
+    created_by uuid references users(id) on delete set null,
     created_at timestamptz not null default now(),
     updated_at timestamptz not null default now()
 );
 create index if not exists projects_workspace_id_idx on projects(workspace_id);
 create index if not exists projects_forked_from_idx on projects(forked_from_project_id);
+create index if not exists projects_created_by_idx on projects(created_by);
 
 create table if not exists share_links (
     id uuid primary key default gen_random_uuid(),
@@ -109,6 +114,10 @@ create table if not exists file_revisions (
 );
 create index if not exists file_revisions_file_id_created_at_idx on file_revisions(file_id, created_at desc);
 
+-- chat_threads.created_by: who created the thread. Activity feed joins
+-- through this to render "<user> asked …" rows; without it every chat
+-- event renders as "Unknown asked …". on delete set null so a deleted
+-- user's old threads survive as anonymised history.
 create table if not exists chat_threads (
     id uuid primary key default gen_random_uuid(),
     project_id uuid not null references projects(id) on delete cascade,
@@ -117,12 +126,17 @@ create table if not exists chat_threads (
     is_starred boolean not null default false,
     last_message_at timestamptz,
     model text,
+    created_by uuid references users(id) on delete set null,
     created_at timestamptz not null default now(),
     updated_at timestamptz not null default now()
 );
 create index if not exists chat_threads_project_id_idx on chat_threads(project_id);
 create index if not exists chat_threads_file_id_idx on chat_threads(file_id);
+create index if not exists chat_threads_created_by_idx on chat_threads(created_by);
 
+-- chat_messages.user_id: who sent this message. Only meaningful for
+-- role='user' rows; assistant/tool rows leave it null. Activity feed
+-- joins through this to render "<user> asked …" preview rows.
 create table if not exists chat_messages (
     id uuid primary key default gen_random_uuid(),
     thread_id uuid not null references chat_threads(id) on delete cascade,
@@ -132,9 +146,11 @@ create table if not exists chat_messages (
     tool_calls jsonb not null default '[]'::jsonb,
     tool_call_id text,
     model text,
+    user_id uuid references users(id) on delete set null,
     created_at timestamptz not null default now()
 );
 create index if not exists chat_messages_thread_id_idx on chat_messages(thread_id);
+create index if not exists chat_messages_user_id_idx on chat_messages(user_id);
 
 -- ════════════ folded: files_kind_check (29 kind migrations collapsed) ════════════
 

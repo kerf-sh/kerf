@@ -16,7 +16,7 @@
 import { useEffect, useMemo } from 'react'
 import {
   Activity, AlertCircle, ChevronDown, Clock, FileText, Folder,
-  Loader2, MessageSquare, Plus, RefreshCw, Sparkles, Trash2, Wrench, X,
+  Loader2, MessageSquare, Plus, RefreshCw, Sparkles, Trash2, Wrench,
 } from 'lucide-react'
 import { useWorkspace } from '../store/workspace.js'
 
@@ -134,7 +134,12 @@ function EventRow({ ev, onSelectFile, onSelectThread }) {
   const Icon = glyph.icon
   const badge = sourceBadge(ev)
   const target = targetLabel(ev)
-  const userName = ev.user?.name || 'Unknown'
+  // Fall back to "Someone" rather than the unfriendly "Unknown" when the
+  // backend can't attribute the event (rows with NULL user_id). The
+  // baseline schema now carries user_id on chat_messages, projects, and
+  // chat_threads, so this fallback should only fire for legacy rows
+  // written before the schema reset.
+  const userName = ev.user?.name || ev.user?.email || 'Someone'
 
   // Click target depends on kind. Projects-created and unknown kinds are
   // informational only.
@@ -173,15 +178,27 @@ function EventRow({ ev, onSelectFile, onSelectThread }) {
         <Avatar user={ev.user} />
         <div className="flex-1 min-w-0">
           {/* Headline: user · verb · target  +  timestamp */}
-          <div className="flex items-baseline gap-1.5 min-w-0">
-            <Icon size={11} className={`${glyph.accent} flex-shrink-0 self-center`} />
-            <span className="text-xs text-ink-100 font-medium truncate">{userName}</span>
-            <span className="text-xs text-ink-400 flex-shrink-0">{glyph.verb}</span>
-            {target && (
-              <span className="text-xs text-ink-100 truncate font-mono">{target}</span>
-            )}
+          {/* Headline: user · verb · target  +  timestamp.
+              We split it into a single truncating <p> so adjacent items
+              never run together visually ("Unknownasked Box…"). Each
+              segment carries its own padding-via-space character so even
+              when the flex-gap collapses under tight widths the row
+              still reads as words rather than a slurry. */}
+          <div className="flex items-baseline min-w-0">
+            <Icon size={11} className={`${glyph.accent} flex-shrink-0 self-center mr-1.5`} />
+            <p className="text-xs text-ink-100 truncate min-w-0 flex-1">
+              <span className="font-medium">{userName}</span>
+              {' '}
+              <span className="text-ink-400">{glyph.verb}</span>
+              {target && (
+                <>
+                  {' '}
+                  <span className="font-mono">{target}</span>
+                </>
+              )}
+            </p>
             <span
-              className="ml-auto text-[10px] text-ink-500 flex-shrink-0"
+              className="ml-2 text-[10px] text-ink-500 flex-shrink-0"
               title={isoTitle}
             >
               {relativeTime(ev.created_at)}
@@ -256,31 +273,20 @@ export default function ActivityTimeline({ projectId, open, onClose }) {
   if (!open) return null
 
   return (
-    <div className="absolute top-12 right-0 bottom-0 w-96 z-30 bg-ink-900 border-l border-ink-800 shadow-2xl flex flex-col">
-      {/* Header */}
-      <div className="flex items-center justify-between h-10 px-3 border-b border-ink-800 flex-shrink-0">
-        <div className="flex items-center gap-2 text-xs font-medium text-ink-200 uppercase tracking-wider">
-          <Activity size={13} className="text-kerf-300" /> Activity
-        </div>
-        <div className="flex items-center gap-1">
-          <button
-            type="button"
-            onClick={() => useWorkspace.getState().loadActivity(false)}
-            disabled={loading}
-            className="p-1 rounded text-ink-400 hover:text-ink-100 hover:bg-ink-800 disabled:opacity-40"
-            title="Refresh"
-          >
-            <RefreshCw size={12} className={loading ? 'animate-spin' : ''} />
-          </button>
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-1 rounded text-ink-400 hover:text-ink-100 hover:bg-ink-800"
-            title="Close"
-          >
-            <X size={14} />
-          </button>
-        </div>
+    <div className="flex flex-col h-full min-h-0 bg-ink-900">
+      {/* Refresh action bar — the drawer's tab strip already shows the
+          "Activity" label and the close button; we only show the Refresh
+          shortcut here. */}
+      <div className="flex items-center justify-end h-8 px-3 border-b border-ink-800 flex-shrink-0">
+        <button
+          type="button"
+          onClick={() => useWorkspace.getState().loadActivity(false)}
+          disabled={loading}
+          className="p-1 rounded text-ink-400 hover:text-ink-100 hover:bg-ink-800 disabled:opacity-40"
+          title="Refresh"
+        >
+          <RefreshCw size={12} className={loading ? 'animate-spin' : ''} />
+        </button>
       </div>
 
       {/* Body */}
