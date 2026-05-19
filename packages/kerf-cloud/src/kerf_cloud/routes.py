@@ -187,26 +187,41 @@ async def ensure_git_repo(pool, project_id: str) -> dict:
     Safe to call multiple times — a no-op when the repo already exists.
     This is the shared body used by both the POST /git/init handler
     and the automatic init triggered at project-creation time.
+
+    Always ensures the 'main' branch row exists in cloud_git_branches
+    (head_sha stays NULL until the first real commit).
     """
     async with pool.acquire() as conn:
         existing = await conn.fetchrow(
             "SELECT * FROM cloud_git_repos WHERE project_id = $1",
             project_id,
         )
-        if existing:
-            return {
-                "project_id": project_id,
-                "default_branch": existing["default_branch"],
-                "head_sha": existing.get("head_sha", ""),
-            }
+        if not existing:
+            await conn.execute(
+                """
+                INSERT INTO cloud_git_repos (project_id, default_branch, head_sha)
+                VALUES ($1, 'main', '')
+                """,
+                project_id,
+            )
 
+        # Always ensure the default branch row exists — covers both the
+        # fresh-insert path and projects created before this fix.
         await conn.execute(
             """
-            INSERT INTO cloud_git_repos (project_id, default_branch, head_sha)
-            VALUES ($1, 'main', '')
+            INSERT INTO cloud_git_branches (project_id, name, head_sha, is_default)
+            VALUES ($1, 'main', NULL, true)
+            ON CONFLICT (project_id, name) DO NOTHING
             """,
             project_id,
         )
+
+    if existing:
+        return {
+            "project_id": project_id,
+            "default_branch": existing["default_branch"],
+            "head_sha": existing.get("head_sha", ""),
+        }
 
     return {
         "project_id": project_id,

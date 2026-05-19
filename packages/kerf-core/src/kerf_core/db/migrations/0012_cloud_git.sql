@@ -32,7 +32,7 @@ CREATE TABLE IF NOT EXISTS cloud_git_repos (
 CREATE TABLE IF NOT EXISTS cloud_git_branches (
     project_id uuid    NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
     name       text    NOT NULL,
-    head_sha   text    NOT NULL DEFAULT '',
+    head_sha   text,
     is_default boolean NOT NULL DEFAULT false,
     PRIMARY KEY (project_id, name)
 );
