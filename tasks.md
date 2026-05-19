@@ -362,7 +362,7 @@ Sequenced for parallel execution across 5 Sonnet agents.
 
 ### T-311 Streaming chat (SSE): tool-use visible in real time
 
-🔴 not started · **Tier A · P0**
+✅ shipped (2026-05-19) · **Tier A · P0**
 
 - **Why:** `POST /messages` is request/response — server runs the
   entire LLM loop (Anthropic call + tool exec + Anthropic call + … ),
@@ -458,7 +458,7 @@ Sequenced for parallel execution across 5 Sonnet agents.
 
 ### T-312 Always initialise new projects on a `main` branch
 
-🔴 not started · **Tier A · P0**
+✅ shipped (2026-05-19) · **Tier A · P0**
 
 - **Why:** Auto-git-init (`ensure_git_repo`) inserts into
   `cloud_git_repos` with `default_branch = 'main'`, BUT there's no
@@ -485,7 +485,7 @@ Sequenced for parallel execution across 5 Sonnet agents.
 
 ### T-313 Project deletion cascades: DB rows + S3 blobs + git tree
 
-🔴 not started · **Tier A · P0**
+✅ shipped (2026-05-19) · **Tier A · P0**
 
 - **Why:** `DELETE /api/projects/{pid}` exists but the cascade is
   partial. FK constraints clean some tables (`files`, `chat_threads`,
