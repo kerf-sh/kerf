@@ -1,0 +1,306 @@
+"""packager.py — Tiny Tapeout submission packager.
+
+Entry point
+-----------
+    package_for_tt(design_dir, info_dict) -> pathlib.Path
+
+Validates:
+  1. Top module name follows the ``tt_um_<id>`` convention.
+  2. RTL source contains the required I/O signals:
+       - ``ui_in[7:0]``    (8-bit input)
+       - ``uo_out[7:0]``   (8-bit output)
+       - ``uio_in[7:0]``   (8-bit bidirectional in)
+       - ``uio_out[7:0]``  (8-bit bidirectional out)
+       - ``uio_oe[7:0]``   (8-bit output-enable)
+  3. The ``project.tiles`` field is a recognised tile label.
+
+On success writes the packaged submission to a sub-directory of *design_dir*
+named ``tt_submission/`` containing:
+  - ``info.yaml``     — project metadata
+  - ``src/<files>``  — copy of all ``.v`` / ``.sv`` / ``.vhd`` source files
+  - ``wrapper.v``     — minimal Verilog wrapper that instantiates the user module
+
+Raises
+------
+ValidationError
+    For any constraint violation.
+"""
+
+from __future__ import annotations
+
+import re
+import shutil
+import textwrap
+from pathlib import Path
+from typing import Any
+
+from .info_yaml import build_info_dict, dump_yaml, validate_info_dict
+from .tile_constraints import validate_tile
+
+# ---------------------------------------------------------------------------
+# Public exception
+# ---------------------------------------------------------------------------
+
+
+class ValidationError(Exception):
+    """Raised when a Tiny Tapeout packaging constraint is violated."""
+
+
+# ---------------------------------------------------------------------------
+# Constants
+# ---------------------------------------------------------------------------
+
+_MODULE_RE = re.compile(r"^tt_um_[A-Za-z0-9_]+$")
+
+# The five mandatory port declarations (bit-width + direction agnostic names)
+_REQUIRED_PORTS: list[str] = [
+    "ui_in",
+    "uo_out",
+    "uio_in",
+    "uio_out",
+    "uio_oe",
+]
+
+# Width that every port above must declare: [7:0]
+_PORT_WIDTH_RE = re.compile(r"\[7:0\]")
+
+# RTL source extensions we copy into the submission
+_RTL_EXTS = {".v", ".sv", ".vhd", ".vhdl"}
+
+# ---------------------------------------------------------------------------
+# Validation helpers
+# ---------------------------------------------------------------------------
+
+
+def _validate_module_name(name: str) -> None:
+    """Raise ``ValidationError`` if *name* does not follow ``tt_um_<id>``."""
+    if not _MODULE_RE.match(name):
+        raise ValidationError(
+            f"Top module name {name!r} is invalid. "
+            "Must match tt_um_<identifier> (letters, digits, underscores only)."
+        )
+
+
+def _collect_rtl_sources(design_dir: Path) -> list[Path]:
+    """Return all RTL source files found under *design_dir*.
+
+    The ``tt_submission/`` output directory is excluded so that re-running
+    :func:`package_for_tt` does not pick up previously generated files.
+    """
+    out_dir = design_dir / "tt_submission"
+    sources: list[Path] = []
+    for ext in _RTL_EXTS:
+        for p in design_dir.rglob(f"*{ext}"):
+            # Skip anything inside the submission output directory
+            try:
+                p.relative_to(out_dir)
+                continue  # it's inside tt_submission/ — skip
+            except ValueError:
+                pass
+            sources.append(p)
+    return sorted(sources)
+
+
+def _validate_io_signature(sources: list[Path], module_name: str) -> None:
+    """Check that the RTL files declare all required 8-bit ports.
+
+    Strategy: concatenate all source text and search for each required port
+    name accompanied by a ``[7:0]`` width specifier on the same line (or the
+    surrounding two lines, to allow line-wrapped port declarations).
+
+    Raises ``ValidationError`` listing every missing or wrongly-sized port.
+    """
+    combined = "\n".join(p.read_text(errors="replace") for p in sources)
+
+    errors: list[str] = []
+    for port in _REQUIRED_PORTS:
+        # Find the port name anywhere in the source
+        port_re = re.compile(
+            r"(?:input|output|inout)\s+(?:wire\s+|reg\s+)?"
+            r"(?P<width>\[7:0\]\s+)?" + re.escape(port) + r"\b"
+        )
+        matches = list(port_re.finditer(combined))
+        if not matches:
+            errors.append(f"  - {port}: not found in RTL sources")
+            continue
+        # At least one occurrence must have [7:0]
+        if not any(m.group("width") for m in matches):
+            errors.append(
+                f"  - {port}: found but not declared with [7:0] width"
+            )
+
+    if errors:
+        raise ValidationError(
+            "I/O signature validation failed for module "
+            f"{module_name!r}:\n" + "\n".join(errors)
+        )
+
+
+# ---------------------------------------------------------------------------
+# Wrapper generation
+# ---------------------------------------------------------------------------
+
+_WRAPPER_TEMPLATE = textwrap.dedent(
+    """\
+    // tt_wrapper.v — auto-generated by kerf-silicon tinytapeout packager
+    // DO NOT EDIT — regenerate by re-running package_for_tt()
+    `default_nettype none
+
+    module tt_um_kerf_wrapper #(
+        parameter USER_MODULE = "{top_module}"
+    ) (
+        input  wire [7:0] ui_in,
+        output wire [7:0] uo_out,
+        input  wire [7:0] uio_in,
+        output wire [7:0] uio_out,
+        output wire [7:0] uio_oe,
+        input  wire       ena,
+        input  wire       clk,
+        input  wire       rst_n
+    );
+
+        {top_module} user_inst (
+            .ui_in   (ui_in),
+            .uo_out  (uo_out),
+            .uio_in  (uio_in),
+            .uio_out (uio_out),
+            .uio_oe  (uio_oe),
+            .ena     (ena),
+            .clk     (clk),
+            .rst_n   (rst_n)
+        );
+
+    endmodule
+    """
+)
+
+
+def _generate_wrapper(top_module: str) -> str:
+    return _WRAPPER_TEMPLATE.format(top_module=top_module)
+
+
+# ---------------------------------------------------------------------------
+# Main entry point
+# ---------------------------------------------------------------------------
+
+
+def package_for_tt(
+    design_dir: str | Path,
+    info_dict: dict[str, Any],
+) -> Path:
+    """Package *design_dir* for Tiny Tapeout submission.
+
+    Parameters
+    ----------
+    design_dir:
+        Directory containing the user's RTL source files.
+    info_dict:
+        Project metadata.  Must contain at least::
+
+            {
+                "project": {
+                    "title":       str,
+                    "author":      str,
+                    "description": str,
+                    "top_module":  str,   # must match tt_um_<id>
+                    "language":    str,   # "Verilog" | "SystemVerilog" | …
+                    "tiles":       str,   # "1x1" | "2x2" | "4x2" | "8x2"
+                },
+                "documentation": { … },   # optional but encouraged
+            }
+
+        Alternatively pass the flat keyword arguments accepted by
+        :func:`kerf_silicon.tinytapeout.info_yaml.build_info_dict` and wrap
+        them yourself, or use that helper directly.
+
+    Returns
+    -------
+    pathlib.Path
+        Path to the ``tt_submission/`` directory written inside *design_dir*.
+
+    Raises
+    ------
+    ValidationError
+        For module-name, I/O signature, or tile-constraint violations.
+    FileNotFoundError
+        If *design_dir* does not exist.
+    """
+    design_dir = Path(design_dir)
+    if not design_dir.is_dir():
+        raise FileNotFoundError(f"design_dir not found: {design_dir}")
+
+    # ------------------------------------------------------------------ #
+    # 1. Validate info_dict structure
+    # ------------------------------------------------------------------ #
+    try:
+        validate_info_dict(info_dict)
+    except ValueError as exc:
+        raise ValidationError(str(exc)) from exc
+
+    project = info_dict["project"]
+    top_module: str = project["top_module"]
+    tiles: str = project["tiles"]
+
+    # ------------------------------------------------------------------ #
+    # 2. Validate module name
+    # ------------------------------------------------------------------ #
+    _validate_module_name(top_module)
+
+    # ------------------------------------------------------------------ #
+    # 3. Validate tile constraint
+    # ------------------------------------------------------------------ #
+    try:
+        tile_dims = validate_tile(tiles)
+    except ValueError as exc:
+        raise ValidationError(str(exc)) from exc
+
+    # ------------------------------------------------------------------ #
+    # 4. Collect RTL sources and validate I/O signature
+    # ------------------------------------------------------------------ #
+    rtl_sources = _collect_rtl_sources(design_dir)
+    if not rtl_sources:
+        raise ValidationError(
+            f"No RTL source files found under {design_dir}. "
+            "Expected at least one .v / .sv / .vhd / .vhdl file."
+        )
+
+    _validate_io_signature(rtl_sources, top_module)
+
+    # ------------------------------------------------------------------ #
+    # 5. Build output directory
+    # ------------------------------------------------------------------ #
+    out_dir = design_dir / "tt_submission"
+    src_dir = out_dir / "src"
+    if out_dir.exists():
+        shutil.rmtree(out_dir)
+    src_dir.mkdir(parents=True)
+
+    # Copy RTL sources preserving relative paths
+    for src in rtl_sources:
+        try:
+            rel = src.relative_to(design_dir)
+        except ValueError:
+            rel = Path(src.name)
+        dest = src_dir / rel
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src, dest)
+
+    # Write info.yaml
+    (out_dir / "info.yaml").write_text(dump_yaml(info_dict), encoding="utf-8")
+
+    # Write wrapper
+    (out_dir / "wrapper.v").write_text(_generate_wrapper(top_module), encoding="utf-8")
+
+    # Write a human-readable summary
+    summary_lines = [
+        f"top_module : {top_module}",
+        f"tile       : {tile_dims.label}  "
+        f"({tile_dims.width_um:.0f} × {tile_dims.height_um:.0f} µm)",
+        f"area       : {tile_dims.area_um2:.0f} µm²",
+        f"sources    : {len(rtl_sources)} file(s)",
+    ]
+    (out_dir / "PACKAGE_SUMMARY.txt").write_text(
+        "\n".join(summary_lines) + "\n", encoding="utf-8"
+    )
+
+    return out_dir
