@@ -360,6 +360,170 @@ Sequenced for parallel execution across 5 Sonnet agents.
 - **Depends-on:** none (frontend chat UI is unchanged — it just receives
   fewer tool_use blocks; same render path)
 
+### T-311 Streaming chat (SSE): tool-use visible in real time
+
+🔴 not started · **Tier A · P0**
+
+- **Why:** `POST /messages` is request/response — server runs the
+  entire LLM loop (Anthropic call + tool exec + Anthropic call + … ),
+  then returns one JSON blob. The user waits 20-40 s on a multi-tool
+  exchange and sees nothing but "Kerf is thinking…". Stream the
+  response so each step is visible as it happens.
+- **Choice:** Server-Sent Events. One-way server→client over plain
+  HTTP; works through Fly proxies; no connection upgrade. Anthropic's
+  own streaming protocol maps to SSE cleanly. NOT WebSocket — no
+  bidirectional need.
+- **Target files:**
+  - `packages/kerf-chat/src/kerf_chat/llm.py` — `AnthropicProvider.stream()`
+    yielding events from `client.messages.stream(...)`. Map Anthropic's
+    `content_block_delta` / `message_start` / `message_stop` /
+    `input_json_delta` to a small Kerf-native event enum so other
+    providers can be wrapped the same way (OpenAI, etc).
+  - `packages/kerf-api/src/kerf_api/routes.py` — new
+    `POST /api/projects/{pid}/threads/{tid}/messages/stream` returning
+    `StreamingResponse(media_type="text/event-stream")`. The dispatcher
+    loop emits SSE frames after each provider event AND around each
+    tool execute (start / running / result).
+  - `src/lib/sseClient.js` (new) — small wrapper around `fetch()` +
+    ReadableStream that yields parsed SSE events. EventSource doesn't
+    support POST, so we use fetch + body-stream-reader.
+  - `src/store/workspace.js` — `sendMessage` now opens the stream,
+    feeds events into an in-progress assistant message + tool-message
+    list; updates the store on each event. `sending: true` flips off
+    only at `message_done`.
+  - `src/components/ChatPanel.jsx` — replace the bare "Kerf is
+    thinking…" with a live tool-use list. Each tool gets a chip with
+    a status icon: `🌀 running` / `✓ done` / `⚠ error`. Final text
+    streams in word-by-word into the assistant message body.
+- **Event schema** (Kerf-native, provider-agnostic):
+  ```
+  event: assistant_text_delta
+  data: {"text": " on it"}
+  ```
+  ```
+  event: tool_use_start
+  data: {"tool_use_id": "tu_...", "name": "read_file", "input_partial": {...}}
+  ```
+  ```
+  event: tool_executing
+  data: {"tool_use_id": "tu_..."}
+  ```
+  ```
+  event: tool_result
+  data: {"tool_use_id": "tu_...", "is_error": false, "content_preview": "..."}
+  ```
+  ```
+  event: assistant_done
+  data: {"stop_reason": "end_turn", "input_tokens": 1234, "output_tokens": 567}
+  ```
+  ```
+  event: error
+  data: {"message": "...", "is_error": true}
+  ```
+- **Backward compatibility:** keep the existing non-streaming
+  `POST /messages` endpoint for the test suite + any non-streaming
+  client. Frontend prefers the stream endpoint and falls back to the
+  blocking one on EventStream failure.
+- **Cancellation:** if the user clicks "Stop", the client aborts the
+  fetch; the server `asyncio.CancelledError` halts the LLM call.
+  Persist whatever assistant text was streamed up to that point
+  (don't lose partial output).
+- **Definition of Done:**
+  - Multi-tool exchange (read_file → edit_file → write_file)
+    surfaces each tool as a chip immediately
+  - Assistant text streams in token-by-token (Anthropic delta events
+    forwarded)
+  - Tool errors propagate via `event: tool_result` with
+    `is_error: true` — UI shows the red error chip; assistant turn
+    continues
+  - Stop button cancels the stream + persists partial state
+  - Existing `POST /messages` non-streaming endpoint still works
+    (regression: legacy test suite passes)
+- **Tests:**
+  - `packages/kerf-api/tests/test_messages_stream_route.py` — fake
+    Anthropic stream yields known events; assert SSE frames come out
+    in order; assert one tool round-trip emits start / executing /
+    result events
+  - `packages/kerf-chat/tests/test_anthropic_stream.py` — provider
+    layer mapping
+  - `src/lib/__tests__/sseClient.test.js` — parse SSE frames from a
+    mock ReadableStream
+  - `src/store/__tests__/sendMessageStream.test.js` — store state
+    transitions per event
+  - `src/components/__tests__/ChatPanel.toolChips.test.jsx` —
+    tool-use chips render with correct status icons
+- **Effort:** L
+- **Depends-on:** none (the `is_error: true` plumbing from T-308 is
+  reused)
+
+### T-312 Always initialise new projects on a `main` branch
+
+🔴 not started · **Tier A · P0**
+
+- **Why:** Auto-git-init (`ensure_git_repo`) inserts into
+  `cloud_git_repos` with `default_branch = 'main'`, BUT there's no
+  corresponding `cloud_git_branches` row created. The branch picker
+  starts empty until the user makes their first commit. Fix:
+  populate `cloud_git_branches('main', null, true)` on init so the
+  picker shows the branch immediately. Also: never default to `master`
+  or any other name. Always `main`.
+- **Target files:**
+  - `packages/kerf-cloud/src/kerf_cloud/routes.py` — extend
+    `ensure_git_repo` to also INSERT a `('main', NULL, true)` row
+    into `cloud_git_branches` (`ON CONFLICT DO NOTHING` for
+    idempotency)
+  - Tests
+- **Definition of Done:**
+  - Newly-created project has a `main` row in `cloud_git_branches`
+    with `is_default = true` and `head_sha` null until the first commit
+  - Branch picker on a fresh project shows "main" instead of empty
+  - Test: `test_auto_git_init_creates_main_branch.py` asserts the row
+    exists after create_project
+  - `ensure_git_repo` remains idempotent (calling twice doesn't dupe)
+- **Effort:** S
+- **Depends-on:** none
+
+### T-313 Project deletion cascades: DB rows + S3 blobs + git tree
+
+🔴 not started · **Tier A · P0**
+
+- **Why:** `DELETE /api/projects/{pid}` exists but the cascade is
+  partial. FK constraints clean some tables (`files`, `chat_threads`,
+  `cloud_git_repos` if cascade is set) but not all. Critically: the
+  Tigris S3 blobs that own file content and the in-storage git objects
+  are NOT cleaned up — they leak forever, eating quota + cost. When a
+  user deletes a project they expect everything to go.
+- **Target files:**
+  - `packages/kerf-core/src/kerf_core/db/migrations/0001_core_identity.sql`
+    + other baseline migrations — audit every FK that references
+    `projects(id)`; ensure each is `ON DELETE CASCADE`. Fold into the
+    CREATE TABLE per the clean-baseline rule.
+  - `packages/kerf-api/src/kerf_api/routes.py` (or kerf-cloud routes)
+    — extend the `DELETE /projects/{pid}` handler to:
+      1. Collect all `storage_key`s belonging to project's `files`
+      2. Call `storage.delete()` for each (Tigris S3)
+      3. Collect `derived_artifacts`/`blob_objects` keys; delete them
+      4. Delete the git repo's S3 prefix
+         (`workspaces/{ws}/git/{project_id}/` or whatever the
+         convention is in `storage/git_storer.py`)
+      5. Finally DELETE from projects; FKs cascade the rows
+- **Definition of Done:**
+  - Create a project with N files + a commit + photos
+  - Delete the project
+  - Assert: `files`, `chat_threads`, `chat_messages`, `file_revisions`,
+    `cloud_git_repos`, `cloud_git_branches`, `cloud_git_commits` all
+    have zero rows for that project_id
+  - Assert: Tigris S3 bucket has zero objects under the project's
+    storage prefixes (mock the storage layer)
+  - All baseline FK constraints to `projects(id)` use
+    `ON DELETE CASCADE`; `grep` confirms
+  - Test: `test_delete_project_cascade.py` covers the full sequence
+- **Effort:** M
+- **Depends-on:** T-307 invariant (clean baseline; this task folds
+  FK changes into baseline rather than adding alter shims)
+
+---
+
 ### T-310 Distributed rate limiting (Postgres-first, Redis later)
 
 ✅ shipped (2026-05-19) · **Tier A · P0**
