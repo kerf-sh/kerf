@@ -89,9 +89,13 @@ echo "▸ dropping and recreating public schema on prod Neon …"
 psql "$DATABASE_URL" -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;" 1>&2
 
 # ── 2. Deploy to Fly main (runs migrations on the remote side) ───────────────
+# deploy-fly.sh has an interactive `PRODUCTION deploy ... continue? (yes/no)`
+# gate; loop_main.sh's own --yes already serves as the explicit opt-in, so we
+# pipe "yes" through to satisfy it. The --yes gate above is the user's actual
+# confirmation point.
 echo ""
 echo "▸ deploying to Fly main via scripts/deploy-fly.sh …"
-FLY_CONFIG_DIR="./.fly" "$_REPO_ROOT/scripts/deploy-fly.sh"
+FLY_CONFIG_DIR="./.fly" "$_REPO_ROOT/scripts/deploy-fly.sh" <<< "yes"
 
 # ── 3. Smoke: health + one API hit ───────────────────────────────────────────
 echo ""
