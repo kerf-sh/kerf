@@ -22,22 +22,32 @@ function initials(name = '', email = '') {
 function UserMenu({ user, onLogout, currentWorkspaceSlug, cloudEnabled }) {
   const [open, setOpen] = useState(false)
   const ref = useRef(null)
+  // Keep a ref to the latest `open` value so the stable click-outside
+  // listener never captures a stale closure — a common React 19 gotcha
+  // when the effect dependency is `[open]` and concurrent rendering can
+  // schedule the effect after the triggering pointer sequence completes.
+  const openRef = useRef(open)
+  useEffect(() => { openRef.current = open }, [open])
 
   useEffect(() => {
-    if (!open) return
+    // Single stable listener registered once on mount.  Uses `click` in
+    // capture phase so it fires reliably before React's root-level bubble
+    // handlers — `mousedown` in React 19 concurrent mode can race with the
+    // effect that installs it when setOpen(true) flushes synchronously.
     const onDoc = (e) => {
+      if (!openRef.current) return
       if (ref.current && !ref.current.contains(e.target)) setOpen(false)
     }
     const onKey = (e) => {
-      if (e.key === 'Escape') setOpen(false)
+      if (e.key === 'Escape' && openRef.current) setOpen(false)
     }
-    document.addEventListener('mousedown', onDoc)
-    document.addEventListener('keydown', onKey)
+    document.addEventListener('click', onDoc, true)
+    document.addEventListener('keydown', onKey, true)
     return () => {
-      document.removeEventListener('mousedown', onDoc)
-      document.removeEventListener('keydown', onKey)
+      document.removeEventListener('click', onDoc, true)
+      document.removeEventListener('keydown', onKey, true)
     }
-  }, [open])
+  }, [])
 
   const display = user?.name || user?.email || 'Account'
 
@@ -45,6 +55,7 @@ function UserMenu({ user, onLogout, currentWorkspaceSlug, cloudEnabled }) {
     <div className="relative" ref={ref}>
       <button
         type="button"
+        id="user-menu-button"
         onClick={() => setOpen((v) => !v)}
         className={clsx(
           'flex items-center gap-2 rounded-lg pr-2 pl-1.5 h-9',
@@ -53,6 +64,7 @@ function UserMenu({ user, onLogout, currentWorkspaceSlug, cloudEnabled }) {
         )}
         aria-haspopup="menu"
         aria-expanded={open}
+        aria-controls="user-menu-panel"
       >
         <span className="grid place-items-center w-7 h-7 rounded-md bg-kerf-300 text-ink-950 text-[11px] font-semibold tracking-tight">
           {user?.avatar_url ? (
@@ -74,6 +86,7 @@ function UserMenu({ user, onLogout, currentWorkspaceSlug, cloudEnabled }) {
       {open && (
         <div
           role="menu"
+          id="user-menu-panel"
           className={clsx(
             'absolute right-0 mt-2 w-56 rounded-xl border border-ink-800',
             'bg-ink-900/95 backdrop-blur shadow-xl shadow-black/40',
