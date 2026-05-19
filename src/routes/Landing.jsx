@@ -1712,7 +1712,6 @@ export default function Landing() {
       <Hero />
       <OutputStrip />
       <PipelineDivider />
-      <PerDomain />
       <KernelDepth />
       <CapabilityTour />
       <DomainSpotlights />
