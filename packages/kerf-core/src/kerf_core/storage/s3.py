@@ -174,6 +174,33 @@ class S3Storage(Storage):
         del self._multipart[upload_key]
         return size
 
+    async def delete_prefix(self, prefix: str) -> int:
+        """Delete all objects under *prefix* using paginated ListObjectsV2."""
+        deleted = 0
+        continuation_token = None
+        while True:
+            kwargs: dict = {"Bucket": self.bucket, "Prefix": prefix, "MaxKeys": 1000}
+            if continuation_token:
+                kwargs["ContinuationToken"] = continuation_token
+
+            page = await _run_sync(self.client.list_objects_v2, **kwargs)
+            contents = page.get("Contents", [])
+
+            if contents:
+                objects = [{"Key": obj["Key"]} for obj in contents]
+                await _run_sync(
+                    self.client.delete_objects,
+                    Bucket=self.bucket,
+                    Delete={"Objects": objects, "Quiet": True},
+                )
+                deleted += len(objects)
+
+            if not page.get("IsTruncated"):
+                break
+            continuation_token = page.get("NextContinuationToken")
+
+        return deleted
+
     async def delete_upload(self, upload_key: str) -> None:
         state = self._multipart.get(upload_key)
         if not state:

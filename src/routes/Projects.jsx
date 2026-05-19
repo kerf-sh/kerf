@@ -540,13 +540,21 @@ function RenameModal({ open, onClose, project, onSaved }) {
   return <RenameModalBody key={project.id} project={project} onClose={onClose} onSaved={onSaved} />
 }
 
-function ConfirmDelete({ open, onClose, project, onDeleted }) {
+function ConfirmDeleteBody({ onClose, project, onDeleted }) {
+  const [nameInput, setNameInput] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState(null)
+  const inputRef = useRef(null)
 
-  if (!project) return null
+  const confirmed = nameInput === project.name
+
+  useEffect(() => {
+    const t = setTimeout(() => inputRef.current?.focus(), 30)
+    return () => clearTimeout(t)
+  }, [])
 
   const doDelete = async () => {
+    if (!confirmed || submitting) return
     setSubmitting(true)
     setError(null)
     try {
@@ -560,7 +568,7 @@ function ConfirmDelete({ open, onClose, project, onDeleted }) {
 
   return (
     <Modal
-      open={open}
+      open
       onClose={onClose}
       title="Delete project"
       footer={
@@ -568,25 +576,70 @@ function ConfirmDelete({ open, onClose, project, onDeleted }) {
           <Button variant="ghost" size="md" onClick={onClose} disabled={submitting}>
             Cancel
           </Button>
-          <Button variant="danger" size="md" onClick={doDelete} disabled={submitting}>
+          <Button
+            variant="danger"
+            size="md"
+            onClick={doDelete}
+            disabled={!confirmed || submitting}
+            data-testid="delete-project-confirm-btn"
+          >
             {submitting ? 'Deleting…' : 'Delete project'}
           </Button>
         </>
       }
     >
-      <p className="text-sm text-ink-200">
-        Permanently delete{' '}
-        <span className="font-mono text-ink-100">{project.name}</span> and all its
-        files, threads, and shares?
-      </p>
-      <p className="mt-2 text-xs text-ink-400">This cannot be undone.</p>
-      {error && (
-        <div className="mt-4 flex items-start gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-200">
-          <AlertCircle size={14} className="mt-0.5 shrink-0" />
-          <span>{error}</span>
+      <div className="flex flex-col gap-4">
+        <div className="flex items-start gap-3 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3">
+          <AlertCircle size={16} className="mt-0.5 shrink-0 text-red-400" />
+          <div className="text-sm text-red-200 leading-snug">
+            <p className="font-semibold text-red-100">This will permanently delete:</p>
+            <ul className="mt-1 list-disc list-inside space-y-0.5 text-red-200/80">
+              <li>All files, revision history, and git commits</li>
+              <li>All chat threads and messages</li>
+              <li>All share links and access grants</li>
+            </ul>
+            <p className="mt-2 font-medium text-red-100">This cannot be undone.</p>
+          </div>
         </div>
-      )}
+
+        <div>
+          <label className="block text-[12px] font-mono uppercase tracking-wider text-ink-400 mb-1.5">
+            Type the project name to confirm
+          </label>
+          <p className="mb-2 text-[12px] text-ink-400 font-mono">
+            <span className="text-ink-100">{project.name}</span>
+          </p>
+          <Input
+            ref={inputRef}
+            name="confirm-name"
+            placeholder={project.name}
+            value={nameInput}
+            onChange={(e) => setNameInput(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') doDelete() }}
+            data-testid="delete-project-name-input"
+          />
+        </div>
+
+        {error && (
+          <div className="flex items-start gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-200">
+            <AlertCircle size={14} className="mt-0.5 shrink-0" />
+            <span>{error}</span>
+          </div>
+        )}
+      </div>
     </Modal>
+  )
+}
+
+function ConfirmDelete({ open, onClose, project, onDeleted }) {
+  if (!open || !project) return null
+  return (
+    <ConfirmDeleteBody
+      key={project.id}
+      onClose={onClose}
+      project={project}
+      onDeleted={onDeleted}
+    />
   )
 }
 

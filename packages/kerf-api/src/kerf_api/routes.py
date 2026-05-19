@@ -1144,8 +1144,11 @@ async def update_project(pid: str, req: UpdateProjectRequest, payload: dict = De
 @router.delete("/projects/{pid}")
 async def delete_project(pid: str, request: Request, payload: dict = Depends(require_auth)):
     user_id = payload.get("sub")
+    logger = logging.getLogger(__name__)
 
     pool = await get_pool_required()
+
+    # ── Phase 1: auth + collect storage keys BEFORE deleting rows ──────────
     async with pool.acquire() as conn:
         row = await conn.fetchrow("SELECT workspace_id FROM projects WHERE id = $1", pid)
         if not row:
@@ -1156,8 +1159,83 @@ async def delete_project(pid: str, request: Request, payload: dict = Depends(req
         if role != "owner":
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="owner only")
 
-        await projects_queries.delete_project(conn, pid)
-        return Response(status_code=status.HTTP_204_NO_CONTENT)
+        # Collect every blob storage_key / mesh_storage_key from files rows.
+        file_rows = await conn.fetch(
+            "SELECT storage_key, mesh_storage_key, content, kind FROM files WHERE project_id = $1",
+            pid,
+        )
+        blob_keys: list[str] = []
+        for r in file_rows:
+            if r["storage_key"]:
+                blob_keys.append(r["storage_key"])
+            if r["mesh_storage_key"]:
+                blob_keys.append(r["mesh_storage_key"])
+            # Photos embedded in Part content JSON: photos/<pid>/<fid>/...
+            if r["kind"] == "part" and r["content"]:
+                try:
+                    content_obj = json.loads(r["content"])
+                    for photo_key in (content_obj.get("photos") or []):
+                        if photo_key:
+                            blob_keys.append(photo_key)
+                except Exception:
+                    pass
+
+        # cover / thumbnail keys on the project row itself
+        proj_row = await conn.fetchrow(
+            "SELECT thumbnail_storage_key, cover_storage_key FROM projects WHERE id = $1",
+            pid,
+        )
+        if proj_row:
+            if proj_row["thumbnail_storage_key"]:
+                blob_keys.append(proj_row["thumbnail_storage_key"])
+            if proj_row["cover_storage_key"]:
+                blob_keys.append(proj_row["cover_storage_key"])
+
+        # step_tessellation_jobs mesh keys (may not overlap with files.mesh_storage_key)
+        tess_rows = await conn.fetch(
+            """
+            SELECT stj.mesh_storage_key
+            FROM step_tessellation_jobs stj
+            JOIN files f ON f.id = stj.file_id
+            WHERE f.project_id = $1 AND stj.mesh_storage_key IS NOT NULL
+            """,
+            pid,
+        )
+        for r in tess_rows:
+            if r["mesh_storage_key"]:
+                blob_keys.append(r["mesh_storage_key"])
+
+    # Git working-tree prefix used by S3GitStorer.
+    git_prefix = f"workspaces/{ws_id}/git/{pid}/"
+    # Photos prefix (catches any photos not yet reconciled to file content).
+    photos_prefix = f"photos/{pid}/"
+
+    # ── Phase 2: delete S3 blobs BEFORE deleting the DB row ──────────────
+    # Best-effort: orphan blobs can be GC'd later; we must not let blob
+    # failures block the project deletion.
+    storage = get_storage_required()
+
+    unique_keys = list(dict.fromkeys(k for k in blob_keys if k))
+    removed_blobs = 0
+    for key in unique_keys:
+        try:
+            await storage.delete(key)
+            removed_blobs += 1
+        except Exception as exc:
+            logger.warning("delete_project: failed to remove blob %s: %s", key, exc)
+
+    for prefix in (git_prefix, photos_prefix):
+        try:
+            n = await storage.delete_prefix(prefix)
+            removed_blobs += n
+        except Exception as exc:
+            logger.warning("delete_project: failed to clean prefix %s: %s", prefix, exc)
+
+    # ── Phase 3: delete the project row; FK cascades do the rest ─────────
+    async with pool.acquire() as conn:
+        await conn.execute("DELETE FROM projects WHERE id = $1", pid)
+
+    return {"deleted": True, "project_id": pid, "removed_blobs": removed_blobs}
 
 
 @router.get("/projects/{pid}/bom")

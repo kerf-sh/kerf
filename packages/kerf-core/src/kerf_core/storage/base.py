@@ -43,6 +43,16 @@ class Storage(ABC):
     @abstractmethod
     async def delete_upload(self, upload_key: str) -> None: ...
 
+    @abstractmethod
+    async def delete_prefix(self, prefix: str) -> int:
+        """Delete all objects whose key starts with *prefix*.
+
+        Returns the number of objects deleted.  Implementations must be
+        best-effort: they should NOT raise on individual object failures but
+        may raise if the listing itself fails.
+        """
+        ...
+
 
 # Public alias used by kerf_core.plugin.PluginContext type annotation.
 StorageBackend = Storage

@@ -141,6 +141,32 @@ class LocalStorage(Storage):
         os.rename(tmp_path, str(dst))
         return total
 
+    async def delete_prefix(self, prefix: str) -> int:
+        """Delete all files under *prefix* by walking the local root directory."""
+        clean = prefix.lstrip("/")
+        target = (self.root / clean).resolve()
+        # Safety: target must be inside root.
+        if not str(target).startswith(str(self.root)):
+            raise ValueError(f"delete_prefix: prefix escapes root: {prefix!r}")
+
+        deleted = 0
+        if target.is_dir():
+            for entry in list(target.rglob("*")):
+                if entry.is_file():
+                    try:
+                        entry.unlink()
+                        deleted += 1
+                    except OSError:
+                        pass
+            shutil.rmtree(target, ignore_errors=True)
+        elif target.is_file():
+            try:
+                target.unlink()
+                deleted = 1
+            except OSError:
+                pass
+        return deleted
+
     async def delete_upload(self, upload_key: str) -> None:
         dir_path = self._chunk_dir(upload_key)
         shutil.rmtree(dir_path, ignore_errors=True)
