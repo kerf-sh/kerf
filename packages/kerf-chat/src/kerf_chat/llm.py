@@ -936,7 +936,14 @@ class GeminiProvider(Provider):
 
         genai.configure(api_key=self.api_key)
 
-        model = genai.GenerativeModel(req.model)
+        # google-generativeai ≥0.8 takes `system_instruction` on the
+        # GenerativeModel CONSTRUCTOR — passing it to generate_content()
+        # raises TypeError (broke every Gemini call on dev). Move it
+        # here so the call below stays SDK-clean.
+        model = genai.GenerativeModel(
+            req.model,
+            system_instruction=req.system if req.system else None,
+        )
 
         contents = []
         for m in req.messages:
@@ -987,7 +994,6 @@ class GeminiProvider(Provider):
 
         response = model.generate_content(
             contents,
-            system_instruction=req.system if req.system else None,
             tools=tools,
             generation_config=genai.types.GenerationConfig(**generation_config) if generation_config else None,
         )
