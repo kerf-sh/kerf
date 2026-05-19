@@ -184,6 +184,16 @@ class ToolCall:
     id: str
     name: str
     arguments_json: str
+    # Provider-specific opaque metadata that must be round-tripped on
+    # subsequent turns. Today's only consumer is Gemini 3, which emits a
+    # `thought_signature` (base64-string here) on every function_call
+    # part; passing it back on the assistant-turn echo is required —
+    # otherwise Gemini 3 rejects the request with HTTP 400 INVALID_ARGUMENT
+    # "Function call is missing a thought_signature in functionCall parts".
+    # Kept as a generic dict so adding more provider quirks (OpenAI's
+    # `tool_call_id` quirks, Anthropic cache_control deltas, etc.) doesn't
+    # require another schema bump.
+    provider_metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -981,9 +991,19 @@ class GeminiProvider(Provider):
                     parts.append(types.Part.from_text(text=m.content))
                 for tc in m.tool_calls:
                     args = json.loads(tc.arguments_json) if tc.arguments_json.strip() else {}
-                    parts.append(types.Part(
-                        function_call=types.FunctionCall(name=tc.name, args=args),
-                    ))
+                    part_kwargs: dict[str, Any] = {
+                        "function_call": types.FunctionCall(name=tc.name, args=args),
+                    }
+                    # Echo Gemini's thought_signature back on the Part —
+                    # required by Gemini 3 (see _parse_response_parts).
+                    sig_b64 = (tc.provider_metadata or {}).get("thought_signature")
+                    if sig_b64:
+                        import base64
+                        try:
+                            part_kwargs["thought_signature"] = base64.b64decode(sig_b64)
+                        except Exception:
+                            pass
+                    parts.append(types.Part(**part_kwargs))
                 contents.append(types.Content(role="model", parts=parts))
             elif m.role == "tool":
                 # In the genai SDK, function_response parts go in a user-
@@ -1033,7 +1053,16 @@ class GeminiProvider(Provider):
     @staticmethod
     def _parse_response_parts(candidate) -> tuple[list[str], list[ToolCall]]:
         """Extract text + function_calls from a single genai response
-        candidate. Skips empty parts so we never emit empty deltas."""
+        candidate. Skips empty parts so we never emit empty deltas.
+
+        For each function_call part we capture `thought_signature`
+        (Gemini 3's opaque thinking-context token) into
+        `tool_call.provider_metadata['thought_signature']` — base64-
+        encoded so it survives JSON persistence. When we echo the
+        assistant turn back in `_build_request_args`, the signature
+        rides along; without it Gemini 3 rejects the request.
+        """
+        import base64
         text_parts: list[str] = []
         tool_calls: list[ToolCall] = []
         if not getattr(candidate, "content", None):
@@ -1045,10 +1074,17 @@ class GeminiProvider(Provider):
                 text_parts.append(text)
             if fc and fc.name:
                 args = dict(fc.args) if fc.args else {}
+                meta: dict[str, Any] = {}
+                sig = getattr(part, "thought_signature", None)
+                if sig:
+                    # `thought_signature` is bytes. Base64 it so the
+                    # value JSON-serialises cleanly into chat_messages.tool_calls.
+                    meta["thought_signature"] = base64.b64encode(sig).decode("ascii")
                 tool_calls.append(ToolCall(
                     id=f"call_{hash((fc.name, str(args))) % 1000000}",
                     name=fc.name,
                     arguments_json=json.dumps(args),
+                    provider_metadata=meta,
                 ))
         return text_parts, tool_calls
 
@@ -1176,12 +1212,23 @@ class GeminiProvider(Provider):
                                 type="tool_use_start",
                                 data={"tool_use_id": tid_key, "name": fc.name},
                             )
+                        # Carry Gemini 3's thought_signature on the
+                        # tool_use_complete event so the route's
+                        # pending_tools assembly picks it up into the
+                        # ToolCall.provider_metadata — required for
+                        # subsequent-turn echo (otherwise Gemini 3 400s).
+                        import base64
+                        provider_metadata: dict[str, Any] = {}
+                        sig = getattr(part, "thought_signature", None)
+                        if sig:
+                            provider_metadata["thought_signature"] = base64.b64encode(sig).decode("ascii")
                         yield StreamEvent(
                             type="tool_use_complete",
                             data={
                                 "tool_use_id": tid_key,
                                 "name": fc.name,
                                 "input": args,
+                                "provider_metadata": provider_metadata,
                             },
                         )
 

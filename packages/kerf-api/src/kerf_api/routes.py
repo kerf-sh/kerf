@@ -2818,7 +2818,15 @@ class PostMessageRequest(BaseModel):
 
 async def _insert_assistant_message(conn, tid: str, content: str, model_id: str, tool_calls: list) -> dict:
     tc_json = json.dumps([
-        {"id": tc.id, "name": tc.name, "arguments": tc.arguments_json}
+        {
+            "id": tc.id,
+            "name": tc.name,
+            "arguments": tc.arguments_json,
+            # Persist provider_metadata so opaque round-trip tokens
+            # (Gemini 3 thought_signature, etc.) survive across turns.
+            # Empty dict serialises to "{}" — cheap.
+            "provider_metadata": getattr(tc, "provider_metadata", None) or {},
+        }
         for tc in (tool_calls or [])
     ])
     row = await conn.fetchrow(
@@ -2873,6 +2881,7 @@ async def _load_llm_history(conn, thread_id: str, exclude_id: str) -> list:
                         id=w.get("id", ""),
                         name=w.get("name", ""),
                         arguments_json=w.get("arguments", "{}"),
+                        provider_metadata=w.get("provider_metadata") or {},
                     ))
             except Exception:
                 pass
@@ -3517,6 +3526,14 @@ async def post_message_stream(
                             assembled_input = ev.data.get("input", {})
                             if tid_key in pending_tools:
                                 pending_tools[tid_key].arguments_json = json.dumps(assembled_input)
+                                # Carry provider_metadata (e.g. Gemini 3's
+                                # thought_signature) into the ToolCall so
+                                # it gets persisted + echoed on the next
+                                # turn. Empty dict if the provider didn't
+                                # emit any opaque metadata.
+                                pm = ev.data.get("provider_metadata") or {}
+                                if pm:
+                                    pending_tools[tid_key].provider_metadata = pm
                                 turn_tool_calls.append(pending_tools[tid_key])
                             yield _sse_frame("tool_use_complete", ev.data)
 
