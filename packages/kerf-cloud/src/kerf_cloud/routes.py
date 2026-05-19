@@ -337,6 +337,113 @@ async def git_log(
         ]
 
 
+@router.get("/projects/{pid}/git/status")
+async def git_status(
+    request: Request,
+    payload: dict = Depends(require_auth),
+    pid: Optional[str] = None,
+):
+    """Diff the live `files` table against the latest commit tree (HEAD).
+
+    Returns a list of changed files with their status (added / modified /
+    deleted) and line-level addition / deletion counts.  When the working
+    tree matches HEAD exactly the list is empty.
+
+    Response shape::
+
+        {
+            "changed_files": [
+                {"path": "main.jscad", "status": "modified",
+                 "additions": 12, "deletions": 3},
+                {"path": "new.sketch", "status": "added",
+                 "additions": 40, "deletions": 0}
+            ]
+        }
+    """
+    user_id = payload.get("sub")
+    await require_role(request, pid, user_id)
+
+    pool = await get_pool_required()
+    async with pool.acquire() as conn:
+        # Materialise the live tree from the files table.
+        live_entries = await _collect_file_entries(conn, pid)
+        live_map: dict[str, bytes] = {e.path: e.content for e in live_entries}
+
+        # Resolve the HEAD tree from the on-disk (or empty) git repo.
+        storage_inst = get_storage_required()
+        loc = resolve_project_repo(pid, storage_inst)
+        repo_dir = loc.repo_dir
+
+        head_map: dict[str, bytes] = {}
+        if os.path.isdir(repo_dir):
+            try:
+                repo = pygit2.Repository(repo_dir)
+                head_ref = repo.head
+                head_commit = repo.get(head_ref.target)
+                if head_commit is not None:
+                    def _walk_tree(tree, prefix=""):
+                        for entry in tree:
+                            full = f"{prefix}{entry.name}" if not prefix else f"{prefix}/{entry.name}"
+                            obj = repo.get(entry.id)
+                            if obj is None:
+                                continue
+                            if obj.type == pygit2.GIT_OBJ_TREE:
+                                _walk_tree(obj, full)
+                            elif obj.type == pygit2.GIT_OBJ_BLOB:
+                                head_map[full] = bytes(obj.data)
+                    _walk_tree(head_commit.tree)
+            except pygit2.GitError:
+                pass  # no HEAD yet — all live files are "added"
+
+    # Compute the diff between live and HEAD.
+    all_paths = set(live_map) | set(head_map)
+    changed_files = []
+    for path in sorted(all_paths):
+        live_bytes = live_map.get(path)
+        head_bytes = head_map.get(path)
+
+        if live_bytes == head_bytes:
+            continue  # unchanged
+
+        if live_bytes is None:
+            # File present in HEAD but deleted from the live tree.
+            dels = len(head_bytes.decode("utf-8", errors="replace").splitlines()) if head_bytes else 0
+            changed_files.append({
+                "path": path,
+                "status": "deleted",
+                "additions": 0,
+                "deletions": dels,
+            })
+        elif head_bytes is None:
+            # New file in the live tree.
+            adds = len(live_bytes.decode("utf-8", errors="replace").splitlines())
+            changed_files.append({
+                "path": path,
+                "status": "added",
+                "additions": adds,
+                "deletions": 0,
+            })
+        else:
+            # Modified — compute unified-diff line counts.
+            import difflib
+            live_lines = live_bytes.decode("utf-8", errors="replace").splitlines(keepends=True)
+            head_lines = head_bytes.decode("utf-8", errors="replace").splitlines(keepends=True)
+            adds = dels = 0
+            for line in difflib.unified_diff(head_lines, live_lines, n=0):
+                if line.startswith("+") and not line.startswith("+++"):
+                    adds += 1
+                elif line.startswith("-") and not line.startswith("---"):
+                    dels += 1
+            changed_files.append({
+                "path": path,
+                "status": "modified",
+                "additions": adds,
+                "deletions": dels,
+            })
+
+    return {"changed_files": changed_files}
+
+
 @router.get("/projects/{pid}/git/branches")
 async def git_branches(
     request: Request,
@@ -357,11 +464,41 @@ async def git_branches(
             """,
             pid,
         )
+
+        # Compute ahead/behind counts when a remote tracking branch exists.
+        storage_inst = get_storage_required()
+        loc = resolve_project_repo(pid, storage_inst)
+        repo_dir = loc.repo_dir
+
+        # Build a sha → (ahead, behind) lookup from the local git repo.
+        tracking_info: dict[str, tuple[int | None, int | None]] = {}
+        if os.path.isdir(repo_dir):
+            try:
+                repo = pygit2.Repository(repo_dir)
+                for branch_row in rows:
+                    name = branch_row["name"]
+                    ahead = behind = None
+                    try:
+                        local_b = repo.lookup_branch(name)
+                        if local_b is not None:
+                            upstream = local_b.upstream
+                            if upstream is not None:
+                                ahead, behind = repo.ahead_behind(
+                                    local_b.target, upstream.target
+                                )
+                    except (pygit2.GitError, AttributeError, KeyError):
+                        pass
+                    tracking_info[name] = (ahead, behind)
+            except pygit2.GitError:
+                pass
+
         return [
             {
                 "name": row["name"],
                 "head_sha": str(row["head_sha"]) if row["head_sha"] else "",
                 "is_default": row["is_default"],
+                "ahead": tracking_info.get(row["name"], (None, None))[0],
+                "behind": tracking_info.get(row["name"], (None, None))[1],
             }
             for row in rows
         ]
@@ -397,6 +534,39 @@ async def git_create_branch(
         "name": name,
         "head_sha": from_sha or "",
     }
+
+
+@router.delete("/projects/{pid}/git/branches/{branch_name}")
+async def git_delete_branch(
+    request: Request,
+    payload: dict = Depends(require_auth),
+    pid: Optional[str] = None,
+    branch_name: Optional[str] = None,
+):
+    user_id = payload.get("sub")
+    await require_editor(request, pid, user_id)
+
+    if not branch_name:
+        raise HTTPException(status_code=400, detail="branch name is required")
+
+    pool = await get_pool_required()
+    async with pool.acquire() as conn:
+        # Protect the current default branch.
+        repo_row = await conn.fetchrow(
+            "SELECT default_branch FROM cloud_git_repos WHERE project_id = $1",
+            pid,
+        )
+        if repo_row and repo_row["default_branch"] == branch_name:
+            raise HTTPException(status_code=409, detail="cannot delete the default branch")
+
+        deleted = await conn.execute(
+            "DELETE FROM cloud_git_branches WHERE project_id = $1 AND name = $2",
+            pid, branch_name,
+        )
+        if deleted == "DELETE 0":
+            raise HTTPException(status_code=404, detail=f"branch {branch_name} not found")
+
+    return Response(status_code=204)
 
 
 @router.post("/projects/{pid}/git/checkout")

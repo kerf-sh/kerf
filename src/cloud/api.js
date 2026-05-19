@@ -397,7 +397,12 @@ export const git = {
     return request(`/api/projects/${projectId}/git/log?${q.toString()}`)
   },
 
-  // GET /branches — [{name, head_sha, is_default}].
+  // GET /status — {changed_files: [{path, status, additions, deletions}]}.
+  // Diffs live files table vs latest commit tree (HEAD).
+  status: (projectId) =>
+    request(`/api/projects/${projectId}/git/status`),
+
+  // GET /branches — [{name, head_sha, is_default, ahead, behind}].
   branches: (projectId) =>
     request(`/api/projects/${projectId}/git/branches`),
 
@@ -407,6 +412,12 @@ export const git = {
     request(`/api/projects/${projectId}/git/branches`, {
       method: 'POST',
       body: from_sha ? { name, from_sha } : { name },
+    }),
+
+  // DELETE /branches/:name — delete a non-current branch.
+  deleteBranch: (projectId, name) =>
+    request(`/api/projects/${projectId}/git/branches/${encodeURIComponent(name)}`, {
+      method: 'DELETE',
     }),
 
   // POST /checkout {branch, force?} — switch the working tree. 409 with

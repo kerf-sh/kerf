@@ -9,8 +9,8 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import {
   AlertCircle, ArrowDownToLine, ArrowUpFromLine, Check, ChevronDown,
-  GitBranch, GitCommit, GitMerge, Github, Link2, Loader2, MoreVertical,
-  Plus, RefreshCw, Settings, Trash2,
+  GitBranch, GitMerge, Github, Link2, Loader2, MoreVertical,
+  Plus, RefreshCw, Settings, Trash2, X,
 } from 'lucide-react'
 import Button from '../components/Button.jsx'
 import PurgeRevisionsModal from '../components/PurgeRevisionsModal.jsx'
@@ -23,6 +23,8 @@ import CommitDialog from './CommitDialog.jsx'
 import MergeDialog from './MergeDialog.jsx'
 import CommitDiffViewer from './CommitDiffViewer.jsx'
 import GitConnectDialog from './GitConnectDialog.jsx'
+import StagedChanges from './StagedChanges.jsx'
+import BranchPicker from './BranchPicker.jsx'
 import {
   assignLanes,
   edgePath,
@@ -596,7 +598,9 @@ export function GitPanel({ projectId, onClose }) {
   const gitDelete = useWorkspace((s) => s.gitDelete)
   const dismissError = useWorkspace((s) => s.dismissGitError)
 
-  const [showCommit, setShowCommit] = useState(false)
+  // showCommit is kept for compatibility but StagedChanges now owns the
+  // inline commit input; this dialog is only reachable via external callers.
+  const [showCommit, setShowCommit] = useState(false) // eslint-disable-line no-unused-vars
   const [showMerge, setShowMerge] = useState(false)
   const [showConnect, setShowConnect] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
@@ -629,22 +633,6 @@ export function GitPanel({ projectId, onClose }) {
     if (name !== branch) await switchBranch(name)
   }, [branch, switchBranch])
 
-  const onNewBranch = useCallback(async () => {
-    const name = window.prompt('New branch name', '')
-    if (!name) return
-    setBusy('newBranch')
-    try {
-      await git.createBranch(projectId, name.trim())
-      await loadGitState()
-    } catch (err) {
-      useWorkspace.setState({
-        gitError: err instanceof ApiError ? err.message : 'Could not create branch.',
-      })
-    } finally {
-      setBusy(null)
-    }
-  }, [projectId, loadGitState])
-
   const onPush = useCallback(async () => {
     setBusy('push')
     try { await gitPush() } finally { setBusy(null) }
@@ -676,6 +664,31 @@ export function GitPanel({ projectId, onClose }) {
   const onLinkGithub = useCallback(() => {
     window.location.assign(githubOAuth.startUrl(window.location.href))
   }, [])
+
+  // handleCommit: called by StagedChanges with the commit message.
+  // Delegates to git.commit then reloads git state so the graph refreshes.
+  const handleCommit = useCallback(async (message) => {
+    await git.commit(projectId, message, branch || undefined)
+    await loadGitState()
+  }, [projectId, branch, loadGitState])
+
+  // Derive push/pull badge text from the current branch's ahead/behind counts.
+  const currentBranchData = (branches || []).find((b) => b.name === branch)
+  const pushBadge = (() => {
+    if (!currentBranchData) return null
+    const { ahead, behind } = currentBranchData
+    if (ahead == null && behind == null) return null
+    if (ahead === 0 && behind === 0) return 'synced'
+    if (ahead > 0) return `${ahead}↑`
+    return null
+  })()
+  const pullBadge = (() => {
+    if (!currentBranchData) return null
+    const { behind } = currentBranchData
+    if (behind == null) return null
+    if (behind > 0) return `${behind}↓`
+    return null
+  })()
 
   const empty = repoState === 'absent'
 
@@ -719,20 +732,40 @@ export function GitPanel({ projectId, onClose }) {
       {/* Sub-header: branch + GitHub link badge */}
       {!empty && (
         <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-ink-800">
-          <BranchSelector
+          <BranchPicker
             branches={branches}
-            current={branch}
-            onSelect={onSelectBranch}
-            onNewBranch={onNewBranch}
+            currentBranch={branch}
+            onCheckout={onSelectBranch}
+            onCreateBranch={async (name) => {
+              setBusy('newBranch')
+              try {
+                await git.createBranch(projectId, name.trim())
+                await loadGitState()
+              } catch (err) {
+                useWorkspace.setState({
+                  gitError: err instanceof ApiError ? err.message : 'Could not create branch.',
+                })
+              } finally {
+                setBusy(null)
+              }
+            }}
+            onDeleteBranch={async (name) => {
+              try {
+                await git.deleteBranch(projectId, name)
+                await loadGitState()
+              } catch (err) {
+                useWorkspace.setState({
+                  gitError: err instanceof ApiError ? err.message : 'Could not delete branch.',
+                })
+              }
+            }}
             disabled={loading || busy === 'newBranch'}
           />
           <GithubBadge login={githubLogin} onLink={onLinkGithub} />
         </div>
       )}
 
-      {/* Revision-history badge (T-302) + purge entry (T-303).
-          Single render — the duplicate footer copy that was added in
-          T-303's branch was collapsed at cherry-pick time. */}
+      {/* Revision-history badge (T-302) + purge entry (T-303). */}
       {!empty && revSize && revSize.revision_count > 0 && (
         <div className="flex items-center justify-between px-3 py-1.5 border-b border-ink-800 bg-ink-850/40">
           <span className="text-[10px] text-ink-400">
@@ -751,6 +784,15 @@ export function GitPanel({ projectId, onClose }) {
             Manage…
           </button>
         </div>
+      )}
+
+      {/* Staged changes + inline commit input (T-305). Sits above the graph. */}
+      {!empty && repoState !== 'unknown' && (
+        <StagedChanges
+          projectId={projectId}
+          branch={branch}
+          onCommit={handleCommit}
+        />
       )}
 
       {/* Body */}
@@ -790,26 +832,51 @@ export function GitPanel({ projectId, onClose }) {
 
       {/* Footer / actions */}
       {!empty && (
-        <div className="flex flex-col border-t border-ink-800 flex-shrink-0">
-          <div className="flex items-center gap-1 px-2 py-2">
-            <Button size="sm" variant="primary" onClick={() => setShowCommit(true)} className="flex-1">
-              <GitCommit size={13} /> Commit
-            </Button>
-            <Button size="sm" variant="secondary" onClick={onPull} disabled={busy === 'pull'} title="Pull">
-              {busy === 'pull' ? <Loader2 size={13} className="animate-spin" /> : <ArrowDownToLine size={13} />}
-            </Button>
-            <Button size="sm" variant="secondary" onClick={onPush} disabled={busy === 'push'} title="Push">
-              {busy === 'push' ? <Loader2 size={13} className="animate-spin" /> : <ArrowUpFromLine size={13} />}
-            </Button>
-            <Button size="sm" variant="ghost" onClick={() => setShowMerge(true)} title="Merge">
-              <GitMerge size={13} />
-            </Button>
-            <MoreMenu
-              githubLinked={!!githubLogin}
-              onDelete={onDelete}
-              onUnlinkGithub={onUnlinkGithub}
-            />
-          </div>
+        <div className="flex items-center gap-1 px-2 py-2 border-t border-ink-800 flex-shrink-0">
+          {/* T-305: dropped the standalone Commit button — StagedChanges
+              owns the commit input + button above the graph. T-306: Push /
+              Pull now carry ahead/behind badges. */}
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={onPull}
+            disabled={busy === 'pull'}
+            title="Pull from remote"
+            className="flex items-center gap-1"
+          >
+            {busy === 'pull'
+              ? <Loader2 size={13} className="animate-spin" />
+              : <ArrowDownToLine size={13} />}
+            {pullBadge && (
+              <span className="text-[9px] font-mono text-amber-300">{pullBadge}</span>
+            )}
+          </Button>
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={onPush}
+            disabled={busy === 'push'}
+            title="Push to remote"
+            className="flex items-center gap-1"
+          >
+            {busy === 'push'
+              ? <Loader2 size={13} className="animate-spin" />
+              : <ArrowUpFromLine size={13} />}
+            {pushBadge && (
+              <span className={[
+                'text-[9px] font-mono',
+                pushBadge === 'synced' ? 'text-emerald-400' : 'text-kerf-300',
+              ].join(' ')}>{pushBadge}</span>
+            )}
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => setShowMerge(true)} title="Merge">
+            <GitMerge size={13} />
+          </Button>
+          <MoreMenu
+            githubLinked={!!githubLogin}
+            onDelete={onDelete}
+            onUnlinkGithub={onUnlinkGithub}
+          />
         </div>
       )}
 
