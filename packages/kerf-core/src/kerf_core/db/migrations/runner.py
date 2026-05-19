@@ -57,6 +57,31 @@ async def run_migrations(database_url: str):
             if name in applied:
                 continue
             sql = migration_file.read_text()
+            # Strip SQL line comments + whitespace to check whether the file
+            # actually contains any statement to execute. T-307's fold
+            # produced "tombstone" files (0003, 0007, 0009) that are
+            # comments-only after their content was hoisted into the
+            # consolidated baseline 0001 / 0004. Sending a comments-only
+            # body to asyncpg.execute() crashes the simple-query response
+            # parser with `AttributeError: 'NoneType' object has no
+            # attribute 'decode'` — Postgres returns an EmptyQueryResponse
+            # with no command tag, and asyncpg's _on_result__simple_query
+            # tries to .decode() the missing tag. Treat tombstones as
+            # "stamp-only" — record them in the ledger so they're not
+            # re-evaluated next deploy, but don't try to execute them.
+            stripped = "\n".join(
+                line for line in sql.splitlines()
+                if line.strip() and not line.strip().startswith("--")
+            ).strip()
+            if not stripped:
+                await conn.execute(
+                    f"INSERT INTO {_LEDGER} (filename) VALUES ($1) "
+                    "ON CONFLICT DO NOTHING",
+                    name,
+                )
+                print(f"  • {name} (tombstone — folded into baseline)")
+                stamped += 1
+                continue
             try:
                 async with conn.transaction():
                     await conn.execute(sql)
