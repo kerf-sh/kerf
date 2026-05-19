@@ -1,0 +1,21 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "kerf-aero"
+version = "0.1.0"
+license = { text = "MIT" }
+classifiers = ["License :: OSI Approved :: MIT License"]
+description = "Aeronautical-design plugin for Kerf — conceptual aircraft sizing, aero analysis"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi",
+    "pydantic",
+]
+
+[project.entry-points."kerf.plugins"]
+aero = "kerf_aero.plugin:register"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/kerf_aero"]
