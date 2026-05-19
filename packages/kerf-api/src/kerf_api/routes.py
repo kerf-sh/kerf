@@ -18,7 +18,7 @@ from typing import Optional, Any
 import asyncpg
 import httpx
 import jwt
-from fastapi import APIRouter, Depends, HTTPException, status, Request, Response, Cookie, UploadFile, Form
+from fastapi import APIRouter, Depends, HTTPException, status, Request, Response, Cookie, UploadFile, Form, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from urllib.parse import urlencode
@@ -2291,6 +2291,202 @@ async def upload_asset(pid: str, request: Request, payload: dict = Depends(requi
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="viewer cannot upload")
 
         return {"status": "ok"}
+
+
+@router.get("/projects/{pid}/activity")
+async def get_project_activity(
+    pid: str,
+    limit: int = Query(default=50, ge=1, le=200),
+    before: Optional[str] = Query(default=None),
+    payload: dict = Depends(require_auth),
+):
+    """Return a merged activity feed for a project.
+
+    Shape: {events: [...], next_cursor: null | iso8601}
+
+    Each event: {kind, source?, created_at, user: {id, name, avatar_url},
+                 file?: {id, name}, thread?: {id, title}, content_preview?}
+
+    Events are ordered newest-first (created_at DESC). Three sources are
+    merged via UNION ALL:
+      - file_revisions  → kind='edit', file, source from the revision
+      - files.created_at (non-deleted) → kind='file_created', file
+      - files.deleted_at (not null)   → kind='file_deleted', file
+      - chat_messages (role='user')   → kind='chat', thread, content_preview
+      - projects.created_at           → kind='project_created'
+
+    Pagination uses an ISO before cursor: only events with created_at < before
+    are returned. next_cursor is the oldest event's created_at when the page
+    is full, else null.
+    """
+    user_id = payload.get("sub")
+
+    pool = await get_pool_required()
+    async with pool.acquire() as conn:
+        ws_id = await project_workspace_id(pid)
+        if not ws_id:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="project not found")
+
+        role = await get_user_workspace_role(conn, ws_id, user_id)
+        if not role:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="project not found")
+
+        # Build optional before-cursor clause. Parameterised to avoid injection.
+        # We add a position placeholder $3 for `before` when supplied.
+        if before:
+            before_clause = "AND sub.created_at < $3::timestamptz"
+            params = [pid, limit + 1, before]
+        else:
+            before_clause = ""
+            params = [pid, limit + 1]
+
+        sql = f"""
+            SELECT
+                sub.kind,
+                sub.source,
+                sub.created_at,
+                sub.user_id,
+                u.name        AS user_name,
+                u.avatar_url  AS user_avatar_url,
+                sub.file_id,
+                sub.file_name,
+                sub.thread_id,
+                sub.thread_title,
+                sub.content_preview
+            FROM (
+                -- (a) file edits
+                SELECT
+                    'edit'::text           AS kind,
+                    fr.source              AS source,
+                    fr.created_at          AS created_at,
+                    COALESCE(fr.user_id, NULL) AS user_id,
+                    f.id                   AS file_id,
+                    f.name                 AS file_name,
+                    NULL::uuid             AS thread_id,
+                    NULL::text             AS thread_title,
+                    fr.content_preview     AS content_preview
+                FROM file_revisions fr
+                JOIN files f ON f.id = fr.file_id
+                WHERE f.project_id = $1
+
+                UNION ALL
+
+                -- (b) file_created: files that are not soft-deleted, keyed on files.created_at
+                SELECT
+                    'file_created'::text   AS kind,
+                    NULL::text             AS source,
+                    f.created_at           AS created_at,
+                    NULL::uuid             AS user_id,
+                    f.id                   AS file_id,
+                    f.name                 AS file_name,
+                    NULL::uuid             AS thread_id,
+                    NULL::text             AS thread_title,
+                    NULL::text             AS content_preview
+                FROM files f
+                WHERE f.project_id = $1
+                  AND f.deleted_at IS NULL
+
+                UNION ALL
+
+                -- (c) file_deleted: files that have been soft-deleted
+                SELECT
+                    'file_deleted'::text   AS kind,
+                    NULL::text             AS source,
+                    f.deleted_at           AS created_at,
+                    NULL::uuid             AS user_id,
+                    f.id                   AS file_id,
+                    f.name                 AS file_name,
+                    NULL::uuid             AS thread_id,
+                    NULL::text             AS thread_title,
+                    NULL::text             AS content_preview
+                FROM files f
+                WHERE f.project_id = $1
+                  AND f.deleted_at IS NOT NULL
+
+                UNION ALL
+
+                -- (d) chat messages (role='user')
+                SELECT
+                    'chat'::text                                AS kind,
+                    NULL::text                                  AS source,
+                    cm.created_at                               AS created_at,
+                    NULL::uuid                                  AS user_id,
+                    NULL::uuid                                  AS file_id,
+                    NULL::text                                  AS file_name,
+                    ct.id                                       AS thread_id,
+                    ct.title                                    AS thread_title,
+                    LEFT(cm.content, 240)                       AS content_preview
+                FROM chat_messages cm
+                JOIN chat_threads ct ON ct.id = cm.thread_id
+                WHERE ct.project_id = $1
+                  AND cm.role = 'user'
+
+                UNION ALL
+
+                -- (e) project creation
+                SELECT
+                    'project_created'::text AS kind,
+                    NULL::text              AS source,
+                    p.created_at            AS created_at,
+                    NULL::uuid              AS user_id,
+                    NULL::uuid              AS file_id,
+                    NULL::text              AS file_name,
+                    NULL::uuid              AS thread_id,
+                    NULL::text              AS thread_title,
+                    NULL::text              AS content_preview
+                FROM projects p
+                WHERE p.id = $1
+            ) sub
+            LEFT JOIN users u ON u.id = sub.user_id
+            WHERE TRUE {before_clause}
+            ORDER BY sub.created_at DESC
+            LIMIT $2
+        """
+
+        rows = await conn.fetch(sql, *params)
+
+    # Determine pagination cursor. We fetched limit+1 rows to detect a next
+    # page without a separate COUNT query.
+    has_more = len(rows) > limit
+    page = rows[:limit]
+
+    next_cursor = None
+    if has_more and page:
+        last_ts = page[-1]["created_at"]
+        # asyncpg returns timestamptz as datetime; convert to ISO-8601.
+        if hasattr(last_ts, "isoformat"):
+            next_cursor = last_ts.isoformat()
+        else:
+            next_cursor = str(last_ts)
+
+    events = []
+    for row in page:
+        ev = {
+            "kind": row["kind"],
+            "created_at": row["created_at"].isoformat() if hasattr(row["created_at"], "isoformat") else str(row["created_at"]),
+            "user": {
+                "id": str(row["user_id"]) if row["user_id"] else None,
+                "name": row["user_name"] or "",
+                "avatar_url": row["user_avatar_url"] or "",
+            },
+        }
+        if row["source"] is not None:
+            ev["source"] = row["source"]
+        if row["file_id"] is not None:
+            ev["file"] = {
+                "id": str(row["file_id"]),
+                "name": row["file_name"] or "",
+            }
+        if row["thread_id"] is not None:
+            ev["thread"] = {
+                "id": str(row["thread_id"]),
+                "title": row["thread_title"] or "",
+            }
+        if row["content_preview"] is not None:
+            ev["content_preview"] = row["content_preview"]
+        events.append(ev)
+
+    return {"events": events, "next_cursor": next_cursor}
 
 
 @router.get("/projects/{pid}/threads")
