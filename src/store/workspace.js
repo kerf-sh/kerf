@@ -284,7 +284,7 @@ const initial = {
 
   // ---- Unified right drawer ----
   // Single overlay drawer on the right side of the editor that surfaces
-  // Chat, Activity, and Git as tabs. Replaces the three independent
+  // Chat, Activity, Git, and History as tabs. Replaces the three independent
   // open/collapsed flags that caused the panels to move independently.
   // `tab` is the last-active tab so re-opening returns to where the user was.
   rightDrawer: { open: false, tab: 'chat' },
@@ -1750,7 +1750,8 @@ export const useWorkspace = create((set, get) => ({
         }
         // If the History drawer is open for the current file, refresh it so
         // the user sees the new tool-source revisions appear immediately.
-        if (get().revisionDrawerOpen && openId) {
+        const _rdMsg = get().rightDrawer
+        if ((get().revisionDrawerOpen || (_rdMsg.open && _rdMsg.tab === 'history')) && openId) {
           await get().loadRevisions(openId)
         }
       }
@@ -2614,12 +2615,17 @@ export const useWorkspace = create((set, get) => ({
   setEditorFocused: (focused) => set({ editorFocused: !!focused }),
 
   openRevisionDrawer: () => {
-    set({ revisionDrawerOpen: true })
+    // Route through the unified right drawer (History tab).
+    set({ revisionDrawerOpen: true, rightDrawer: { open: true, tab: 'history' } })
     const { currentFileId } = get()
     if (currentFileId) get().loadRevisions(currentFileId)
   },
 
-  closeRevisionDrawer: () => set({ revisionDrawerOpen: false }),
+  closeRevisionDrawer: () => {
+    set({ revisionDrawerOpen: false })
+    const rd = get().rightDrawer
+    if (rd.tab === 'history') set({ rightDrawer: { ...rd, open: false } })
+  },
 
   loadRevisions: async (fileId) => {
     const { projectId } = get()
@@ -2650,7 +2656,8 @@ export const useWorkspace = create((set, get) => ({
         const fresh = await api.listFiles(projectId)
         set({ files: fresh })
       } catch { /* tolerate */ }
-      if (get().revisionDrawerOpen) await get().loadRevisions(currentFileId)
+      const _rd = get().rightDrawer
+      if (get().revisionDrawerOpen || (_rd.open && _rd.tab === 'history')) await get().loadRevisions(currentFileId)
     } catch (err) {
       set({ toast: err?.message || 'Restore failed' })
     }
@@ -2677,7 +2684,8 @@ export const useWorkspace = create((set, get) => ({
     try {
       await api.restoreRevision(projectId, currentFileId, previous.id)
       await get().loadFileForEditor(currentFileId)
-      if (get().revisionDrawerOpen) await get().loadRevisions(currentFileId)
+      const _rdUndo = get().rightDrawer
+      if (get().revisionDrawerOpen || (_rdUndo.open && _rdUndo.tab === 'history')) await get().loadRevisions(currentFileId)
       set((s) => ({
         redoStack: [...s.redoStack, { fileId: currentFileId, revisionId: current.id }],
       }))
@@ -2698,7 +2706,8 @@ export const useWorkspace = create((set, get) => ({
     try {
       await api.restoreRevision(projectId, currentFileId, next.revisionId)
       await get().loadFileForEditor(currentFileId)
-      if (get().revisionDrawerOpen) await get().loadRevisions(currentFileId)
+      const _rdRedo = get().rightDrawer
+      if (get().revisionDrawerOpen || (_rdRedo.open && _rdRedo.tab === 'history')) await get().loadRevisions(currentFileId)
     } catch (err) {
       set({ toast: err?.message || 'Redo failed' })
     }
@@ -2717,6 +2726,11 @@ export const useWorkspace = create((set, get) => ({
     // Keep backward-compat flags in sync.
     if (next === 'activity') set({ activityOpen: true })
     if (next === 'git') set({ gitOpen: true })
+    if (next === 'history') {
+      set({ revisionDrawerOpen: true })
+      const { currentFileId } = get()
+      if (currentFileId) get().loadRevisions(currentFileId)
+    }
   },
   closeRightDrawer: () => {
     set({ rightDrawer: { ...get().rightDrawer, open: false } })
@@ -2726,6 +2740,11 @@ export const useWorkspace = create((set, get) => ({
     set({ rightDrawer: { open: true, tab } })
     if (tab === 'activity') set({ activityOpen: true })
     if (tab === 'git') set({ gitOpen: true })
+    if (tab === 'history') {
+      set({ revisionDrawerOpen: true })
+      const { currentFileId } = get()
+      if (currentFileId) get().loadRevisions(currentFileId)
+    }
   },
 
   openGitPanel: () => {

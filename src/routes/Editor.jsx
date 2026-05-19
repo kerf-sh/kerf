@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { Share2, Save, Loader2, ArrowLeft, Check, History, X, RotateCcw, Undo2, Redo2, GitBranch, Clock, MessageSquare, PanelRightClose, PanelRightOpen, PanelLeftOpen, PanelLeftClose, Plus, Box, SlidersHorizontal, ChevronDown, ArrowRight, RotateCw, MoreHorizontal, Activity as ActivityIcon, LogOut, UserCog } from 'lucide-react'
+import { Share2, Save, Loader2, ArrowLeft, Check, History, X, RotateCcw, Undo2, Redo2, GitBranch, MessageSquare, PanelRightClose, PanelRightOpen, PanelLeftOpen, PanelLeftClose, Plus, Box, SlidersHorizontal, ChevronDown, ArrowRight, RotateCw, MoreHorizontal, Activity as ActivityIcon, LogOut, UserCog, Settings, CreditCard, Users } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { LogoWordmark } from '../components/Logo.jsx'
 import FileTree from '../components/FileTree.jsx'
@@ -42,7 +42,9 @@ import QuadMeshView from '../components/QuadMeshView.jsx'
 import PrintSliceView from '../components/PrintSliceView.jsx'
 import ConfigurationsPanel from '../components/ConfigurationsPanel.jsx'
 import ActivityTimeline from '../components/ActivityTimeline.jsx'
+import RevisionDrawerPanel from '../components/RevisionDrawer.jsx'
 import { useWorkspace, loadFilePartsForProject } from '../store/workspace.js'
+import { useWorkspaces } from '../store/workspaces.js'
 import { useAuth } from '../store/auth.js'
 import { useCloudConfig, GitPanel, PublishButton } from '../cloud/index.js'
 import { runJscad, cancelJscad } from '../lib/jscadRunner.js'
@@ -245,6 +247,8 @@ function EditorUserMenu({ user }) {
   const openRef = useRef(false)
   const navigate = useNavigate()
   const logout = useAuth((s) => s.logout)
+  const currentWorkspaceSlug = useWorkspaces((s) => s.currentSlug)
+  const { cloudEnabled } = useCloudConfig()
 
   // Keep openRef in sync so the stable listener reads the latest value
   // without depending on `open` (and thus avoiding re-registration races
@@ -303,25 +307,63 @@ function EditorUserMenu({ user }) {
             <p className="text-sm text-ink-100 truncate">{user?.name || 'Signed in'}</p>
             <p className="text-xs text-ink-400 truncate font-mono">{user?.email || ''}</p>
           </div>
-          <Link
-            to="/profile"
-            role="menuitem"
-            onClick={() => setOpen(false)}
-            className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-ink-100 hover:bg-ink-800/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-kerf-300/50"
-          >
-            <UserCog size={14} className="text-ink-300" />
-            Profile
-          </Link>
-          <Link
-            to="/projects"
-            role="menuitem"
-            onClick={() => setOpen(false)}
-            className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-ink-100 hover:bg-ink-800/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-kerf-300/50"
-          >
-            <ArrowLeft size={14} className="text-ink-300" />
-            All projects
-          </Link>
+          <div className="py-1">
+            <Link
+              to="/profile"
+              role="menuitem"
+              onClick={() => setOpen(false)}
+              className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-ink-100 hover:bg-ink-800/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-kerf-300/50"
+            >
+              <UserCog size={14} className="text-ink-300" />
+              Profile
+            </Link>
+          </div>
+          {currentWorkspaceSlug && (
+            <div className="py-1 border-t border-ink-800">
+              <p className="px-3 pt-1 pb-0.5 text-[10px] font-mono uppercase tracking-[0.18em] text-ink-500">
+                Workspace
+              </p>
+              <Link
+                to={`/w/${currentWorkspaceSlug}/members`}
+                role="menuitem"
+                onClick={() => setOpen(false)}
+                className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-ink-100 hover:bg-ink-800/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-kerf-300/50"
+              >
+                <Users size={14} className="text-ink-300" />
+                Members
+              </Link>
+              <Link
+                to={`/w/${currentWorkspaceSlug}/settings`}
+                role="menuitem"
+                onClick={() => setOpen(false)}
+                className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-ink-100 hover:bg-ink-800/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-kerf-300/50"
+              >
+                <Settings size={14} className="text-ink-300" />
+                Workspace settings
+              </Link>
+              {cloudEnabled && (
+                <Link
+                  to="/billing"
+                  role="menuitem"
+                  onClick={() => setOpen(false)}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-ink-100 hover:bg-ink-800/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-kerf-300/50"
+                >
+                  <CreditCard size={14} className="text-ink-300" />
+                  Billing
+                </Link>
+              )}
+            </div>
+          )}
           <div className="py-1 border-t border-ink-800">
+            <Link
+              to="/projects"
+              role="menuitem"
+              onClick={() => setOpen(false)}
+              className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-ink-100 hover:bg-ink-800/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-kerf-300/50"
+            >
+              <ArrowLeft size={14} className="text-ink-300" />
+              All projects
+            </Link>
             <button
               type="button"
               role="menuitem"
@@ -1387,40 +1429,9 @@ export default function Editor() {
         >
           <Redo2 size={14} />
         </button>
-        <button
-          type="button"
-          onClick={() => w.openRevisionDrawer()}
-          disabled={!w.currentFileId}
-          title="History"
-          aria-label="Revision history"
-          className="hidden md:inline-flex p-1.5 rounded hover:bg-ink-800 text-ink-300 hover:text-kerf-300 disabled:opacity-40 disabled:hover:bg-transparent"
-        >
-          <History size={14} />
-        </button>
-
-        <button
-          type="button"
-          onClick={() => {
-            if (rightDrawer.open && rightDrawer.tab === 'activity') {
-              closeRightDrawer()
-            } else {
-              setRightDrawerTab('activity')
-            }
-          }}
-          disabled={!projectId}
-          title="Activity"
-          aria-label="Activity timeline"
-          aria-expanded={rightDrawer.open && rightDrawer.tab === 'activity'}
-          className={`hidden md:inline-flex p-1.5 rounded hover:bg-ink-800 disabled:opacity-40 disabled:hover:bg-transparent ${rightDrawer.open && rightDrawer.tab === 'activity' ? 'text-kerf-300' : 'text-ink-300 hover:text-kerf-300'}`}
-        >
-          <Clock size={14} />
-        </button>
-
-        {/* Git toggle removed from topbar — the unified right drawer's
-            Git tab (below) is now the single entry-point. The topbar
-            previously had a duplicate GitBranch button + a tab in the
-            drawer; they fought each other and the duplicate was
-            confusing. */}
+        {/* History, Activity, and Git have moved into the unified right
+            drawer tabs (Chat / Activity / Git / History). The topbar
+            stays focused on undo/redo and primary actions. */}
 
         <ExportButton onCaptureHero={() => rendererRef.current?.captureHeroShot?.({})} />
 
@@ -1486,54 +1497,13 @@ export default function Editor() {
         </button>
 
         {/* ---------- T-L2 Overflow menu ----------
-            Mirrors the actions hidden in the inline row at narrower widths.
-            Each menu item has the inverse visibility class so it shows up
-            only when the corresponding inline button is hidden:
-              - History / Activity → `inline-flex md:hidden`
-              - Git → `inline-flex lg:hidden` (cloud-only)
-              - Refresh thumbnail → `inline-flex xl:hidden` (cloud-only)
+            Mirrors actions hidden at narrower widths. History/Activity/Git
+            now live in the right drawer tabs, so only Refresh thumbnail
+            remains here for sub-xl screens.
             Auto-closes on item click (handled in TopBarMoreMenu). The
             host TopBarMoreMenu wrapper is itself `xl:hidden` so the menu
             disappears entirely at ≥1280px. */}
         <TopBarMoreMenu>
-          <button
-            type="button"
-            role="menuitem"
-            onClick={() => w.openRevisionDrawer()}
-            disabled={!w.currentFileId}
-            className="inline-flex md:hidden w-full items-center gap-2 px-3 py-1.5 text-xs text-ink-100 hover:bg-ink-700 text-left disabled:opacity-40"
-          >
-            <History size={12} className="text-ink-400" />
-            <span>Revision history</span>
-          </button>
-          <button
-            type="button"
-            role="menuitem"
-            onClick={() => {
-              if (rightDrawer.open && rightDrawer.tab === 'activity') closeRightDrawer()
-              else setRightDrawerTab('activity')
-            }}
-            disabled={!projectId}
-            className="inline-flex md:hidden w-full items-center gap-2 px-3 py-1.5 text-xs text-ink-100 hover:bg-ink-700 text-left disabled:opacity-40"
-          >
-            <Clock size={12} className="text-ink-400" />
-            <span>Activity timeline</span>
-          </button>
-          {cloudEnabled && (
-            <button
-              type="button"
-              role="menuitem"
-              onClick={() => {
-                if (rightDrawer.open && rightDrawer.tab === 'git') closeRightDrawer()
-                else setRightDrawerTab('git')
-              }}
-              disabled={!projectId}
-              className="inline-flex lg:hidden w-full items-center gap-2 px-3 py-1.5 text-xs text-ink-100 hover:bg-ink-700 text-left disabled:opacity-40"
-            >
-              <GitBranch size={12} className="text-ink-400" />
-              <span>{rightDrawer.open && rightDrawer.tab === 'git' ? 'Hide Git panel' : 'Open Git panel'}</span>
-            </button>
-          )}
           {cloudEnabled && w.project && (
             <button
               type="button"
@@ -2429,6 +2399,20 @@ export default function Editor() {
                 <GitBranch size={12} /> Git
               </button>
             )}
+            {w.currentFileId && (
+              <button
+                type="button"
+                data-testid="right-drawer-tab-history"
+                onClick={() => setRightDrawerTab('history')}
+                className={`flex items-center gap-1.5 px-4 h-10 text-[11px] uppercase tracking-wider font-medium border-b-2 transition-colors ${
+                  rightDrawer.tab === 'history'
+                    ? 'border-kerf-300 text-kerf-300'
+                    : 'border-transparent text-ink-400 hover:text-ink-200'
+                }`}
+              >
+                <History size={12} /> History
+              </button>
+            )}
             <div className="flex-1" />
             <button
               type="button"
@@ -2470,6 +2454,14 @@ export default function Editor() {
                 onClose={() => closeRightDrawer()}
               />
             )}
+            {rightDrawer.tab === 'history' && w.currentFileId && (
+              <RevisionDrawerPanel
+                revisions={w.revisions}
+                loading={w.loadingRevisions}
+                onRestore={(id) => w.restoreRevision(id)}
+                onClose={() => closeRightDrawer()}
+              />
+            )}
           </div>
         </div>
       )}
@@ -2477,122 +2469,6 @@ export default function Editor() {
       {showShare && projectId && (
         <ShareModal projectId={projectId} onClose={() => setShowShare(false)} />
       )}
-
-      {w.revisionDrawerOpen && (
-        <RevisionDrawer
-          revisions={w.revisions}
-          loading={w.loadingRevisions}
-          onRestore={(id) => w.restoreRevision(id)}
-          onClose={() => w.closeRevisionDrawer()}
-        />
-      )}
-    </div>
-  )
-}
-
-function relativeTime(iso) {
-  if (!iso) return ''
-  const t = new Date(iso).getTime()
-  if (Number.isNaN(t)) return ''
-  const ms = Date.now() - t
-  const s = Math.round(ms / 1000)
-  if (s < 5) return 'just now'
-  if (s < 60) return `${s}s ago`
-  const m = Math.round(s / 60)
-  if (m < 60) return `${m}m ago`
-  const h = Math.round(m / 60)
-  if (h < 24) return `${h}h ago`
-  const d = Math.round(h / 24)
-  if (d < 7) return `${d}d ago`
-  return new Date(iso).toLocaleDateString()
-}
-
-function sourceTag(source) {
-  switch (source) {
-    case 'user':    return { icon: '👤', label: 'You',     className: 'text-kerf-300' }
-    case 'llm':     return { icon: '✨', label: 'AI',      className: 'text-purple-300' }
-    case 'tool':    return { icon: '🔧', label: 'Tool',    className: 'text-amber-300' }
-    case 'restore': return { icon: '↩',  label: 'Restore', className: 'text-blue-300' }
-    default:        return { icon: '•',  label: source || 'Edit', className: 'text-ink-400' }
-  }
-}
-
-function RevisionDrawer({ revisions, loading, onRestore, onClose }) {
-  return (
-    <div className="absolute top-12 right-0 bottom-0 w-80 z-30 bg-ink-900 border-l border-ink-800 shadow-2xl flex flex-col">
-      <div className="flex items-center justify-between h-10 px-3 border-b border-ink-800 flex-shrink-0">
-        <div className="flex items-center gap-2 text-xs font-medium text-ink-200 uppercase tracking-wider">
-          <History size={13} className="text-kerf-300" />
-          History
-        </div>
-        <button
-          type="button"
-          onClick={onClose}
-          className="p-1 rounded text-ink-400 hover:text-ink-100 hover:bg-ink-800"
-          aria-label="Close history"
-        >
-          <X size={14} />
-        </button>
-      </div>
-
-      <div className="flex-1 overflow-y-auto">
-        {loading ? (
-          <div className="p-3 space-y-2">
-            {Array.from({ length: 5 }).map((_, i) => (
-              <div key={i} className="h-14 rounded bg-ink-850 animate-pulse" />
-            ))}
-          </div>
-        ) : revisions.length === 0 ? (
-          <div className="p-6 text-center text-xs text-ink-500">
-            No history yet — make a change to see it here.
-          </div>
-        ) : (
-          <ul className="divide-y divide-ink-850">
-            {revisions.map((r, i) => {
-              const tag = sourceTag(r.source)
-              const isCurrent = i === 0
-              const preview = (r.content_preview || '').replace(/\s+/g, ' ').trim()
-              const truncated = preview.length > 80 ? preview.slice(0, 80) + '…' : preview
-              return (
-                <li
-                  key={r.id}
-                  className={`px-3 py-2 ${isCurrent ? 'bg-ink-850/60' : 'hover:bg-ink-850/40'}`}
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-1.5 min-w-0">
-                      <span className={`text-[10px] uppercase tracking-wider font-medium ${tag.className}`}>
-                        {tag.icon} {tag.label}
-                      </span>
-                      {r.user_name && (
-                        <span className="text-[10px] text-ink-500 truncate">· {r.user_name}</span>
-                      )}
-                      {isCurrent && (
-                        <span className="text-[9px] uppercase tracking-wider text-kerf-300/80 ml-1">current</span>
-                      )}
-                    </div>
-                    <span className="text-[10px] text-ink-500 flex-shrink-0">{relativeTime(r.created_at)}</span>
-                  </div>
-                  <div className="mt-1 font-mono text-[10px] text-ink-400 line-clamp-2 break-all">
-                    {truncated || <span className="italic text-ink-600">(empty)</span>}
-                  </div>
-                  {!isCurrent && (
-                    <div className="mt-1.5">
-                      <button
-                        type="button"
-                        onClick={() => onRestore(r.id)}
-                        className="inline-flex items-center gap-1 text-[10px] text-kerf-300 hover:text-kerf-200"
-                      >
-                        <RotateCcw size={10} />
-                        Restore
-                      </button>
-                    </div>
-                  )}
-                </li>
-              )
-            })}
-          </ul>
-        )}
-      </div>
     </div>
   )
 }
