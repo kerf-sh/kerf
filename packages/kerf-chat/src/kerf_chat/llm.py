@@ -48,6 +48,35 @@ For non-.jscad files (.sketch, .assembly, .drawing, .part, .feature, .circuit.ts
 4. write_file or edit_file with the JSON / TSX patch.
 5. Summarize in 1-2 sentences.
 
+JSCAD execution model (LOCKED — match this exactly):
+
+A .jscad file MUST follow the Kerf runner's contract:
+
+  export default function ({ primitives, transforms, booleans, colors, expansions, hulls, extrusions, measurements, maths, utils, params }) {
+    const base = primitives.cuboid({ size: [40, 40, 10] })
+    const peg  = transforms.translate([0, 0, 10], primitives.cylinder({ radius: 6, height: 20 }))
+    return [
+      { id: 'base', geom: base },
+      { id: 'peg',  geom: peg  },
+    ]
+  }
+
+Rules — violating ANY of these breaks the viewport with a ReferenceError:
+  • `jscad` is NOT a global. NEVER write `const { cuboid } = jscad.primitives`.
+    The @jscad/modeling sub-modules are passed in destructured to the
+    default export's argument.
+  • The file's `export default` MUST be a function taking ONE object arg.
+  • That function returns `[{ id, geom }, ...]` — Kerf's Part shape.
+  • `params` carries any equations / config bindings; it's never null.
+  • No top-level `import` statements — they're stripped before eval.
+    Just destructure from the function arg.
+  • Use `function main() { ... }` ONLY as a helper if you also
+    `export default main` at the bottom — the function signature must
+    still be `function main({ primitives, transforms, ... })`.
+
+If a user pastes legacy `const { cuboid } = jscad.primitives` style,
+rewrite it on save into the destructured-arg pattern above.
+
 File kinds and their canonical extensions:
 - .jscad       — JSCAD code (kind='file'). Edit directly.
 - .sketch      — parametric 2D profile (kind='sketch'). Use create_file(kind='sketch', ...).

@@ -547,40 +547,94 @@ function buildRenderItems(messages) {
  *
  * chips: [{ tool_use_id, name, status: 'queued'|'running'|'done'|'error', content_preview? }]
  */
+// Human labels for the tool-use chips. The model surface uses
+// snake_case ids (read_file, run_compute(engine=...)) which look
+// engineery in a chat bubble; map them to verbs the user understands.
+const TOOL_VERB = {
+  read_file:        'Reading',
+  write_file:       'Writing',
+  edit_file:        'Editing',
+  list_files:       'Listing files',
+  search_files:     'Searching files',
+  create_file:      'Creating',
+  describe_part:    'Inspecting',
+  search_kerf_docs: 'Searching docs',
+  import_step:      'Importing STEP',
+  export_artifact:  'Exporting',
+  run_compute:      'Computing',
+  poll_compute:     'Checking compute',
+}
+
+function _humanToolLabel(chip) {
+  const verb = TOOL_VERB[chip.name] || chip.name
+  // Extract a short target hint from the input if available — file path
+  // basename or engine name. Keeps each chip to a single line.
+  let hint = ''
+  if (chip.input) {
+    if (chip.input.path) {
+      const p = String(chip.input.path)
+      hint = p.split('/').filter(Boolean).pop() || ''
+    } else if (chip.input.engine) {
+      hint = String(chip.input.engine)
+    } else if (chip.input.query) {
+      hint = String(chip.input.query).slice(0, 30)
+    }
+  }
+  return hint ? `${verb} ${hint}` : verb
+}
+
 function ToolChipList({ chips }) {
   if (!chips || chips.length === 0) return null
   return (
     <div
       data-testid="tool-chip-list"
-      className="flex flex-col gap-1 mt-1.5"
+      className="flex flex-col gap-1 mt-2 mb-0.5"
     >
-      {chips.map((chip) => (
-        <div
-          key={chip.tool_use_id}
-          data-testid="tool-chip"
-          data-status={chip.status}
-          className={`flex items-center gap-1.5 px-2 py-1 rounded-md border text-[11px] font-mono ${
-            chip.status === 'running'
-              ? 'border-kerf-300/40 bg-kerf-300/5 text-kerf-300'
-              : chip.status === 'done'
-              ? 'border-ink-700 bg-ink-800/40 text-ink-400'
-              : chip.status === 'error'
-              ? 'border-red-500/40 bg-red-500/5 text-red-300'
-              : 'border-ink-700 bg-ink-800/20 text-ink-500'
-          }`}
-        >
-          {chip.status === 'running' ? (
-            <Loader2 size={10} className="animate-spin shrink-0" />
-          ) : chip.status === 'done' ? (
-            <Check size={10} className="shrink-0" />
-          ) : chip.status === 'error' ? (
-            <TriangleAlert size={10} className="shrink-0" />
-          ) : (
-            <span className="w-2.5 h-2.5 rounded-full border border-current opacity-40 shrink-0" />
-          )}
-          <span>{chip.name}</span>
-        </div>
-      ))}
+      {chips.map((chip) => {
+        const label = _humanToolLabel(chip)
+        const status = chip.status || 'queued'
+        return (
+          <div
+            key={chip.tool_use_id}
+            data-testid="tool-chip"
+            data-status={status}
+            className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg border text-[11px] transition-colors ${
+              status === 'running'
+                ? 'border-kerf-300/40 bg-kerf-300/10 text-kerf-200'
+                : status === 'done'
+                ? 'border-ink-700 bg-ink-900/50 text-ink-300'
+                : status === 'error'
+                ? 'border-red-500/40 bg-red-500/10 text-red-200'
+                : 'border-ink-800 bg-ink-900/30 text-ink-400'
+            }`}
+          >
+            <span
+              className={`grid place-items-center w-5 h-5 rounded-md shrink-0 ${
+                status === 'running' ? 'bg-kerf-300/20 text-kerf-300'
+                : status === 'done'    ? 'bg-ink-800 text-emerald-400'
+                : status === 'error'   ? 'bg-red-500/20 text-red-300'
+                :                        'bg-ink-800/60 text-ink-500'
+              }`}
+            >
+              {status === 'running' ? (
+                <Loader2 size={11} className="animate-spin" />
+              ) : status === 'done' ? (
+                <Check size={11} />
+              ) : status === 'error' ? (
+                <TriangleAlert size={11} />
+              ) : (
+                <span className="w-1.5 h-1.5 rounded-full bg-current opacity-50" />
+              )}
+            </span>
+            <span className="flex-1 min-w-0 truncate font-medium tracking-tight">
+              {label}
+            </span>
+            <span className="font-mono text-[10px] uppercase tracking-wider opacity-60 shrink-0">
+              {status === 'running' ? '…' : status === 'done' ? 'ok' : status === 'error' ? 'err' : 'queued'}
+            </span>
+          </div>
+        )
+      })}
     </div>
   )
 }

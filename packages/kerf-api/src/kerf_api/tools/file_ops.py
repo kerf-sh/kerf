@@ -206,7 +206,13 @@ async def run_read_file(ctx: ProjectCtx, args: bytes) -> str:
     if not path:
         return err_payload("path is required", "BAD_ARGS")
 
-    from . import docs
+    # `docs` lives in kerf_chat.tools, not kerf_api.tools. The previous
+    # `from . import docs` raised `cannot import name 'docs' from
+    # 'kerf_api.tools'` every time the assistant called read_file with
+    # a /docs/llm/* path — surfaced in the e2e probe as a tool-result
+    # ⚠ ERROR on read_file(/main.jscad) too, because the import fires
+    # unconditionally before the path-prefix check.
+    from kerf_chat.tools import docs
     if path.startswith("/docs/llm/"):
         body = docs.doc_corpus_read_file(path)
         if body:

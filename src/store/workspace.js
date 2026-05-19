@@ -1913,10 +1913,14 @@ export const useWorkspace = create((set, get) => ({
             break
           }
           case 'tool_use_complete': {
-            // The chip was added on tool_use_start; update it if needed
+            // The chip was added on tool_use_start; now attach the parsed
+            // input so the chip can render a human-friendly target hint
+            // (e.g. "Reading main.jscad" instead of just "read_file").
             updateAssistant((m) => ({
               _toolChips: (m._toolChips || []).map((c) =>
-                c.tool_use_id === data.tool_use_id ? { ...c, status: 'queued' } : c
+                c.tool_use_id === data.tool_use_id
+                  ? { ...c, status: 'queued', input: data.input || {} }
+                  : c
               ),
             }))
             break

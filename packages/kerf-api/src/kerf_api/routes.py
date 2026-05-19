@@ -443,6 +443,17 @@ def _friendly_llm_error(provider_name: str, err: Exception) -> str:
         return "The model took too long to respond. Try again or pick a faster model."
     if "deprecated" in msg:
         return "The selected model rejected one of the request parameters. Try picking a different model — this usually means the catalog needs updating."
+    # ModuleNotFoundError on a provider SDK dependency — most common cause
+    # is a missing pip entry. Surface this concretely so the next E2E
+    # probe doesn't have to SSH into the box to find it.
+    if "modulenotfounderror" in type(err).__name__.lower() or "no module named" in msg:
+        return f"The {provider_name} provider's SDK is not installed on the server (missing pip dependency)."
+    # Last-resort: include the exception class name + a short fragment of
+    # the message so operators can grep logs. Don't leak internal stack
+    # frames — just a labelled tail.
+    detail = str(err).strip().splitlines()[-1] if str(err).strip() else ""
+    if detail:
+        return f"The model returned an error ({type(err).__name__}: {detail[:160]}). Try again or pick a different model."
     return "The model returned an error. Try again, or pick a different model from the dropdown."
 
 
