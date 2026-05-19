@@ -1,6 +1,16 @@
 @import "tailwindcss";
 @import "highlight.js/styles/github-dark.css";
 
+/* Editor 3-pane grid columns at ≥ lg. Driven by an inline `--kerf-editor-cols`
+ * custom property the JS sets on the container (Editor.jsx). Tailwind cannot
+ * emit arbitrary utility classes from runtime-interpolated strings — this CSS
+ * rule is the source of truth for the editor grid columns. */
+@media (min-width: 1024px) {
+  .kerf-editor-grid {
+    grid-template-columns: var(--kerf-editor-cols);
+  }
+}
+
 /* Kerf design tokens. Final palette comes from the branding pass. */
 @theme {
   --font-sans: "Inter", "Geist", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;

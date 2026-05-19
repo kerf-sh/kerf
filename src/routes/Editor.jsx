@@ -1446,8 +1446,10 @@ export default function Editor() {
       {/* ---------- Main grid ----------
           T-L1 responsive shell:
           - ≥ lg: 3-pane grid `240px 1fr 380px` (chat collapsed: `240px 1fr`).
-            Byte-for-byte identical to the original inline grid-template-columns
-            (Tailwind's arbitrary grid-cols utility compiles to the same CSS).
+            Uses an inline `style` for grid-template-columns because Tailwind's
+            JIT can NOT emit utility classes from dynamic template strings —
+            the previous `lg:grid-cols-[${...}]` interpolation silently lost
+            the class and the layout collapsed to a single full-width column.
           - md ≤ width < lg: single-column flex (canvas only); file-tree is a
             drawer; the inline chat pane is hidden — chat is reachable via the
             top-bar chat toggle which on < lg switches semantics to "open chat
@@ -1455,7 +1457,12 @@ export default function Editor() {
             are kept separate so neither interferes with the other.
           - < md: same as md — canvas only, both panes as drawers.
           The `relative` here anchors the `fixed`-positioned drawers below. */}
-      <div className={`flex-1 grid min-h-0 relative grid-cols-1 lg:grid-cols-[${editorGridCols(chatCollapsed, gitCollapsed)}]`}>
+      <div
+        className="flex-1 grid min-h-0 relative grid-cols-1 kerf-editor-grid"
+        style={{
+          '--kerf-editor-cols': editorGridCols(chatCollapsed, gitCollapsed).replace(/_/g, ' '),
+        }}
+      >
         {/* Left: file tree (top) + objects panel (bottom).
             ≥ lg: inline aside, occupies the first grid column.
             < lg: hidden (drawer instance below renders the same content). */}
