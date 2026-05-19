@@ -3,7 +3,7 @@ import {
   Send, Star, MessageSquarePlus, MessageSquare, Trash2, Plus,
   Code as CodeIcon, ChevronDown, ChevronRight, Check, X, Sparkles,
   FolderTree, FileText, FilePen, Pencil, FilePlus, FileX, Search,
-  Box, ShieldCheck, Wrench,
+  Box, ShieldCheck, Wrench, TriangleAlert,
 } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -551,7 +551,18 @@ function MessageBlock({ message, modelLookup }) {
         <div className="text-[10px] text-ink-500">sending…</div>
       )}
       {message._error && (
-        <div className="text-[10px] text-red-400">{message._error}</div>
+        <div
+          role="alert"
+          data-testid="chat-message-error"
+          className="max-w-[88%] mt-1 rounded-md border border-red-500/40 bg-red-500/10 px-2.5 py-1.5 text-[11px] text-red-300 flex items-start gap-1.5"
+        >
+          <TriangleAlert size={12} className="mt-0.5 shrink-0" />
+          <div className="leading-snug">
+            <div className="font-medium text-red-200">Message failed to send</div>
+            <div className="text-red-300/90 break-words">{message._error}</div>
+            <div className="text-red-300/70 mt-0.5">Try sending it again.</div>
+          </div>
+        </div>
       )}
     </div>
   )

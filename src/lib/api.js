@@ -32,28 +32,61 @@ async function refreshAccessToken() {
   return refreshing
 }
 
-async function request(path, { method = 'GET', body, headers = {}, auth = true, raw = false } = {}) {
+// Default fetch timeout. Chosen so a stuck backend (LLM provider hang,
+// hung database query, dead worker) surfaces as a visible error in the
+// chat UI within ~60 s rather than spinning forever on "Kerf is thinking…".
+// Individual call sites can override with a longer or shorter ms value;
+// pass timeoutMs: 0 to disable.
+export const DEFAULT_TIMEOUT_MS = 60_000
+// Chat sendMessage may legitimately take longer when the assistant uses
+// several tool calls or a slow provider. 3 minutes is generous; users
+// will see a clear "request timed out" error rather than an indefinite spinner.
+export const CHAT_TIMEOUT_MS = 180_000
+
+async function fetchWithTimeout(url, init, timeoutMs) {
+  if (!timeoutMs || timeoutMs <= 0) return fetch(url, init)
+  const ctrl = new AbortController()
+  const t = setTimeout(() => ctrl.abort(), timeoutMs)
+  try {
+    return await fetch(url, { ...init, signal: ctrl.signal })
+  } finally {
+    clearTimeout(t)
+  }
+}
+
+async function request(
+  path,
+  { method = 'GET', body, headers = {}, auth = true, raw = false, timeoutMs = DEFAULT_TIMEOUT_MS } = {},
+) {
   const url = path.startsWith('http') ? path : `${API_URL}${path}`
   const h = { 'content-type': 'application/json', ...headers }
   if (auth) {
     const token = useAuth.getState().accessToken
     if (token) h.authorization = `Bearer ${token}`
   }
-  let res = await fetch(url, {
+  const init = {
     method,
     headers: h,
     body: body == null ? undefined : (typeof body === 'string' ? body : JSON.stringify(body)),
-  })
+  }
+  let res
+  try {
+    res = await fetchWithTimeout(url, init, timeoutMs)
+  } catch (e) {
+    if (e?.name === 'AbortError') {
+      throw new ApiError(0, `Request timed out after ${Math.round(timeoutMs / 1000)}s. Please try again.`)
+    }
+    // Network errors (DNS, offline, CORS preflight, etc.) reach here as
+    // generic TypeError. Surface them as ApiError so call sites can
+    // uniformly catch + render instead of swallowing.
+    throw new ApiError(0, e?.message || 'Network error — check your connection.')
+  }
 
   if (res.status === 401 && auth && useAuth.getState().refreshToken) {
     try {
       const newToken = await refreshAccessToken()
       h.authorization = `Bearer ${newToken}`
-      res = await fetch(url, {
-        method,
-        headers: h,
-        body: body == null ? undefined : (typeof body === 'string' ? body : JSON.stringify(body)),
-      })
+      res = await fetchWithTimeout(url, init, timeoutMs)
     } catch {
       // fall through to error below
     }
@@ -271,6 +304,9 @@ export const api = {
     request(`/api/projects/${projectId}/threads/${threadId}/messages`, {
       method: 'POST',
       body: { content, part_refs, model },
+      // Chat can legitimately take 30-90s with tool calls; allow up to 3 min
+      // before surfacing a timeout so the UI never hangs indefinitely.
+      timeoutMs: CHAT_TIMEOUT_MS,
     }),
 
   // ---- Threads ----

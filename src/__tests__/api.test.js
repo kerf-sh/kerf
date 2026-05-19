@@ -232,3 +232,84 @@ describe('401 refresh flow', () => {
     expect(authState.logout).toHaveBeenCalledTimes(1)
   })
 })
+
+/* -------------------------------------------------------------------------- */
+/* Timeout + network-error surfacing                                          */
+/* -------------------------------------------------------------------------- */
+//
+// Regression coverage for the "chat hangs on 'Kerf is thinking…' forever"
+// bug. The fetch helper now aborts after CHAT_TIMEOUT_MS for sendMessage and
+// DEFAULT_TIMEOUT_MS for everything else, and converts the AbortError /
+// generic TypeError into an ApiError(status=0) so the chat UI can render a
+// "Try again" alert instead of spinning indefinitely.
+
+describe('request timeouts', () => {
+  it('aborts the fetch when it does not resolve within timeoutMs', async () => {
+    // Simulate a fetch that resolves only when its AbortSignal fires.
+    fetch.mockImplementationOnce((url, init) => {
+      return new Promise((_resolve, reject) => {
+        init.signal.addEventListener('abort', () => {
+          const e = new Error('aborted')
+          e.name = 'AbortError'
+          reject(e)
+        })
+      })
+    })
+    vi.useFakeTimers()
+    try {
+      // Attach a catch handler synchronously so the rejection is never
+      // un-observed while we advance the fake clock.
+      const captured = api
+        .sendMessage('p1', 't1', { content: 'hi', part_refs: [], model: 'm1' })
+        .then((v) => ({ ok: true, v }), (e) => ({ ok: false, e }))
+      // The bug case was: fetch never resolves, no timeout, sending: true forever.
+      // CHAT_TIMEOUT_MS is 180_000ms. Advancing past it should reject.
+      await vi.advanceTimersByTimeAsync(180_001)
+      const result = await captured
+      expect(result.ok).toBe(false)
+      expect(result.e).toMatchObject({
+        status: 0,
+        message: expect.stringMatching(/timed out/i),
+      })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('passes an AbortSignal to fetch when timeoutMs > 0', async () => {
+    fetch.mockResolvedValueOnce(jsonRes({ id: 'u1' }))
+    await api.me()
+    const init = fetch.mock.calls[0][1]
+    expect(init.signal).toBeInstanceOf(AbortSignal)
+  })
+
+  it('surfaces a generic network error as ApiError(0)', async () => {
+    fetch.mockRejectedValueOnce(new TypeError('Failed to fetch'))
+    await expect(api.me()).rejects.toMatchObject({
+      status: 0,
+      message: expect.stringMatching(/Failed to fetch|Network error/i),
+    })
+  })
+
+  it('default timeout still applies to non-chat calls (≈60s)', async () => {
+    fetch.mockImplementationOnce((url, init) => {
+      return new Promise((_resolve, reject) => {
+        init.signal.addEventListener('abort', () => {
+          const e = new Error('aborted')
+          e.name = 'AbortError'
+          reject(e)
+        })
+      })
+    })
+    vi.useFakeTimers()
+    try {
+      const captured = api.me().then((v) => ({ ok: true, v }), (e) => ({ ok: false, e }))
+      await vi.advanceTimersByTimeAsync(60_001)
+      const result = await captured
+      expect(result.ok).toBe(false)
+      expect(result.e).toMatchObject({ status: 0, message: /timed out/i })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})
