@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, AsyncIterator
 
 
 SystemPrompt = """You are an expert CAD assistant helping a user iterate on a project that mixes JSCAD code, parametric sketches, B-rep features, assemblies, drawings, library parts, and (optionally) tscircuit electronics.
@@ -194,6 +194,13 @@ class CompleteResponse:
     output_tokens: int = 0
 
 
+@dataclass
+class StreamEvent:
+    """A Kerf-native provider-agnostic streaming event."""
+    type: str
+    data: dict
+
+
 class Provider(ABC):
     @abstractmethod
     def complete(self, req: CompleteRequest) -> CompleteResponse:
@@ -202,6 +209,20 @@ class Provider(ABC):
     @abstractmethod
     def name(self) -> str:
         raise NotImplementedError
+
+    async def stream(self, req: CompleteRequest) -> AsyncIterator[StreamEvent]:
+        """Yield Kerf-native StreamEvents for one LLM turn.
+
+        Default implementation raises NotImplementedError.
+        Subclasses that support streaming should override this.
+        """
+        # The `yield` below makes this an async generator. The raise fires
+        # before the first yielded value, propagating NotImplementedError to
+        # the caller's `async for` loop.
+        raise NotImplementedError(
+            f"Provider {self.name()!r} does not support streaming"
+        )
+        yield  # type: ignore[misc]  # pragma: no cover  — makes this an async generator
 
 
 @dataclass
@@ -473,6 +494,209 @@ class AnthropicProvider(Provider):
             model_used=req.model,
             input_tokens=response.usage.input_tokens,
             output_tokens=response.usage.output_tokens,
+        )
+
+    async def stream(self, req: CompleteRequest) -> AsyncIterator[StreamEvent]:  # type: ignore[override]
+        """Stream one LLM turn via Anthropic's messages.stream() context manager.
+
+        Yields Kerf-native StreamEvent objects:
+          assistant_text_delta  — incremental text
+          tool_use_start        — a new tool call block started
+          tool_use_input_delta  — partial JSON input for a tool call
+          tool_use_complete     — tool call input fully assembled
+          assistant_done        — final stop/token event
+        """
+        import anthropic
+        import httpx
+
+        client = anthropic.Anthropic(
+            api_key=self.api_key,
+            http_client=httpx.Client(timeout=120.0),
+        )
+
+        max_tokens = req.max_tokens if req.max_tokens > 0 else 4096
+        use_cache = self.prompt_cache and _anthropic_sdk_supports_cache_control()
+
+        # ── System block ────────────────────────────────────────────────────
+        if use_cache and req.system:
+            system_param: Any = [
+                {
+                    "type": "text",
+                    "text": req.system,
+                    "cache_control": {"type": "ephemeral"},
+                }
+            ]
+        else:
+            system_param: Any = req.system
+
+        # ── Tools block ─────────────────────────────────────────────────────
+        tools = None
+        if req.tools:
+            tools = [
+                {
+                    "name": t.name,
+                    "description": t.description,
+                    "input_schema": t.input_schema or {"type": "object", "properties": {}},
+                }
+                for t in req.tools
+            ]
+            if use_cache and tools:
+                tools[-1] = dict(tools[-1], cache_control={"type": "ephemeral"})
+
+        tool_choice = None
+        if tools:
+            if req.tool_choice in ("", "auto"):
+                tool_choice = {"type": "auto"}
+            elif req.tool_choice == "none":
+                tool_choice = {"type": "none"}
+            else:
+                tool_choice = {"type": "tool", "name": req.tool_choice}
+
+        # ── Build messages ───────────────────────────────────────────────────
+        messages: list[dict] = []
+        i = 0
+        while i < len(req.messages):
+            m = req.messages[i]
+            if m.role == "tool":
+                tool_blocks = []
+                while i < len(req.messages) and req.messages[i].role == "tool":
+                    tm = req.messages[i]
+                    block: dict[str, Any] = {
+                        "type": "tool_result",
+                        "tool_use_id": tm.tool_call_id,
+                        "content": tm.content,
+                    }
+                    if tm.is_error:
+                        block["is_error"] = True
+                    tool_blocks.append(block)
+                    i += 1
+                messages.append({"role": "user", "content": tool_blocks})
+                continue
+
+            if m.tool_calls:
+                content_blocks = []
+                if m.content.strip():
+                    content_blocks.append({"type": "text", "text": m.content})
+                for tc in m.tool_calls:
+                    content_blocks.append({
+                        "type": "tool_use",
+                        "id": tc.id,
+                        "name": tc.name,
+                        "input": json.loads(tc.arguments_json) if tc.arguments_json.strip() else {},
+                    })
+                messages.append({"role": m.role, "content": content_blocks})
+            else:
+                messages.append({"role": m.role, "content": m.content})
+            i += 1
+
+        _kw: dict[str, Any] = dict(
+            model=req.model,
+            system=system_param,
+            max_tokens=max_tokens,
+            messages=messages,
+        )
+        if tools:
+            _kw["tools"] = tools
+        if tool_choice is not None:
+            _kw["tool_choice"] = tool_choice
+        if req.temperature > 0:
+            _kw["temperature"] = req.temperature
+
+        # ── State tracking for tool-use blocks ──────────────────────────────
+        # We accumulate per-block state so we can emit complete events.
+        current_block_type: str | None = None
+        current_tool_id: str | None = None
+        current_tool_name: str | None = None
+        current_tool_input_parts: list[str] = []
+
+        input_tokens = 0
+        output_tokens = 0
+
+        with client.messages.stream(**_kw) as stream:
+            for event in stream:
+                etype = type(event).__name__
+
+                if etype == "MessageStartEvent":
+                    # Capture input tokens from message_start usage
+                    if hasattr(event, "message") and hasattr(event.message, "usage"):
+                        input_tokens = getattr(event.message.usage, "input_tokens", 0) or 0
+
+                elif etype == "ContentBlockStartEvent":
+                    block = event.content_block
+                    if block.type == "text":
+                        current_block_type = "text"
+                        current_tool_id = None
+                        current_tool_name = None
+                        current_tool_input_parts = []
+                    elif block.type == "tool_use":
+                        current_block_type = "tool_use"
+                        current_tool_id = block.id
+                        current_tool_name = block.name
+                        current_tool_input_parts = []
+                        yield StreamEvent(
+                            type="tool_use_start",
+                            data={"tool_use_id": block.id, "name": block.name},
+                        )
+
+                elif etype == "ContentBlockDeltaEvent":
+                    delta = event.delta
+                    if current_block_type == "text" and delta.type == "text_delta":
+                        yield StreamEvent(
+                            type="assistant_text_delta",
+                            data={"text": delta.text},
+                        )
+                    elif current_block_type == "tool_use" and delta.type == "input_json_delta":
+                        current_tool_input_parts.append(delta.partial_json)
+                        yield StreamEvent(
+                            type="tool_use_input_delta",
+                            data={
+                                "tool_use_id": current_tool_id,
+                                "partial_json": delta.partial_json,
+                            },
+                        )
+
+                elif etype == "ContentBlockStopEvent":
+                    if current_block_type == "tool_use" and current_tool_id is not None:
+                        assembled = "".join(current_tool_input_parts)
+                        try:
+                            parsed_input = json.loads(assembled) if assembled.strip() else {}
+                        except json.JSONDecodeError:
+                            parsed_input = {}
+                        yield StreamEvent(
+                            type="tool_use_complete",
+                            data={
+                                "tool_use_id": current_tool_id,
+                                "name": current_tool_name,
+                                "input": parsed_input,
+                            },
+                        )
+                    current_block_type = None
+
+                elif etype == "MessageDeltaEvent":
+                    if hasattr(event, "usage"):
+                        output_tokens = getattr(event.usage, "output_tokens", 0) or 0
+
+                elif etype == "MessageStopEvent":
+                    pass  # handled via get_final_message below
+
+            # Retrieve final stop_reason + token counts from the accumulated message.
+            try:
+                final_msg = stream.get_final_message()
+                stop_reason = final_msg.stop_reason or "end_turn"
+                if hasattr(final_msg, "usage"):
+                    input_tokens = getattr(final_msg.usage, "input_tokens", input_tokens)
+                    output_tokens = getattr(final_msg.usage, "output_tokens", output_tokens)
+            except Exception:
+                stop_reason = "end_turn"
+
+        yield StreamEvent(
+            type="assistant_done",
+            data={
+                "stop_reason": stop_reason,
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
+                "model": req.model,
+            },
         )
 
 

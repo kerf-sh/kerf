@@ -3255,6 +3255,451 @@ async def post_message(
     }
 
 
+# ---------------------------------------------------------------------------
+# Streaming chat endpoint — SSE
+# ---------------------------------------------------------------------------
+
+def _sse_frame(event_name: str, data: dict) -> str:
+    """Format a single SSE frame."""
+    return f"event: {event_name}\ndata: {json.dumps(data)}\n\n"
+
+
+@router.post("/projects/{pid}/threads/{tid}/messages/stream")
+async def post_message_stream(
+    pid: str,
+    tid: str,
+    req: PostMessageRequest,
+    payload: dict = Depends(require_auth),
+    _rl: None = Depends(rate_limit(max_per_window=30, window_seconds=60, key_prefix="api:messages_stream")),
+):
+    """Streaming (SSE) variant of POST /messages.
+
+    Returns a text/event-stream response. The client reads Kerf-native events:
+      assistant_text_delta, tool_use_start, tool_use_input_delta,
+      tool_use_complete, tool_executing, tool_result, assistant_done, error.
+
+    The endpoint is backward-compatible — the non-streaming POST /messages
+    endpoint is kept unchanged.
+    """
+    user_id = payload.get("sub")
+    pool = await get_pool_required()
+
+    # ── Auth / project access ────────────────────────────────────────────────
+    ws_id = await project_workspace_id(pid)
+    if not ws_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="project not found")
+
+    async with pool.acquire() as conn:
+        role = await get_user_workspace_role(conn, ws_id, user_id)
+    if not role:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="project not found")
+    if role == "viewer":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="viewer cannot post messages")
+
+    async with pool.acquire() as conn:
+        thread_row = await conn.fetchrow(
+            "SELECT id FROM chat_threads WHERE id = $1 AND project_id = $2", tid, pid
+        )
+    if not thread_row:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="thread not found")
+
+    if not req.content:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="content is required")
+
+    part_refs = req.part_refs or []
+
+    # Count existing user messages for auto-title trigger
+    async with pool.acquire() as conn:
+        existing_user_count = await conn.fetchval(
+            "SELECT count(*) FROM chat_messages WHERE thread_id = $1 AND role = 'user'", tid
+        )
+    is_first_user_message = (existing_user_count == 0)
+
+    # Resolve model: body.model -> thread.model -> default
+    async with pool.acquire() as conn:
+        thread_model_row = await conn.fetchrow("SELECT model FROM chat_threads WHERE id = $1", tid)
+    thread_model = thread_model_row["model"] if thread_model_row else None
+    if req.model:
+        chosen_model = req.model
+    elif thread_model:
+        chosen_model = thread_model
+    else:
+        chosen_model = settings.default_model
+
+    # Insert user message synchronously (so the optimistic-by-ID handshake works).
+    async with pool.acquire() as conn:
+        user_row = await conn.fetchrow(
+            """
+            INSERT INTO chat_messages (thread_id, role, content, part_refs, user_id)
+            VALUES ($1, 'user', $2, $3::jsonb, $4)
+            RETURNING *
+            """,
+            tid, req.content, json.dumps(part_refs), user_id,
+        )
+    user_msg = dict(user_row)
+
+    # Build LLM history
+    async with pool.acquire() as conn:
+        history_msgs = await _load_llm_history(conn, tid, str(user_msg["id"]))
+        part_contexts = await _load_part_contexts(conn, pid, part_refs)
+
+    final_user_content = llm_module.build_user_message(req.content, part_contexts)
+    history_msgs.append(llm_module.Message(role="user", content=final_user_content))
+
+    registry = _get_llm_registry()
+
+    # Resolve project tags addendum
+    async with pool.acquire() as conn:
+        proj_row = await conn.fetchrow("SELECT tags FROM projects WHERE id = $1", pid)
+    project_tags = proj_row["tags"] if proj_row and proj_row["tags"] else []
+    type_addendum = llm_module.build_project_tags_addendum(project_tags)
+
+    # Build tool specs for this role
+    tool_specs = tools_specs(role)
+
+    # Project context for tool runner
+    proj_ctx = ProjectCtx(
+        pool=pool,
+        storage=get_storage_required(),
+        project_id=uuid.UUID(pid),
+        user_id=uuid.UUID(user_id),
+        role=role,
+        http_client=httpx.AsyncClient(timeout=30.0),
+        file_revisions_max=settings.file_revisions_max,
+    )
+
+    async def _event_generator():
+        nonlocal history_msgs
+
+        # Emit the user_message id first so the client can anchor its UI.
+        yield _sse_frame("user_message", {"id": str(user_msg["id"])})
+
+        if not registry.has_any():
+            yield _sse_frame("error", {"message": "LLM not configured — set ANTHROPIC_API_KEY", "is_error": True})
+            async with pool.acquire() as conn:
+                await _insert_assistant_message(
+                    conn, tid, "LLM not configured — set ANTHROPIC_API_KEY", "none", None
+                )
+                await conn.execute(
+                    "UPDATE chat_threads SET last_message_at = now(), updated_at = now() WHERE id = $1", tid
+                )
+            return
+
+        try:
+            provider, provider_model_id = registry.resolve(chosen_model)
+        except ValueError as e:
+            _logger.warning(f"llm stream: resolve {chosen_model!r} failed: {e}")
+            msg = "That model isn't available right now. Try picking a different one from the model dropdown."
+            yield _sse_frame("error", {"message": msg, "is_error": True})
+            async with pool.acquire() as conn:
+                await _insert_assistant_message(conn, tid, msg, "none", None)
+                await conn.execute(
+                    "UPDATE chat_threads SET last_message_at = now(), updated_at = now() WHERE id = $1", tid
+                )
+            return
+
+        # ── Three-bucket billing (cloud only) ───────────────────────────────
+        bucket = None
+        bucket_model_info = None
+        bucket_model_info_price = None
+        bucket_provider_name = provider.name()
+        if settings.usage_enabled:
+            try:
+                from kerf_billing.buckets import (
+                    load_model_info,
+                    load_user_billing,
+                    pick_bucket,
+                    InsufficientCredits,
+                    Byo,
+                )
+                from kerf_pricing.queries import get_price as _get_price
+
+                bucket_model_info = await load_model_info(pool, bucket_provider_name, provider_model_id)
+                if bucket_model_info is None:
+                    msg = "That model isn't in the pricing table yet — contact admin to refresh /api/admin/pricing/refresh."
+                    yield _sse_frame("error", {"message": msg, "is_error": True})
+                    async with pool.acquire() as conn:
+                        await _insert_assistant_message(conn, tid, msg, "none", None)
+                        await conn.execute(
+                            "UPDATE chat_threads SET last_message_at = now(), updated_at = now() WHERE id = $1", tid
+                        )
+                    return
+
+                user_billing = await load_user_billing(pool, user_id)
+                bucket_model_info_price = await _get_price(pool, bucket_provider_name, provider_model_id)
+                est_cogs = bucket_model_info_price.compute_cost_usd(1000, 1000) if bucket_model_info_price else 0.0
+                est_billed = est_cogs * 1.20
+
+                bucket = pick_bucket(
+                    user_billing, bucket_model_info, est_billed,
+                    estimated_input_tokens=1000, estimated_output_tokens=1000,
+                )
+
+                if isinstance(bucket, InsufficientCredits):
+                    code = "INSUFFICIENT_CREDITS_BYO_AVAILABLE" if bucket.byo_available else "INSUFFICIENT_CREDITS"
+                    yield _sse_frame("error", {"message": code, "is_error": True, "code": code})
+                    return
+
+                if isinstance(bucket, Byo):
+                    provider = await _make_byo_provider(
+                        pool, user_id, bucket.provider, fallback=provider,
+                    )
+            except (GeneratorExit, asyncio.CancelledError):
+                return
+            except Exception as bx:
+                _logger.warning(f"bucket-select stream: degrading to legacy path: {bx}")
+                bucket = None
+
+        last_assistant_content = ""
+        last_assistant_tool_calls: list = []
+        last_assistant_model = provider_model_id
+        last_assistant_db: dict = {}
+
+        try:
+            for iteration in range(_MAX_AGENT_ITERATIONS):
+                complete_req = llm_module.CompleteRequest(
+                    model=provider_model_id,
+                    system=llm_module.SystemPrompt + _AGENT_SYSTEM_ADDENDUM + type_addendum,
+                    messages=history_msgs,
+                    tools=tool_specs,
+                )
+
+                # ── Per-turn state ───────────────────────────────────────────
+                turn_text_parts: list[str] = []
+                turn_tool_calls: list[llm_module.ToolCall] = []
+                # Map tool_use_id -> ToolCall (assembled from stream events)
+                pending_tools: dict[str, llm_module.ToolCall] = {}
+                stop_reason = "end_turn"
+                input_tokens = 0
+                output_tokens = 0
+
+                # Heartbeat bookkeeping
+                last_heartbeat = asyncio.get_event_loop().time()
+
+                try:
+                    stream_iter = provider.stream(complete_req)
+                    async for ev in stream_iter:
+                        # Emit heartbeat every 25 s to keep proxies alive
+                        now = asyncio.get_event_loop().time()
+                        if now - last_heartbeat >= 25:
+                            yield ": keepalive\n\n"
+                            last_heartbeat = now
+
+                        if ev.type == "assistant_text_delta":
+                            turn_text_parts.append(ev.data.get("text", ""))
+                            yield _sse_frame("assistant_text_delta", ev.data)
+
+                        elif ev.type == "tool_use_start":
+                            tid_key = ev.data["tool_use_id"]
+                            pending_tools[tid_key] = llm_module.ToolCall(
+                                id=tid_key,
+                                name=ev.data["name"],
+                                arguments_json="{}",
+                            )
+                            yield _sse_frame("tool_use_start", ev.data)
+
+                        elif ev.type == "tool_use_input_delta":
+                            yield _sse_frame("tool_use_input_delta", ev.data)
+
+                        elif ev.type == "tool_use_complete":
+                            tid_key = ev.data["tool_use_id"]
+                            assembled_input = ev.data.get("input", {})
+                            if tid_key in pending_tools:
+                                pending_tools[tid_key].arguments_json = json.dumps(assembled_input)
+                                turn_tool_calls.append(pending_tools[tid_key])
+                            yield _sse_frame("tool_use_complete", ev.data)
+
+                        elif ev.type == "assistant_done":
+                            stop_reason = ev.data.get("stop_reason", "end_turn")
+                            input_tokens = ev.data.get("input_tokens", 0)
+                            output_tokens = ev.data.get("output_tokens", 0)
+
+                except NotImplementedError:
+                    # Provider doesn't support streaming — fall back to blocking.
+                    try:
+                        resp = await asyncio.get_event_loop().run_in_executor(
+                            None,
+                            lambda: provider.complete(complete_req),
+                        )
+                    except Exception as e:
+                        err_msg = _friendly_llm_error(provider.name(), e)
+                        yield _sse_frame("error", {"message": err_msg, "is_error": True})
+                        async with pool.acquire() as conn:
+                            await _insert_assistant_message(conn, tid, err_msg, provider_model_id, None)
+                            await conn.execute(
+                                "UPDATE chat_threads SET last_message_at = now(), updated_at = now() WHERE id = $1", tid
+                            )
+                        return
+                    turn_text_parts = [resp.content]
+                    turn_tool_calls = resp.tool_calls
+                    stop_reason = resp.stop_reason
+                    input_tokens = resp.input_tokens
+                    output_tokens = resp.output_tokens
+                    # Emit the complete text as one delta so frontend renders it.
+                    if resp.content:
+                        yield _sse_frame("assistant_text_delta", {"text": resp.content})
+
+                except Exception as e:
+                    err_msg = _friendly_llm_error(provider.name(), e)
+                    _logger.error(f"llm stream: provider {provider.name()} model {provider_model_id} failed: {e}")
+                    yield _sse_frame("error", {"message": err_msg, "is_error": True})
+                    async with pool.acquire() as conn:
+                        await _insert_assistant_message(conn, tid, err_msg, provider_model_id, None)
+                        await conn.execute(
+                            "UPDATE chat_threads SET last_message_at = now(), updated_at = now() WHERE id = $1", tid
+                        )
+                    return
+
+                # ── Persist assistant turn ───────────────────────────────────
+                assistant_content = "".join(turn_text_parts)
+                last_assistant_content = assistant_content
+                last_assistant_tool_calls = turn_tool_calls
+                last_assistant_model = provider_model_id
+                async with pool.acquire() as conn:
+                    last_assistant_db = await _insert_assistant_message(
+                        conn, tid, assistant_content, provider_model_id, turn_tool_calls
+                    )
+
+                # ── Record token usage (cloud only) ──────────────────────────
+                if settings.usage_enabled and (input_tokens > 0 or output_tokens > 0):
+                    try:
+                        if bucket is not None and bucket_model_info is not None:
+                            from kerf_billing.spend import commit_spend, ApiTokenDailyCapExceeded
+                            cogs = bucket_model_info_price.compute_cost_usd(input_tokens, output_tokens) \
+                                if bucket_model_info_price else 0.0
+                            billed = cogs * 1.20
+                            try:
+                                await commit_spend(
+                                    pool, bucket=bucket, user_id=user_id, project_id=pid,
+                                    model=provider_model_id,
+                                    input_tokens=input_tokens, output_tokens=output_tokens,
+                                    cogs_usd=cogs, billed_usd=billed, api_token_id=None,
+                                )
+                            except Exception:
+                                pass
+                        else:
+                            from cloud.usage import record_token_event
+                            await record_token_event(
+                                pool, user_id, pid, provider_model_id,
+                                input_tokens, output_tokens, cost_usd=0.0,
+                            )
+                    except Exception as ue:
+                        _logger.warning(f"usage stream: record token event: {ue}")
+
+                # Append assistant turn to history
+                history_msgs.append(llm_module.Message(
+                    role="assistant",
+                    content=assistant_content,
+                    tool_calls=turn_tool_calls,
+                ))
+
+                if not turn_tool_calls or stop_reason == "stop":
+                    # Final turn — emit assistant_done and break.
+                    yield _sse_frame("assistant_done", {
+                        "stop_reason": stop_reason,
+                        "input_tokens": input_tokens,
+                        "output_tokens": output_tokens,
+                        "model": provider_model_id,
+                    })
+                    break
+
+                # ── Execute tool calls ────────────────────────────────────────
+                for tc in turn_tool_calls:
+                    yield _sse_frame("tool_executing", {"tool_use_id": tc.id, "name": tc.name})
+
+                    tool_is_error = False
+                    try:
+                        result = await tools_execute(proj_ctx, tc.name, tc.arguments_json.encode())
+                        try:
+                            _parsed = json.loads(result)
+                            if isinstance(_parsed, dict) and "error" in _parsed and "code" in _parsed:
+                                tool_is_error = True
+                        except Exception:
+                            pass
+                    except Exception as tool_exc:
+                        result = json.dumps({"error": str(tool_exc), "code": "ERROR"})
+                        tool_is_error = True
+
+                    async with pool.acquire() as conn:
+                        tm = await _insert_tool_message(conn, tid, tc.id, result, is_error=tool_is_error)
+
+                    content_preview = result[:200] if result else ""
+                    yield _sse_frame("tool_result", {
+                        "tool_use_id": tc.id,
+                        "is_error": tool_is_error,
+                        "content_preview": content_preview,
+                    })
+
+                    history_msgs.append(llm_module.Message(
+                        role="tool",
+                        content=result,
+                        tool_call_id=tc.id,
+                        is_error=tool_is_error,
+                    ))
+
+                if stop_reason != "tool_use" and not turn_tool_calls:
+                    yield _sse_frame("assistant_done", {
+                        "stop_reason": stop_reason,
+                        "input_tokens": input_tokens,
+                        "output_tokens": output_tokens,
+                        "model": provider_model_id,
+                    })
+                    break
+
+                if iteration == _MAX_AGENT_ITERATIONS - 1:
+                    msg = "(stopped: max tool iterations reached)"
+                    async with pool.acquire() as conn:
+                        last_assistant_db = await _insert_assistant_message(
+                            conn, tid, msg, provider_model_id, None
+                        )
+                    yield _sse_frame("assistant_done", {
+                        "stop_reason": "max_iterations",
+                        "input_tokens": 0,
+                        "output_tokens": 0,
+                        "model": provider_model_id,
+                    })
+                    break
+
+        except (asyncio.CancelledError, GeneratorExit):
+            # Client disconnected — persist whatever partial assistant text we have.
+            if last_assistant_content or last_assistant_tool_calls:
+                try:
+                    async with pool.acquire() as conn:
+                        if not last_assistant_db:
+                            await _insert_assistant_message(
+                                conn, tid, last_assistant_content,
+                                provider_model_id, last_assistant_tool_calls or None,
+                            )
+                except Exception:
+                    pass
+            return
+        except Exception as e:
+            err_msg = _friendly_llm_error("unknown", e)
+            _logger.error(f"llm stream: unexpected error: {e}")
+            yield _sse_frame("error", {"message": err_msg, "is_error": True})
+
+        finally:
+            async with pool.acquire() as conn:
+                await conn.execute(
+                    "UPDATE chat_threads SET last_message_at = now(), updated_at = now() WHERE id = $1", tid
+                )
+
+        # Auto-title on first exchange (fire and forget)
+        if is_first_user_message and registry.has_any() and last_assistant_content:
+            asyncio.create_task(_auto_title_thread(
+                tid, req.content, last_assistant_content, provider, provider_model_id, pool
+            ))
+
+    return StreamingResponse(
+        _event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
 @router.post("/projects/{pid}/share/links")
 async def create_share_link(pid: str, request: Request, payload: dict = Depends(require_auth)):
     user_id = payload.get("sub")

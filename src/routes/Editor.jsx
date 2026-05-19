@@ -2353,7 +2353,8 @@ export default function Editor() {
                   if (confirm('Delete this thread?')) w.deleteThread(id)
                 }}
                 onRemovePartRef={(i) => w.removePartRef(i)}
-                onSend={(content, opts) => w.sendMessage(content, opts)}
+                onSend={(content, opts) => w.sendMessageStreaming(content, opts)}
+                onCancelStream={() => w.cancelStream()}
               />
             </div>
           </div>
@@ -2439,7 +2440,8 @@ export default function Editor() {
                   if (confirm('Delete this thread?')) w.deleteThread(id)
                 }}
                 onRemovePartRef={(i) => w.removePartRef(i)}
-                onSend={(content, opts) => w.sendMessage(content, opts)}
+                onSend={(content, opts) => w.sendMessageStreaming(content, opts)}
+                onCancelStream={() => w.cancelStream()}
               />
             )}
             {rightDrawer.tab === 'activity' && projectId && (

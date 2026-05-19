@@ -3,7 +3,8 @@ import {
   Send, Star, MessageSquarePlus, MessageSquare, Trash2, Plus,
   Code as CodeIcon, ChevronDown, ChevronRight, Check, X, Sparkles,
   FolderTree, FileText, FilePen, Pencil, FilePlus, FileX, Search,
-  Box, ShieldCheck, Wrench, TriangleAlert,
+  Box, ShieldCheck, Wrench, Loader2, Square,
+  TriangleAlert,
 } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -538,6 +539,52 @@ function buildRenderItems(messages) {
   return items
 }
 
+// ---------- live streaming tool chip list ----------
+
+/**
+ * ToolChipList — rendered inside a streaming assistant message to show
+ * live tool-call progress.
+ *
+ * chips: [{ tool_use_id, name, status: 'queued'|'running'|'done'|'error', content_preview? }]
+ */
+function ToolChipList({ chips }) {
+  if (!chips || chips.length === 0) return null
+  return (
+    <div
+      data-testid="tool-chip-list"
+      className="flex flex-col gap-1 mt-1.5"
+    >
+      {chips.map((chip) => (
+        <div
+          key={chip.tool_use_id}
+          data-testid="tool-chip"
+          data-status={chip.status}
+          className={`flex items-center gap-1.5 px-2 py-1 rounded-md border text-[11px] font-mono ${
+            chip.status === 'running'
+              ? 'border-kerf-300/40 bg-kerf-300/5 text-kerf-300'
+              : chip.status === 'done'
+              ? 'border-ink-700 bg-ink-800/40 text-ink-400'
+              : chip.status === 'error'
+              ? 'border-red-500/40 bg-red-500/5 text-red-300'
+              : 'border-ink-700 bg-ink-800/20 text-ink-500'
+          }`}
+        >
+          {chip.status === 'running' ? (
+            <Loader2 size={10} className="animate-spin shrink-0" />
+          ) : chip.status === 'done' ? (
+            <Check size={10} className="shrink-0" />
+          ) : chip.status === 'error' ? (
+            <TriangleAlert size={10} className="shrink-0" />
+          ) : (
+            <span className="w-2.5 h-2.5 rounded-full border border-current opacity-40 shrink-0" />
+          )}
+          <span>{chip.name}</span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 // ---------- message bubble ----------
 
 function MessageBlock({ message, modelLookup }) {
@@ -576,7 +623,17 @@ function MessageBlock({ message, modelLookup }) {
         {isUser ? (
           <div className="whitespace-pre-wrap break-words">{message.content}</div>
         ) : (
-          <Markdown text={message.content || ''} />
+          <>
+            {(message.content || message._streaming) && (
+              <Markdown text={message.content || ''} />
+            )}
+            {message._streaming && !message.content && (
+              <span className="text-ink-500 animate-pulse text-xs">…</span>
+            )}
+            {Array.isArray(message._toolChips) && message._toolChips.length > 0 && (
+              <ToolChipList chips={message._toolChips} />
+            )}
+          </>
         )}
       </div>
       {message._pending && (
@@ -725,7 +782,7 @@ const ChatInput = forwardRef(function ChatInput({
 const ChatPanel = forwardRef(function ChatPanel({
   threads, currentThreadId, messages, pendingPartRefs,
   onSelectThread, onCreateThread, onToggleStar, onDeleteThread,
-  onSend, onRemovePartRef, sending, loadingMessages,
+  onSend, onRemovePartRef, onCancelStream, sending, loadingMessages,
 }, inputRef) {
   const scrollRef = useRef(null)
   const [models, setModels] = useState([])
@@ -812,12 +869,36 @@ const ChatPanel = forwardRef(function ChatPanel({
           }
           return <MessageBlock key={item.message.id || i} message={item.message} modelLookup={modelLookup} />
         })}
-        {sending && (
-          <div className="flex items-center gap-2 text-[11px] text-ink-400">
-            <Sparkles size={11} className="text-kerf-300 animate-pulse" />
-            <span className="animate-pulse">Kerf is thinking…</span>
-          </div>
-        )}
+        {sending && (() => {
+          // Check if there is an in-progress streaming message with live chips.
+          const streamingMsg = messages && messages.find((m) => m._streaming)
+          const hasChips = streamingMsg && Array.isArray(streamingMsg._toolChips) && streamingMsg._toolChips.length > 0
+          // Only show the "thinking" indicator when there's no streaming message
+          // taking up space in the list (the streaming message renders itself).
+          const showThinking = !streamingMsg
+          return (
+            <div className="flex items-center gap-2 text-[11px] text-ink-400">
+              {showThinking && (
+                <>
+                  <Sparkles size={11} className="text-kerf-300 animate-pulse" />
+                  <span className="animate-pulse">Kerf is thinking…</span>
+                </>
+              )}
+              {onCancelStream && (
+                <button
+                  type="button"
+                  data-testid="cancel-stream-btn"
+                  onClick={onCancelStream}
+                  className="ml-auto flex items-center gap-1 px-2 py-0.5 rounded border border-ink-700 bg-ink-800 text-ink-300 hover:bg-ink-700 hover:text-ink-100 transition-colors text-[10px]"
+                  title="Stop generating"
+                >
+                  <Square size={9} />
+                  Stop
+                </button>
+              )}
+            </div>
+          )
+        })()}
       </div>
 
       <ChatInput

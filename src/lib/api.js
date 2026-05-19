@@ -1,5 +1,6 @@
 import { useAuth } from '../store/auth.js'
 import { toast } from '../components/ToastBus.jsx'
+import { streamSse } from './sseClient.js'
 
 const API_URL = import.meta.env.VITE_API_URL || ''
 
@@ -324,6 +325,25 @@ export const api = {
       // before surfacing a timeout so the UI never hangs indefinitely.
       timeoutMs: CHAT_TIMEOUT_MS,
     }),
+
+  /**
+   * Open an SSE stream for one chat turn.
+   *
+   * Returns an AsyncIterable<{ event: string, data: object }>.
+   * The caller owns the AbortController; call abortController.abort() to cancel.
+   *
+   * @param {string} projectId
+   * @param {string} threadId
+   * @param {{ content: string, part_refs?: any[], model?: string }} body
+   * @param {AbortSignal} [abortSignal]
+   * @returns {AsyncIterable<{ event: string, data: object }>}
+   */
+  streamMessage(projectId, threadId, { content, part_refs, model }, abortSignal) {
+    const url = `${API_URL}/api/projects/${projectId}/threads/${threadId}/messages/stream`
+    const token = useAuth.getState().accessToken
+    const headers = token ? { authorization: `Bearer ${token}` } : {}
+    return streamSse(url, { content, part_refs, model }, { signal: abortSignal, headers })
+  },
 
   // ---- Threads ----
   listThreads: (projectId, fileId) => {

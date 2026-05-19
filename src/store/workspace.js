@@ -151,6 +151,7 @@ const initial = {
   messages: [],
   loadingMessages: false,
   sending: false,
+  streamAbortController: null,  // AbortController for the active SSE stream (if any)
 
   pickedPart: null,        // {file_id, part_id, label?} — last clicked
   pendingPartRefs: [],     // attached to next message
@@ -1813,6 +1814,214 @@ export const useWorkspace = create((set, get) => ({
           ? { ...m, _error: err?.message || 'Failed to send' }
           : m),
       }))
+    }
+  },
+
+  /**
+   * sendMessageStreaming — uses the SSE stream endpoint for live tool-use chips.
+   *
+   * Optimistic flow:
+   *   1. Append optimistic user message.
+   *   2. Append empty assistant message with _streaming: true.
+   *   3. Open the stream.
+   *   4. Per event: mutate the assistant message in-place.
+   *   5. On assistant_done: clear _streaming, set sending: false.
+   *   6. On error: mark _error on the assistant message.
+   *   7. Falls back to sendMessage on 404/5xx (endpoint not yet deployed).
+   *
+   * Callers can cancel by calling the returned AbortController's abort().
+   * The store property `streamAbortController` holds the active controller.
+   */
+  sendMessageStreaming: async (content, { model } = {}) => {
+    const { projectId, currentThreadId, pendingPartRefs, currentFileId } = get()
+    if (!projectId || !content.trim()) return
+
+    let threadId = currentThreadId
+    if (!threadId) {
+      const title = content.trim().slice(0, 60)
+      const t = await get().createThread({ title, file_id: currentFileId, model })
+      threadId = t?.id
+      if (!threadId) return
+    }
+
+    // Optimistic user message
+    const optimistic = {
+      id: `local-${Date.now()}`,
+      thread_id: threadId,
+      role: 'user',
+      content,
+      part_refs: pendingPartRefs,
+      created_at: new Date().toISOString(),
+      _pending: true,
+    }
+
+    // Placeholder assistant message (rendered while streaming)
+    const assistantPlaceholder = {
+      id: `stream-${Date.now()}`,
+      thread_id: threadId,
+      role: 'assistant',
+      content: '',
+      tool_calls: [],
+      _streaming: true,
+      _toolChips: [],   // [{ tool_use_id, name, status: 'queued'|'running'|'done'|'error', content_preview? }]
+    }
+
+    const ctrl = new AbortController()
+
+    set((s) => ({
+      messages: [...s.messages, optimistic, assistantPlaceholder],
+      sending: true,
+      pendingPartRefs: [],
+      streamAbortController: ctrl,
+    }))
+
+    // Helper: mutate the streaming assistant message
+    const updateAssistant = (updater) => {
+      set((s) => ({
+        messages: s.messages.map((m) =>
+          m.id === assistantPlaceholder.id ? { ...m, ...updater(m) } : m
+        ),
+      }))
+    }
+
+    try {
+      for await (const { event, data } of api.streamMessage(
+        projectId, threadId, { content, part_refs: optimistic.part_refs, model },
+        ctrl.signal,
+      )) {
+        switch (event) {
+          case 'user_message': {
+            // Replace the optimistic user message id with the server's id
+            set((s) => ({
+              messages: s.messages.map((m) =>
+                m.id === optimistic.id ? { ...m, id: data.id, _pending: false } : m
+              ),
+            }))
+            break
+          }
+          case 'assistant_text_delta': {
+            updateAssistant((m) => ({ content: (m.content || '') + (data.text || '') }))
+            break
+          }
+          case 'tool_use_start': {
+            updateAssistant((m) => ({
+              _toolChips: [
+                ...(m._toolChips || []),
+                { tool_use_id: data.tool_use_id, name: data.name, status: 'queued' },
+              ],
+            }))
+            break
+          }
+          case 'tool_use_complete': {
+            // The chip was added on tool_use_start; update it if needed
+            updateAssistant((m) => ({
+              _toolChips: (m._toolChips || []).map((c) =>
+                c.tool_use_id === data.tool_use_id ? { ...c, status: 'queued' } : c
+              ),
+            }))
+            break
+          }
+          case 'tool_executing': {
+            updateAssistant((m) => ({
+              _toolChips: (m._toolChips || []).map((c) =>
+                c.tool_use_id === data.tool_use_id ? { ...c, status: 'running' } : c
+              ),
+            }))
+            break
+          }
+          case 'tool_result': {
+            updateAssistant((m) => ({
+              _toolChips: (m._toolChips || []).map((c) =>
+                c.tool_use_id === data.tool_use_id
+                  ? { ...c, status: data.is_error ? 'error' : 'done', content_preview: data.content_preview }
+                  : c
+              ),
+            }))
+            break
+          }
+          case 'assistant_done': {
+            updateAssistant(() => ({
+              _streaming: false,
+              model: data.model,
+            }))
+            set((s) => {
+              const threads = s.threads.map((t) =>
+                t.id === threadId ? { ...t, last_message_at: new Date().toISOString() } : t
+              )
+              return { sending: false, streamAbortController: null, threads }
+            })
+            break
+          }
+          case 'error': {
+            updateAssistant(() => ({
+              _streaming: false,
+              _error: data.message || 'Stream error',
+            }))
+            set({ sending: false, streamAbortController: null })
+            break
+          }
+        }
+      }
+    } catch (err) {
+      if (err?.name === 'AbortError' || ctrl.signal.aborted) {
+        // User cancelled — preserve partial state
+        updateAssistant(() => ({ _streaming: false }))
+        set({ sending: false, streamAbortController: null })
+        return
+      }
+
+      // Network error or 4xx/5xx — fall back to blocking sendMessage
+      const statusCode = err?.status ?? 0
+      if (statusCode === 404 || statusCode >= 500) {
+        // Remove the placeholder and delegate to the blocking path
+        set((s) => ({
+          messages: s.messages.filter(
+            (m) => m.id !== assistantPlaceholder.id && m.id !== optimistic.id
+          ),
+          sending: false,
+          streamAbortController: null,
+          pendingPartRefs: optimistic.part_refs,
+        }))
+        await get().sendMessage(content, { model })
+        return
+      }
+
+      updateAssistant(() => ({
+        _streaming: false,
+        _error: err?.message || 'Failed to stream',
+      }))
+      set({ sending: false, streamAbortController: null })
+    }
+
+    // If any tool in the stream used file-mutating tools, refresh the tree.
+    // We check _toolChips on the final assistant message state.
+    const finalMsg = get().messages.find((m) => m.id === assistantPlaceholder.id)
+    if (finalMsg) {
+      const mutated = (finalMsg._toolChips || []).some((c) => FILE_MUTATING_TOOLS.has(c.name))
+      if (mutated) {
+        try {
+          const fresh = await api.listFiles(projectId)
+          set({ files: fresh })
+        } catch { /* tolerate */ }
+        const { currentFileId: openId } = get()
+        if (openId) {
+          await get().loadFileForEditor(openId)
+        }
+        const _rdMsg = get().rightDrawer
+        if ((get().revisionDrawerOpen || (_rdMsg.open && _rdMsg.tab === 'history')) && openId) {
+          await get().loadRevisions(openId)
+        }
+      }
+    }
+  },
+
+  /**
+   * Cancel an in-progress streaming turn (if any).
+   */
+  cancelStream: () => {
+    const { streamAbortController } = get()
+    if (streamAbortController) {
+      streamAbortController.abort()
     }
   },
 
