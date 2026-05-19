@@ -27,6 +27,15 @@ async def register(app: FastAPI, ctx) -> PluginManifest:
     from kerf_api.routes_plc_sim import router as plc_sim_router
     app.include_router(plc_sim_router, prefix="/api", tags=["plc-sim"])
 
+    from kerf_api.routes_aero_propulsion import router as aero_propulsion_router
+    app.include_router(aero_propulsion_router, prefix="/api", tags=["aero"])
+    from kerf_api.routes_aero_atmosphere import router as aero_atmosphere_router
+    app.include_router(aero_atmosphere_router, prefix="/api", tags=["aero"])
+    from kerf_api.routes_silicon_synth import router as silicon_synth_router
+    app.include_router(silicon_synth_router, prefix="/api", tags=["silicon"])
+    from kerf_api.routes_composites import router as composites_router
+    app.include_router(composites_router, prefix="/api", tags=["composites"])
+
     _register_tools(ctx)
 
     ctx.logger.info("kerf-api: registered /api routes and LLM tools")
