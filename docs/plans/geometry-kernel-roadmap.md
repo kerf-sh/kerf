@@ -672,11 +672,11 @@ Format: `[ ] GK-NN  scope — FILE(s) — oracle — dep — parallel? — tier`
   certified Hausdorff ≤ tol). — `geom/surface_analysis.py` — oracle:
   refined approximation of a torus certified ≤ tol with minimal knots.
   — dep: GK-37 — parallel: Y — sonnet.
-- [ ] **GK-64** Class-A acceptance harness: curvature combs + zebra +
+- [x] **GK-64** Class-A acceptance harness: curvature combs + zebra +
   G-continuity report on a reference fender/A-surface fixture. —
   `geom/surface_analysis.py` tests — oracle: known good A-surface passes
   all gates; a deliberately G0 variant fails the G1 gate. — dep: GK-38,
-  GK-62 — parallel: Y — sonnet.
+  GK-62 — parallel: Y — sonnet. *Landed: test_class_a_harness.py, 39 tests.*
 - [ ] **GK-65** Curvature comb / porcupine numeric export validated vs
   analytic κ. — `geom/curve_toolkit.py`, `geom/surface_analysis.py` —
   oracle: comb magnitude on a circle = constant 1/r to `1e-9`. — dep:
