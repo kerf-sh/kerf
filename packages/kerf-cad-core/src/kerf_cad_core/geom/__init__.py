@@ -132,6 +132,8 @@ from kerf_cad_core.geom.io.iges import (
 # GK-37: certified Hausdorff surface deviation
 from kerf_cad_core.geom.surface_fillet import variable_radius_fillet_g1
 from kerf_cad_core.geom.surface_analysis import hausdorff_deviation, zebra_stripe, zebra_stripe_continuity_analyser
+# GK-63: deviation-driven adaptive surface refinement
+from kerf_cad_core.geom.surface_analysis import adaptive_refine_surface
 # GK-47: STEP reader
 from kerf_cad_core.geom.io.step_read import read_step, StepReadError
 # GK-48: STEP writer
@@ -235,6 +237,8 @@ __all__ = [
     # GK-37
     "variable_radius_fillet_g1",
     "hausdorff_deviation","zebra_stripe","zebra_stripe_continuity_analyser",
+    # GK-63
+    "adaptive_refine_surface",
     "read_step","StepReadError",
     "write_step","StepWriteError",
     # GK-23

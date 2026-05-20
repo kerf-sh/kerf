@@ -2497,3 +2497,482 @@ if _REGISTRY_AVAILABLE:
         if not result["ok"]:
             return err_payload(result["reason"], "OP_FAILED")
         return ok_payload(result)
+
+
+# ---------------------------------------------------------------------------
+# GK-63 — adaptive_refine_surface: deviation-driven knot insertion
+# ---------------------------------------------------------------------------
+
+def _surface_knot_insert_u(surf: NurbsSurface, u_new: float) -> NurbsSurface:
+    """Insert knot u_new into the U knot vector of surf (Boehm's algorithm).
+
+    Applies the B-spline knot-insertion formula independently to each V-row
+    of control points (each row is an isoparametric U-curve).
+
+    The surface geometry is preserved exactly; only the CP representation
+    is refined.
+
+    Parameters
+    ----------
+    surf  : NurbsSurface  (degree_u × degree_v, (nu, nv, 3) control points)
+    u_new : float         — knot value to insert (clamped to domain)
+
+    Returns
+    -------
+    NurbsSurface with nu+1 control points in U and the same knots_v.
+    """
+    nu = surf.num_control_points_u
+    nv = surf.num_control_points_v
+    p = surf.degree_u
+    U = surf.knots_u.copy()
+    P = surf.control_points  # (nu, nv, 3)
+
+    u_min = float(U[0])
+    u_max = float(U[-1])
+    u_new = float(np.clip(u_new, u_min + 1e-14, u_max - 1e-14))
+
+    n = nu - 1  # last control point index
+    k = int(find_span(n, p, u_new, U))  # knot span index
+
+    # Count existing multiplicity of u_new
+    s = int(np.sum(np.abs(U - u_new) < 1e-10))
+
+    if p - s <= 0:
+        # Already at max multiplicity; no new CP needed, just return a copy
+        return NurbsSurface(
+            degree_u=surf.degree_u,
+            degree_v=surf.degree_v,
+            control_points=P.copy(),
+            knots_u=U.copy(),
+            knots_v=surf.knots_v.copy(),
+        )
+
+    # New knot vector
+    new_U = np.empty(len(U) + 1)
+    new_U[:k + 1] = U[:k + 1]
+    new_U[k + 1] = u_new
+    new_U[k + 2:] = U[k + 1:]
+
+    # New CP net: (nu+1, nv, 3)
+    new_P = np.zeros((nu + 1, nv, 3))
+
+    # Copy unchanged leading/trailing rows
+    for i_row in range(k - p + 1):
+        new_P[i_row] = P[i_row]
+    for i_row in range(k - s, nu):
+        new_P[i_row + 1] = P[i_row]
+
+    # Apply Boehm's alpha formula for the affected rows
+    for i_row in range(k - p + 1, k - s + 1):
+        denom = U[i_row + p] - U[i_row]
+        if abs(denom) < 1e-15:
+            alpha = 0.0
+        else:
+            alpha = (u_new - U[i_row]) / denom
+        new_P[i_row] = (1.0 - alpha) * P[i_row - 1] + alpha * P[i_row]
+
+    return NurbsSurface(
+        degree_u=surf.degree_u,
+        degree_v=surf.degree_v,
+        control_points=new_P,
+        knots_u=new_U,
+        knots_v=surf.knots_v.copy(),
+    )
+
+
+def _surface_knot_insert_v(surf: NurbsSurface, v_new: float) -> NurbsSurface:
+    """Insert knot v_new into the V knot vector (Boehm's algorithm).
+
+    Applies the knot-insertion formula independently to each U-row (each row
+    is an isoparametric V-curve).  Geometry is preserved exactly.
+
+    Parameters
+    ----------
+    surf  : NurbsSurface
+    v_new : float — knot value to insert (clamped to domain)
+
+    Returns
+    -------
+    NurbsSurface with nv+1 control points in V and the same knots_u.
+    """
+    nu = surf.num_control_points_u
+    nv = surf.num_control_points_v
+    q = surf.degree_v
+    V = surf.knots_v.copy()
+    P = surf.control_points  # (nu, nv, 3)
+
+    v_min = float(V[0])
+    v_max = float(V[-1])
+    v_new = float(np.clip(v_new, v_min + 1e-14, v_max - 1e-14))
+
+    n_v = nv - 1
+    k = int(find_span(n_v, q, v_new, V))
+    s = int(np.sum(np.abs(V - v_new) < 1e-10))
+
+    if q - s <= 0:
+        return NurbsSurface(
+            degree_u=surf.degree_u,
+            degree_v=surf.degree_v,
+            control_points=P.copy(),
+            knots_u=surf.knots_u.copy(),
+            knots_v=V.copy(),
+        )
+
+    new_V = np.empty(len(V) + 1)
+    new_V[:k + 1] = V[:k + 1]
+    new_V[k + 1] = v_new
+    new_V[k + 2:] = V[k + 1:]
+
+    # New CP net: (nu, nv+1, 3)
+    new_P = np.zeros((nu, nv + 1, 3))
+
+    for j_col in range(k - q + 1):
+        new_P[:, j_col] = P[:, j_col]
+    for j_col in range(k - s, nv):
+        new_P[:, j_col + 1] = P[:, j_col]
+
+    for j_col in range(k - q + 1, k - s + 1):
+        denom = V[j_col + q] - V[j_col]
+        if abs(denom) < 1e-15:
+            alpha = 0.0
+        else:
+            alpha = (v_new - V[j_col]) / denom
+        new_P[:, j_col] = (1.0 - alpha) * P[:, j_col - 1] + alpha * P[:, j_col]
+
+    return NurbsSurface(
+        degree_u=surf.degree_u,
+        degree_v=surf.degree_v,
+        control_points=new_P,
+        knots_u=surf.knots_u.copy(),
+        knots_v=new_V,
+    )
+
+
+def _deviation_map(
+    approx: NurbsSurface,
+    oracle: NurbsSurface,
+    n_sample: int,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray, float]:
+    """Sample deviation between approx and oracle on an n_sample×n_sample grid.
+
+    Returns (us, vs, dev_matrix, max_dev):
+      us, vs   : 1D arrays of U/V parameter values (n_sample each)
+      dev_matrix : (n_sample, n_sample) Euclidean distance at each grid point
+      max_dev   : global maximum of dev_matrix
+    """
+    us, vs = _uv_grid(approx, n_sample, n_sample)
+    dev = np.zeros((n_sample, n_sample))
+    for i, u in enumerate(us):
+        for j, v in enumerate(vs):
+            pa = _eval_surface(approx, float(u), float(v))[:3]
+            po = _eval_surface(oracle, float(u), float(v))[:3]
+            dev[i, j] = float(np.linalg.norm(pa - po))
+    max_dev = float(np.max(dev))
+    return us, vs, dev, max_dev
+
+
+def _refit_to_oracle(
+    surf: NurbsSurface,
+    oracle: NurbsSurface,
+    n_sample: int,
+) -> NurbsSurface:
+    """Re-fit the CP net of surf to oracle samples (least-squares reprojection).
+
+    Samples oracle on an n_sample × n_sample grid, then solves the separable
+    least-squares problem using the *existing* knot vectors of surf.  This
+    updates the CPs to best-approximate the oracle, preserving the knot
+    structure established by the caller.
+
+    The algorithm mirrors patch_srf.fit_surface:
+      1. Build basis matrices Bu (m, nu) and Bv (n, nv) using surf's own knots.
+      2. Solve  Bu @ Cx @ Bv.T = Px  (and similarly for Y, Z).
+         In practice: for each oracle row k, solve  Bv @ C[k, :] = P[k, :],
+         then for each CP column j, solve  Bu @ C[:, j] = tmp[:, j].
+
+    Returns a new NurbsSurface with the same degree and knots as surf but
+    with control points refitted to the oracle samples.
+    """
+    nu = surf.num_control_points_u
+    nv = surf.num_control_points_v
+    p = surf.degree_u
+    q = surf.degree_v
+    ku = surf.knots_u
+    kv = surf.knots_v
+
+    # Sample oracle
+    us = np.linspace(float(ku[0]), float(ku[-1]), n_sample)
+    vs = np.linspace(float(kv[0]), float(kv[-1]), n_sample)
+
+    # Sample oracle points (n_sample × n_sample × 3)
+    oracle_pts = np.zeros((n_sample, n_sample, 3))
+    for i, u in enumerate(us):
+        for j, v in enumerate(vs):
+            oracle_pts[i, j] = _eval_surface(oracle, float(u), float(v))[:3]
+
+    def _basis_row(param_val: float, knots: np.ndarray, n_ctrl: int, degree: int) -> np.ndarray:
+        """Build one row of the B-spline basis matrix."""
+        t = float(np.clip(param_val, float(knots[0]), float(knots[-1])))
+        span = int(find_span(n_ctrl - 1, degree, t, knots))
+        Nvals = _basis_fns(span, t, degree, knots)
+        row = np.zeros(n_ctrl)
+        for k in range(degree + 1):
+            col = span - degree + k
+            if 0 <= col < n_ctrl:
+                row[col] = Nvals[k]
+        return row
+
+    # Build Bu (n_sample × nu) and Bv (n_sample × nv)
+    Bu = np.array([_basis_row(u, ku, nu, p) for u in us])
+    Bv = np.array([_basis_row(v, kv, nv, q) for v in vs])
+
+    # Tikhonov regularisation to prevent singular systems
+    reg_u = np.eye(nu) * 1e-10
+    reg_v = np.eye(nv) * 1e-10
+
+    # Separable solve: solve two 1D LS problems per coordinate
+    # Step 1: for each u-sample row i, solve  Bv @ tmp[i, :, d] = oracle_pts[i, :, d]
+    #   → tmp shape (n_sample, nv, 3)
+    tmp = np.zeros((n_sample, nv, 3))
+    BvtBv = Bv.T @ Bv + reg_v
+    for i in range(n_sample):
+        for d in range(3):
+            rhs = Bv.T @ oracle_pts[i, :, d]
+            try:
+                tmp[i, :, d] = np.linalg.solve(BvtBv, rhs)
+            except np.linalg.LinAlgError:
+                tmp[i, :, d], _, _, _ = np.linalg.lstsq(BvtBv, rhs, rcond=None)
+
+    # Step 2: for each nv column j, solve  Bu @ ctrl[:, j, d] = tmp[:, j, d]
+    new_ctrl = np.zeros((nu, nv, 3))
+    ButBu = Bu.T @ Bu + reg_u
+    for j in range(nv):
+        for d in range(3):
+            rhs = Bu.T @ tmp[:, j, d]
+            try:
+                new_ctrl[:, j, d] = np.linalg.solve(ButBu, rhs)
+            except np.linalg.LinAlgError:
+                new_ctrl[:, j, d], _, _, _ = np.linalg.lstsq(ButBu, rhs, rcond=None)
+
+    return NurbsSurface(
+        degree_u=surf.degree_u,
+        degree_v=surf.degree_v,
+        control_points=new_ctrl,
+        knots_u=ku.copy(),
+        knots_v=kv.copy(),
+    )
+
+
+def adaptive_refine_surface(
+    approx_surf: NurbsSurface,
+    oracle_surf: NurbsSurface,
+    tol: float = 1e-3,
+    *,
+    max_knots: int = 64,
+    n_sample: int = 32,
+    hausdorff_epsilon: float = 1e-6,
+    n_hausdorff_start: int = 16,
+    n_hausdorff_max: int = 64,
+) -> dict:
+    """Deviation-driven adaptive surface refinement (GK-63).
+
+    Iteratively refines ``approx_surf`` by inserting knots at the locations of
+    largest deviation from ``oracle_surf`` until the certified Hausdorff bound
+    (computed via ``hausdorff_deviation``) satisfies:
+
+        hausdorff_upper ≤ tol
+
+    Algorithm
+    ---------
+    1.  Sample the deviation field on an ``n_sample × n_sample`` grid.
+    2.  Find the (u, v) location of maximum deviation.
+    3.  Determine which knot span contains that location in U and V; insert a
+        new knot at the midpoint of whichever span is *larger* in world-space
+        (greedy: the larger span is more likely to be under-sampled).
+    4.  Repeat until ``hausdorff_deviation`` certifies ≤ tol or ``max_knots``
+        knots have been inserted.
+
+    The Boehm knot-insertion step preserves the surface geometry exactly.
+    After each insertion, the CPs are re-fit to the oracle by least-squares
+    projection so that the extra degree of freedom is used to reduce deviation.
+
+    Parameters
+    ----------
+    approx_surf    : NurbsSurface — initial approximation
+    oracle_surf    : NurbsSurface — exact (reference) surface
+    tol            : float — target certified Hausdorff upper bound
+    max_knots      : int — hard limit on knots inserted before giving up
+    n_sample       : int — grid resolution for deviation sampling
+    hausdorff_epsilon : float — certification epsilon passed to hausdorff_deviation
+    n_hausdorff_start : int — starting grid for hausdorff_deviation
+    n_hausdorff_max   : int — max grid for hausdorff_deviation
+
+    Returns
+    -------
+    dict with keys:
+        ok              : bool — True if certified Hausdorff ≤ tol
+        surface         : NurbsSurface — refined approximation
+        hausdorff_upper : float — certified Hausdorff upper bound at convergence
+        certified       : bool — True if hausdorff_deviation certified its bound
+        knots_added     : int — total knots inserted (U + V combined)
+        num_ctrl_u      : int — final control-point count in U
+        num_ctrl_v      : int — final control-point count in V
+        iterations      : int — refinement loop iterations run
+        reason          : str — non-empty on failure
+    """
+    if not isinstance(approx_surf, NurbsSurface):
+        return {
+            "ok": False, "reason": "approx_surf must be a NurbsSurface",
+            "surface": None, "hausdorff_upper": float("inf"),
+            "certified": False, "knots_added": 0,
+            "num_ctrl_u": 0, "num_ctrl_v": 0, "iterations": 0,
+        }
+    if not isinstance(oracle_surf, NurbsSurface):
+        return {
+            "ok": False, "reason": "oracle_surf must be a NurbsSurface",
+            "surface": None, "hausdorff_upper": float("inf"),
+            "certified": False, "knots_added": 0,
+            "num_ctrl_u": 0, "num_ctrl_v": 0, "iterations": 0,
+        }
+    if not (isinstance(tol, (int, float)) and tol > 0):
+        return {
+            "ok": False, "reason": f"tol must be a positive number; got {tol!r}",
+            "surface": None, "hausdorff_upper": float("inf"),
+            "certified": False, "knots_added": 0,
+            "num_ctrl_u": 0, "num_ctrl_v": 0, "iterations": 0,
+        }
+
+    max_knots = max(1, int(max_knots))
+    n_sample = max(8, int(n_sample))
+
+    current = approx_surf
+    knots_added = 0
+    iterations = 0
+    hausdorff_upper = float("inf")
+    cert_result: dict = {}
+
+    for _iter in range(max_knots + 1):
+        iterations = _iter
+
+        # ── Certify current surface ─────────────────────────────────────────
+        cert_result = hausdorff_deviation(
+            current,
+            oracle_surf,
+            epsilon=hausdorff_epsilon,
+            n_start=n_hausdorff_start,
+            n_max=n_hausdorff_max,
+        )
+        if not cert_result.get("ok", False):
+            break
+        hausdorff_upper = float(cert_result["hausdorff_upper"])
+
+        if hausdorff_upper <= tol:
+            # Certified ✓ — done
+            return {
+                "ok": True,
+                "reason": "",
+                "surface": current,
+                "hausdorff_upper": hausdorff_upper,
+                "certified": bool(cert_result.get("certified", False)),
+                "knots_added": knots_added,
+                "num_ctrl_u": current.num_control_points_u,
+                "num_ctrl_v": current.num_control_points_v,
+                "iterations": iterations,
+            }
+
+        if knots_added >= max_knots:
+            break
+
+        # ── Sample deviation field ──────────────────────────────────────────
+        us, vs, dev_mat, _ = _deviation_map(current, oracle_surf, n_sample)
+
+        # Find row/col of worst deviation
+        worst_idx = int(np.argmax(dev_mat))
+        worst_i = worst_idx // n_sample  # u index
+        worst_j = worst_idx % n_sample   # v index
+
+        u_worst = float(us[worst_i])
+        v_worst = float(vs[worst_j])
+
+        # ── Choose insertion direction: whichever partial has larger magnitude
+        #    at the worst point → more curvature there → refine that direction
+        try:
+            Su, Sv = _surface_partials(current, u_worst, v_worst)
+            mag_u = float(np.linalg.norm(Su))
+            mag_v = float(np.linalg.norm(Sv))
+        except Exception:
+            mag_u = mag_v = 1.0
+
+        # U domain span per existing interior knot span
+        U_inner = current.knots_u[current.degree_u: -current.degree_u]
+        V_inner = current.knots_v[current.degree_v: -current.degree_v]
+        # Average knot spacing (proxy for resolution)
+        du_avg = float(U_inner[-1] - U_inner[0]) / max(len(U_inner) - 1, 1)
+        dv_avg = float(V_inner[-1] - V_inner[0]) / max(len(V_inner) - 1, 1)
+
+        # Score: deviation amplified by derivative magnitude × average spacing
+        # Insert in U if the U direction is more under-resolved
+        score_u = mag_u * du_avg
+        score_v = mag_v * dv_avg
+
+        if score_u >= score_v:
+            # Insert knot in U at the midpoint of the worst-point's knot span
+            U = current.knots_u
+            span_u = int(find_span(current.num_control_points_u - 1, current.degree_u,
+                                   u_worst, U))
+            u_lo = float(U[span_u])
+            u_hi = float(U[span_u + 1])
+            u_insert = (u_lo + u_hi) / 2.0
+            if u_hi - u_lo < 1e-12:
+                # Span already collapsed — fallback to V
+                V = current.knots_v
+                span_v = int(find_span(current.num_control_points_v - 1, current.degree_v,
+                                       v_worst, V))
+                v_lo = float(V[span_v])
+                v_hi = float(V[span_v + 1])
+                v_insert = (v_lo + v_hi) / 2.0
+                if v_hi - v_lo < 1e-12:
+                    break  # completely refined — cannot add more
+                current = _surface_knot_insert_v(current, v_insert)
+            else:
+                current = _surface_knot_insert_u(current, u_insert)
+        else:
+            V = current.knots_v
+            span_v = int(find_span(current.num_control_points_v - 1, current.degree_v,
+                                   v_worst, V))
+            v_lo = float(V[span_v])
+            v_hi = float(V[span_v + 1])
+            v_insert = (v_lo + v_hi) / 2.0
+            if v_hi - v_lo < 1e-12:
+                # Fallback to U
+                U = current.knots_u
+                span_u = int(find_span(current.num_control_points_u - 1, current.degree_u,
+                                       u_worst, U))
+                u_lo = float(U[span_u])
+                u_hi = float(U[span_u + 1])
+                u_insert = (u_lo + u_hi) / 2.0
+                if u_hi - u_lo < 1e-12:
+                    break
+                current = _surface_knot_insert_u(current, u_insert)
+            else:
+                current = _surface_knot_insert_v(current, v_insert)
+
+        knots_added += 1
+
+        # ── Re-fit CPs to oracle after knot insertion ───────────────────────
+        current = _refit_to_oracle(current, oracle_surf, n_sample)
+
+    # Best-effort: return what we have
+    return {
+        "ok": hausdorff_upper <= tol,
+        "reason": "" if hausdorff_upper <= tol else (
+            f"tol {tol} not achieved after {knots_added} knots; "
+            f"hausdorff_upper={hausdorff_upper:.4g}"
+        ),
+        "surface": current,
+        "hausdorff_upper": hausdorff_upper,
+        "certified": bool(cert_result.get("certified", False)),
+        "knots_added": knots_added,
+        "num_ctrl_u": current.num_control_points_u,
+        "num_ctrl_v": current.num_control_points_v,
+        "iterations": iterations,
+    }
