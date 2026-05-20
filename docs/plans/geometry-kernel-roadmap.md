@@ -820,7 +820,7 @@ in `geom/__init__.py`.
   `geom/subd_authoring.py` — oracle: loop-slide a box edge-loop by t
   along adjacent face → vertex positions move by t in face-tangent
   direction, topology unchanged. — dep: GK-52 — parallel: Y — sonnet.
-- [ ] **GK-89** Knife / cut face by 3D curve (B-rep + SubD): split a
+- [x] **GK-89** Knife / cut face by 3D curve (B-rep + SubD): split a
   face by an arbitrary 3D curve (projected then imprinted). Different
   cut-mode than split_body — face-local. — `geom/knife.py` — oracle:
   knife a planar face by a diagonal → 2 triangle-faces of equal area

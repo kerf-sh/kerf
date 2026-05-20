@@ -291,6 +291,8 @@ from kerf_cad_core.geom.split_body import (
     split_body_by_plane,
     split_body_by_surface,
 )
+# GK-89: knife / cut face by 3D curve (B-rep + SubD)
+from kerf_cad_core.geom.knife import knife_face
 
 __all__ = [
     "NurbsCurve",
@@ -475,4 +477,6 @@ __all__ = [
     # GK-84
     "split_body_by_plane",
     "split_body_by_surface",
+    # GK-89
+    "knife_face",
 ]
