@@ -269,15 +269,16 @@ export default function LibraryPart() {
       </div>
 
       {loading && (
-        <div className="grid place-items-center py-20 text-ink-400">
-          <Loader2 size={20} className="animate-spin" />
+        <div role="status" aria-live="polite" className="grid place-items-center py-20 text-ink-400">
+          <Loader2 size={20} className="animate-spin" aria-hidden />
+          <span className="sr-only">Loading part…</span>
         </div>
       )}
 
       {!loading && error && (
-        <Card className="p-10 text-center max-w-xl mx-auto">
+        <Card role="alert" aria-live="assertive" className="p-10 text-center max-w-xl mx-auto">
           <div className="mx-auto grid place-items-center w-12 h-12 rounded-xl bg-ink-800 border border-ink-700">
-            <AlertCircle size={20} className="text-red-300" />
+            <AlertCircle size={20} className="text-red-300" aria-hidden />
           </div>
           <h1 className="mt-4 font-display text-lg font-semibold tracking-tight">
             {error === 'Part not found.' ? 'Part not found' : 'Could not load part'}

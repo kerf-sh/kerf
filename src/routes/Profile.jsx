@@ -117,13 +117,17 @@ export default function Profile() {
 
           <form className="flex flex-col gap-4" onSubmit={save}>
             {err && (
-              <div className="flex items-start gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-200">
-                <AlertCircle size={14} className="mt-0.5 shrink-0" />
+              <div
+                role="alert"
+                aria-live="assertive"
+                className="flex items-start gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-200"
+              >
+                <AlertCircle size={14} className="mt-0.5 shrink-0" aria-hidden />
                 <span>{err}</span>
               </div>
             )}
             {msg && (
-              <div className="text-xs text-kerf-300">{msg}</div>
+              <div role="status" aria-live="polite" className="text-xs text-kerf-300">{msg}</div>
             )}
 
             <div className="flex flex-col gap-1.5">

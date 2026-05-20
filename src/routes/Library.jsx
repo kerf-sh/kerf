@@ -548,7 +548,11 @@ export default function Library() {
       </div>
 
       {error && (
-        <div className="mb-6 flex items-start gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-200">
+        <div
+          role="alert"
+          aria-live="assertive"
+          className="mb-6 flex items-start gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-200"
+        >
           <AlertCircle size={14} className="mt-0.5 shrink-0" />
           <span>{error}</span>
         </div>
@@ -558,8 +562,13 @@ export default function Library() {
       <div className={selected ? 'grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-6' : ''}>
         <div>
           {loading && !data && (
-            <div className="flex items-center justify-center py-16">
-              <Loader2 size={20} className="animate-spin text-ink-400" />
+            <div
+              role="status"
+              aria-live="polite"
+              className="flex items-center justify-center py-16"
+            >
+              <Loader2 size={20} className="animate-spin text-ink-400" aria-hidden />
+              <span className="sr-only">Loading parts…</span>
             </div>
           )}
 

@@ -187,7 +187,7 @@ Each task ≈1–3h sonnet unless `[HARD]`. Always isolate in a worktree.
 
 ### Group E — ProjectList / Dashboard
 
-- [ ] **T-E1 aria-live on Projects error + scan Library/Profile**
+- [x] **T-E1 aria-live on Projects error + scan Library/Profile**
   Scope: add `role="alert"` to the Projects error banner; quick responsive/a11y pass over `Library.jsx`, `LibraryPart.jsx`, `Profile.jsx` and log any fixed-width or label gaps inline as follow-up sub-bullets here.
   Files: `src/routes/Projects.jsx`, `src/routes/Library.jsx`, `src/routes/LibraryPart.jsx`, `src/routes/Profile.jsx`.
   Success: project load errors announced; the three unscanned routes have a documented status line in this doc.
