@@ -102,6 +102,8 @@ from kerf_cad_core.geom.intersection import (
     curve_surface_intersect,
     surface_surface_intersect,
 )
+# GK-34: surface fit-to-tolerance (lofted/grid least-squares + knot placement)
+from kerf_cad_core.geom.patch_srf import fit_surface
 
 __all__ = [
     "NurbsCurve",
@@ -171,4 +173,6 @@ __all__ = [
     "curve_curve_intersect",
     "curve_surface_intersect",
     "surface_surface_intersect",
+    # GK-34
+    "fit_surface",
 ]

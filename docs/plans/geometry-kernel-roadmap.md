@@ -521,7 +521,7 @@ Format: `[ ] GK-NN  scope — FILE(s) — oracle — dep — parallel? — tier`
   bilinear patch; boundary interpolation exact to `1e-12`. — dep: GK-01 —
   parallel: Y — sonnet.
   *Landed as `coons.py` (519 LOC); `test_coons.py` 49 tests.*
-- [ ] **GK-34** Surface fit-to-tolerance (lofted/grid least-squares with
+- [x] **GK-34** Surface fit-to-tolerance (lofted/grid least-squares with
   knot placement). — `geom/patch_srf.py` — oracle: fit of a sampled
   torus patch ≤ tol with bounded CP count. — dep: GK-22 — parallel: Y —
   sonnet.
