@@ -40,7 +40,7 @@ noted.
   File: `packages/kerf-cad-core/tests/test_feature_jewelry_bezel_auto.py`
   Success: 25 stone shapes (round/oval/marquise/pear/cushion/emerald + irregular cabochons); generated bezel wall thickness & seat depth within spec; clean boolean.
 
-- [ ] T-4 Jewelry: bangle / cuff / torque builders
+- [x] T-4 Jewelry: bangle / cuff / torque builders
   Scope: `bangle.py` parametric closure round-trip.
   File: `packages/kerf-cad-core/tests/test_feature_jewelry_bangle.py`
   Success: 25 wrist sizes × profile combinations; inner perimeter accuracy ±0.1 mm; hinge/clasp variants pass clash check.
