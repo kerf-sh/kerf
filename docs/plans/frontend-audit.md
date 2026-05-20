@@ -274,7 +274,7 @@ Each task ≈1–3h sonnet unless `[HARD]`. Always isolate in a worktree.
   Files: new `src/components/Modal.jsx`; `src/components/ShareModal.jsx`, `src/components/ShortcutsModal.jsx`, `src/routes/Editor.jsx`, `src/routes/Projects.jsx`.
   Success: every modal traps focus, returns focus on close, is dialog-roled; one implementation.
 
-- [ ] **T-L4 Toast → accessible status component**
+- [x] **T-L4 Toast → accessible status component**
   Scope: build a small shared toast that renders into an `aria-live="polite"` region; route `Editor.jsx` `w.toast` and `thumbToast` (and any other ad-hoc toasts) through it.
   Files: new `src/components/Toast.jsx`; `src/routes/Editor.jsx` (and grep other inline toasts).
   Success: toasts are announced; consistent placement/dismiss.

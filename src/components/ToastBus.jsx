@@ -27,11 +27,13 @@
  *     - duration: number  ms until auto-dismiss. Default 4000. 0 = never.
  *     - id: string        Deduplicate by ID (2nd call with same ID replaces 1st).
  *
- *   useToast() → { toasts, dismiss, add }
+ *   useToast() → { toasts, dismiss, add, pause, resume }
  *     React hook for components that need direct access to the toast list.
  *     - toasts:  ToastEntry[]  Current live toasts
  *     - dismiss: (id) => void  Remove a toast by ID
  *     - add:     (msg, opts) => string  Add a toast; returns its ID
+ *     - pause:   (id) => void  Pause auto-dismiss timer (e.g. on hover/focus)
+ *     - resume:  (id) => void  Resume auto-dismiss with remaining time
  *
  *   dismissToast(id) — programmatic dismiss without the hook
  *
@@ -46,9 +48,12 @@
  *     error/warning so AT announces them at the appropriate urgency.
  *   - aria-live="polite" (info/success) / aria-live="assertive" (error/warning).
  *   - Dismiss button has aria-label="Dismiss notification".
+ *   - Esc key dismisses the toast when focus is anywhere inside it.
+ *   - Auto-dismiss is paused on mouse hover or keyboard focus, and resumes
+ *     (with the remaining time) when the pointer or focus leaves.
  *   - The container is positioned fixed in the viewport corner and does not
- *     trap focus; users can dismiss with the close button or wait for auto-
- *     dismiss.
+ *     trap focus; users can dismiss with the close button, Esc, or wait for
+ *     auto-dismiss.
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react'
@@ -115,24 +120,62 @@ export function _resetBus() {
 /**
  * React hook that provides access to the toast list and imperative controls.
  *
- * @returns {{ toasts: ToastEntry[], dismiss: (id: string) => void, add: (msg: string, opts?: object) => string }}
+ * @returns {{ toasts: ToastEntry[], dismiss: (id: string) => void, add: (msg: string, opts?: object) => string, pause: (id: string) => void, resume: (id: string) => void }}
  */
 export function useToast() {
   const [toasts, setToasts] = useState([])
   const timersRef = useRef({})
+  // Track remaining time when a toast is paused { id: remainingMs }
+  const pausedRef = useRef({})
+  // Track when each timer started { id: startTimestamp }
+  const timerStartRef = useRef({})
+  // Track the full duration for each active timer { id: durationMs }
+  const timerDurationRef = useRef({})
 
   const dismiss = useCallback((id) => {
     setToasts((prev) => prev.filter((t) => t.id !== id))
     clearTimeout(timersRef.current[id])
     delete timersRef.current[id]
+    delete pausedRef.current[id]
+    delete timerStartRef.current[id]
+    delete timerDurationRef.current[id]
   }, [])
 
   const scheduleAutoDismiss = useCallback(
     (id, duration) => {
       if (duration <= 0) return
+      clearTimeout(timersRef.current[id])
+      timerStartRef.current[id] = Date.now()
+      timerDurationRef.current[id] = duration
       timersRef.current[id] = setTimeout(() => dismiss(id), duration)
     },
     [dismiss],
+  )
+
+  /**
+   * Pause the auto-dismiss timer for a toast (e.g. on hover/focus).
+   * Stores remaining time so resume() can restore it accurately.
+   */
+  const pause = useCallback((id) => {
+    if (!timersRef.current[id]) return
+    clearTimeout(timersRef.current[id])
+    delete timersRef.current[id]
+    const elapsed = Date.now() - (timerStartRef.current[id] ?? Date.now())
+    const remaining = Math.max(0, (timerDurationRef.current[id] ?? 0) - elapsed)
+    pausedRef.current[id] = remaining
+  }, [])
+
+  /**
+   * Resume the auto-dismiss timer with the remaining time.
+   */
+  const resume = useCallback(
+    (id) => {
+      const remaining = pausedRef.current[id]
+      if (remaining == null) return
+      delete pausedRef.current[id]
+      scheduleAutoDismiss(id, remaining)
+    },
+    [scheduleAutoDismiss],
   )
 
   const add = useCallback(
@@ -189,12 +232,12 @@ export function useToast() {
     }
   }, [dismiss, scheduleAutoDismiss])
 
-  return { toasts, dismiss, add }
+  return { toasts, dismiss, add, pause, resume }
 }
 
 // ── Toast UI primitives ───────────────────────────────────────────────────────
 
-const VARIANT_CONFIG = {
+export const VARIANT_CONFIG = {
   info: {
     icon: Info,
     role: 'status',
@@ -225,14 +268,29 @@ const VARIANT_CONFIG = {
   },
 }
 
-function ToastItem({ entry, onDismiss }) {
+function ToastItem({ entry, onDismiss, onPause, onResume }) {
   const config = VARIANT_CONFIG[entry.variant] ?? VARIANT_CONFIG.info
   const Icon = config.icon
+
+  function handleKeyDown(e) {
+    if (e.key === 'Escape') {
+      e.stopPropagation()
+      onDismiss(entry.id)
+    }
+  }
 
   return (
     <div
       role={config.role}
       aria-live={config.live}
+      // Keyboard: Esc dismisses when any element inside the toast is focused
+      onKeyDown={handleKeyDown}
+      // Hover/focus: pause auto-dismiss so users with slower reading speeds
+      // can read without the toast disappearing under them.
+      onMouseEnter={() => onPause?.(entry.id)}
+      onMouseLeave={() => onResume?.(entry.id)}
+      onFocusCapture={() => onPause?.(entry.id)}
+      onBlurCapture={() => onResume?.(entry.id)}
       className={clsx(
         'flex items-start gap-3 w-full max-w-sm',
         'bg-ink-800 border rounded-xl px-4 py-3',
@@ -266,7 +324,7 @@ function ToastItem({ entry, onDismiss }) {
 // ── ToastBus component (mounts once at app root) ─────────────────────────────
 
 export default function ToastBus() {
-  const { toasts, dismiss } = useToast()
+  const { toasts, dismiss, pause, resume } = useToast()
 
   if (toasts.length === 0) return null
 
@@ -281,7 +339,7 @@ export default function ToastBus() {
     >
       {toasts.map((entry) => (
         <div key={entry.id} className="pointer-events-auto">
-          <ToastItem entry={entry} onDismiss={dismiss} />
+          <ToastItem entry={entry} onDismiss={dismiss} onPause={pause} onResume={resume} />
         </div>
       ))}
     </div>
