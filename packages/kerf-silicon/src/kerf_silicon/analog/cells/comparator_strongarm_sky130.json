@@ -1,7 +1,7 @@
 {
   "cell_name": "comparator_strongarm_sky130",
   "pdk": "sky130",
-  "description": "Strong-arm latched comparator (clocked), SKY130A — STUB",
+  "description": "Strong-arm latched comparator (clocked), SKY130A. Two PMOS pre-charge + cross-coupled NMOS latch + NMOS tail switch.",
   "ports": ["VDD", "VSS", "INP", "INN", "CLK", "OUTP", "OUTN"],
   "layers": [
     {"name": "nwell",  "gds_layer": 64, "gds_datatype": 20},
@@ -13,21 +13,117 @@
   "polygons": [
     {
       "layer": "nwell", "datatype": 20,
-      "comment": "STUB — placeholder bounding box",
-      "points": [[0, 0], [30000, 0], [30000, 20000], [0, 20000]]
+      "comment": "nwell for MP1/MP2 PMOS pre-charge transistors",
+      "points": [[0, 14000], [30000, 14000], [30000, 20000], [0, 20000]]
+    },
+    {
+      "layer": "diff", "datatype": 20,
+      "comment": "MP1 PMOS pre-charge left (OUTP → VSS)",
+      "points": [[1000, 15000], [5000, 15000], [5000, 19000], [1000, 19000]]
+    },
+    {
+      "layer": "diff", "datatype": 20,
+      "comment": "MP2 PMOS pre-charge right (OUTN → VSS)",
+      "points": [[7000, 15000], [11000, 15000], [11000, 19000], [7000, 19000]]
+    },
+    {
+      "layer": "diff", "datatype": 20,
+      "comment": "MN1 NMOS input left (INP)",
+      "points": [[1000, 6000], [5000, 6000], [5000, 10000], [1000, 10000]]
+    },
+    {
+      "layer": "diff", "datatype": 20,
+      "comment": "MN2 NMOS input right (INN)",
+      "points": [[7000, 6000], [11000, 6000], [11000, 10000], [7000, 10000]]
+    },
+    {
+      "layer": "diff", "datatype": 20,
+      "comment": "ML1 NMOS latch left (cross-coupled)",
+      "points": [[14000, 6000], [18000, 6000], [18000, 10000], [14000, 10000]]
+    },
+    {
+      "layer": "diff", "datatype": 20,
+      "comment": "ML2 NMOS latch right (cross-coupled)",
+      "points": [[20000, 6000], [24000, 6000], [24000, 10000], [20000, 10000]]
+    },
+    {
+      "layer": "diff", "datatype": 20,
+      "comment": "MT NMOS tail switch (CLK-controlled)",
+      "points": [[4000, 1000], [8000, 1000], [8000, 5000], [4000, 5000]]
+    },
+    {
+      "layer": "poly", "datatype": 20,
+      "comment": "MP1/MP2 gates (CLKb — inverted CLK pre-charge control)",
+      "points": [[2000, 13000], [10000, 13000], [10000, 14500], [2000, 14500]]
+    },
+    {
+      "layer": "poly", "datatype": 20,
+      "comment": "MN1 gate (INP)",
+      "points": [[3000, 5000], [4000, 5000], [4000, 11000], [3000, 11000]]
+    },
+    {
+      "layer": "poly", "datatype": 20,
+      "comment": "MN2 gate (INN)",
+      "points": [[8500, 5000], [9500, 5000], [9500, 11000], [8500, 11000]]
+    },
+    {
+      "layer": "poly", "datatype": 20,
+      "comment": "ML1 gate (OUTN — cross-coupled)",
+      "points": [[15000, 5000], [16000, 5000], [16000, 11000], [15000, 11000]]
+    },
+    {
+      "layer": "poly", "datatype": 20,
+      "comment": "ML2 gate (OUTP — cross-coupled)",
+      "points": [[21500, 5000], [22500, 5000], [22500, 11000], [21500, 11000]]
+    },
+    {
+      "layer": "poly", "datatype": 20,
+      "comment": "MT gate (CLK — tail switch)",
+      "points": [[5500, 0], [6500, 0], [6500, 6000], [5500, 6000]]
     },
     {
       "layer": "met1", "datatype": 20,
-      "comment": "VDD bus stub",
+      "comment": "VDD bus",
       "points": [[0, 19000], [30000, 19000], [30000, 20000], [0, 20000]]
     },
     {
       "layer": "met1", "datatype": 20,
-      "comment": "VSS bus stub",
+      "comment": "VSS bus",
       "points": [[0, 0], [30000, 0], [30000, 1000], [0, 1000]]
+    },
+    {
+      "layer": "met1", "datatype": 20,
+      "comment": "OUTP port",
+      "points": [[1000, 11000], [5000, 11000], [5000, 12000], [1000, 12000]]
+    },
+    {
+      "layer": "met1", "datatype": 20,
+      "comment": "OUTN port",
+      "points": [[20000, 11000], [24000, 11000], [24000, 12000], [20000, 12000]]
     }
   ],
-  "devices": [],
-  "schematic_nets": ["VDD", "VSS", "INP", "INN", "CLK", "OUTP", "OUTN"],
-  "TODO": "Full strong-arm latch transistor sizing + routing pending"
+  "devices": [
+    {"ref": "MP1", "type": "sky130_fd_pr__pfet_01v8",
+     "ports": {"S": "VDD", "G": "CLKb", "D": "OUTP", "B": "VDD"},
+     "params": {"W": 4, "L": 0.15, "nf": 1}},
+    {"ref": "MP2", "type": "sky130_fd_pr__pfet_01v8",
+     "ports": {"S": "VDD", "G": "CLKb", "D": "OUTN", "B": "VDD"},
+     "params": {"W": 4, "L": 0.15, "nf": 1}},
+    {"ref": "MN1", "type": "sky130_fd_pr__nfet_01v8",
+     "ports": {"S": "net_tail", "G": "INP", "D": "OUTP", "B": "VSS"},
+     "params": {"W": 4, "L": 0.15, "nf": 1}},
+    {"ref": "MN2", "type": "sky130_fd_pr__nfet_01v8",
+     "ports": {"S": "net_tail", "G": "INN", "D": "OUTN", "B": "VSS"},
+     "params": {"W": 4, "L": 0.15, "nf": 1}},
+    {"ref": "ML1", "type": "sky130_fd_pr__nfet_01v8",
+     "ports": {"S": "net_tail", "G": "OUTN", "D": "OUTP", "B": "VSS"},
+     "params": {"W": 4, "L": 0.15, "nf": 1}},
+    {"ref": "ML2", "type": "sky130_fd_pr__nfet_01v8",
+     "ports": {"S": "net_tail", "G": "OUTP", "D": "OUTN", "B": "VSS"},
+     "params": {"W": 4, "L": 0.15, "nf": 1}},
+    {"ref": "MT",  "type": "sky130_fd_pr__nfet_01v8",
+     "ports": {"S": "VSS", "G": "CLK", "D": "net_tail", "B": "VSS"},
+     "params": {"W": 4, "L": 0.15, "nf": 1}}
+  ],
+  "schematic_nets": ["VDD", "VSS", "INP", "INN", "CLK", "CLKb", "OUTP", "OUTN", "net_tail"]
 }

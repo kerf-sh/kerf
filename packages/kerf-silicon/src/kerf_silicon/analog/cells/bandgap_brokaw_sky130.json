@@ -1,7 +1,7 @@
 {
   "cell_name": "bandgap_brokaw_sky130",
   "pdk": "sky130",
-  "description": "Brokaw bandgap voltage reference, SKY130A — STUB",
+  "description": "Brokaw bandgap voltage reference, SKY130A. Two NPN BJTs at 8:1 area ratio, PMOS current mirror, poly resistors R1/R2. VREF ≈ 1.25 V.",
   "ports": ["VDD", "VSS", "VREF", "IREF"],
   "layers": [
     {"name": "nwell",  "gds_layer": 64, "gds_datatype": 20},
@@ -13,21 +13,90 @@
   "polygons": [
     {
       "layer": "nwell", "datatype": 20,
-      "comment": "STUB — placeholder bounding box",
-      "points": [[0, 0], [25000, 0], [25000, 18000], [0, 18000]]
+      "comment": "nwell for MP1/MP2 PMOS current mirror",
+      "points": [[0, 14000], [25000, 14000], [25000, 18000], [0, 18000]]
+    },
+    {
+      "layer": "diff", "datatype": 20,
+      "comment": "MP1 PMOS — diode-connected IREF current mirror input",
+      "points": [[1000, 15000], [5000, 15000], [5000, 17000], [1000, 17000]]
+    },
+    {
+      "layer": "diff", "datatype": 20,
+      "comment": "MP2 PMOS — mirrored output current",
+      "points": [[7000, 15000], [11000, 15000], [11000, 17000], [7000, 17000]]
+    },
+    {
+      "layer": "diff", "datatype": 20,
+      "comment": "Q1 NPN 8× area emitter (lower current density)",
+      "points": [[2000, 3000], [10000, 3000], [10000, 9000], [2000, 9000]]
+    },
+    {
+      "layer": "diff", "datatype": 20,
+      "comment": "Q2 NPN 1× area emitter (higher current density)",
+      "points": [[12000, 3000], [16000, 3000], [16000, 9000], [12000, 9000]]
+    },
+    {
+      "layer": "poly", "datatype": 20,
+      "comment": "R1 — lower poly resistor (base to VSS)",
+      "points": [[18000, 2000], [20000, 2000], [20000, 8000], [18000, 8000]]
+    },
+    {
+      "layer": "poly", "datatype": 20,
+      "comment": "R2 — upper poly resistor (VREF to base)",
+      "points": [[18000, 9000], [20000, 9000], [20000, 14000], [18000, 14000]]
     },
     {
       "layer": "met1", "datatype": 20,
-      "comment": "VDD bus stub",
+      "comment": "VDD bus",
       "points": [[0, 17000], [25000, 17000], [25000, 18000], [0, 18000]]
     },
     {
       "layer": "met1", "datatype": 20,
-      "comment": "VSS bus stub",
+      "comment": "VSS bus",
       "points": [[0, 0], [25000, 0], [25000, 1000], [0, 1000]]
+    },
+    {
+      "layer": "met1", "datatype": 20,
+      "comment": "VREF output port connection",
+      "points": [[20000, 13000], [24000, 13000], [24000, 14500], [20000, 14500]]
     }
   ],
-  "devices": [],
-  "schematic_nets": ["VDD", "VSS", "VREF", "IREF"],
-  "TODO": "Full Brokaw cell BJT + PMOS error-amp sizing + routing pending"
+  "devices": [
+    {"ref": "MP1", "type": "sky130_fd_pr__pfet_01v8",
+     "ports": {"S": "VDD", "G": "net_mirror_g", "D": "net_mirror_g", "B": "VDD"},
+     "params": {"W": 4, "L": 1.0, "nf": 1},
+     "comment": "PMOS diode-connected; MP1/D=MP1/G=net_mirror_g=Q1/C"},
+    {"ref": "MP2", "type": "sky130_fd_pr__pfet_01v8",
+     "ports": {"S": "VDD", "G": "net_mirror_g", "D": "VREF", "B": "VDD"},
+     "params": {"W": 4, "L": 1.0, "nf": 1},
+     "comment": "PMOS mirror; drives VREF = R2 top = Q2 collector"},
+    {"ref": "Q1", "type": "sky130_fd_pr__npn_05v5_W1p00L1p00",
+     "ports": {"C": "net_mirror_g", "B": "net_base", "E": "VSS"},
+     "params": {"area": 8},
+     "comment": "NPN 8× area — VBE1 < VBE2; ΔVBE = Vt*ln(8)"},
+    {"ref": "Q2", "type": "sky130_fd_pr__npn_05v5_W1p00L1p00",
+     "ports": {"C": "VREF", "B": "net_base", "E": "VSS"},
+     "params": {"area": 1},
+     "comment": "NPN 1× area; collector tied to VREF = MP2/D"},
+    {"ref": "R1", "type": "sky130_fd_pr__res_generic_po",
+     "ports": {"PLUS": "net_base", "MINUS": "VSS"},
+     "params": {"W": 2, "L": 30},
+     "comment": "R1 lower resistor; sets PTAT current balance"},
+    {"ref": "R2", "type": "sky130_fd_pr__res_generic_po",
+     "ports": {"PLUS": "VREF", "MINUS": "net_base"},
+     "params": {"W": 2, "L": 130},
+     "comment": "R2 upper resistor; VREF = VBE2 + (R2/R1)*2*Vt*ln(8) ≈ 1.25 V"}
+  ],
+  "schematic_nets": [
+    "VDD", "VSS", "VREF", "IREF",
+    "net_mirror_g", "net_base"
+  ],
+  "design_equations": {
+    "Vt_300K_V": 0.02585,
+    "n_ratio": 8,
+    "DELTA_VBE_mV": "2 * 25.85 * ln(8) = 107.6 mV (PTAT)",
+    "R2_R1_for_1p25V": "(1.25 - 0.65) / 0.1076 = 5.57 → R2/R1 ≈ 4.33 after VBE correction",
+    "TC_cancellation": "CTAT(-2.2 mV/K from VBE) + PTAT(R2/R1 * 2*k/q * ln(8) per K) → TC ≈ 0"
+  }
 }

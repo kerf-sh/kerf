@@ -1,0 +1,18 @@
+{
+  "description": "Golden LVS reference netlist for bandgap_brokaw_sky130",
+  "cells": [
+    {"ref": "MP1", "type": "sky130_fd_pr__pfet_01v8",              "ports": ["S", "G", "D", "B"]},
+    {"ref": "MP2", "type": "sky130_fd_pr__pfet_01v8",              "ports": ["S", "G", "D", "B"]},
+    {"ref": "Q1",  "type": "sky130_fd_pr__npn_05v5_W1p00L1p00",   "ports": ["C", "B", "E"]},
+    {"ref": "Q2",  "type": "sky130_fd_pr__npn_05v5_W1p00L1p00",   "ports": ["C", "B", "E"]},
+    {"ref": "R1",  "type": "sky130_fd_pr__res_generic_po",         "ports": ["PLUS", "MINUS"]},
+    {"ref": "R2",  "type": "sky130_fd_pr__res_generic_po",         "ports": ["PLUS", "MINUS"]}
+  ],
+  "nets": [
+    {"name": "VDD",         "pin_refs": ["MP1/S", "MP2/S", "MP1/B", "MP2/B"]},
+    {"name": "VSS",         "pin_refs": ["Q1/E",  "Q2/E",  "R1/MINUS"]},
+    {"name": "VREF",        "pin_refs": ["MP2/D", "R2/PLUS", "Q2/C"]},
+    {"name": "net_mirror_g","pin_refs": ["MP1/G", "MP2/G", "MP1/D", "Q1/C"]},
+    {"name": "net_base",    "pin_refs": ["Q1/B",  "Q2/B",  "R1/PLUS", "R2/MINUS"]}
+  ]
+}

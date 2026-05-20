@@ -1,0 +1,23 @@
+{
+  "description": "Golden LVS reference netlist for comparator_strongarm_sky130",
+  "cells": [
+    {"ref": "MP1", "type": "sky130_fd_pr__pfet_01v8",  "ports": ["S", "G", "D", "B"]},
+    {"ref": "MP2", "type": "sky130_fd_pr__pfet_01v8",  "ports": ["S", "G", "D", "B"]},
+    {"ref": "MN1", "type": "sky130_fd_pr__nfet_01v8",  "ports": ["S", "G", "D", "B"]},
+    {"ref": "MN2", "type": "sky130_fd_pr__nfet_01v8",  "ports": ["S", "G", "D", "B"]},
+    {"ref": "ML1", "type": "sky130_fd_pr__nfet_01v8",  "ports": ["S", "G", "D", "B"]},
+    {"ref": "ML2", "type": "sky130_fd_pr__nfet_01v8",  "ports": ["S", "G", "D", "B"]},
+    {"ref": "MT",  "type": "sky130_fd_pr__nfet_01v8",  "ports": ["S", "G", "D", "B"]}
+  ],
+  "nets": [
+    {"name": "VDD",      "pin_refs": ["MP1/S", "MP2/S", "MP1/B", "MP2/B"]},
+    {"name": "VSS",      "pin_refs": ["MT/S",  "MT/B",  "MN1/B", "MN2/B", "ML1/B", "ML2/B"]},
+    {"name": "INP",      "pin_refs": ["MN1/G"]},
+    {"name": "INN",      "pin_refs": ["MN2/G"]},
+    {"name": "CLK",      "pin_refs": ["MT/G"]},
+    {"name": "CLKb",     "pin_refs": ["MP1/G", "MP2/G"]},
+    {"name": "OUTP",     "pin_refs": ["MP1/D", "MN1/D", "ML1/D", "ML2/G"]},
+    {"name": "OUTN",     "pin_refs": ["MP2/D", "MN2/D", "ML2/D", "ML1/G"]},
+    {"name": "net_tail", "pin_refs": ["MT/D",  "MN1/S", "MN2/S", "ML1/S", "ML2/S"]}
+  ]
+}
