@@ -205,12 +205,12 @@ noted.
   File: `packages/kerf-cam/tests/test_feature_cam3_post_tooldb.py`
   Success: 25 toolpaths; valid G-code for fanuc/haas/mach3/grbl; tool-change blocks; feed/speed from DB.
 
-- [ ] T-37 CAM 5-axis: 3+2 indexed
+- [x] T-37 CAM 5-axis: 3+2 indexed
   Scope: `kerf-cam/five_axis/` + `kerf-cad-core/fiveaxis/`.
   File: `packages/kerf-cam/tests/test_feature_cam5_3plus2.py`
   Success: 25 setups; indexed plane resolves; kinematic limits checked; G68.2 / RTCP outputs differ correctly.
 
-- [ ] T-38 CAM: layered (additive milling) flow
+- [x] T-38 CAM: layered (additive milling) flow
   Scope: `cam_layered.py`.
   File: `packages/kerf-cad-core/tests/test_feature_cam_layered.py`
   Success: 25 part shapes; layer count, step-down, scallop within target; collision check.
