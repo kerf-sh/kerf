@@ -598,7 +598,7 @@ estimates: **S** = ½ day, **M** = 1-2 days, **L** = 3-5 days, **XL** =
 
 ### T-322 Project export / materialize foundation — `kerf export` / `import` (P0-7)
 
-🔴 not started · **Tier A · P0**
+✅ shipped (2026-05-20) · **Tier A · P0**
 
 - **Why:** ROADMAP §1.5 commitment 3 — "you own your data and can
   leave any time" is only credible if there's a concrete `kerf
