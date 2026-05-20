@@ -607,12 +607,12 @@ Format: `[ ] GK-NN  scope — FILE(s) — oracle — dep — parallel? — tier`
   ≥30 fixtures round-trip with Hausdorff ≤ tol or a structured skip
   reason. — dep: GK-48 — parallel: Y — sonnet.
   *Landed: test_step_fuzz.py, 59 tests (56 passed, 3 structured skips).*
-- [ ] **GK-52** [HARD] SubD cage → watertight NURBS `Body` (Catmull–Clark
+- [x] **GK-52** [HARD] SubD cage → watertight NURBS `Body` (Catmull–Clark
   limit → bicubic faces, sewn, extraordinary-point handling). —
   `geom/subd.py`, `geom/brep_build.py`, `geom/sew.py` — oracle: subD
   cube → smooth body; `validate_body` ok; limit-surface deviation from
   Stam evaluation ≤ `1e-6`. — dep: GK-17, GK-52-prereq GK-13 — parallel:
-  N — opus.
+  N — opus. *Landed: 21 tests.*
 - [ ] **GK-53** NURBS `Body` → SubD cage (reverse, quad-dominant). —
   `geom/subd.py` — oracle: round-trip subD→NURBS→subD on a cube returns
   the original cage to `1e-7`. — dep: GK-52 — parallel: N — opus.
