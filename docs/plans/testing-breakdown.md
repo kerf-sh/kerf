@@ -190,7 +190,7 @@ noted.
   File: `packages/kerf-electronics/tests/test_feature_pcb_panel_fixture.py`
   Success: 25 panels (V-score + mouse-bite); bed-of-nails fixture clearances; gold-finger / fiducial placement.
 
-- [ ] T-34 Electronic: BOM variants
+- [x] T-34 Electronic: BOM variants
   Scope: assembly BOM with DNP / variant assignment.
   File: `packages/kerf-electronics/tests/test_feature_pcb_bom_variants.py`
   Success: 25 variant configurations; DNP filtering; cost roll-up against `kerf-parts` distributors.
