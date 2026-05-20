@@ -75,7 +75,7 @@ noted.
   File: `packages/kerf-cad-core/tests/test_feature_jewelry_pave.py`
   Success: 25 host surfaces × stone sizes; stones tangent to surface within ε; no inter-stone clash; share-prong logic.
 
-- [ ] T-11 Jewelry: gallery / head wizard
+- [x] T-11 Jewelry: gallery / head wizard
   Scope: `gallery.py` + `head_wizard.py` composite head onto shank.
   File: `packages/kerf-cad-core/tests/test_feature_jewelry_head.py`
   Success: 25 head styles (4/6/8 prong, basket, cathedral, halo); attach point coincident with shank top.
