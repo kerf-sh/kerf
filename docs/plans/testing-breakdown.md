@@ -25,7 +25,7 @@ plugin call → worker / pure-python compute → render or export round-trip),
 not a single internal module. ≥25 hermetic cases each unless otherwise
 noted.
 
-- [ ] T-1 Jewelry: gemstone → seat → setting → ring composite
+- [x] T-1 Jewelry: gemstone → seat → setting → ring composite
   Scope: gemstone catalog (`gemstones.py`) → `gem_seat.py` boolean → `settings.py` prong/bezel/channel/pavé → `ring.py` shank attach.
   File: `packages/kerf-cad-core/tests/test_feature_jewelry_ring_composite.py`
   Success: build 25 ring SKUs (stones × cuts × shank profiles), assert OCCT solid validity, mass-balance, gem clearance, no interpenetration.
