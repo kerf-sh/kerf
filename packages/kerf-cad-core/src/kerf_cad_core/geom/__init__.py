@@ -48,6 +48,7 @@ from kerf_cad_core.geom.network_srf import (
 from kerf_cad_core.geom.blend_srf import (
     blend_srf,
     blend_srf_g1,
+    blend_srf_g2,
     blend_srf_with_curves,
     blend_srf_fillet,
     validate_surface_blend,
@@ -167,6 +168,7 @@ __all__ = [
     "gordon_network_srf",
     "blend_srf",
     "blend_srf_g1",
+    "blend_srf_g2",
     "blend_srf_with_curves",
     "blend_srf_fillet",
     "validate_surface_blend",
