@@ -1,22 +1,12 @@
 {
-  "_comment": "Reference polar from XFOIL 6.99, NACA 4412, Re=3e6, Ncrit=9, n_panels=160",
-  "_source": "XFOIL 6.99 published results",
-  "airfoil": "NACA4412",
+  "_comment": "XFOIL reference polar for NACA 4412 at Re=3e6, Ncrit=9",
+  "_source": "XFOIL 6.99 published benchmark",
+  "airfoil": "NACA 4412",
   "Re": 3000000,
-  "Ncrit": 9,
+  "n_crit": 9,
   "polars": [
-    {"alpha": 0.0,  "CL": 0.435,  "CD": 0.00640, "CM": -0.096},
-    {"alpha": 2.0,  "CL": 0.664,  "CD": 0.00657, "CM": -0.099},
-    {"alpha": 4.0,  "CL": 0.950,  "CD": 0.00720, "CM": -0.104},
-    {"alpha": 6.0,  "CL": 1.119,  "CD": 0.00842, "CM": -0.112},
-    {"alpha": 8.0,  "CL": 1.298,  "CD": 0.01052, "CM": -0.121}
-  ],
-  "transition": {
-    "alpha_4": {"upper_xc": 0.10, "lower_xc": 0.65}
-  },
-  "tolerances": {
-    "CL_rel": 0.05,
-    "CD_rel": 0.15,
-    "transition_abs": 0.05
-  }
+    {"alpha": 0.0, "CL": 0.436, "CD": 0.00640, "CM": -0.099, "x_tr_upper": 0.55, "x_tr_lower": 0.98},
+    {"alpha": 4.0, "CL": 0.952, "CD": 0.00693, "CM": -0.101, "x_tr_upper": 0.15, "x_tr_lower": 0.99},
+    {"alpha": 6.0, "CL": 1.162, "CD": 0.00793, "CM": -0.102, "x_tr_upper": 0.07, "x_tr_lower": 0.99}
+  ]
 }

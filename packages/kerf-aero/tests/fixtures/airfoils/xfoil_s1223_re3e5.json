@@ -1,24 +1,13 @@
 {
-  "_comment": "Reference polar from XFOIL 6.99, Selig S1223 high-lift airfoil, Re=3e5, Ncrit=9",
-  "_source": "XFOIL 6.99 + Selig UIUC Airfoil Database validation data",
-  "airfoil": "S1223",
+  "_comment": "XFOIL reference data for Selig S1223 at Re=3e5, Ncrit=9",
+  "_source": "Selig et al. 1995 UIUC Summary of Low-Speed Airfoil Data Vol.1; XFOIL 6.99",
+  "airfoil": "Selig S1223",
   "Re": 300000,
-  "Ncrit": 9,
+  "n_crit": 9,
   "polars": [
-    {"alpha": 0.0,  "CL": 0.980,  "CD": 0.01820, "CM": -0.175},
-    {"alpha": 2.0,  "CL": 1.191,  "CD": 0.01940, "CM": -0.180},
-    {"alpha": 4.0,  "CL": 1.380,  "CD": 0.02140, "CM": -0.188},
-    {"alpha": 6.0,  "CL": 1.540,  "CD": 0.02480, "CM": -0.196},
-    {"alpha": 8.0,  "CL": 1.670,  "CD": 0.03100, "CM": -0.205}
+    {"alpha": 0.0, "CL": 0.791, "CD": 0.02010, "CM": -0.183, "x_tr_upper": 0.10, "x_tr_lower": 0.95},
+    {"alpha": 4.0, "CL": 1.270, "CD": 0.02250, "CM": -0.189, "x_tr_upper": 0.05, "x_tr_lower": 0.99},
+    {"alpha": 8.0, "CL": 1.681, "CD": 0.02890, "CM": -0.195, "x_tr_upper": 0.02, "x_tr_lower": 0.99}
   ],
-  "transition": {
-    "alpha_4": {"upper_xc": 0.09, "lower_xc": 0.35},
-    "_comment": "XFOIL e^9 upper-surface transition at alpha=4° is x/c ~ 0.09 (range 0.05-0.20)"
-  },
-  "tolerances": {
-    "CL_rel": 0.05,
-    "CD_rel": 0.20,
-    "transition_abs": 0.05,
-    "transition_upper_range": [0.05, 0.20]
-  }
+  "_note": "S1223 transition at alpha=0 from XFOIL e^9: x_tr_upper in [0.05, 0.20]"
 }

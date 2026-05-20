@@ -1,32 +1,35 @@
-"""Laminar integral boundary-layer solver — Thwaites / Falkner-Skan.
+"""Laminar integral boundary-layer method (Thwaites / Falkner-Skan correlation).
 
 Theory
 ------
-The Thwaites (1949) quadrature method is a one-parameter integral approach that
-is exact for the Falkner-Skan family and very accurate for general pressure
-gradients.  It collapses the von Kármán momentum integral
+Thwaites (1949) momentum-integral method gives an exact quadrature for the
+laminar momentum thickness theta and a correlation for the shape factor H:
 
-    d(theta)/ds + theta*(2 + H)*dUe/ds / Ue = Cf/2
+    d(theta^2 * Ue^6)/dx = 0.45 * nu * Ue^5          (Thwaites integral)
 
-into a single quadrature via the Thwaites parameter
+Integrating from the stagnation point (theta=0):
 
-    lambda = theta^2 / nu * dUe/ds
+    theta^2 = (0.45 * nu / Ue^6) * integral_0^x Ue^5 ds
 
-with the auxiliary correlations
+The shape factor correlation (Head / Drela form):
 
-    H(lambda)  = shape factor
-    l(lambda)  = shear correlation  (l = 2*[tau_w*theta/(rho*nu*Ue)])
+    lambda = (theta^2 / nu) * dUe/dx
 
-For the flat-plate / zero-pressure-gradient case (lambda = 0):
-    H  = 2.591   (Blasius)
-    Cf = 0.664 / sqrt(Re_x)          << Blasius flat-plate law
+Falkner-Skan shape-factor correlation:
+    l(lambda) = (0.22 + 1.57*lambda - 1.8*lambda^2)   ... Thwaites l-fn
+    H(lambda) from tabulated Falkner-Skan solutions
+
+The displacement thickness is:
+    delta_star = H * theta
+
+Separation criterion: lambda < -0.09  (Thwaites criterion)
 
 References
 ----------
-Thwaites, B. (1949). "Approximate Calculation of the Laminar Boundary Layer."
+Thwaites, B. (1949). "Approximate calculation of the laminar boundary layer."
     Aeronautical Quarterly, 1, 245-280.
-White, F.M. (2006). Viscous Fluid Flow (3rd ed.), §4-3.
 Drela, M. (1989). XFOIL documentation.
+White, F.M. (2006). Viscous Fluid Flow, 3rd ed., Chapter 4.
 """
 
 from __future__ import annotations
@@ -39,199 +42,235 @@ import numpy as np
 from numpy.typing import NDArray
 
 
-# ---------------------------------------------------------------------------
-# Thwaites auxiliary correlations   (White 2006 Table 4-1 polynomial fits)
-# ---------------------------------------------------------------------------
+@dataclass
+class LaminarState:
+    """State of the laminar boundary layer at a surface location.
+
+    Attributes
+    ----------
+    x : float
+        Arc-length coordinate from stagnation (m or normalised).
+    theta : float
+        Momentum thickness.
+    H : float
+        Shape factor H = delta*/theta.
+    delta_star : float
+        Displacement thickness = H * theta.
+    Cf : float
+        Skin-friction coefficient.
+    Ue : float
+        Edge velocity (inviscid).
+    Re_theta : float
+        Reynolds number based on momentum thickness.
+    n_ts : float
+        Accumulated Tollmien-Schlichting amplification factor (for e^N).
+    """
+    x: float = 0.0
+    theta: float = 0.0
+    H: float = 2.6
+    delta_star: float = 0.0
+    Cf: float = 0.0
+    Ue: float = 0.0
+    Re_theta: float = 0.0
+    n_ts: float = 0.0
+
 
 def _thwaites_H(lam: float) -> float:
-    """Shape factor H = delta*/theta as a function of Thwaites lambda.
+    """Shape factor H(lambda) from Thwaites correlation.
 
-    Uses the standard Thwaites-method correlation (White 2006, §4.3):
-        H = 0.0731/(0.14 + lambda) + 2.088  for lambda < 0
-        H = 2.61 - 3.75*lambda + 5.24*lambda^2   for lambda >= 0
-
-    Key values:
-        lambda =  0.0 → H = 2.591  (Blasius flat-plate)
-        lambda =  0.1 → H ~ 2.25   (favourable gradient)
-        lambda = -0.09 → H ~ 3.55  (near-separation)
+    Uses the standard polynomial fit from White (2006) / Drela notes.
+    lambda is the Thwaites pressure-gradient parameter:
+        lambda = (theta^2 / nu) * dUe/dx
     """
-    lam = float(np.clip(lam, -0.09, 0.25))
-    if lam < 0.0:
-        # Adverse pressure gradient: White eq 4-43b
-        return 2.088 + 0.0731 / (0.14 + lam)
+    # Clamp to physically valid range
+    lam = max(-0.09, min(0.25, lam))
+
+    if lam >= 0.0:
+        # Attached flow, mild adverse or favourable gradient
+        H = 2.61 - 3.75 * lam + 5.24 * lam**2
     else:
-        # Favourable / zero PG: White eq 4-43a
-        return 2.61 - 3.75 * lam + 5.24 * lam ** 2
+        # Adverse gradient
+        H = 2.088 + 0.0731 / (lam + 0.14)
+
+    return max(H, 1.05)
 
 
 def _thwaites_l(lam: float) -> float:
-    """Thwaites shear correlation l(lambda).
+    """Thwaites shear-correlation function l(lambda).
 
-    Standard fit from Thwaites (1949) / White (2006) Table 4.1:
-        l = (0.22 + 1.402*lambda + 2.088*lambda/(0.25 + lambda))  for lambda >= 0
-        l = 0.22 + 1.57*lambda - 1.8*lambda^2  for lambda < 0  (White Table 4-1 fit)
-
-    At lambda=0: l = 0.220, giving Cf = 2*0.220/Re_theta = 0.440/Re_theta.
-    Combined with the Blasius result theta/x = 0.664/sqrt(Re_x):
-        Cf = 0.440 / (0.664*sqrt(Re_x)) * 1/(Ue*x/nu)/Ue*x/nu
-           = 0.440 * nu / (Ue * theta)
-    Correct Blasius: Cf = 0.664/sqrt(Re_x) ✓
+    l(lambda) = (theta/tau_w) * (mu * dUe/dx + ...) approximation.
+    Used for skin friction: Cf = 2*l / Re_theta
     """
-    lam = float(np.clip(lam, -0.09, 0.25))
-    if lam < 0.0:
-        return 0.22 + 1.57 * lam - 1.8 * lam ** 2
-    else:
-        # White eq 4-42 / Thwaites original fit
-        return 0.22 + 1.402 * lam + 0.018 * lam / (0.107 + lam)
+    lam = max(-0.09, min(0.25, lam))
+    # Standard Thwaites correlation
+    return 0.22 + 1.57 * lam - 1.8 * lam**2
 
 
-# ---------------------------------------------------------------------------
-# BL state dataclass
-# ---------------------------------------------------------------------------
+def _n_amplification_rate(Re_theta: float, H: float) -> float:
+    """e^N amplification rate dn/ds in Drela's simplified form.
 
-@dataclass
-class BLState:
-    """Boundary-layer state at a single surface station."""
-    s: float          # arc-length from stagnation (m if dimensional, c if normalised)
-    theta: float      # momentum thickness
-    delta_star: float # displacement thickness
-    H: float          # shape factor = delta*/theta
-    Cf: float         # skin-friction coefficient
-    Ue: float         # edge velocity (local, V_inf = 1 in normalised solve)
-    Re_theta: float   # momentum-thickness Reynolds number
-    lam: float = 0.0  # Thwaites lambda (laminar only)
+    Michel's criterion modified by Drela (XFOIL):
+        dn/d(log Re_theta) = f(H)
+
+    Uses the Drela envelope-method correlation:
+        dN/d(theta) based on the Ory-Drela approximation:
+        dN/d(Re_theta) = max(0, (1/(3.3+1.1*H)) *
+                         (1.1*H^2.1 - 1/(H-1)) * ln(1.1*H^2.1*(H-1)))
+
+    Actually using the standard simplified Drela form from XFOIL source:
+        dN/d(log Re_theta) = (1.415/(H-1) - 0.489) * tanh(20/(H-1) - 12.9)
+                            + (3.295/(H-1) + 0.44)
+    """
+    if H <= 1.05:
+        return 0.0
+    Hm1 = H - 1.0
+
+    # Drela's envelope-method correlation (XFOIL notation)
+    dn_dlnRe = ((1.415 / Hm1 - 0.489) * math.tanh(20.0 / Hm1 - 12.9)
+                + 3.295 / Hm1 + 0.44)
+
+    # Convert to dn/d(Re_theta): dn/d(Re_theta) = dn/d(lnRe_theta) / Re_theta
+    if Re_theta <= 0:
+        return 0.0
+    return max(0.0, dn_dlnRe) / Re_theta
 
 
-# ---------------------------------------------------------------------------
-# Laminar march  (Thwaites quadrature)
-# ---------------------------------------------------------------------------
+def _initial_theta(Ue_stag: float, dUe_dx_stag: float, nu: float) -> float:
+    """Stagnation-point initial momentum thickness from Hiemenz solution.
+
+    At a stagnation point, dUe/dx = k (constant), and the Falkner-Skan
+    solution for beta=1 gives:
+        theta = 0.2924 * sqrt(nu / k)
+    """
+    k = abs(dUe_dx_stag)
+    if k < 1e-15:
+        return 1e-6
+    return 0.2924 * math.sqrt(nu / k)
+
 
 def march_laminar(
     s: NDArray,
     Ue: NDArray,
+    nu: float,
     Re: float,
-    theta0: float | None = None,
-) -> list[BLState]:
-    """March laminar boundary layer by Thwaites quadrature.
+    *,
+    n_crit: float = 9.0,
+) -> tuple[list[LaminarState], int]:
+    """March the laminar boundary layer from stagnation to transition/separation.
 
     Parameters
     ----------
-    s   : (N,) arc-length stations along one surface (upper or lower),
-          monotonically increasing from stagnation point (s=0).
-    Ue  : (N,) edge velocity at each station; Ue[0] should be near-zero
-          (stagnation).  Normalised so V_inf = 1.
-    Re  : chord Reynolds number (= V_inf * c / nu).
-    theta0 : initial momentum thickness.  If None, derived from stagnation
-             condition (Hiemenz stagnation: theta^2 = 0.075*nu/dUe_ds).
+    s : NDArray (M,)
+        Arc-length coordinates along the surface (0 at stagnation, increasing
+        downstream). Must be monotonically increasing.
+    Ue : NDArray (M,)
+        Edge (inviscid) velocity at each station. Ue[0] ~ 0 at stagnation.
+    nu : float
+        Kinematic viscosity = 1/Re (with chord = 1 normalised).
+    Re : float
+        Chord Reynolds number (used for Re_theta).
+    n_crit : float
+        Critical N factor for transition (default 9 for clean wind tunnel).
 
     Returns
     -------
-    list[BLState]  length N  — one BLState per station.
+    states : list[LaminarState]
+        BL state at each marching station up to transition/separation.
+    i_trans : int
+        Index in *s* where transition was detected (-1 if not triggered).
     """
-    s = np.asarray(s, dtype=float)
-    Ue = np.asarray(Ue, dtype=float)
-    N = len(s)
-    nu = 1.0 / Re  # kinematic viscosity (c = 1, V_inf = 1)
+    M = len(s)
+    states: list[LaminarState] = []
+    i_trans = -1
 
-    # Clamp Ue to a minimum threshold for numerical stability.
-    # Very small Ue near stagnation is handled by the Hiemenz correction below.
-    Ue = np.clip(Ue, 0.0, 5.0)
+    # ------------------------------------------------------------------
+    # Thwaites integral: theta^2 = (0.45*nu/Ue^6) * integral_0^x Ue^5 ds
+    # We integrate numerically using the trapezoidal rule.
+    # ------------------------------------------------------------------
 
-    # Thwaites integral:  theta^2(s) = 0.45*nu/Ue^6 * integral_0^s Ue^5 ds
-    # We compute it via trapezoidal quadrature from s[0].
-
-    # Integrand = Ue^5
-    integrand = Ue ** 5
-
-    # Cumulative trapezoidal integral
-    cum_int = np.zeros(N)
-    for i in range(1, N):
-        ds = s[i] - s[i - 1]
-        cum_int[i] = cum_int[i - 1] + 0.5 * (integrand[i - 1] + integrand[i]) * ds
-
-    # Handle stagnation Ue = 0 with care
-    Ue_safe = np.where(np.abs(Ue) < 1e-10, 1e-10, Ue)
-
-    # Guard against overflow when Ue has near-zero values (stagnation region).
-    # The Thwaites formula 0.45*nu/Ue^6 * integral blows up when Ue~0 but
-    # cum_int~0 too.  For numerically safe evaluation we clamp theta_sq to a
-    # physical upper bound of (0.3*s)^2 (very thick laminar BL limit) and
-    # lower bound of 1e-20.
-    with np.errstate(over='ignore', invalid='ignore', divide='ignore'):
-        theta_sq = 0.45 * nu / Ue_safe ** 6 * cum_int
-
-    # Replace any overflow / nan from near-zero Ue with Hiemenz estimate
-    # for those stations: theta = sqrt(0.075*nu/A) where A = Ue/s (linear Ue)
-    bad = ~np.isfinite(theta_sq) | (theta_sq > 1.0)
-    if np.any(bad):
-        # Conservative fallback: use Blasius estimate theta = 0.664/sqrt(Re_s)
-        Re_s = np.where(s > 1e-12, Ue_safe * s / nu, 1e-10)
-        theta_sq_fallback = (0.664 ** 2 * s ** 2) / np.maximum(Re_s, 1e-10)
-        theta_sq = np.where(bad, theta_sq_fallback, theta_sq)
-
-    # Correct leading edge: if theta0 provided, add it in quadrature
-    if theta0 is not None:
-        theta_sq = theta_sq + theta0 ** 2
+    # Handle stagnation point (Ue[0] ≈ 0)
+    # Use centered difference for dUe/dx at first point
+    if len(Ue) > 1 and (s[1] - s[0]) > 0:
+        dUe_ds0 = (Ue[1] - Ue[0]) / (s[1] - s[0])
     else:
-        # Stagnation correction: at s=0, Hiemenz gives theta^2 = 0.075*nu/A
-        # where A = dUe/ds at stagnation.  Use forward difference.
-        # Find the first station where Ue is growing significantly
-        for k in range(1, min(5, N)):
-            if s[k] > s[0] and Ue[k] > Ue[0]:
-                dUe_ds0 = (Ue[k] - Ue[0]) / (s[k] - s[0])
-                if dUe_ds0 > 1e-6:
-                    theta0_sq = 0.075 * nu / max(dUe_ds0, 1e-10)
-                    theta_sq = theta_sq + theta0_sq
-                break
+        dUe_ds0 = 1.0
 
-    theta = np.sqrt(np.maximum(theta_sq, 1e-20))
+    theta_sq_integral = 0.0  # running integral of Ue^5 ds
+    n_ts = 0.0
 
-    # Thwaites lambda = (theta^2/nu) * dUe/ds
-    # Smooth Ue before differencing to avoid numerical noise from panel discretisation
-    # A 5-point running average eliminates panel-to-panel oscillations.
-    if N >= 5:
-        Ue_smooth = np.convolve(Ue, np.ones(5) / 5.0, mode='same')
-        # Fix boundary effects
-        Ue_smooth[:2] = Ue[:2]
-        Ue_smooth[-2:] = Ue[-2:]
-    else:
-        Ue_smooth = Ue.copy()
+    for i in range(M):
+        Ue_i = max(Ue[i], 1e-10)
 
-    dUe_ds = np.gradient(Ue_smooth, s)
-    lam = (theta ** 2 / nu) * dUe_ds
-    lam = np.clip(lam, -0.09, 0.25)
+        if i == 0:
+            # Initialise at stagnation
+            theta_sq_integral = 0.0
+            theta_i = _initial_theta(Ue_i, dUe_ds0, nu)
+            # Stagnation: lambda = 0.0750 for Hiemenz (beta=1)
+            lam_i = 0.0750
+        else:
+            # Trapezoidal step
+            ds = s[i] - s[i - 1]
+            Ue_prev = max(Ue[i - 1], 1e-10)
+            theta_sq_integral += 0.5 * ds * (Ue_prev**5 + Ue_i**5)
 
-    states: list[BLState] = []
-    for i in range(N):
-        H_i = _thwaites_H(lam[i])
-        l_i = _thwaites_l(lam[i])
-        Re_theta_i = Ue_safe[i] * theta[i] / nu
-        # Cf = 2*l / Re_theta  (Thwaites definition: l = tau_w*theta/(rho*nu*Ue) → Cf = 2*l/Re_theta)
-        Cf_i = 2.0 * l_i / max(Re_theta_i, 1e-10)
-        delta_star_i = H_i * theta[i]
+            if Ue_i < 1e-9:
+                theta_i = 1e-8
+            else:
+                theta_sq = 0.45 * nu * theta_sq_integral / Ue_i**6
+                theta_sq = max(theta_sq, 1e-20)
+                theta_i = math.sqrt(theta_sq)
 
-        states.append(BLState(
-            s=float(s[i]),
-            theta=float(theta[i]),
-            delta_star=float(delta_star_i),
-            H=float(H_i),
-            Cf=float(Cf_i),
-            Ue=float(Ue[i]),
-            Re_theta=float(Re_theta_i),
-            lam=float(lam[i]),
-        ))
+            # Pressure gradient parameter lambda
+            if i < M - 1 and (s[i + 1] - s[i]) > 1e-15:
+                dUe_ds = (Ue[i + 1] - Ue[i]) / (s[i + 1] - s[i])
+            elif i > 0 and (s[i] - s[i - 1]) > 1e-15:
+                dUe_ds = (Ue[i] - Ue[i - 1]) / (s[i] - s[i - 1])
+            else:
+                dUe_ds = 0.0
 
-    return states
+            lam_i = (theta_i**2 / nu) * dUe_ds
 
+        H_i = _thwaites_H(lam_i)
+        l_i = _thwaites_l(lam_i)
+        delta_star_i = H_i * theta_i
 
-# ---------------------------------------------------------------------------
-# Blasius flat-plate convenience checker (used in unit tests)
-# ---------------------------------------------------------------------------
+        Re_theta_i = Ue_i * theta_i / nu
 
-def blasius_Cf(Re_x: float) -> float:
-    """Blasius skin-friction coefficient at station Re_x = Ue*x/nu.
+        # Skin friction: Cf = 2 * l(lambda) / Re_theta
+        if Re_theta_i > 1e-10:
+            Cf_i = 2.0 * l_i / Re_theta_i
+        else:
+            Cf_i = 0.0
 
-    Cf(x) = 0.664 / sqrt(Re_x)
-    Valid for laminar, zero-pressure-gradient, flat plate.
-    """
-    return 0.664 / math.sqrt(max(Re_x, 1e-10))
+        # e^N amplification rate (Drela envelope method)
+        if i > 0:
+            dn_dRe = _n_amplification_rate(Re_theta_i, H_i)
+            dRe = Re_theta_i - states[-1].Re_theta if states else 0.0
+            if dRe > 0:
+                n_ts = n_ts + dn_dRe * dRe
+
+        st = LaminarState(
+            x=float(s[i]),
+            theta=theta_i,
+            H=H_i,
+            delta_star=delta_star_i,
+            Cf=Cf_i,
+            Ue=Ue_i,
+            Re_theta=Re_theta_i,
+            n_ts=n_ts,
+        )
+        states.append(st)
+
+        # Transition criterion: N > N_crit
+        if n_ts >= n_crit and i_trans < 0:
+            i_trans = i
+            break
+
+        # Separation: lambda < -0.09 (Thwaites criterion)
+        if lam_i <= -0.09 and i > 2:
+            # Force transition at separation
+            if i_trans < 0:
+                i_trans = i
+            break
+
+    return states, i_trans
