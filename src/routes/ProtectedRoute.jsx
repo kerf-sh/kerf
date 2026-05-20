@@ -5,7 +5,13 @@ export default function ProtectedRoute() {
   const isAuthed = useAuth((s) => !!s.accessToken)
   const loc = useLocation()
   if (!isAuthed) {
-    return <Navigate to="/login" replace state={{ from: loc.pathname }} />
+    return (
+      <Navigate
+        to="/login"
+        replace
+        state={{ from: loc.pathname, sessionExpired: true }}
+      />
+    )
   }
   return <Outlet />
 }

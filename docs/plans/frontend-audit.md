@@ -119,7 +119,7 @@ Each task ≈1–3h sonnet unless `[HARD]`. Always isolate in a worktree.
   Files: `src/routes/Login.jsx`, `src/routes/Signup.jsx`, `src/routes/AuthCallback.jsx`.
   Success: VoiceOver/NVDA announces the error on submit failure; AuthCallback no longer a silent text-only frame.
 
-- [ ] **T-A2 Session-expired feedback on protected bounce**
+- [x] **T-A2 Session-expired feedback on protected bounce**
   Scope: when `ProtectedRoute` redirects to `/login`, pass a reason in `state`; Login renders a one-line "Your session expired — sign in again." banner when present.
   Files: `src/routes/ProtectedRoute.jsx`, `src/routes/Login.jsx`.
   Success: deep-link to a protected page while logged out shows context, not a bare login.

@@ -56,6 +56,8 @@ export default function Login() {
   const setSession = useAuth((s) => s.setSession)
   const { googleEnabled, githubEnabled } = useCloudConfig()
 
+  const sessionExpired = location.state?.sessionExpired === true
+
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -122,6 +124,18 @@ export default function Login() {
                 Sign in to continue to your projects.
               </p>
             </header>
+
+            {sessionExpired && !error && (
+              <div
+                role="status"
+                aria-live="polite"
+                data-testid="session-expired-banner"
+                className="mb-5 flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-200"
+              >
+                <AlertCircle size={14} className="mt-0.5 shrink-0" aria-hidden />
+                <span>Your session expired — sign in again.</span>
+              </div>
+            )}
 
             {error && (
               <div
