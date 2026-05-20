@@ -301,6 +301,8 @@ from kerf_cad_core.geom.knife import knife_face
 from kerf_cad_core.geom.replace_face import replace_face
 # GK-93: symmetry detection (reflective + rotational)
 from kerf_cad_core.geom.symmetry import detect_symmetry
+# GK-85: body simplify / heal (remove sub-tol faces/edges, weld verts, close gaps)
+from kerf_cad_core.geom.body_heal import simplify_body, heal_body
 
 __all__ = [
     "NurbsCurve",
@@ -495,4 +497,7 @@ __all__ = [
     "subd_loop_slide",
     # GK-93
     "detect_symmetry",
+    # GK-85
+    "simplify_body",
+    "heal_body",
 ]

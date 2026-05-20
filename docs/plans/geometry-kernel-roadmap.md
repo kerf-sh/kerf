@@ -799,7 +799,7 @@ in `geom/__init__.py`.
   `geom/split_body.py` — oracle: split a box by its midplane → 2 open
   half-shells, sum of surface areas = original surface + 2·section
   area. — dep: GK-11 — parallel: Y — sonnet.
-- [ ] **GK-85** Body simplify / heal: remove sub-tolerance faces and
+- [x] **GK-85** Body simplify / heal: remove sub-tolerance faces and
   edges, close sliver gaps, weld near-duplicate vertices. Robustness
   layer for imported STEP/IGES bodies. — `geom/body_heal.py` —
   oracle: imported body with intentionally-introduced 1e-9 sliver
