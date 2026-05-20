@@ -145,7 +145,7 @@ noted.
   File: `packages/kerf-cad-core/tests/test_feature_mech_family.py`
   Success: 25 family rows; deterministic resolution; equation propagation.
 
-- [ ] T-25 Mech: gears / gearbox composite
+- [x] T-25 Mech: gears / gearbox composite
   Scope: `gears.py` + `gearbox/` + `wormbevel/` mesh.
   File: `packages/kerf-cad-core/tests/test_feature_mech_gears.py`
   Success: 25 gear pair specs; module / addendum / dedendum vs AGMA; mesh clash check.
