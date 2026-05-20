@@ -620,11 +620,11 @@ Format: `[ ] GK-NN  scope — FILE(s) — oracle — dep — parallel? — tier`
   volume oracle (harden existing `mesh_boolean`). — `geom/mesh_repair.py`
   — oracle: cube∪cube mesh volume = exact; result `is_closed` &
   `is_manifold`. — dep: none — parallel: Y — sonnet.
-- [ ] **GK-56** 2D region boolean on planar curve loops (union/diff/
+- [x] **GK-56** 2D region boolean on planar curve loops (union/diff/
   intersection with holes) → `Face` with inner loops. — new
   `geom/region2d.py` — oracle: square − circle area = 1 − πr² exact;
   result loop orientation CCW/CW correct per contract. — dep: GK-11 —
-  parallel: Y — sonnet.
+  parallel: Y — sonnet. *Landed: region2d.py, 25 tests.*
 - [ ] **GK-57** Planar region → solid via `extrude_to_body` with holes. —
   `geom/region2d.py`, `geom/brep_build.py` — oracle: extruded washer
   volume = π(R²−r²)h exact; `validate_body` ok (genus per hole). — dep:
