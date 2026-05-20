@@ -1,0 +1,23 @@
+{
+  "_comment": "Reference polar from XFOIL 6.99, NACA 0012, Re=3e6, Ncrit=9, n_panels=160",
+  "_source": "XFOIL published results; Ladson et al. 1988 TM-100526 wind-tunnel data",
+  "airfoil": "NACA0012",
+  "Re": 3000000,
+  "Ncrit": 9,
+  "polars": [
+    {"alpha": 0.0,  "CL": 0.000,  "CD": 0.00620, "CM": 0.000},
+    {"alpha": 2.0,  "CL": 0.230,  "CD": 0.00637, "CM": -0.005},
+    {"alpha": 4.0,  "CL": 0.455,  "CD": 0.00680, "CM": -0.011},
+    {"alpha": 6.0,  "CL": 0.676,  "CD": 0.00768, "CM": -0.018},
+    {"alpha": 8.0,  "CL": 0.886,  "CD": 0.00953, "CM": -0.027}
+  ],
+  "transition": {
+    "alpha_0": {"upper_xc": 0.71, "lower_xc": 0.71},
+    "alpha_4": {"upper_xc": 0.45, "lower_xc": 0.85}
+  },
+  "tolerances": {
+    "CL_rel": 0.05,
+    "CD_rel": 0.15,
+    "transition_abs": 0.05
+  }
+}
