@@ -60,7 +60,7 @@ noted.
   File: `packages/kerf-cad-core/tests/test_feature_jewelry_profile_lib.py`
   Success: 25 profile codes; centroid + section properties match analytic ground truth ±1%.
 
-- [ ] T-8 Jewelry: engraving / monogram / signet
+- [x] T-8 Jewelry: engraving / monogram / signet
   Scope: `engraving.py` stroke-font engrave onto signet face.
   File: `packages/kerf-cad-core/tests/test_feature_jewelry_engraving.py`
   Success: 25 text/glyph permutations; engraved depth & font fidelity; UTF-8 + ligature stress cases.
