@@ -524,7 +524,410 @@ Sequenced for parallel execution across 5 Sonnet agents.
 
 ---
 
-### T-310 Distributed rate limiting (Postgres-first, Redis later)
+## Tier A — Strategic spine, broken down from ROADMAP §3 + §3.5 (2026-05-20)
+
+ROADMAP-level commitments that hadn't yet been turned into agent-sized
+tasks. Sequenced for the autonomous-loop / next contributor. Effort
+estimates: **S** = ½ day, **M** = 1-2 days, **L** = 3-5 days, **XL** =
+1-2 weeks (split into sub-tasks before pulling).
+
+### T-320 Large-assembly performance ceiling + LOD / lazy-load (P0-5)
+
+🔴 not started · **Tier A · P0**
+
+- **Why:** ROADMAP §3 P0-5 — mechanical / architecture / automotive
+  personas hit a perf cliff above ~1000 parts. Automotive
+  full-vehicle DMU (10,000s of parts) is the extreme case. Today's
+  viewport renders every part fully; no LOD, no lazy-load, no
+  measured budget.
+- **Definition of Done:**
+  - A perf-harness script under `scripts/perf_assembly.py` that
+    loads N synthetic parts (N ∈ {100, 1k, 5k, 10k}) and reports
+    FPS + time-to-interactive + memory peak in a headless renderer
+  - LOD pipeline: each part gets a coarse-mesh proxy auto-generated
+    from its OCCT tessellation (e.g. quadric-edge-collapse to ~10 %
+    triangle budget); viewport swaps to proxy when angular size <
+    threshold
+  - Lazy-load: assembly components are loaded only when their
+    bounding box intersects the camera frustum + an N-component
+    pre-fetch window
+  - 5k-part assembly: ≥ 30 FPS interactive in a hosted Chrome run,
+    ≤ 1.5 GB heap
+  - 10k-part assembly: ≥ 15 FPS, ≤ 3 GB heap
+  - Test fixture: a synthesized 10k bolt-grid `.assembly` that the
+    perf harness can replay
+- **Target files/packages:** `src/lib/lod.js`, `src/lib/assemblyLoader.js`,
+  `packages/kerf-cad-core/src/kerf_cad_core/mesh_decimate.py` (if not
+  shipped), `scripts/perf_assembly.py`, `tests/perf/test_large_assembly.py`.
+- **Effort:** L
+- **Depends-on:** none (assembly + OCCT tess shipped)
+
+### T-321 Broaden text / code file support (P0-6)
+
+🔴 not started · **Tier A · P0**
+
+- **Why:** ROADMAP §3 P0-6 — common text / source files (`.txt`,
+  `.md`, `.c`, `.cpp`, `.h`, `.hpp`, `.py`, `.js`, `.ts`, `.json`,
+  `.yaml`, `.yml`, `.toml`, `.ini`, `.cfg`, `.sh`, `.ino`/`.uno`,
+  `.ld`, `.v`, `.vhd`, …) should open as editable text **now**;
+  per-language syntax highlighting follows. Architecture-independent;
+  every persona benefits.
+- **Definition of Done:**
+  - `files.kind` enum gains `'text'` (fold into baseline 0001 — no
+    alter shim; the kind check constraint already accepts a long list)
+  - File-upload + create_file UX detects any of the extensions above
+    and assigns `kind='text'`
+  - The CodeMirror-backed editor accepts the kind and loads the
+    content as plain text editable; existing JSCAD-specific
+    machinery does NOT fire for these
+  - Syntax highlighting bootstraps from CodeMirror's bundled language
+    modes — start with python / cpp / verilog / vhdl / yaml / toml /
+    bash; others fall back to plaintext
+  - Tool dispatcher (`read_file` / `write_file` / `edit_file`) treats
+    `kind='text'` identically to `'file'` (the JSCAD kind)
+  - Tests: per-extension fixture upload → renders as editable text;
+    edit_file works against a `.py` file
+- **Target files/packages:**
+  `packages/kerf-core/src/kerf_core/db/migrations/0001_core_identity.sql`,
+  `packages/kerf-core/src/kerf_core/classify.py` (extension → kind),
+  `src/lib/codeMirrorSetup.js` (language pickers),
+  `src/routes/Editor.jsx` (text-kind branch),
+  `packages/kerf-api/tests/test_text_files.py` (new).
+- **Effort:** M
+- **Depends-on:** T-307 (clean baseline) so the new kind folds in.
+
+### T-322 Project export / materialize foundation — `kerf export` / `import` (P0-7)
+
+🔴 not started · **Tier A · P0**
+
+- **Why:** ROADMAP §1.5 commitment 3 — "you own your data and can
+  leave any time" is only credible if there's a concrete `kerf
+  export` / `kerf import` that produces and ingests a plain file
+  tree. The git-substrate work (T-307+) gives us the data model; this
+  task gives users the tool to leave with it.
+- **Definition of Done:**
+  - CLI `kerf export <project-id> --out <dir>` writes the project's
+    materialized tree (files + .kerf/metadata.json + .kerf/manifest.lock)
+    to disk; preserves git history if the project has a cloud_git_repo
+  - CLI `kerf import <dir>` reverses it: creates a fresh project +
+    re-creates the file tree from the directory; round-trips losslessly
+  - Round-trip test: export → wipe local DB → import → diff with
+    original = empty
+  - `.kerf/manifest.lock` records file SHAs + the cloud_git_repos
+    default_branch + workspace_id mapping (anonymised if exporting
+    across owners)
+  - Symmetric: cloud project export / self-hosted project import work
+    with identical CLI; documented in `docs/architecture/portability.md`
+- **Target files/packages:**
+  `packages/kerf-cli/src/kerf_cli/export.py` (new),
+  `packages/kerf-cli/src/kerf_cli/import.py` (new),
+  `packages/kerf-cli/tests/test_export_import_roundtrip.py` (new),
+  `docs/architecture/portability.md` (new).
+- **Effort:** L
+- **Depends-on:** T-313 (delete cascade) — same FK audit informs the
+  materialize logic.
+
+### T-323 3D in-vehicle wiring harness — route through DMU (P1-7)
+
+🔴 not started · **Tier A · P1**
+
+- **Why:** ROADMAP §3 P1-7 — automotive / ECAD personas need 3D
+  routing through the digital mock-up. Today only 2D WireViz
+  `.wiring` diagrams. Without a 3D harness, automotive cannot
+  deliver a "harness-installed" milestone.
+- **Definition of Done:**
+  - `.harness` file kind (folded into baseline kind check)
+  - Routing solver: given a 3D assembly + a list of (from-pin,
+    to-pin, gauge, max-bend-radius) edges + an obstacle set, finds
+    a Manhattan-ish polyline through the DMU avoiding bodies
+  - Bundle / segment / connector libraries (≥ 20 standard automotive
+    parts: Mil-DTL-38999, Deutsch DT, Molex Mini-Fit, …)
+  - Formboard flatten: 3D harness → 2D flat pattern + length table
+  - Length / gauge / voltage-drop report: per-circuit total length,
+    gauge from current rating, voltage drop at nominal current
+  - Test fixture: 4-wire harness through a 3-box obstacle set →
+    flattens within ±2 mm of the 3D path length; voltage drop matches
+    analytic prediction within 5 %
+- **Target files/packages:**
+  `packages/kerf-electronics/src/kerf_electronics/harness3d/` (new
+  module), `packages/kerf-electronics/tests/test_harness3d.py`.
+- **Effort:** XL — should be split into T-323a (routing solver),
+  T-323b (formboard flatten), T-323c (libraries + voltage drop)
+  before being pulled.
+- **Depends-on:** assemblies, electronics, mates (all shipped).
+
+### T-324 Local folder sync + cloud↔self-host portability (P1-10)
+
+🔴 not started · **Tier A · P1**
+
+- **Why:** ROADMAP §1.5 commitment 3 — `kerf sync` two-way folder
+  mirror. Complements T-322's one-shot export/import with a live
+  ongoing mirror so users can edit in their favourite editor on disk
+  and have it round-trip back to the cloud project.
+- **Definition of Done:**
+  - CLI `kerf sync <project-id> <local-dir>` starts a foreground
+    daemon that watches both sides, propagates changes either way
+  - OCC (T-302) prevents clobber: if both sides changed the same file
+    between two ticks, the daemon stops + prints a conflict report
+  - Symmetric: works against the hosted cloud OR a self-hosted Kerf
+    server identically
+  - Test: simulate a 3-file project, edit on disk, expect the next
+    sync tick to upload; edit in the cloud, expect the next tick to
+    download
+  - `docs/cli/kerf-sync.md`
+- **Target files/packages:** `packages/kerf-cli/src/kerf_cli/sync.py`
+  (new), `packages/kerf-cli/tests/test_sync_daemon.py`.
+- **Effort:** L
+- **Depends-on:** T-322 (export/import), T-302 (OCC).
+
+### T-325 1D system simulation — Modelica / Amesim / Simulink class (sim pillar)
+
+🔴 not started · **Tier A · P1**
+
+- **Why:** ROADMAP §3.5 — lumped-parameter thermal / hydraulic /
+  electrical / control networks. Modelica is **text**, a declarative
+  equation-based language — exceptionally AI-native. Today: absent.
+- **Definition of Done:**
+  - `.system` file kind (folded into baseline kind check)
+  - DSL or .mo subset: components + connections defined as text;
+    parser → DAE
+  - DAE solver: BDF + initialization (Pantelides + dummy-derivatives)
+    via `scipy.integrate.solve_ivp` for index-1 systems; document
+    fall-back / known limits for higher-index
+  - Component library: thermal mass / resistance / capacitance,
+    hydraulic orifice / pump / tank, electrical R/L/C/source,
+    control P/PI/PID — 20 components minimum
+  - Validation: RC low-pass step response matches analytic
+    `Vout(t) = Vin·(1−e^(−t/τ))` within 1 %; mass-spring-damper free
+    response matches `e^(−ζω_n t)·cos(ω_d t)` within 2 % over 5 s
+  - Round-trip with shipped `flight_dynamics/sixdof.py` for a
+    plant + PID-controlled aircraft model
+- **Target files/packages:** `packages/kerf-systems/` (new package),
+  `packages/kerf-systems/src/kerf_systems/{parser,solver,components}/`,
+  `packages/kerf-systems/tests/test_systems_*.py`.
+- **Effort:** XL — split into T-325a (parser), T-325b (DAE solver),
+  T-325c (component library), T-325d (oracles) before pulling.
+- **Depends-on:** none.
+
+### T-326 Manufacturing process simulation — mold-flow / casting / stamping (sim pillar)
+
+🔴 not started · **Tier A · P2**
+
+- **Why:** ROADMAP §3.5 — Moldflow / MAGMASOFT / AutoForm / Vericut
+  class. Closes the loop between design intent and a producible part
+  the LLM can reason about. Verified absent.
+- **Definition of Done (v1, narrow scope to keep this M not XL):**
+  - Pick ONE flagship sub-domain for v1: **mold-flow** (injection
+    moulding fill simulation, generalized Hele-Shaw approximation)
+  - Inputs: shell mesh + gate location + polymer rheology card
+    (Cross-WLF viscosity) + injection pressure / temperature
+  - Output: fill-time map + weld-line prediction + short-shot
+    detection
+  - v1 explicitly out of scope: residual stress, warp, fibre
+    orientation — flagged in a follow-up
+  - Validation: a flat disc with central gate fills with radial
+    symmetry; an L-shaped part shows the expected weld line at the
+    corner
+- **Target files/packages:** `packages/kerf-manufacturing/src/kerf_manufacturing/moldflow/`
+  (new), `packages/kerf-manufacturing/tests/test_moldflow.py`.
+- **Effort:** L
+- **Depends-on:** OCCT tess (shipped).
+
+### T-327 Automatic Feature Recognition (AFR) — STEP → editable feature tree (sim pillar)
+
+🔴 not started · **Tier A · P1**
+
+- **Why:** ROADMAP §3.5 — "edit ANY model" enabler. Today, an
+  imported "dumb" STEP is read-only B-rep; the LLM cannot
+  parametrize / edit it. AFR turns it back into a `.feature` tree
+  the LLM can reason about. **Single largest AI-leverage unlock left
+  on the roadmap.**
+- **Definition of Done (v1):**
+  - Recognise the 5 canonical features: extrude, revolve, hole,
+    chamfer, fillet
+  - Algorithm: face-attribute graph → known-pattern matchers
+    (planar-circular-hole detector, cylindrical-coaxial-pair detector,
+    edge-curvature chamfer/fillet detector)
+  - Output: a `.feature` JSON tree that, when re-evaluated, produces
+    the same B-rep (within tessellation tolerance)
+  - Round-trip oracle: load `bracket.step` → recognise → re-evaluate
+    → diff Hausdorff distance ≤ 1e-3 × bounding-box diagonal
+  - Limits documented: sweeps / lofts / pattern features deferred
+    to v2
+- **Target files/packages:** `packages/kerf-cad-core/src/kerf_cad_core/afr/`
+  (new), `packages/kerf-cad-core/tests/test_afr.py`,
+  `packages/kerf-cad-core/tests/fixtures/afr/bracket.step`.
+- **Effort:** XL — split into T-327a..d (graph builder, hole detector,
+  chamfer/fillet detector, extrude/revolve detector) before pulling.
+- **Depends-on:** OCCT, feature evaluator (shipped).
+
+### T-328 Knowledge-based engineering — code-compliance / DriveWorks-class rules
+
+🔴 not started · **Tier A · P2**
+
+- **Why:** ROADMAP §3.5 — KBE rule engine driven by the model
+  (Eurocode / AISC / ACI / ASME / ISO). Rules + standards are text,
+  hugely AI-native, and a large differentiator. Today: only narrow
+  PCB-DRC + railing checks exist.
+- **Definition of Done (v1 narrow):**
+  - Rule DSL: declarative `kerf-rule` files defining checks
+    (`when <model-predicate> then <assertion>`)
+  - Engine: load rule files → evaluate against a project (file tree +
+    metadata) → emit a structured violation list
+  - Ship 30 rules across 3 domains: AISC steel-column slenderness,
+    Eurocode 2 reinforcement-spacing, ASME B18 fastener-grade selection
+  - Surfaced in chat: `validate_against_rules(project, rule_pack)`
+    LLM tool
+  - Test: a model that violates AISC column-slenderness produces a
+    citing violation; a compliant model produces zero
+- **Target files/packages:** `packages/kerf-rules/` (new package),
+  `packages/kerf-rules/rules/{aisc,eurocode2,asme_b18}/*.yaml`.
+- **Effort:** L
+- **Depends-on:** none.
+
+### T-329 3D tolerance / variation analysis — 3DCS / CETOL class
+
+🔴 not started · **Tier A · P1**
+
+- **Why:** ROADMAP §3.5 — shipped 1D worst-case / RSS / Monte-Carlo
+  in `kerf-mates` `tolerance.py`. Need to extend to **3D**: statistical
+  stack-up + contributor analysis in 3D.
+- **Definition of Done:**
+  - Inputs: assembly + datum reference frames + per-feature
+    GD&T-style tolerances (position / orientation / form)
+  - Monte-Carlo: sample N variants from the feature tolerance
+    distributions, compute final-assembly KPIs (gap / step / parallelism)
+  - Output: histograms + contributor sensitivities (sorted by
+    variance contribution)
+  - Validation: a 4-block stack with ±0.1 mm flatness each →
+    expected gap σ matches the RSS analytic stack-up within 5 %
+- **Target files/packages:**
+  `packages/kerf-mates/src/kerf_mates/tolerance3d.py` (new),
+  `packages/kerf-mates/tests/test_tolerance3d.py`.
+- **Effort:** L
+- **Depends-on:** mates (shipped), 1D tolerance.py (shipped).
+
+### T-330 PLM depth — 150% / effectivity BOM, where-used, ECR/ECO, MBSE/SysML trace
+
+🔴 not started · **Tier A · P1**
+
+- **Why:** ROADMAP §3.5 — shipped: file revisions + cloud git +
+  configurations + BOM rollup. Missing: configurator UX, 150% /
+  effectivity BOM, where-used queries, ECR/ECO change-management,
+  MBSE/SysML traceability. The digital thread is structured data +
+  relationships = ideal for an LLM to traverse and keep coherent.
+- **Definition of Done:**
+  - `bom_150_percent(project, effectivity_date)` returns the
+    full universe of parts ever used + per-part effectivity windows
+  - `where_used(part_id)` walks the assembly graph and returns every
+    parent assembly + effectivity
+  - `.eco` file kind: structured change request with from-state +
+    to-state + impact list (where-used roll-up)
+  - SysML-light: `.sysml` file kind, top-level requirement + trace
+    links to file IDs + verification test IDs; a `trace` query
+    returns the requirement → implementation → verification chain
+  - Surfaced as LLM tools so the assistant can reason about the
+    change graph
+- **Target files/packages:** `packages/kerf-cloud/src/kerf_cloud/plm/`
+  (new), `packages/kerf-cloud/tests/test_plm_*.py`.
+- **Effort:** XL — split into T-330a (150% BOM), T-330b (where-used),
+  T-330c (ECO file kind), T-330d (SysML trace) before pulling.
+- **Depends-on:** BOM, file_revisions, cloud git (all shipped).
+
+### T-331 Multi-CAD interop + geometry healing — AP242 / JT / Parasolid / QIF
+
+🔴 not started · **Tier A · P1**
+
+- **Why:** ROADMAP §3.5 — STEP I/O shipped. Missing: AP242
+  (semantic GD&T / PMI), JT (Siemens), Parasolid (.x_t / .x_b), QIF
+  (Quality Information Framework). Plus a general geometry-healing
+  pass (only internal ShapeFix usage today, not a public tool).
+- **Definition of Done:**
+  - AP242 reader extracts PMI annotations + datum reference frames
+    + GD&T tolerances and maps to `.drawing` annotations
+  - JT reader (single-file CAD format, structured / faceted) — at
+    minimum read the geometry + the assembly tree
+  - Parasolid bridge via `pyOCCT` (Parasolid kernel is closed; ship
+    the bridge with a documented "license required at runtime")
+  - QIF reader for inspection plans
+  - `heal_geometry(file_id)` LLM tool: closes gaps, removes
+    short edges, fixes face orientation; reports the diff
+  - Test: an intentionally broken STEP file (one degenerate face)
+    passes through heal_geometry and re-exports cleanly
+- **Target files/packages:** `packages/kerf-imports/src/kerf_imports/{ap242,jt,parasolid,qif}_reader.py`
+  (new), `packages/kerf-cad-core/src/kerf_cad_core/heal.py` (new).
+- **Effort:** XL — split per format before pulling.
+- **Depends-on:** OCCT, kerf-imports.
+
+### T-332 Reverse-engineering pipeline — point cloud → parametric solid
+
+🔴 not started · **Tier A · P2**
+
+- **Why:** ROADMAP §3.5 — Geomagic / PolyWorks class. Today: absent
+  as a pipeline. Adjacent building blocks (`quad_remesh.py`) exist.
+- **Definition of Done (v1):**
+  - `.pcd` / `.ply` import → segmentation (RANSAC for planes +
+    cylinders + spheres + cones)
+  - Per-segment feature fit → `.feature` tree (extrudes, revolves,
+    primitives)
+  - Round-trip: a known synthetic cube + cylinder point cloud →
+    recognise → re-evaluate → Hausdorff diff ≤ 1e-3
+  - Documented limits: freeform / class-A surfaces deferred to v2
+- **Target files/packages:**
+  `packages/kerf-cad-core/src/kerf_cad_core/reverse_engineering/` (new),
+  tests + fixtures.
+- **Effort:** XL — point-cloud handling is its own world.
+- **Depends-on:** OCCT, AFR (T-327) for the fit→feature step.
+
+### T-333 Mechanism synthesis — MotionGen / Adams class linkage / cam / gear synthesis
+
+🔴 not started · **Tier A · P2**
+
+- **Why:** ROADMAP §3.5 — synthesis is an inverse problem stated in
+  text (motion spec → mechanism), exceptionally AI-native. Today:
+  mates constraint solver shipped (`packages/kerf-mates/solver.py`);
+  synthesis 🔴.
+- **Definition of Done (v1):**
+  - 4-bar linkage synthesis from a 3-point motion specification
+    (Burmester theory)
+  - Cam-profile synthesis from a follower-motion law (cycloidal,
+    polynomial, harmonic) — verify shipped under T-262 motion
+    domain; if not, ship here
+  - Gear-train synthesis: given a target ratio + speed range,
+    return a 1- or 2-stage spur configuration with module / tooth
+    counts / centre distance
+  - Validation: a synthesized 4-bar that traces 3 specified
+    coupler-curve points within 0.5 mm
+- **Target files/packages:** `packages/kerf-mates/src/kerf_mates/synthesis/`
+  (new).
+- **Effort:** L
+- **Depends-on:** mates solver (shipped).
+
+### T-334 Sustainability / LCA — embodied carbon + circularity from the model
+
+🔴 not started · **Tier A · P2**
+
+- **Why:** ROADMAP §3.5 — One Click LCA class. Data-native,
+  increasingly *mandated* by regulation. Today: absent.
+- **Definition of Done:**
+  - Materials database with embodied-carbon factors (kg CO₂-eq / kg)
+    for 50+ common materials — wire to existing material catalogue
+    (`packages/kerf-mates/material*.py` if it exists, else create)
+  - `lca_report(project)` LLM tool: walks the BOM, multiplies mass
+    × factor per part, returns total embodied carbon + per-material
+    breakdown + circularity score (% recycled content, end-of-life
+    recyclability)
+  - Tests against published reference values (e.g. ICE database for
+    steel ~1.8 kg CO₂-eq/kg, concrete ~0.12, aluminium ~9, …) within
+    ±5 %
+- **Target files/packages:** `packages/kerf-lca/` (new package),
+  `packages/kerf-lca/data/ice_v3.json` (or similar).
+- **Effort:** M
+- **Depends-on:** BOM + material catalogue.
+
+---
+
+
 
 ✅ shipped (2026-05-19) · **Tier A · P0**
 
