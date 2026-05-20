@@ -109,6 +109,9 @@ function fileKindFor(file) {
   if (file.kind === 'script') return 'script'
   if (file.kind === 'subd') return 'subd'
   if (file.kind === 'mesh') return 'mesh'
+  // T-321: kind='text' is the explicit text/source-code kind — route to the
+  // plain-text editor path (isTextCodeFile in editorModes.js handles it).
+  if (file.kind === 'text') return 'text'
   const name = (file.name || '').toLowerCase()
   // Circuit must be checked BEFORE generic .tsx so a tscircuit file routes to
   // the CircuitEditor; pure .tsx files (if we ever support them) keep the
@@ -895,6 +898,19 @@ export const useWorkspace = create((set, get) => ({
             })
           }
         }
+        return
+      }
+      // T-321: kind='text' files open in the Monaco plain-text editor.
+      // No JSCAD worker, no parts — just set the content and return.
+      if (kind === 'text') {
+        set({
+          currentFile: file,
+          currentFileContent: file.content ?? '',
+          dirty: false,
+          parts: [],
+          loadingParts: false,
+          partsError: null,
+        })
         return
       }
       // JSCAD / text path.

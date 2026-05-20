@@ -5,6 +5,7 @@ from typing import Any, Optional
 from kerf_chat.tools.registry import ToolSpec, err_payload, ok_payload, register
 from kerf_core.utils.context import ProjectCtx
 from kerf_core.revisions import write_revision as _write_revision
+from kerf_core.classify import kind_for_name as _kind_for_name
 
 
 def normalize_path(path: str) -> tuple[str, Optional[str]]:
@@ -302,9 +303,13 @@ async def run_write_file(ctx: ProjectCtx, args: bytes) -> str:
 
     parent_id = await ensure_folders(ctx, parts[:-1])
     leaf = parts[-1]
+    # T-321: assign kind='text' for common text/source extensions so the
+    # frontend opens them in the Monaco editor with per-language highlighting.
+    # Falls back to 'file' for unrecognised extensions.
+    file_kind = _kind_for_name(leaf) or "file"
     new_id = await ctx.pool.fetchval(
-        "INSERT INTO files(project_id, parent_id, name, kind, content) VALUES ($1, $2, $3, 'file', $4) RETURNING id",
-        ctx.project_id, parent_id, leaf, content,
+        "INSERT INTO files(project_id, parent_id, name, kind, content) VALUES ($1, $2, $3, $4, $5) RETURNING id",
+        ctx.project_id, parent_id, leaf, file_kind, content,
     )
     if content:
         await record_revision_for_file(ctx, new_id, content, "tool")

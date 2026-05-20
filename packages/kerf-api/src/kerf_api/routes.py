@@ -1540,7 +1540,7 @@ class CreateFileRequest(BaseModel):
 # and the FileTree "+ New" menu KIND_ORDER. Module-level so tests can
 # import and assert the menu set is a subset.
 FILE_KINDS = (
-    "file", "folder", "assembly", "step", "drawing", "sketch", "part",
+    "file", "text", "folder", "assembly", "step", "drawing", "sketch", "part",
     "feature", "circuit", "equations", "material", "simulation", "script",
     "step-ref", "assembly_lock", "canvas", "schedule", "view", "sheet",
     "duct", "pipe", "conduit", "subd", "mesh", "render", "section",
