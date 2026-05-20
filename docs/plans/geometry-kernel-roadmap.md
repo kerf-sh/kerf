@@ -466,10 +466,11 @@ Format: `[ ] GK-NN  scope — FILE(s) — oracle — dep — parallel? — tier`
   oracle: fitting 500 samples of a known cubic returns ≤ original CP
   count, max deviation < `tol`. — dep: GK-01 — parallel: Y — sonnet.
   *Landed with GK-05; commit b3d87f6.*
-- [ ] **GK-23** Box/cyl/sphere primitive volume + closed oracles wired into
+- [x] **GK-23** Box/cyl/sphere primitive volume + closed oracles wired into
   a `geom/brep` analytic test harness (mass props on a `Body`). — new
   `geom/mass_props.py` — oracle: sphere volume = 4/3πr³, centroid at
   centre, to `1e-6`. — dep: GK-13 — parallel: Y — sonnet.
+  *Landed: mass_props.py, 20 tests.*
 
 ### P1 — Comprehensiveness parity
 
