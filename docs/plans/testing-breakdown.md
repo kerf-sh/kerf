@@ -135,7 +135,7 @@ noted.
   File: `packages/kerf-mates/tests/test_feature_mech_assembly_mates.py`
   Success: 25 assemblies (≥10 parts each); coincident/concentric/distance/angle mates resolve; over-/under-constrained detection.
 
-- [ ] T-23 Mech: fasteners library
+- [x] T-23 Mech: fasteners library
   Scope: `fasteners/` ISO/DIN/ASME bolt + nut + washer generation.
   File: `packages/kerf-cad-core/tests/test_feature_mech_fasteners.py`
   Success: 25 fastener specs; dimensions match standard; hole-pattern integration.
@@ -155,7 +155,7 @@ noted.
   File: `packages/kerf-cad-core/tests/test_feature_mech_bearings.py`
   Success: 25 bearing codes; ISO 286 fits H7/g6 etc.; lip / shoulder geometry.
 
-- [ ] T-27 Electronic: PCB DRC + Gerber/Excellon/PnP/IPC-2581
+- [x] T-27 Electronic: PCB DRC + Gerber/Excellon/PnP/IPC-2581
   Scope: `kerf-electronics/dfm/` + `fab/` complete fab-output stack.
   File: `packages/kerf-electronics/tests/test_feature_pcb_fab_output_roundtrip.py`
   Success: 25 boards (1–8 layers); DRC clean; Gerber RS-274X passes lint; Excellon drills coincident; IPC-2581 round-trips.
