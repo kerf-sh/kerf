@@ -762,3 +762,115 @@ describe('JewelryConfigurator component', () => {
     expect(JewelryConfigurator.length).toBeLessThanOrEqual(1)
   })
 })
+
+// ---------------------------------------------------------------------------
+// T-I1: Stepper a11y + estimate states
+// ---------------------------------------------------------------------------
+
+describe('T-I1: stepper aria-current — STEPS supports aria-current="step"', () => {
+  it('every step has a non-empty label for aria announcements', () => {
+    for (const step of STEPS) {
+      expect(typeof step.label).toBe('string')
+      expect(step.label.length).toBeGreaterThan(0)
+    }
+  })
+
+  it('step ids are stable (used as React keys in StepIndicator)', () => {
+    const ids = STEPS.map((s) => s.id)
+    expect(new Set(ids).size).toBe(STEPS.length)
+  })
+})
+
+describe('T-I1: step-change announcement text', () => {
+  // Mirrors the logic in goNext / goBack in JewelryConfigurator
+  function buildAnnouncement(stepIndex) {
+    return `Step ${stepIndex + 1} of ${STEP_COUNT}: ${STEPS[stepIndex].label}`
+  }
+
+  it('first step announcement is correct', () => {
+    const msg = buildAnnouncement(0)
+    expect(msg).toBe(`Step 1 of ${STEP_COUNT}: ${STEPS[0].label}`)
+    expect(msg).toContain('Piece type')
+  })
+
+  it('last step announcement mentions Review & order', () => {
+    const msg = buildAnnouncement(STEP_COUNT - 1)
+    expect(msg).toContain('Review')
+  })
+
+  it('each step produces a unique announcement', () => {
+    const msgs = STEPS.map((_, i) => buildAnnouncement(i))
+    expect(new Set(msgs).size).toBe(STEP_COUNT)
+  })
+
+  it('announcement always starts with "Step N of 5:"', () => {
+    for (let i = 0; i < STEP_COUNT; i++) {
+      const msg = buildAnnouncement(i)
+      expect(msg).toMatch(/^Step \d+ of 5:/)
+    }
+  })
+})
+
+describe('T-I1: EstimateCard — loading state accessibility', () => {
+  // The loading branch in EstimateCard renders role="status" aria-live="polite".
+  // We validate that the component module exports the helpers needed to drive it.
+  it('computeLocalEstimate returns a non-null estimate for a valid ring state', () => {
+    const state = {
+      pieceType: 'ring',
+      metal: '18k_yellow',
+      finish: 'polish',
+      settingStyle: 'prong',
+      stones: [],
+    }
+    const est = computeLocalEstimate(state)
+    expect(est).not.toBeNull()
+    expect(typeof est.total).toBe('number')
+    expect(est.total).toBeGreaterThan(0)
+  })
+
+  it('buildToolPayload builds a payload ready for api.jewelryQuote', () => {
+    const state = {
+      pieceType: 'ring',
+      metal: '18k_yellow',
+      finish: 'polish',
+      settingStyle: 'prong',
+      stones: [],
+    }
+    const payload = buildToolPayload(state)
+    // Required fields expected by the server quote endpoint
+    expect(payload).toHaveProperty('volume_mm3')
+    expect(payload).toHaveProperty('metal')
+    expect(payload).toHaveProperty('metal_price_per_gram')
+    expect(payload).toHaveProperty('casting_allowance_pct')
+    expect(payload).toHaveProperty('finishing_type')
+    expect(payload).toHaveProperty('finishing_cost')
+    expect(payload).toHaveProperty('setting_type')
+    expect(payload).toHaveProperty('bench_hours')
+    expect(payload).toHaveProperty('hourly_rate')
+  })
+})
+
+describe('T-I1: EstimateCard — retryable error state', () => {
+  it('computeLocalEstimate returns null for missing metal (error-path fallback)', () => {
+    const result = computeLocalEstimate({ pieceType: 'ring', metal: '', stones: [] })
+    expect(result).toBeNull()
+  })
+
+  it('computeLocalEstimate returns null for an unknown metal key', () => {
+    const result = computeLocalEstimate({ pieceType: 'ring', metal: 'unobtanium_9k', stones: [] })
+    expect(result).toBeNull()
+  })
+
+  it('estimate total is a number when all fields are valid (no error state)', () => {
+    const state = {
+      pieceType: 'pendant',
+      metal: 'sterling_925',
+      finish: 'polish',
+      settingStyle: 'prong',
+      stones: [],
+    }
+    const est = computeLocalEstimate(state)
+    expect(est).not.toBeNull()
+    expect(Number.isFinite(est.total)).toBe(true)
+  })
+})

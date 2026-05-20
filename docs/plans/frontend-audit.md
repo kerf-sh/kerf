@@ -225,7 +225,7 @@ Each task ≈1–3h sonnet unless `[HARD]`. Always isolate in a worktree.
 
 ### Group I — Configurator
 
-- [ ] **T-I1 Configurator stepper a11y + estimate states**
+- [x] **T-I1 Configurator stepper a11y + estimate states**
   Scope: give the step indicator `aria-current="step"`, ensure Back/Next are reachable and announce step changes; add explicit loading + error states for the `api.jewelryQuote` estimate in step 5.
   Files: `src/routes/JewelryConfigurator.jsx`.
   Success: stepper announced; review step shows spinner on quote fetch and a retryable error if it fails.

@@ -17,7 +17,7 @@
  * React component so they can be unit-tested without a DOM.
  */
 
-import { useState, useCallback, useMemo } from 'react'
+import { useState, useCallback, useMemo, useEffect, useRef } from 'react'
 import { Gem, ChevronLeft, ChevronRight, CheckCircle, AlertTriangle, RefreshCw } from 'lucide-react'
 import { api } from '../lib/api.js'
 
@@ -593,11 +593,16 @@ function Step4Setting({ state, onChange }) {
   )
 }
 
-function EstimateCard({ estimate, loading, error }) {
+function EstimateCard({ estimate, loading, error, onRetry }) {
   if (loading) {
     return (
-      <div className="flex items-center justify-center gap-2 py-8 text-sm text-ink-400">
-        <RefreshCw size={14} className="animate-spin" />
+      <div
+        role="status"
+        aria-live="polite"
+        aria-label="Calculating cost estimate"
+        className="flex items-center justify-center gap-2 py-8 text-sm text-ink-400"
+      >
+        <RefreshCw size={14} className="animate-spin" aria-hidden="true" />
         Calculating estimate…
       </div>
     )
@@ -605,9 +610,22 @@ function EstimateCard({ estimate, loading, error }) {
 
   if (error) {
     return (
-      <div className="flex items-start gap-2 px-3 py-2 rounded-xl bg-amber-500/10 border border-amber-500/30 mb-4">
-        <AlertTriangle size={14} className="text-amber-400 mt-0.5 shrink-0" />
-        <span className="text-xs text-amber-200">{error}</span>
+      <div
+        role="alert"
+        className="flex items-start gap-2 px-3 py-2 rounded-xl bg-amber-500/10 border border-amber-500/30 mb-4"
+      >
+        <AlertTriangle size={14} className="text-amber-400 mt-0.5 shrink-0" aria-hidden="true" />
+        <span className="text-xs text-amber-200 flex-1">{error}</span>
+        {onRetry && (
+          <button
+            type="button"
+            onClick={onRetry}
+            aria-label="Retry fetching cost estimate"
+            className="text-xs text-kerf-300 hover:text-kerf-200 shrink-0 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-kerf-300 rounded"
+          >
+            Retry
+          </button>
+        )}
       </div>
     )
   }
@@ -686,6 +704,14 @@ function Step5Review({ state, projectId }) {
     }
   }, [projectId, state, localEst])
 
+  // Auto-fetch the server estimate when the review step mounts (if projectId present)
+  useEffect(() => {
+    if (projectId) {
+      fetchEstimate()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []) // intentionally run once on mount
+
   const metalLabel = METAL_OPTIONS.find((m) => m.key === state.metal)?.label ?? state.metal
   const pieceLabel = PIECE_TYPES.find((p) => p.key === state.pieceType)?.label ?? state.pieceType
   const finishLabel = FINISH_OPTIONS.find((f) => f.key === state.finish)?.label ?? state.finish
@@ -757,6 +783,7 @@ function Step5Review({ state, projectId }) {
           estimate={apiEstimate ?? localEst}
           loading={loading}
           error={error}
+          onRetry={projectId ? fetchEstimate : undefined}
         />
       </div>
 
@@ -814,6 +841,8 @@ export default function JewelryConfigurator({ projectId }) {
   const [step, setStep] = useState(0)
   const [state, setState] = useState(initialState)
   const [validationError, setValidationError] = useState(null)
+  const [stepAnnouncement, setStepAnnouncement] = useState('')
+  const announcementRef = useRef(null)
 
   const patch = useCallback((updates) => {
     setState((prev) => ({ ...prev, ...updates }))
@@ -827,12 +856,20 @@ export default function JewelryConfigurator({ projectId }) {
       return
     }
     setValidationError(null)
-    setStep((s) => Math.min(s + 1, STEP_COUNT - 1))
+    setStep((s) => {
+      const next = Math.min(s + 1, STEP_COUNT - 1)
+      setStepAnnouncement(`Step ${next + 1} of ${STEP_COUNT}: ${STEPS[next].label}`)
+      return next
+    })
   }, [step, state])
 
   const goBack = useCallback(() => {
     setValidationError(null)
-    setStep((s) => Math.max(s - 1, 0))
+    setStep((s) => {
+      const prev = Math.max(s - 1, 0)
+      setStepAnnouncement(`Step ${prev + 1} of ${STEP_COUNT}: ${STEPS[prev].label}`)
+      return prev
+    })
   }, [])
 
   const isLast = step === STEP_COUNT - 1
@@ -849,6 +886,17 @@ export default function JewelryConfigurator({ projectId }) {
             <h1 className="text-xl font-semibold text-ink-100">Jewelry Configurator</h1>
             <p className="text-xs text-ink-500">Design your piece step by step</p>
           </div>
+        </div>
+
+        {/* Screen-reader step-change announcer (visually hidden) */}
+        <div
+          ref={announcementRef}
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
+          className="sr-only"
+        >
+          {stepAnnouncement}
         </div>
 
         {/* Step indicator */}
