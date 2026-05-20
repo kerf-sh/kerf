@@ -1,0 +1,24 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "kerf-manufacturing"
+version = "0.1.0"
+license = { text = "MIT" }
+classifiers = ["License :: OSI Approved :: MIT License"]
+description = "Manufacturing process simulation plugins for Kerf (mold-flow v1, …)"
+requires-python = ">=3.11"
+dependencies = [
+    "numpy",
+    "scipy",
+]
+
+[project.entry-points."kerf.plugins"]
+manufacturing = "kerf_manufacturing.plugin:register"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/kerf_manufacturing"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
