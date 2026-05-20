@@ -760,7 +760,7 @@ in `geom/__init__.py`.
   Critical printability gate for jewelry. — `geom/wall_thickness.py` —
   oracle: hollowed sphere of wall t returns min ≈ t ± tol on every
   face. — dep: GK-21, GK-45 — parallel: Y — sonnet.
-- [ ] **GK-77** Helical sweep: extend `sweep1` with a helical rail
+- [x] **GK-77** Helical sweep: extend `sweep1` with a helical rail
   (axis, radius, pitch, turns) for springs / threads / spiral
   settings. — `geom/sweep1.py` — oracle: helical sweep of a circular
   profile yields a torus-like Body with volume ≈ 2π R · π r² · turns. —

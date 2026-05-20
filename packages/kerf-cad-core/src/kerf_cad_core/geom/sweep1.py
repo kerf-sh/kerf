@@ -428,3 +428,158 @@ def profile_along_path(profile: NurbsCurve, path: NurbsCurve,
         sections.append(np.array(section_pts))
 
     return sections
+
+
+# ---------------------------------------------------------------------------
+# GK-77: Helical sweep — springs / threads / spiral settings
+# ---------------------------------------------------------------------------
+
+def _make_helix_nurbs(
+    axis: np.ndarray,
+    radius: float,
+    pitch: float,
+    turns: float,
+    num_samples: int = 128,
+) -> NurbsCurve:
+    """Build a helical path as a degree-1 NURBS polyline.
+
+    The helix is parameterised by angle θ ∈ [0, 2π·turns]:
+        x = radius · cos(θ)  (in the plane perpendicular to *axis*)
+        y = radius · sin(θ)
+        z = pitch · θ / (2π)  (along *axis*)
+
+    Parameters
+    ----------
+    axis : (3,) unit vector — helix axis direction.
+    radius : helix radius (distance from axis to tube centreline).
+    pitch : axial advance per full revolution.
+    turns : number of complete turns.
+    num_samples : number of polyline vertices (≥ 4).
+
+    Returns
+    -------
+    NurbsCurve
+        Degree-1 NURBS polyline approximating the helix.
+    """
+    axis = np.asarray(axis, dtype=float)
+    axis_norm = np.linalg.norm(axis)
+    if axis_norm < 1e-14:
+        raise ValueError("axis must be non-zero")
+    axis = axis / axis_norm
+
+    # Build an orthonormal frame: (x_hat, y_hat, axis)
+    # x_hat is the most orthogonal world axis to *axis*.
+    abs_ax = np.abs(axis)
+    if abs_ax[0] <= abs_ax[1] and abs_ax[0] <= abs_ax[2]:
+        ref = np.array([1.0, 0.0, 0.0])
+    elif abs_ax[1] <= abs_ax[0] and abs_ax[1] <= abs_ax[2]:
+        ref = np.array([0.0, 1.0, 0.0])
+    else:
+        ref = np.array([0.0, 0.0, 1.0])
+
+    x_hat = ref - np.dot(ref, axis) * axis
+    x_hat = x_hat / np.linalg.norm(x_hat)
+    y_hat = np.cross(axis, x_hat)
+
+    n = max(int(num_samples), 4)
+    thetas = np.linspace(0.0, 2.0 * np.pi * turns, n)
+
+    pts = np.array([
+        radius * np.cos(t) * x_hat
+        + radius * np.sin(t) * y_hat
+        + (pitch * t / (2.0 * np.pi)) * axis
+        for t in thetas
+    ])
+
+    # Chord-length parameterisation for uniform distribution.
+    diffs = np.linalg.norm(np.diff(pts, axis=0), axis=1)
+    cumlen = np.concatenate([[0.0], np.cumsum(diffs)])
+    total = cumlen[-1]
+    if total < 1e-14:
+        params = np.linspace(0.0, 1.0, n)
+    else:
+        params = cumlen / total
+
+    # Degree-1 (polyline) NURBS: knots = [p0, p0, p1, ..., p_{n-1}, p_{n-1}]
+    knots = np.concatenate([[params[0]], params, [params[-1]]])
+
+    return NurbsCurve(degree=1, control_points=pts, knots=knots)
+
+
+def sweep1_helical(
+    profile: NurbsCurve,
+    axis: "np.ndarray | list",
+    radius: float,
+    pitch: float,
+    turns: float,
+    frame: str = "rmf",
+    num_helix_samples: int = 128,
+) -> NurbsSurface:
+    """Sweep *profile* along a helical rail and return the tube NurbsSurface.
+
+    Builds a helical path (axis, radius, pitch, turns) and sweeps *profile*
+    along it using a rotation-minimising frame (Wang 2008 double-reflection).
+    The result is the lateral tube surface of the swept solid — useful for
+    springs, threads, and spiral settings.
+
+    The helix is defined by::
+
+        P(θ) = radius · cos(θ) · x̂ + radius · sin(θ) · ŷ
+               + (pitch · θ / 2π) · axis_hat
+
+    where θ ∈ [0, 2π · turns] and (x̂, ŷ, axis_hat) form a right-handed
+    orthonormal frame.
+
+    Parameters
+    ----------
+    profile : NurbsCurve
+        Cross-section profile in a local 2-D frame.  The profile is centred
+        at the origin; coordinates are interpreted in the RMF frame at each
+        path sample.  For a circular cross-section use
+        ``make_circle_nurbs(center=[0,0,0], radius=r)``.
+    axis : array_like (3,)
+        Helix axis direction (need not be unit length).
+    radius : float
+        Helix radius — distance from the axis to the tube centreline.
+    pitch : float
+        Axial advance per full revolution (0 = torus-like, no axial travel).
+    turns : float
+        Number of complete helical turns.
+    frame : str
+        Frame type: ``'rmf'`` (rotation-minimising, default) or
+        ``'frenet'`` (legacy, may flip at inflections).
+    num_helix_samples : int
+        Number of polyline vertices used to discretise the helix (≥ 4).
+        More samples → smoother surface at the cost of more control points.
+
+    Returns
+    -------
+    NurbsSurface
+        Open tube surface.  The u-direction follows the profile; the
+        v-direction follows the helix path.  When *profile* is a closed
+        curve (e.g. a full NURBS circle) the u-direction boundary is
+        periodic.
+
+    Notes
+    -----
+    Volume oracle (torus approximation, small *pitch*)::
+
+        V ≈ 2π · radius · π · profile_radius² · turns
+
+    For exact torus volume (pitch=0, turns=1) use ``geom.brep.make_torus``.
+    """
+    axis = np.asarray(axis, dtype=float).ravel()
+
+    helix_path = _make_helix_nurbs(
+        axis=axis,
+        radius=radius,
+        pitch=pitch,
+        turns=turns,
+        num_samples=num_helix_samples,
+    )
+
+    return sweep1_rmf(
+        profile=profile,
+        path=helix_path,
+        num_samples=helix_path.num_control_points,
+    )

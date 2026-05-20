@@ -51,6 +51,7 @@ from kerf_cad_core.geom.sweep1 import (
     sweep1_rmf,
     sweep1_with_twist,
     sweep1_variable_scale,
+    sweep1_helical,
     profile_along_path,
     compute_rmf_frames,
 )
@@ -310,6 +311,8 @@ __all__ = [
     "sweep1_rmf",
     "sweep1_with_twist",
     "sweep1_variable_scale",
+    # GK-77
+    "sweep1_helical",
     "profile_along_path",
     "compute_rmf_frames",
     "sweep2",
