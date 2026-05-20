@@ -1125,6 +1125,221 @@ def mesh_boolean(
 
 
 # ===========================================================================
+# mesh_boolean_sealed — boolean + guaranteed sealed 2-manifold output
+# ===========================================================================
+
+def _seal_mesh(
+    verts: List[Vert],
+    faces: List[Face],
+    tol: float = 1e-6,
+) -> Tuple[List[Vert], List[Face], str]:
+    """Weld coincident vertices, fill boundary holes, and remove degenerate faces.
+
+    Returns (verts, faces, warning) where *warning* is empty on clean results.
+    Never raises — on any failure returns the input unchanged with a warning.
+    """
+    try:
+        # Step 1: weld
+        r = weld_vertices(verts, faces, tol=tol)
+        if not r["ok"]:
+            return verts, faces, f"weld failed: {r.get('reason', '')}"
+        verts, faces = r["verts"], r["faces"]
+
+        # Step 2: unify normals (so fill_holes inserts faces with consistent winding)
+        r = unify_normals(verts, faces)
+        if not r["ok"]:
+            return verts, faces, f"unify_normals failed: {r.get('reason', '')}"
+        verts, faces = r["verts"], r["faces"]
+
+        # Step 3: fill holes
+        r = fill_holes(verts, faces)
+        if not r["ok"]:
+            return verts, faces, f"fill_holes failed: {r.get('reason', '')}"
+        verts, faces = r["verts"], r["faces"]
+
+        # Step 4: remove degenerate (also removes dupes introduced by fill)
+        r = remove_degenerate(verts, faces)
+        if not r["ok"]:
+            return verts, faces, f"remove_degenerate failed: {r.get('reason', '')}"
+        verts, faces = r["verts"], r["faces"]
+
+        return verts, faces, ""
+    except Exception as exc:
+        return verts, faces, f"_seal_mesh failed: {exc}"
+
+
+def mesh_boolean_sealed(
+    verts_a: Sequence,
+    faces_a: Sequence,
+    verts_b: Sequence,
+    faces_b: Sequence,
+    operation: str,
+    tol: float = 1e-6,
+) -> dict:
+    """Triangle mesh boolean with a guaranteed sealed 2-manifold output.
+
+    Extends :func:`mesh_boolean` with a post-boolean weld/seal pass:
+
+    1. Compute the boolean via face classification (same as :func:`mesh_boolean`).
+    2. Weld coincident vertices at the seam between the two meshes.
+    3. Fill any remaining boundary holes (fan-triangulation).
+    4. Remove degenerate and duplicate faces.
+
+    The result is validated with :func:`is_closed` and :func:`is_manifold`; if
+    the seal pass is insufficient to close the mesh (e.g. wildly non-manifold
+    input), *seal_warning* is non-empty but the function still returns ``ok=True``
+    with the best-effort result.
+
+    *operation* ∈ {"union", "difference", "intersection"}.
+
+    Returns
+    -------
+    dict with keys:
+        ok            : bool
+        verts         : list
+        faces         : list
+        failed        : bool  — True if pre-seal boolean had topology problems
+        fail_reason   : str
+        sealed        : bool  — True if post-seal is_closed AND is_manifold
+        seal_warning  : str   — empty on a clean seal
+        volume        : float — signed volume of sealed result (divergence theorem)
+    """
+    try:
+        raw = mesh_boolean(verts_a, faces_a, verts_b, faces_b, operation)
+        if not raw["ok"]:
+            return raw
+
+        rv, rf = raw["verts"], raw["faces"]
+
+        if not rf:
+            return {
+                "ok": True,
+                "verts": rv,
+                "faces": rf,
+                "failed": raw.get("failed", False),
+                "fail_reason": raw.get("fail_reason", ""),
+                "sealed": True,   # empty mesh is vacuously sealed
+                "seal_warning": "",
+                "volume": 0.0,
+            }
+
+        rv, rf, warn = _seal_mesh(rv, rf, tol=tol)
+
+        rc = is_closed(rv, rf)
+        rm = is_manifold(rv, rf)
+        rv_vol = mesh_volume(rv, rf)
+
+        closed_ok = rc.get("closed", False) if rc["ok"] else False
+        manifold_ok = rm.get("manifold", False) if rm["ok"] else False
+        vol = rv_vol.get("volume", 0.0) if rv_vol["ok"] else 0.0
+
+        if not closed_ok or not manifold_ok:
+            if not warn:
+                parts = []
+                if not closed_ok:
+                    parts.append("not closed")
+                if not manifold_ok:
+                    parts.append("not manifold")
+                warn = "post-seal mesh is " + "; ".join(parts)
+
+        return {
+            "ok": True,
+            "verts": rv,
+            "faces": rf,
+            "failed": raw.get("failed", False),
+            "fail_reason": raw.get("fail_reason", ""),
+            "sealed": closed_ok and manifold_ok,
+            "seal_warning": warn,
+            "volume": vol,
+        }
+    except Exception as exc:
+        return {"ok": False, "reason": f"mesh_boolean_sealed failed: {exc}"}
+
+
+def boolean_volume_oracle(
+    verts_a: Sequence,
+    faces_a: Sequence,
+    verts_b: Sequence,
+    faces_b: Sequence,
+    operation: str,
+) -> dict:
+    """Analytic volume oracle for mesh boolean operations.
+
+    Computes the expected volume of the boolean result using the
+    inclusion–exclusion principle and individual mesh volumes:
+
+    * union:        V(A) + V(B) − V(A ∩ B)
+    * difference:   V(A) − V(A ∩ B)
+    * intersection: V(A ∩ B)
+
+    V(A ∩ B) is estimated by running :func:`mesh_boolean_sealed` with
+    ``operation="intersection"`` on the inputs, then measuring its volume.
+
+    For non-overlapping meshes V(A ∩ B) = 0, so:
+
+    * union:        V(A) + V(B)
+    * difference:   V(A)
+    * intersection: 0
+
+    Returns
+    -------
+    dict with keys:
+        ok               : bool
+        oracle_volume    : float — expected volume from inclusion–exclusion
+        vol_a            : float — V(A)
+        vol_b            : float — V(B)
+        vol_intersection : float — V(A ∩ B)
+    """
+    try:
+        err = _validate_mesh(verts_a, faces_a)
+        if err:
+            return {"ok": False, "reason": f"mesh A: {err}"}
+        err = _validate_mesh(verts_b, faces_b)
+        if err:
+            return {"ok": False, "reason": f"mesh B: {err}"}
+        valid_ops = {"union", "difference", "intersection"}
+        if operation not in valid_ops:
+            return {
+                "ok": False,
+                "reason": f"operation must be one of {sorted(valid_ops)}; got {operation!r}",
+            }
+
+        rva = mesh_volume(verts_a, faces_a)
+        rvb = mesh_volume(verts_b, faces_b)
+        if not rva["ok"]:
+            return {"ok": False, "reason": f"volume(A) failed: {rva.get('reason', '')}"}
+        if not rvb["ok"]:
+            return {"ok": False, "reason": f"volume(B) failed: {rvb.get('reason', '')}"}
+
+        vol_a = rva["volume"]
+        vol_b = rvb["volume"]
+
+        # Compute intersection volume via sealed boolean
+        ri = mesh_boolean_sealed(verts_a, faces_a, verts_b, faces_b, "intersection")
+        if not ri["ok"] or not ri["faces"]:
+            vol_intersection = 0.0
+        else:
+            vol_intersection = ri["volume"]
+
+        if operation == "union":
+            oracle = vol_a + vol_b - vol_intersection
+        elif operation == "difference":
+            oracle = vol_a - vol_intersection
+        else:  # intersection
+            oracle = vol_intersection
+
+        return {
+            "ok": True,
+            "oracle_volume": oracle,
+            "vol_a": vol_a,
+            "vol_b": vol_b,
+            "vol_intersection": vol_intersection,
+        }
+    except Exception as exc:
+        return {"ok": False, "reason": f"boolean_volume_oracle failed: {exc}"}
+
+
+# ===========================================================================
 # repair_pipeline
 # ===========================================================================
 
