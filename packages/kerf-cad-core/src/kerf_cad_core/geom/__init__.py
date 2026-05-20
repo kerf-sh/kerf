@@ -71,6 +71,8 @@ from kerf_cad_core.geom.brep_build import (
     sphere_to_body,
     revolve_to_body,
     extrude_to_body,
+    # GK-57: planar region (with holes) → extruded solid
+    extrude_face_to_body,
     # GK-16: loft / sweep1 / sweep2 → open Shell Body
     loft_to_body,
     sweep1_to_body,
@@ -212,6 +214,8 @@ __all__ = [
     "sphere_to_body",
     "revolve_to_body",
     "extrude_to_body",
+    # GK-57
+    "extrude_face_to_body",
     # GK-16
     "loft_to_body",
     "sweep1_to_body",

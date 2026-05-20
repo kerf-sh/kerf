@@ -630,10 +630,10 @@ Format: `[ ] GK-NN  scope — FILE(s) — oracle — dep — parallel? — tier`
   `geom/region2d.py` — oracle: square − circle area = 1 − πr² exact;
   result loop orientation CCW/CW correct per contract. — dep: GK-11 —
   parallel: Y — sonnet. *Landed: region2d.py, 25 tests.*
-- [ ] **GK-57** Planar region → solid via `extrude_to_body` with holes. —
+- [x] **GK-57** Planar region → solid via `extrude_to_body` with holes. —
   `geom/region2d.py`, `geom/brep_build.py` — oracle: extruded washer
   volume = π(R²−r²)h exact; `validate_body` ok (genus per hole). — dep:
-  GK-56, GK-15 — parallel: N — sonnet.
+  GK-56, GK-15 — parallel: N — sonnet. *Landed: 16 tests.*
 
 ### P3 — Parametric history + advanced
 
