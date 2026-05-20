@@ -141,6 +141,9 @@ function ForkDialog({ open, onClose, listing, onForked }) {
 // ImageCarousel — optional secondary gallery. Shown only when gallery images
 // exist. Falls back gracefully to nothing when empty (the hero cover handles
 // the primary visual on the listing page).
+//
+// Keyboard: ArrowLeft / ArrowRight navigate slides; the thumb strip is a
+// roving-tabindex list so Tab lands on the strip, then arrows move within it.
 function ImageCarousel({ slides }) {
   const [idx, setIdx] = useState(0)
 
@@ -151,12 +154,30 @@ function ImageCarousel({ slides }) {
   const active = slides[Math.min(idx, slides.length - 1)]
   const go = (delta) => setIdx((i) => (i + delta + slides.length) % slides.length)
 
+  const onMainKeyDown = (e) => {
+    if (slides.length <= 1) return
+    if (e.key === 'ArrowLeft') { e.preventDefault(); go(-1) }
+    if (e.key === 'ArrowRight') { e.preventDefault(); go(1) }
+  }
+
+  const onThumbKeyDown = (e, i) => {
+    if (e.key === 'ArrowLeft') { e.preventDefault(); setIdx((prev) => (prev - 1 + slides.length) % slides.length) }
+    if (e.key === 'ArrowRight') { e.preventDefault(); setIdx((prev) => (prev + 1) % slides.length) }
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setIdx(i) }
+  }
+
   return (
-    <div className="flex flex-col">
+    <div
+      className="flex flex-col"
+      role="region"
+      aria-label="Image gallery"
+      onKeyDown={onMainKeyDown}
+      tabIndex={slides.length > 1 ? 0 : -1}
+    >
       <div className="relative aspect-[16/10] bg-ink-800">
         <img
           src={active.url}
-          alt={active.caption || ''}
+          alt={active.caption || `Image ${idx + 1} of ${slides.length}`}
           className="w-full h-full object-cover"
         />
         {slides.length > 1 && (
@@ -165,7 +186,7 @@ function ImageCarousel({ slides }) {
               type="button"
               onClick={() => go(-1)}
               aria-label="Previous image"
-              className="absolute left-2 top-1/2 -translate-y-1/2 grid place-items-center w-9 h-9 rounded-full bg-ink-950/70 text-ink-100 hover:bg-ink-950"
+              className="absolute left-2 top-1/2 -translate-y-1/2 grid place-items-center w-9 h-9 rounded-full bg-ink-950/70 text-ink-100 hover:bg-ink-950 focus-visible:ring-2 focus-visible:ring-kerf-300/60"
             >
               <ChevronLeft size={18} />
             </button>
@@ -173,11 +194,11 @@ function ImageCarousel({ slides }) {
               type="button"
               onClick={() => go(1)}
               aria-label="Next image"
-              className="absolute right-2 top-1/2 -translate-y-1/2 grid place-items-center w-9 h-9 rounded-full bg-ink-950/70 text-ink-100 hover:bg-ink-950"
+              className="absolute right-2 top-1/2 -translate-y-1/2 grid place-items-center w-9 h-9 rounded-full bg-ink-950/70 text-ink-100 hover:bg-ink-950 focus-visible:ring-2 focus-visible:ring-kerf-300/60"
             >
               <ChevronRight size={18} />
             </button>
-            <div className="absolute bottom-2 left-1/2 -translate-x-1/2 px-2 py-0.5 rounded-full bg-ink-950/70 text-[10px] font-mono text-ink-200">
+            <div className="absolute bottom-2 left-1/2 -translate-x-1/2 px-2 py-0.5 rounded-full bg-ink-950/70 text-[10px] font-mono text-ink-200" aria-live="polite" aria-atomic="true">
               {idx + 1} / {slides.length}
             </div>
           </>
@@ -194,15 +215,23 @@ function ImageCarousel({ slides }) {
         )}
       </div>
       {slides.length > 1 && (
-        <div className="flex gap-1.5 overflow-x-auto px-2 py-2 bg-ink-900/60">
+        <div
+          className="flex gap-1.5 overflow-x-auto px-2 py-2 bg-ink-900/60"
+          role="tablist"
+          aria-label="Gallery thumbnails"
+        >
           {slides.map((s, i) => (
             <button
               key={s.id || s.url}
               type="button"
+              role="tab"
               onClick={() => setIdx(i)}
-              aria-label={`Show image ${i + 1}`}
+              onKeyDown={(e) => onThumbKeyDown(e, i)}
+              aria-label={s.caption ? `Image ${i + 1}: ${s.caption}` : `Image ${i + 1}`}
+              aria-selected={i === idx}
+              tabIndex={i === idx ? 0 : -1}
               className={[
-                'relative flex-shrink-0 w-16 h-12 rounded overflow-hidden border-2 transition-colors',
+                'relative flex-shrink-0 w-16 h-12 rounded overflow-hidden border-2 transition-colors focus-visible:ring-2 focus-visible:ring-kerf-300/60',
                 i === idx ? 'border-kerf-300' : 'border-ink-800 hover:border-ink-600',
               ].join(' ')}
             >
@@ -261,6 +290,8 @@ export function WorkshopListing() {
   const [listing, setListing] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  // errorKind: null | 'not_found' | 'private' | 'generic'
+  const [errorKind, setErrorKind] = useState(null)
   const [likeBusy, setLikeBusy] = useState(false)
   const [forkOpen, setForkOpen] = useState(false)
   const [galleryImages, setGalleryImages] = useState([])
@@ -278,6 +309,7 @@ export function WorkshopListing() {
         if (cancelled) return
         setListing(resp)
         setError(null)
+        setErrorKind(null)
         // Files-in-repo: gallery images come from the listing payload
         // (image files under the project's `workshop/` folder), not a
         // separate DB-gallery fetch.
@@ -285,7 +317,21 @@ export function WorkshopListing() {
       })
       .catch((err) => {
         if (cancelled) return
-        setError(err instanceof ApiError ? err.message : 'Listing not found.')
+        if (err instanceof ApiError) {
+          if (err.status === 404) {
+            setErrorKind('not_found')
+            setError('This listing does not exist or has been removed.')
+          } else if (err.status === 403) {
+            setErrorKind('private')
+            setError('This listing is private and only visible to its owner.')
+          } else {
+            setErrorKind('generic')
+            setError(err.message || 'Could not load listing.')
+          }
+        } else {
+          setErrorKind('generic')
+          setError('Listing not found.')
+        }
         setListing(null)
       })
       .finally(() => {
@@ -376,9 +422,39 @@ export function WorkshopListing() {
         </div>
       )}
 
-      {error && !loading && (
-        <Card className="p-8 text-center">
-          <AlertCircle size={20} className="mx-auto text-red-300" />
+      {error && !loading && errorKind === 'not_found' && (
+        <Card className="p-8 text-center" data-testid="workshop-state-not-found">
+          <AlertCircle size={20} className="mx-auto text-red-300" aria-hidden="true" />
+          <h2 className="mt-3 font-display text-lg font-semibold tracking-tight">Listing not found</h2>
+          <p className="mt-1 text-sm text-ink-400">{error}</p>
+          <div className="mt-4">
+            <Link to="/workshop">
+              <Button variant="ghost" size="sm">
+                <ArrowLeft size={14} /> Back to workshop
+              </Button>
+            </Link>
+          </div>
+        </Card>
+      )}
+
+      {error && !loading && errorKind === 'private' && (
+        <Card className="p-8 text-center" data-testid="workshop-state-private">
+          <AlertCircle size={20} className="mx-auto text-amber-300" aria-hidden="true" />
+          <h2 className="mt-3 font-display text-lg font-semibold tracking-tight">Private listing</h2>
+          <p className="mt-1 text-sm text-ink-400">{error}</p>
+          <div className="mt-4">
+            <Link to="/workshop">
+              <Button variant="ghost" size="sm">
+                <ArrowLeft size={14} /> Back to workshop
+              </Button>
+            </Link>
+          </div>
+        </Card>
+      )}
+
+      {error && !loading && errorKind === 'generic' && (
+        <Card className="p-8 text-center" data-testid="workshop-state-error">
+          <AlertCircle size={20} className="mx-auto text-red-300" aria-hidden="true" />
           <p className="mt-3 text-sm text-ink-200">{error}</p>
           <div className="mt-4">
             <Link to="/workshop">

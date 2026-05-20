@@ -206,7 +206,7 @@ Each task ≈1–3h sonnet unless `[HARD]`. Always isolate in a worktree.
 
 ### Group G — Workshop
 
-- [ ] **T-G1 Workshop listing keyboard + empty/error states**
+- [x] **T-G1 Workshop listing keyboard + empty/error states**
   Scope: verify and fix the `WorkshopListing` gallery thumb strip for keyboard operation (arrow/Enter), add explicit empty + private + 404 states to `Workshop.jsx`/`WorkshopListing.jsx`.
   Files: `src/cloud/Workshop.jsx`, `src/cloud/WorkshopListing.jsx`.
   Success: gallery navigable by keyboard; missing/empty/private listings show real states.

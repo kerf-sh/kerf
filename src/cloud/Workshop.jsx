@@ -400,8 +400,12 @@ export function Workshop() {
       </div>
 
       {error && (
-        <div className="mb-6 flex items-start gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-200">
-          <AlertCircle size={14} className="mt-0.5 shrink-0" />
+        <div
+          className="mb-6 flex items-start gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-200"
+          role="alert"
+          data-testid="workshop-error-banner"
+        >
+          <AlertCircle size={14} className="mt-0.5 shrink-0" aria-hidden="true" />
           <span>{error}</span>
         </div>
       )}
@@ -412,10 +416,32 @@ export function Workshop() {
         </div>
       )}
 
-      {data && !listings.length && !error && (
-        <Card className="p-10 text-center">
+      {data && !listings.length && !error && activeTags.length > 0 && (
+        <Card className="p-10 text-center" data-testid="workshop-empty-filtered">
           <div className="mx-auto grid place-items-center w-12 h-12 rounded-xl bg-ink-800 border border-ink-700">
-            <Sparkles size={20} className="text-kerf-300" />
+            <Sparkles size={20} className="text-kerf-300" aria-hidden="true" />
+          </div>
+          <h3 className="mt-4 font-display text-lg font-semibold tracking-tight">
+            No listings match your filter
+          </h3>
+          <p className="mt-1 text-sm text-ink-400">
+            Try removing a tag or{' '}
+            <button
+              type="button"
+              onClick={clearTags}
+              className="text-kerf-300 hover:underline"
+            >
+              clear all filters
+            </button>{' '}
+            to see everything.
+          </p>
+        </Card>
+      )}
+
+      {data && !listings.length && !error && activeTags.length === 0 && (
+        <Card className="p-10 text-center" data-testid="workshop-empty">
+          <div className="mx-auto grid place-items-center w-12 h-12 rounded-xl bg-ink-800 border border-ink-700">
+            <Sparkles size={20} className="text-kerf-300" aria-hidden="true" />
           </div>
           <h3 className="mt-4 font-display text-lg font-semibold tracking-tight">
             Nothing published yet
