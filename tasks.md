@@ -533,7 +533,7 @@ estimates: **S** = ½ day, **M** = 1-2 days, **L** = 3-5 days, **XL** =
 
 ### T-320 Large-assembly performance ceiling + LOD / lazy-load (P0-5)
 
-🔴 not started · **Tier A · P0**
+✅ shipped (2026-05-20) · **Tier A · P0** (FPS/heap targets modelled — no GPU in CI; decimation + frustum-cull + LOD-swap logic verified)
 
 - **Why:** ROADMAP §3 P0-5 — mechanical / architecture / automotive
   personas hit a perf cliff above ~1000 parts. Automotive
