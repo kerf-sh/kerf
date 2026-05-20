@@ -787,7 +787,7 @@ estimates: **S** = ½ day, **M** = 1-2 days, **L** = 3-5 days, **XL** =
 
 ### T-329 3D tolerance / variation analysis — 3DCS / CETOL class
 
-🔴 not started · **Tier A · P1**
+✅ shipped (2026-05-20) · **Tier A · P1**
 
 - **Why:** ROADMAP §3.5 — shipped 1D worst-case / RSS / Monte-Carlo
   in `kerf-mates` `tolerance.py`. Need to extend to **3D**: statistical
@@ -881,7 +881,7 @@ estimates: **S** = ½ day, **M** = 1-2 days, **L** = 3-5 days, **XL** =
 
 ### T-333 Mechanism synthesis — MotionGen / Adams class linkage / cam / gear synthesis
 
-🔴 not started · **Tier A · P2**
+✅ shipped (2026-05-20) · **Tier A · P2**
 
 - **Why:** ROADMAP §3.5 — synthesis is an inverse problem stated in
   text (motion spec → mechanism), exceptionally AI-native. Today:
