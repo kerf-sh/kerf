@@ -690,10 +690,11 @@ Format: `[ ] GK-NN  scope — FILE(s) — oracle — dep — parallel? — tier`
   sequences keep `euler_poincare_residual()==0`. — dep: none —
   parallel: Y — sonnet.
   *Landed: `test_euler_invariants.py` 63 tests; commit 6c15a0f.*
-- [ ] **GK-67** Degenerate-input contract tests across construction verbs
+- [x] **GK-67** Degenerate-input contract tests across construction verbs
   (zero-length rail, coincident control points, NaN). —
   per-module test files — oracle: structured failure, never an
   exception or invalid `Body`. — dep: GK-16 — parallel: Y — sonnet.
+  *Landed: test_degenerate_contract.py, 65 tests (61 pass, 4 xfail documenting gaps).*
 - [x] **GK-68** Tolerance-sweep robustness: every P0/P1 op run across a
   tol ladder; assert monotone behaviour + no validity regressions. —
   test harness — oracle: looser tol never makes a previously valid
