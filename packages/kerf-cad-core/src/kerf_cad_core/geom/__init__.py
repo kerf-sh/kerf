@@ -305,6 +305,8 @@ from kerf_cad_core.geom.symmetry import detect_symmetry
 from kerf_cad_core.geom.body_heal import simplify_body, heal_body
 # GK-82: imprint 3D curve on face → split face creating new edges
 from kerf_cad_core.geom.imprint import imprint_curve_on_face
+# GK-90: N-rail sweep (3+ rails)
+from kerf_cad_core.geom.sweep_n import sweep_n
 
 __all__ = [
     "NurbsCurve",
@@ -504,4 +506,6 @@ __all__ = [
     "heal_body",
     # GK-82
     "imprint_curve_on_face",
+    # GK-90
+    "sweep_n",
 ]

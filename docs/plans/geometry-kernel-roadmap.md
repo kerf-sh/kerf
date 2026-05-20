@@ -825,7 +825,7 @@ in `geom/__init__.py`.
   cut-mode than split_body — face-local. — `geom/knife.py` — oracle:
   knife a planar face by a diagonal → 2 triangle-faces of equal area
   ± tol. — dep: GK-82 — parallel: Y — sonnet.
-- [ ] **GK-90** N-rail sweep (sweepN, 3+ rails): generalize sweep2 to
+- [x] **GK-90** N-rail sweep (sweepN, 3+ rails): generalize sweep2 to
   3+ guide rails; profile evolves to satisfy all rails at each
   station. — `geom/sweep_n.py` — oracle: 3-rail sweep of three
   parallel circles yields a cylinder of equivalent volume ± tol. —
