@@ -170,7 +170,7 @@ noted.
   File: `packages/kerf-electronics/tests/test_feature_pcb_spice.py`
   Success: 25 analog circuits (RC, opamp, regulator, oscillator); DC op-point / AC sweep / transient match analytic.
 
-- [ ] T-30 Electronic: 3D board STEP export + IDF MCAD
+- [x] T-30 Electronic: 3D board STEP export + IDF MCAD
   Scope: `fab/board_step.py` + `fab/` IDF.
   File: `packages/kerf-electronics/tests/test_feature_pcb_3d_step.py`
   Success: 25 boards; STEP solid valid; component placement matches PnP; IDF round-trip back to PCB.
