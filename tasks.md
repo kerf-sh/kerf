@@ -5298,7 +5298,7 @@ User-direction 2026-05-19. Extends T-179 (apparel pattern-making) with deeper te
 ### T-282 Drape / cloth-simulation seed
 - **Tier:** B
 - **Priority:** P2
-- **Status:** 🔴 not started
+- **Status:** 🟢 shipped (2026-05-20)
 - **Scope:** mass-spring cloth model on a textile mesh; gravity + air drag + collision against a body or table; uses kerf-motion's RK4 integrator (T-163). Settle to static drape under gravity for visualisation; export the draped mesh as STEP / glTF for rendering.
 - **Target files/packages:** `packages/kerf-textiles/src/kerf_textiles/drape.py`, `packages/kerf-textiles/src/kerf_textiles/mass_spring.py`, tests with analytic oracles (a square cloth pinned at 2 corners droops with a catenary shape — verify max-sag formula).
 - **Definition of Done:** catenary droop matches analytic to 5%; cloth settles to static within N steps; pytest analytic oracles.
