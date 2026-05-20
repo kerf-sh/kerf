@@ -115,6 +115,8 @@ from kerf_cad_core.geom.io.iges import (
     IgesReadError,
     IgesWriteError,
 )
+# GK-37: certified Hausdorff surface deviation
+from kerf_cad_core.geom.surface_analysis import hausdorff_deviation
 # GK-23: body mass properties
 from kerf_cad_core.geom.mass_props import body_mass_props
 # GK-55: mesh boolean sealed-manifold
@@ -208,6 +210,8 @@ __all__ = [
     "read_iges",
     "IgesReadError",
     "IgesWriteError",
+    # GK-37
+    "hausdorff_deviation",
     # GK-23
     "body_mass_props",
     # GK-55
