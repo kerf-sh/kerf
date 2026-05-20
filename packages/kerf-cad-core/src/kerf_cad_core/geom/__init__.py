@@ -263,6 +263,13 @@ from kerf_cad_core.geom.io.gltf import (
     GltfReadError,
     GltfWriteError,
 )
+# GK-80: Wavefront OBJ read + write (mesh + groups + mtllib)
+from kerf_cad_core.geom.io.obj import (
+    read_obj,
+    write_obj,
+    ObjReadError,
+    ObjWriteError,
+)
 
 __all__ = [
     "NurbsCurve",
@@ -426,4 +433,9 @@ __all__ = [
     "write_gltf",
     "GltfReadError",
     "GltfWriteError",
+    # GK-80
+    "read_obj",
+    "write_obj",
+    "ObjReadError",
+    "ObjWriteError",
 ]

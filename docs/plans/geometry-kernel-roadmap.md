@@ -773,7 +773,7 @@ in `geom/__init__.py`.
   `geom/io/gltf.py` — oracle: write a unit cube with metallic-roughness
   → read back vertex count + base-colour + roughness within ε. — dep:
   GK-21 — parallel: Y — sonnet.
-- [ ] **GK-80** OBJ read + write (mesh + groups + mtllib). —
+- [x] **GK-80** OBJ read + write (mesh + groups + mtllib). —
   `geom/io/obj.py` — oracle: write→read round-trip preserves V, F,
   group names; MTL lookup resolves diffuse/colour. — dep: GK-21 —
   parallel: Y — sonnet.

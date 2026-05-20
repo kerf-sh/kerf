@@ -7,6 +7,7 @@ step_read   Pure-Python STEP AP203/214 B-rep reader (GK-47).
 step_write  Pure-Python STEP AP214 B-rep writer (GK-48).
 threemf     3MF read/write (sealed manifold + materials + colour + thumbnail) (GK-78).
 gltf        glTF 2.0 / GLB mesh + PBR materials reader/writer (GK-79).
+obj         Wavefront OBJ mesh + groups + mtllib reader/writer (GK-80).
 """
 from kerf_cad_core.geom.io.iges import (
     IgesReadError,
@@ -37,6 +38,13 @@ from kerf_cad_core.geom.io.gltf import (
     GltfReadError,
     GltfWriteError,
 )
+# GK-80: Wavefront OBJ read + write
+from kerf_cad_core.geom.io.obj import (
+    read_obj,
+    write_obj,
+    ObjReadError,
+    ObjWriteError,
+)
 
 __all__ = [
     "IgesReadError",
@@ -58,4 +66,9 @@ __all__ = [
     "write_gltf",
     "GltfReadError",
     "GltfWriteError",
+    # GK-80
+    "read_obj",
+    "write_obj",
+    "ObjReadError",
+    "ObjWriteError",
 ]
