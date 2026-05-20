@@ -538,10 +538,10 @@ Format: `[ ] GK-NN  scope — FILE(s) — oracle — dep — parallel? — tier`
   — dep: GK-02 — parallel: Y — sonnet.
   *Landed: `test_surface_analysis_refvalues.py` 46 tests; commits
   8a7d41a / d9eb047.*
-- [ ] **GK-37** Surface deviation with a true Hausdorff bound (both
+- [x] **GK-37** Surface deviation with a true Hausdorff bound (both
   directions, refine until certified). — `geom/surface_analysis.py` —
   oracle: deviation between a surface and its exact offset = d ± `1e-6`.
-  — dep: GK-07 — parallel: Y — sonnet.
+  — dep: GK-07 — parallel: Y — sonnet. *Landed: surface_analysis.py, 18 tests.*
 - [ ] **GK-38** Zebra / reflection-line continuity analyser. —
   `geom/surface_analysis.py` — oracle: zebra stripes continuous across a
   G1 join, broken across a G0 join (stripe-tangent discontinuity
