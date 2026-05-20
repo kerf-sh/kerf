@@ -3977,6 +3977,16 @@ the detailed spec; these T-NN entries are the execution-queue handles.
 - **Definition of Done:** SubD cube → smooth `validate_body`-clean NURBS body; limit-surface deviation ≤ `1e-6` vs Stam; reverse round-trip for a cube returns original cage to `1e-7`; pytest; ties GK-52/53.
 - **Depends-on:** none
 
+### T-160b GK P2: IGES 144 trimmed-surface reader/writer (GK-49)
+- **Tier:** B
+- **Money/reach rationale:** IGES interop (trimmed NURBS surfaces) is a critical import/export path for legacy CAD data. Entity-144 is the trimmed-surface subset used by the vast majority of mechanical CAD IGES exports.
+- **Priority:** P2
+- **Status:** ✅ shipped — `- [x] **GK-49**` *Landed: io/iges.py, 28 tests.*
+- **Scope:** Pure-Python `geom/io/iges.py` — IGES 5.3 reader/writer for entity-144 (Trimmed Parametric Surface) + dependents (128 NURBS surface, 126 NURBS curve, 142 curve-on-surface). Write→read round-trip boundary loop Hausdorff ≤ `1e-6`. No OCCT; no external binaries; hermetic tests.
+- **Target files/packages:** `packages/kerf-cad-core/src/kerf_cad_core/geom/io/__init__.py` (new package), `packages/kerf-cad-core/src/kerf_cad_core/geom/io/iges.py` (new), `packages/kerf-cad-core/tests/test_iges.py` (new, 28 tests).
+- **Definition of Done:** trimmed plane round-trip boundary Hausdorff ≤ `1e-6`; surface CPs exact to `1e-9`; 80-column IGES line formatting; pytest hermetic; ties GK-49.
+- **Depends-on:** none
+
 ### T-159 GK P2: 2D region boolean on planar curve loops (GK-56/57)
 - **Tier:** B
 - **Money/reach rationale:** 2D region boolean (sketch-driven solid extrude/pocket without OCCT) is the key enabler for a pure-Python parametric workflow that operates without the OCCT worker. Unlocks the full in-process sketch→solid path.
