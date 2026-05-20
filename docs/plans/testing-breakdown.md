@@ -130,7 +130,7 @@ noted.
   File: `packages/kerf-cad-core/tests/test_feature_mech_threads.py`
   Success: 25 thread specs; pitch/diameter match catalog; engagement length vs DIN/ASME.
 
-- [ ] T-22 Mech: assembly + mates
+- [x] T-22 Mech: assembly + mates
   Scope: `assembly/` plus `kerf-mates` `chain_walk.py` + `solver.py`.
   File: `packages/kerf-mates/tests/test_feature_mech_assembly_mates.py`
   Success: 25 assemblies (≥10 parts each); coincident/concentric/distance/angle mates resolve; over-/under-constrained detection.
