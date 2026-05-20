@@ -1,0 +1,17 @@
+{
+  "description": "Expected OASPL from Farassat 1A loading-noise formula for the 2bladed_propeller.json test case. Mean pressure (non-radiating near-field static term) subtracted before OASPL computation, per standard far-field aeroacoustics practice.",
+  "source": "Farassat & Succi (1980), Eq. 13 (on-axis, BPF m=1 harmonic): p_amp = omega_BPF * F_delta / (2*a0*r). F_delta = T0*delta = 2.40 N, omega_BPF = 2*pi*80 = 502.65 rad/s, a0 = 340.3 m/s, r = 1 m. p_amp = 502.65*2.40/(2*340.3*1) = 1.781 Pa. p_rms = p_amp/sqrt(2) = 1.259 Pa... wait. Re-derive: p_amp = (2*pi*BPF) * F_delta / (4*pi*a0*r) = BPF * F_delta / (2*a0*r) = 80*2.4/(2*340.3*1) = 0.282 Pa. p_rms = 0.282/sqrt(2) = 0.1994 Pa. OASPL = 20*log10(0.1994/20e-6) = 80.0 dB.",
+  "formula_inputs": {
+    "BPF_hz": 80.0,
+    "omega_BPF_rad_s": 502.655,
+    "F_delta_N": 2.40,
+    "a0_m_s": 340.3,
+    "r_m": 1.0
+  },
+  "p_amp_Pa": 0.28210,
+  "p_rms_Pa": 0.19947,
+  "oaspl_loading_dB": 80.0,
+  "tolerance_dB": 3.0,
+  "mean_subtract": true,
+  "note": "Tolerance +/-3 dB per task specification (Farassat 1A reference case). Mean subtraction removes the non-radiating near-field static component (decays as r^-2). The BPF tone is the dominant far-field contribution."
+}

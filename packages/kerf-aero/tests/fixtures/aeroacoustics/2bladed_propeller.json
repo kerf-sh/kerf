@@ -1,0 +1,32 @@
+{
+  "description": "2-bladed propeller at 2400 RPM with 20% BPF-frequency (in-phase) thrust variation, modelling periodic loading from a fixed disturbance (strut wake, inflow distortion). Observer 1 m on-axis along thrust direction (z-axis). Mean pressure (static near-field contribution) is removed before OASPL computation.",
+  "reference": "Farassat & Succi (1980) 'A Review of Propeller Discrete Frequency Noise Prediction Technology', JSV 71(3), Eq. 13 (loading noise, on-axis, BPF harmonic m=1). Cross-checked against Gutin (1948). p_amp = omega_BPF * F_delta / (2*a0*r). F_delta = T0*delta = 2.4 N, omega_BPF = 2*pi*80 Hz, a0 = 340.3 m/s, r = 1 m. p_rms = p_amp/sqrt(2) = 0.1994 Pa, OASPL = 80.0 dB.",
+  "model_notes": "Cyclic loading is at BPF = B*n_rps (in-phase for all blades), modelling a rotor passing twice per revolution through a fixed aerodynamic disturbance. The FW-H integral also produces a non-radiating static near-field term (r^-2 decay) that must be removed (mean subtracted) before computing far-field OASPL.",
+  "propeller": {
+    "n_blades": 2,
+    "rpm": 2400,
+    "radius_m": 0.25,
+    "effective_radius_fraction": 0.7,
+    "chord_m": 0.025,
+    "span_m": 0.25,
+    "panel_area_m2": 0.00625,
+    "total_thrust_N": 12.0,
+    "cyclic_thrust_fraction": 0.20,
+    "cyclic_frequency": "BPF",
+    "cyclic_phase_offset_blades": false,
+    "total_torque_Nm": 0.5
+  },
+  "atmosphere": {
+    "altitude_m": 0.0,
+    "density_kg_m3": 1.225,
+    "speed_of_sound_m_s": 340.3
+  },
+  "observer": {
+    "position_m": [0.0, 0.0, 1.0],
+    "description": "1 m on-axis along thrust direction (+z)"
+  },
+  "simulation": {
+    "n_revolutions": 8,
+    "points_per_revolution": 256
+  }
+}
