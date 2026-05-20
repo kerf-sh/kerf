@@ -80,7 +80,7 @@ noted.
   File: `packages/kerf-cad-core/tests/test_feature_jewelry_head.py`
   Success: 25 head styles (4/6/8 prong, basket, cathedral, halo); attach point coincident with shank top.
 
-- [ ] T-12 Jewelry: casting / STL production export
+- [x] T-12 Jewelry: casting / STL production export
   Scope: `casting_export.py` + `production.py` end-to-end STL/3MF.
   File: `packages/kerf-cad-core/tests/test_feature_jewelry_casting_export.py`
   Success: 25 finished SKUs; manifold STL; sprue/runner attachment; volume matches solid model ±0.5%.
