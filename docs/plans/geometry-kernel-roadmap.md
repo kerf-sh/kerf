@@ -769,7 +769,7 @@ in `geom/__init__.py`.
   + thumbnail). — `geom/io/threemf.py` — oracle: write→read round-trip
   preserves V, F, per-face material id; thumbnail PNG round-trips. —
   dep: GK-21, GK-49 — parallel: Y — sonnet.
-- [ ] **GK-79** glTF 2.0 / GLB read + write (mesh + PBR materials). —
+- [x] **GK-79** glTF 2.0 / GLB read + write (mesh + PBR materials). —
   `geom/io/gltf.py` — oracle: write a unit cube with metallic-roughness
   → read back vertex count + base-colour + roughness within ε. — dep:
   GK-21 — parallel: Y — sonnet.
