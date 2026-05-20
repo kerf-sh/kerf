@@ -131,7 +131,7 @@ Each task ≈1–3h sonnet unless `[HARD]`. Always isolate in a worktree.
 
 ### Group B — Chat
 
-- [ ] **T-B1 Label the chat input + model options**
+- [x] **T-B1 Label the chat input + model options**
   Scope: add `aria-label` (or visually-hidden `<label>`) to the chat `textarea`; change model-picker option `<button>`s to `role="option"` with `aria-selected`, set `aria-activedescendant` on the listbox.
   Files: `src/components/ChatPanel.jsx`.
   Success: input and model list are properly named/announced; axe shows no listbox violation.

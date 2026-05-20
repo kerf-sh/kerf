@@ -58,12 +58,21 @@ function ModelPicker({ models, selectedId, onSelect, disabled }) {
 
   if (!models.length) return null
 
+  // Stable DOM id for aria-activedescendant (sanitise the model id for use as
+  // an HTML id — replace anything that isn't alphanumeric or dash/underscore).
+  const activeOptionId = selectedId
+    ? `model-option-${selectedId.replace(/[^a-zA-Z0-9_-]/g, '_')}`
+    : undefined
+
   return (
     <div ref={wrapRef} className="relative">
       <button
         type="button"
         disabled={disabled}
         onClick={() => setOpen((v) => !v)}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-label={`Model: ${current?.label || 'pick model'}`}
         className="group inline-flex items-center gap-1.5 px-2 py-1 rounded-md border border-ink-700 bg-ink-900/80 text-[11px] font-mono text-ink-200 hover:bg-ink-800 hover:border-ink-600 disabled:opacity-50 transition-colors"
         title="Pick model"
       >
@@ -74,8 +83,10 @@ function ModelPicker({ models, selectedId, onSelect, disabled }) {
 
       {open && (
         <div
-          className="absolute bottom-full left-0 mb-1.5 z-30 w-64 rounded-lg border border-ink-700 bg-ink-900 shadow-2xl shadow-black/50 overflow-hidden"
           role="listbox"
+          aria-label="Select model"
+          aria-activedescendant={activeOptionId}
+          className="absolute bottom-full left-0 mb-1.5 z-30 w-64 rounded-lg border border-ink-700 bg-ink-900 shadow-2xl shadow-black/50 overflow-hidden"
         >
           <div className="max-h-[60vh] overflow-auto py-1">
             {grouped.map(([provider, ms]) => (
@@ -85,12 +96,15 @@ function ModelPicker({ models, selectedId, onSelect, disabled }) {
                 </div>
                 {ms.map((m) => {
                   const active = m.id === selectedId
+                  const optionId = `model-option-${m.id.replace(/[^a-zA-Z0-9_-]/g, '_')}`
                   return (
-                    <button
+                    <div
                       key={m.id}
-                      type="button"
+                      id={optionId}
+                      role="option"
+                      aria-selected={active}
                       onClick={() => { onSelect(m.id); setOpen(false) }}
-                      className={`w-full flex items-center gap-2 px-3 py-1.5 text-left text-[12px] font-mono ${
+                      className={`w-full flex items-center gap-2 px-3 py-1.5 text-left text-[12px] font-mono cursor-pointer ${
                         active ? 'bg-kerf-300/10 text-kerf-100' : 'text-ink-100 hover:bg-ink-800'
                       }`}
                     >
@@ -99,7 +113,7 @@ function ModelPicker({ models, selectedId, onSelect, disabled }) {
                         <span className="text-[9px] uppercase tracking-wider text-ink-500">default</span>
                       )}
                       {active && <Check size={12} className="text-kerf-300" />}
-                    </button>
+                    </div>
                   )
                 })}
               </div>
@@ -797,6 +811,7 @@ const ChatInput = forwardRef(function ChatInput({
           onChange={(e) => setValue(e.target.value)}
           onKeyDown={onKey}
           placeholder={disabled ? 'Loading…' : 'Ask Kerf to refine the model…'}
+          aria-label="Chat message"
           rows={2}
           disabled={disabled}
           className="w-full resize-none bg-transparent text-sm text-ink-100 placeholder:text-ink-500 outline-none font-sans leading-relaxed px-3 py-2.5"
