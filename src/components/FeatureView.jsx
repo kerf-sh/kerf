@@ -1908,6 +1908,42 @@ export default function FeatureView({
     if (!selectedId && tree.length > 0) setSelectedId(tree[tree.length - 1]?.id)
   }, [tree, selectedId])
 
+  // Roving-tabindex index for the feature timeline (keyboard nav).
+  // Points to the chip that currently owns tabIndex=0. Defaults to the last
+  // chip (same as selectedId initialisation above). Clamped on tree change.
+  const [rovingIdx, setRovingIdx] = useState(0)
+  useEffect(() => {
+    if (tree.length === 0) return
+    setRovingIdx((prev) => Math.min(prev, tree.length - 1))
+  }, [tree.length])
+
+  // Ref to the timeline container so we can focus individual chips.
+  const timelineRef = useRef(null)
+
+  const handleTimelineKeyDown = useCallback((e) => {
+    if (tree.length === 0) return
+    let next = rovingIdx
+    if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+      e.preventDefault()
+      next = Math.min(rovingIdx + 1, tree.length - 1)
+    } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+      e.preventDefault()
+      next = Math.max(rovingIdx - 1, 0)
+    } else if (e.key === 'Home') {
+      e.preventDefault()
+      next = 0
+    } else if (e.key === 'End') {
+      e.preventDefault()
+      next = tree.length - 1
+    } else {
+      return
+    }
+    setRovingIdx(next)
+    // Move DOM focus to the newly-roving chip button.
+    const chipBtns = timelineRef.current?.querySelectorAll('[data-chip-btn]')
+    if (chipBtns?.[next]) chipBtns[next].focus()
+  }, [rovingIdx, tree.length])
+
   // Cached evaluation results — survive across debounced re-runs so a brief
   // error doesn't wipe the viewport.
   const [meshes, setMeshes] = useState([])
@@ -2260,12 +2296,15 @@ export default function FeatureView({
 
         {/* Timeline — scroll horizontally if it gets long.
             role="tree" + role="treeitem" for a11y even though it is a flat
-            timeline (aria-level="1" throughout). */}
+            timeline (aria-level="1" throughout).
+            Keyboard: ArrowLeft/Right move between chips (roving tabindex). */}
         <div
+          ref={timelineRef}
           role="tree"
           aria-label="Feature timeline"
           className="flex-1 min-w-0 flex items-center gap-1 overflow-x-auto scrollbar-thin"
           title={tree.length > 1 ? 'Selections may reset after structural changes.' : undefined}
+          onKeyDown={handleTimelineKeyDown}
         >
           {tree.length === 0 ? (
             <span className="text-xs text-ink-500 italic">
@@ -2284,7 +2323,8 @@ export default function FeatureView({
                   Icon={Icon}
                   idx={idx}
                   isSel={isSel}
-                  onSelect={() => { setSelectedId(node.id); setInspectorOpen(true) }}
+                  rovingTabIndex={idx === rovingIdx ? 0 : -1}
+                  onSelect={() => { setSelectedId(node.id); setRovingIdx(idx); setInspectorOpen(true) }}
                   onDelete={() => { if (confirm(`Delete ${kind?.label || node.op} '${node.id}'?`)) removeFeature(node.id) }}
                 />
               )
@@ -2504,7 +2544,7 @@ export default function FeatureView({
 //   - touch: long-press opens a small dot-menu (⋯) popover with Delete.
 //   - keyboard: Enter/Space selects; Delete key deletes.
 
-function FeatureTimelineChip({ node, kind, Icon, idx, isSel, onSelect, onDelete }) {
+function FeatureTimelineChip({ node, kind, Icon, idx, isSel, rovingTabIndex = 0, onSelect, onDelete }) {
   const [dotMenuOpen, setDotMenuOpen] = useState(false)
   const wrapRef = useRef(null)
   useClickOutside(wrapRef, () => setDotMenuOpen(false), dotMenuOpen)
@@ -2513,6 +2553,8 @@ function FeatureTimelineChip({ node, kind, Icon, idx, isSel, onSelect, onDelete 
   const label = kind?.label || node.op
 
   function handleKeyDown(e) {
+    // Enter/Space selects. Delete removes. Arrow keys bubble up to the
+    // tree container's roving-tabindex handler.
     if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelect() }
     if (e.key === 'Delete') onDelete()
   }
@@ -2522,6 +2564,8 @@ function FeatureTimelineChip({ node, kind, Icon, idx, isSel, onSelect, onDelete 
       {idx > 0 && <ChevronRight size={11} className="text-ink-600" aria-hidden="true" />}
       <button
         type="button"
+        data-chip-btn=""
+        tabIndex={rovingTabIndex}
         onClick={onSelect}
         onKeyDown={handleKeyDown}
         onContextMenu={(ev) => { ev.preventDefault(); onDelete() }}
@@ -2593,15 +2637,90 @@ function FeatureTimelineChip({ node, kind, Icon, idx, isSel, onSelect, onDelete 
 // ---------------------------------------------------------------------------
 // Add-feature popover. Single button replaces the 14-icon kitchen-sink; opens
 // a panel with FEATURE_CATEGORIES groups and a 3-column grid of icon tiles.
+//
+// Keyboard:
+//   Enter/Space on trigger  → open + focus first item
+//   Arrow keys              → move through items (3-col grid: Left/Right wrap
+//                             within row; Up/Down move by column)
+//   Escape                  → close + return focus to trigger
+//   Enter/Space on item     → pick + close + return focus to trigger
 
 function AddFeaturePopover({ onPick }) {
   const [open, setOpen] = useState(false)
   const wrapRef = useRef(null)
+  const triggerRef = useRef(null)
+  const menuRef = useRef(null)
   useClickOutside(wrapRef, () => setOpen(false), open)
+
+  // Flatten all valid ops across categories for sequential focus.
+  const allOps = useMemo(
+    () => FEATURE_CATEGORIES.flatMap((cat) => cat.ops.filter((op) => KIND_BY_OP[op])),
+    [],
+  )
+  const COLS = 3
+
+  const closeAndReturnFocus = useCallback(() => {
+    setOpen(false)
+    // Defer so the menu has unmounted before we attempt focus.
+    requestAnimationFrame(() => triggerRef.current?.focus())
+  }, [])
+
+  // When the popover opens, focus the first menu item.
+  useEffect(() => {
+    if (!open) return
+    requestAnimationFrame(() => {
+      const first = menuRef.current?.querySelector('[role="menuitem"]')
+      first?.focus()
+    })
+  }, [open])
+
+  function handleMenuKeyDown(e) {
+    const items = Array.from(menuRef.current?.querySelectorAll('[role="menuitem"]') ?? [])
+    if (!items.length) return
+    const focused = document.activeElement
+    const idx = items.indexOf(focused)
+
+    if (e.key === 'Escape') {
+      e.preventDefault()
+      closeAndReturnFocus()
+    } else if (e.key === 'ArrowRight') {
+      e.preventDefault()
+      const next = (idx + 1) % items.length
+      items[next]?.focus()
+    } else if (e.key === 'ArrowLeft') {
+      e.preventDefault()
+      const next = (idx - 1 + items.length) % items.length
+      items[next]?.focus()
+    } else if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      const next = Math.min(idx + COLS, items.length - 1)
+      items[next]?.focus()
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      const next = Math.max(idx - COLS, 0)
+      items[next]?.focus()
+    } else if (e.key === 'Home') {
+      e.preventDefault()
+      items[0]?.focus()
+    } else if (e.key === 'End') {
+      e.preventDefault()
+      items[items.length - 1]?.focus()
+    } else if (e.key === 'Tab') {
+      // Trap focus: cycle within menu or close on Shift+Tab from first.
+      if (e.shiftKey && idx === 0) {
+        e.preventDefault()
+        closeAndReturnFocus()
+      } else if (!e.shiftKey && idx === items.length - 1) {
+        e.preventDefault()
+        items[0]?.focus()
+      }
+    }
+  }
 
   return (
     <div ref={wrapRef} className="relative flex-shrink-0">
       <button
+        ref={triggerRef}
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-label="Add feature to timeline"
@@ -2625,9 +2744,11 @@ function AddFeaturePopover({ onPick }) {
 
       {open && (
         <div
+          ref={menuRef}
           className="absolute top-full left-0 mt-1.5 z-30 w-[min(420px,calc(100vw-2rem))] rounded-lg border border-ink-700 bg-ink-900 shadow-2xl shadow-black/60 overflow-hidden"
           role="menu"
           aria-label="Add feature"
+          onKeyDown={handleMenuKeyDown}
         >
           <div className="max-h-[70vh] overflow-y-auto py-1.5">
             {FEATURE_CATEGORIES.map((cat, ci) => (
@@ -2645,7 +2766,8 @@ function AddFeaturePopover({ onPick }) {
                         key={op}
                         type="button"
                         role="menuitem"
-                        onClick={() => { onPick(op); setOpen(false) }}
+                        tabIndex={-1}
+                        onClick={() => { onPick(op); closeAndReturnFocus() }}
                         aria-label={`Add ${k.label}`}
                         className="group flex flex-col items-center gap-1 px-2 py-2.5 rounded-md text-ink-200 hover:bg-ink-800 hover:text-kerf-200 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-kerf-300/60"
                         title={`Add ${k.label}`}

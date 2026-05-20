@@ -175,7 +175,7 @@ Each task ≈1–3h sonnet unless `[HARD]`. Always isolate in a worktree.
 
 ### Group D — FeatureView
 
-- [ ] **T-D1 Keyboard traversal for the feature tree**
+- [x] **T-D1 Keyboard traversal for the feature tree**
   Scope: add roving-tabindex + Up/Down/Enter handling to feature-tree rows; ensure the add-feature popover (`role=menu`) supports arrow keys + Esc + focus return.
   Files: `src/components/FeatureView.jsx`.
   Success: the feature tree and add menu are fully operable without a mouse.
