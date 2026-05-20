@@ -55,7 +55,7 @@ noted.
   File: `packages/kerf-cad-core/tests/test_feature_jewelry_findings.py`
   Success: 25 finding-attachment combos; correct wire gauge; female/male mate clearance.
 
-- [ ] T-7 Jewelry: profile library (cross-sections)
+- [x] T-7 Jewelry: profile library (cross-sections)
   Scope: `profile_lib.py` MatrixGold-parity profiles wired into `ring.py` shank.
   File: `packages/kerf-cad-core/tests/test_feature_jewelry_profile_lib.py`
   Success: 25 profile codes; centroid + section properties match analytic ground truth ±1%.
