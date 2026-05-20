@@ -244,7 +244,7 @@ Each task ≈1–3h sonnet unless `[HARD]`. Always isolate in a worktree.
   Files: `src/lib/dfmOverlay.js`.
   Success: DFM issues are announced; tooltip z-index comes from the token scale.
 
-- [ ] **T-K2 Curvature comb overlay contrast/labelling**
+- [x] **T-K2 Curvature comb overlay contrast/labelling**
   Scope: verify the comb overlay panel text against `ink` background for ≥4.5:1 contrast; add an accessible label/legend; bump small text where it fails.
   Files: `src/components/CurvatureCombOverlay.jsx`.
   Success: overlay text meets WCAG AA; legend has a name.

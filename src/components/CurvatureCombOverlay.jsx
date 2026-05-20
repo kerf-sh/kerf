@@ -233,7 +233,8 @@ export function CurvatureCombPanel({
   geomLPropOk,
 }) {
   return (
-    <div
+    <section
+      aria-label="Curvature Combs overlay controls"
       style={{
         position: 'absolute',
         bottom: 56,
@@ -250,9 +251,23 @@ export function CurvatureCombPanel({
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-        <span style={{ fontWeight: 600, flex: 1 }}>Curvature Combs</span>
+        {/* Use an <h2> so the panel has a programmatic name visible to AT */}
+        <h2
+          style={{
+            margin: 0,
+            fontWeight: 600,
+            fontSize: 12,
+            flex: 1,
+            color: '#e5e7eb',
+          }}
+        >
+          Curvature Combs
+        </h2>
         <button
+          type="button"
           onClick={onToggle}
+          aria-pressed={enabled}
+          aria-label={enabled ? 'Disable curvature combs' : 'Enable curvature combs'}
           style={{
             background: enabled ? '#3b82f6' : '#374151',
             color: '#fff',
@@ -268,7 +283,7 @@ export function CurvatureCombPanel({
       </div>
 
       {geomLPropOk === false && (
-        <div style={{ color: '#f87171', marginBottom: 8, fontSize: 11 }}>
+        <div role="alert" style={{ color: '#f87171', marginBottom: 8, fontSize: 11 }}>
           Curvature probe unavailable on this OCCT build.
         </div>
       )}
@@ -298,7 +313,7 @@ export function CurvatureCombPanel({
           style={{
             width: 56,
             background: '#1f2937',
-            border: '1px solid #374151',
+            border: '1px solid #4b5563',
             borderRadius: 4,
             color: '#e5e7eb',
             padding: '2px 4px',
@@ -307,10 +322,20 @@ export function CurvatureCombPanel({
         />
       </label>
 
-      <div style={{ marginTop: 8, color: '#6b7280', fontSize: 10, lineHeight: 1.4 }}>
-        Blue = concave &nbsp;|&nbsp; Red = convex &nbsp;|&nbsp; White = flat<br />
-        Viz-only (no GeomAbs_G3 in OCCT)
-      </div>
-    </div>
+      {/* Colour legend — text bumped from #6b7280 (3.86:1) to #9ca3af (7.35:1) */}
+      <dl
+        aria-label="Curvature colour legend"
+        style={{ marginTop: 8, fontSize: 10, lineHeight: 1.4, color: '#9ca3af' }}
+      >
+        <div style={{ display: 'flex', gap: 4 }}>
+          <dt style={{ color: '#93c5fd' }}>Blue</dt><dd style={{ margin: 0 }}>= concave</dd>
+          <span aria-hidden="true">&nbsp;|&nbsp;</span>
+          <dt style={{ color: '#fca5a5' }}>Red</dt><dd style={{ margin: 0 }}>= convex</dd>
+          <span aria-hidden="true">&nbsp;|&nbsp;</span>
+          <dt>White</dt><dd style={{ margin: 0 }}>= flat</dd>
+        </div>
+        <dd style={{ margin: 0 }}>Viz-only (no GeomAbs_G3 in OCCT)</dd>
+      </dl>
+    </section>
   )
 }
