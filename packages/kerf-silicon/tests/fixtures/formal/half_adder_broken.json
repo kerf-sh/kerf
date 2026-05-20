@@ -1,0 +1,9 @@
+{
+  "_comment": "Half-adder — BROKEN variant. The sum output is deliberately swapped to OR instead of XOR. This means sum=1 when a=1,b=1 (should be 0) and is otherwise equal. The counterexample should be {a:1, b:1}.",
+  "inputs": ["a", "b"],
+  "outputs": ["sum", "cout"],
+  "gates": [
+    {"type": "or",  "inputs": ["a", "b"], "output": "sum"},
+    {"type": "and", "inputs": ["a", "b"], "output": "cout"}
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "_comment": "Half-adder — post-synthesis gate-level netlist. Implements the same function using NAND-based decomposition: sum = a XOR b = (a NAND (a NAND b)) NAND (b NAND (a NAND b)); cout = a AND b = (a NAND b) NAND (a NAND b) [i.e. NOT of NAND]. This is equivalent to the pre-synthesis version.",
+  "inputs": ["a", "b"],
+  "outputs": ["sum", "cout"],
+  "gates": [
+    {"type": "nand", "inputs": ["a", "b"], "output": "nand_ab"},
+    {"type": "nand", "inputs": ["a", "nand_ab"], "output": "nand_a_nab"},
+    {"type": "nand", "inputs": ["b", "nand_ab"], "output": "nand_b_nab"},
+    {"type": "nand", "inputs": ["nand_a_nab", "nand_b_nab"], "output": "sum"},
+    {"type": "nand", "inputs": ["nand_ab", "nand_ab"], "output": "cout"}
+  ]
+}

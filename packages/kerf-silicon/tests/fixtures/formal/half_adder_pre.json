@@ -1,0 +1,9 @@
+{
+  "_comment": "Half-adder — pre-synthesis (behavioural gate description). sum = a XOR b; cout = a AND b.",
+  "inputs": ["a", "b"],
+  "outputs": ["sum", "cout"],
+  "gates": [
+    {"type": "xor", "inputs": ["a", "b"], "output": "sum"},
+    {"type": "and", "inputs": ["a", "b"], "output": "cout"}
+  ]
+}
