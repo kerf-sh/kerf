@@ -509,6 +509,143 @@ def smooth_blend(t: float) -> float:
     return t * t * (3 - 2 * t)
 
 
+def blend_srf_g3(surf1: NurbsSurface, surf2: NurbsSurface,
+                 edge1_idx: int, edge2_idx: int,
+                 blend_dist: float,
+                 samples: int = 24) -> NurbsSurface:
+    """G3 (curvature-rate-continuous) degree-7 Bezier blend strip (GK-62).
+
+    Constructs a degree-7 Bezier strip (8 control rows in the cross-seam
+    direction) that analytically enforces G3 continuity at both seams via
+    the Bezier forward-difference formulas:
+
+      * **G0** — boundary rows interpolate the seam sample points exactly.
+      * **G1** — control row 1 (and 6) encodes the cross-boundary tangent.
+      * **G2** — control row 2 (and 5) encodes the curvature normal component.
+      * **G3** — control row 3 (and 4) encodes the curvature-rate (dκ/ds)
+        normal component, resolved from the T-104a oracle formula.
+
+    Delegates to :func:`surface_blend_g3` in ``surface_fillet.py``, which
+    carries the verified analytic derivation.  The oracle (T-104a
+    ``curvature_rate_continuity_residual``) must return residual < 1e-5 for
+    both seams.
+
+    Parameters
+    ----------
+    surf1, surf2 : NurbsSurface
+        The two support surfaces.
+    edge1_idx : int
+        Column index on surf1 that forms the shared seam (ignored — the
+        seam is always ``v = v_max`` of surf1 in the ``"v1_v0"`` convention).
+        Kept for API symmetry with :func:`blend_srf_g1`.
+    edge2_idx : int
+        Column index on surf2 that forms the shared seam.  Kept for API
+        symmetry with :func:`blend_srf_g1`.
+    blend_dist : float
+        Geometric blend width (must be > 0).
+    samples : int
+        Number of control-point columns along the seam direction (≥ 3).
+
+    Returns
+    -------
+    NurbsSurface
+        Degree-7 blend strip; degree_v == 7, num_control_points_v == 8.
+
+    Raises
+    ------
+    ValueError
+        If ``blend_dist ≤ 0`` or ``surface_blend_g3`` returns an error.
+    """
+    if blend_dist <= 0:
+        raise ValueError("blend_dist must be positive")
+    samples = max(3, int(samples))
+
+    res = surface_blend_g3(
+        surf1, surf2,
+        edge="v1_v0",
+        samples=samples,
+        blend_width=blend_dist,
+    )
+    if not res["ok"]:
+        raise ValueError(f"blend_srf_g3: surface_blend_g3 failed — {res['reason']}")
+    return res["blend_surface"]
+
+
+def blend_srf_g1(surf1: NurbsSurface, surf2: NurbsSurface,
+                 edge1_idx: int, edge2_idx: int,
+                 blend_dist: float,
+                 continuity: str = "G1") -> NurbsSurface:
+    if blend_dist <= 0:
+        raise ValueError("blend_dist must be positive")
+
+    num_cp_u1 = surf1.num_control_points_u
+    num_cp_v1 = surf1.num_control_points_v
+    num_cp_u2 = surf2.num_control_points_u
+    num_cp_v2 = surf2.num_control_points_v
+
+    dim = surf1.control_points.shape[2]
+
+    blend_rows = max(3, int(blend_dist * 5))
+
+    new_num_cp_v = num_cp_v1 + blend_rows + num_cp_v2
+
+    degree_u = max(surf1.degree_u, surf2.degree_u)
+    degree_v = max(surf1.degree_v, surf2.degree_v)
+
+    control_points = np.zeros((max(num_cp_u1, num_cp_u2), new_num_cp_v, dim))
+
+    for i in range(num_cp_u1):
+        for j in range(num_cp_v1):
+            control_points[i, j] = surf1.control_points[i, j]
+
+    for i in range(num_cp_u2):
+        for j in range(num_cp_v2):
+            control_points[i, new_num_cp_v - num_cp_v2 + j] = surf2.control_points[i, j]
+
+    if edge1_idx >= 0 and edge1_idx < num_cp_v1:
+        edge1_pts = surf1.control_points[:, edge1_idx]
+
+    if edge2_idx >= 0 and edge2_idx < num_cp_v2:
+        edge2_pts = surf2.control_points[:, edge2_idx]
+
+    if continuity in ["G1", "G2"]:
+        blend_start = num_cp_v1
+        blend_end = new_num_cp_v - num_cp_v2
+
+        for i in range(max(num_cp_u1, num_cp_u2)):
+            prev_pt = surf1.control_points[i % num_cp_u1, edge1_idx] if edge1_idx < num_cp_v1 else None
+            next_pt = surf2.control_points[i % num_cp_u2, edge2_idx] if edge2_idx < num_cp_v2 else None
+
+            if prev_pt is not None and next_pt is not None:
+                for j in range(blend_rows):
+                    t = (j + 1) / (blend_rows + 1)
+
+                    if continuity == "G1":
+                        blend_pt = g1_blend_point(prev_pt, next_pt, t, blend_dist)
+                    else:
+                        blend_pt = g2_blend_point(prev_pt, next_pt, t, blend_dist)
+
+                    control_points[i, blend_start + j] = blend_pt
+
+    knots_v1 = surf1.knots_v
+    knots_v2 = surf2.knots_v
+
+    knots_v = np.linspace(0, 1, new_num_cp_v + degree_v + 1)
+
+    return NurbsSurface(
+        degree_u=degree_u,
+        degree_v=degree_v,
+        control_points=control_points,
+        knots_u=surf1.knots_u,
+        knots_v=knots_v
+    )
+
+
+def g1_blend_point(p1: np.ndarray, p2: np.ndarray, t: float, blend_dist: float) -> np.ndarray:
+    blend_t = smooth_blend(t)
+    return (1 - blend_t) * p1 + blend_t * p2
+
+
 def g2_blend_point(p1: np.ndarray, p2: np.ndarray, t: float, blend_dist: float) -> np.ndarray:
     """Quarantined legacy helper — no longer adds an erroneous offset.
 
