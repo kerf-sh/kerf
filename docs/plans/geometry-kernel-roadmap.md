@@ -524,10 +524,11 @@ Format: `[ ] GK-NN  scope — FILE(s) — oracle — dep — parallel? — tier`
   knot placement). — `geom/patch_srf.py` — oracle: fit of a sampled
   torus patch ≤ tol with bounded CP count. — dep: GK-22 — parallel: Y —
   sonnet.
-- [ ] **GK-35** Curve fairing with curvature target (energy-minimising,
+- [x] **GK-35** Curve fairing with curvature target (energy-minimising,
   knot-preserving). — `geom/curve_toolkit.py` — oracle: faired curve
   curvature variance strictly decreases; endpoints + tangents preserved
   to `1e-9`. — dep: GK-22 — parallel: Y — sonnet.
+  *Landed: curve_toolkit.py, 23 tests.*
 - [x] **GK-36** Validate Gaussian/mean/principal curvature against analytic
   surfaces. — `geom/surface_analysis.py` — oracle: sphere K=1/r²,
   H=−1/r; cylinder K=0, one κ=1/r; torus K closed form — all to `1e-6`.

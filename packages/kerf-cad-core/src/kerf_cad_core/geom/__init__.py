@@ -88,6 +88,11 @@ from kerf_cad_core.geom.trim_curve import (
     untrim,
     shrink,
 )
+# GK-35: energy-minimising, knot-preserving curve fairing
+from kerf_cad_core.geom.curve_toolkit import (
+    fair_curve,
+    curvature_variance,
+)
 
 __all__ = [
     "NurbsCurve",
@@ -148,4 +153,6 @@ __all__ = [
     "TrimmedSurface",
     "untrim",
     "shrink",
+    "fair_curve",
+    "curvature_variance",
 ]
