@@ -278,6 +278,8 @@ from kerf_cad_core.geom.io.stl import (
     StlWriteError,
 )
 
+from kerf_cad_core.geom.surface_offset import surface_offset
+
 __all__ = [
     "NurbsCurve",
     "NurbsSurface",
@@ -450,4 +452,6 @@ __all__ = [
     "write_stl",
     "StlReadError",
     "StlWriteError",
+    # GK-83
+    "surface_offset",
 ]

@@ -788,7 +788,7 @@ in `geom/__init__.py`.
   `geom/imprint.py` — oracle: imprint a great-circle on a sphere face
   splits it into two equal-area hemispheres ± tol. — dep: GK-11,
   GK-39 — parallel: N — opus.
-- [ ] **GK-83** Surface offset / parallel surface (true offset, not
+- [x] **GK-83** Surface offset / parallel surface (true offset, not
   shell): produce a NURBS surface offset by signed distance d along
   surface normal; preserve UV. — `geom/surface_offset.py` — oracle:
   offset of a unit sphere by d yields a sphere of radius 1+d ± tol. —
