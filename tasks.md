@@ -861,7 +861,7 @@ estimates: **S** = ½ day, **M** = 1-2 days, **L** = 3-5 days, **XL** =
 
 ### T-332 Reverse-engineering pipeline — point cloud → parametric solid
 
-🔴 not started · **Tier A · P2**
+✅ shipped (2026-05-20) v1 · **Tier A · P2**
 
 - **Why:** ROADMAP §3.5 — Geomagic / PolyWorks class. Today: absent
   as a pipeline. Adjacent building blocks (`quad_remesh.py`) exist.
@@ -878,6 +878,27 @@ estimates: **S** = ½ day, **M** = 1-2 days, **L** = 3-5 days, **XL** =
   tests + fixtures.
 - **Effort:** XL — point-cloud handling is its own world.
 - **Depends-on:** OCCT, AFR (T-327) for the fit→feature step.
+
+### T-332b Reverse-engineering pipeline v2 — deferred sub-capabilities
+
+🔴 not started · **Tier A · P2**
+
+Deferred from T-332 v1 (shipped 2026-05-20).  Pick up any/all of:
+
+- **Real scanner noise handling** — robust outlier pre-filtering (statistical
+  outlier removal, bilateral smoothing) before RANSAC.  Current RANSAC
+  thresholds are tuned for ≤ 0.5 % synthetic noise.
+- **Binary PLY / binary PCD** — add binary-LE / binary-BE parsers in
+  `reverse_engineering/io.py` (v1 raises `UnsupportedFormatError`).
+- **Cone accuracy** — the v1 pure-Python linear fitter has ~0.8° half-angle
+  error (no Levenberg-Marquardt refinement).  Add iterative non-linear
+  refinement for cone parameters.
+- **Torus primitive** — RANSAC torus fitting for common swept features.
+- **Topology / feature ordering** — constructive history reconstruction
+  (which feature is additive vs. subtractive) requires an OCC Boolean
+  evaluation pass (depends on T-327 AFR).
+- **Freeform / Class-A surfaces** — NURBS patch fitting for unrecognised
+  regions (depends on T-100 / T-101 NURBS surfacing).
 
 ### T-333 Mechanism synthesis — MotionGen / Adams class linkage / cam / gear synthesis
 
