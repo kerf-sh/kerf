@@ -641,7 +641,7 @@ function ToolChipList({ chips }) {
 
 // ---------- message bubble ----------
 
-function MessageBlock({ message, modelLookup }) {
+function MessageBlock({ message, modelLookup, isLatestAssistant }) {
   const isUser = message.role === 'user'
   const showBadge = !isUser && message.model && message.model !== 'none'
   const badgeProvider = showBadge ? (modelLookup?.[message.model]?.provider || '') : ''
@@ -669,11 +669,16 @@ function MessageBlock({ message, modelLookup }) {
           ))}
         </div>
       )}
-      <div className={`max-w-[88%] rounded-2xl px-3.5 py-2 text-sm leading-relaxed ${
-        isUser
-          ? 'bg-kerf-300/15 border border-kerf-300/30 text-ink-100 rounded-br-sm'
-          : 'bg-ink-800 border border-ink-700 text-ink-100 rounded-bl-sm'
-      }`}>
+      <div
+        className={`max-w-[88%] rounded-2xl px-3.5 py-2 text-sm leading-relaxed ${
+          isUser
+            ? 'bg-kerf-300/15 border border-kerf-300/30 text-ink-100 rounded-br-sm'
+            : 'bg-ink-800 border border-ink-700 text-ink-100 rounded-bl-sm'
+        }`}
+        {...(!isUser && isLatestAssistant
+          ? { 'aria-live': 'polite', 'aria-atomic': 'false', 'data-live-region': 'assistant-reply' }
+          : {})}
+      >
         {isUser ? (
           <div className="whitespace-pre-wrap break-words">{message.content}</div>
         ) : (
@@ -917,12 +922,30 @@ const ChatPanel = forwardRef(function ChatPanel({
           <div className="text-xs text-ink-400 text-center py-8">Loading messages…</div>
         ) : renderItems.length === 0 ? (
           <EmptyState hasThreads={(threads || []).length > 0} />
-        ) : renderItems.map((item, i) => {
-          if (item.kind === 'tool-group') {
-            return <ToolGroup key={`tg-${item.id || i}`} calls={item.calls} model={item.model} modelLookup={modelLookup} />
+        ) : (() => {
+          // Find the index of the last assistant message block so we can mark
+          // it with aria-live="polite" for screen-reader streaming announcement.
+          let lastAssistantIdx = -1
+          for (let i = renderItems.length - 1; i >= 0; i--) {
+            if (renderItems[i].kind === 'message' && renderItems[i].message.role === 'assistant') {
+              lastAssistantIdx = i
+              break
+            }
           }
-          return <MessageBlock key={item.message.id || i} message={item.message} modelLookup={modelLookup} />
-        })}
+          return renderItems.map((item, i) => {
+            if (item.kind === 'tool-group') {
+              return <ToolGroup key={`tg-${item.id || i}`} calls={item.calls} model={item.model} modelLookup={modelLookup} />
+            }
+            return (
+              <MessageBlock
+                key={item.message.id || i}
+                message={item.message}
+                modelLookup={modelLookup}
+                isLatestAssistant={i === lastAssistantIdx}
+              />
+            )
+          })
+        })()}
         {sending && (() => {
           // Check if there is an in-progress streaming message with live chips.
           const streamingMsg = messages && messages.find((m) => m._streaming)

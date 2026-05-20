@@ -136,7 +136,7 @@ Each task ≈1–3h sonnet unless `[HARD]`. Always isolate in a worktree.
   Files: `src/components/ChatPanel.jsx`.
   Success: input and model list are properly named/announced; axe shows no listbox violation.
 
-- [ ] **T-B2 Live region for streamed assistant replies**
+- [x] **T-B2 Live region for streamed assistant replies**
   Scope: wrap the message scroll container's latest assistant block in an `aria-live="polite"` region; ensure auto-scroll doesn't yank SR focus.
   Files: `src/components/ChatPanel.jsx`.
   Success: assistant responses are announced as they arrive without trapping focus.
