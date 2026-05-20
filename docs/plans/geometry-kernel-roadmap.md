@@ -702,10 +702,10 @@ Format: `[ ] GK-NN  scope — FILE(s) — oracle — dep — parallel? — tier`
   `geom/inversion.py` — oracle: ill-conditioned tangent case converges
   or returns structured None, never diverges. — dep: GK-09, GK-07 —
   parallel: N — opus.
-- [ ] **GK-70** Performance budget tests (evaluation, SSI, boolean on
+- [x] **GK-70** Performance budget tests (evaluation, SSI, boolean on
   the primitive matrix) with regression thresholds. — test harness —
   oracle: SSI sphere∩sphere < N ms; boolean box−cyl < M ms (thresholds
-  recorded, not absolute). — dep: GK-18 — parallel: Y — sonnet.
+  recorded, not absolute). — dep: GK-18 — parallel: Y — sonnet. *Landed: test_perf_budget.py, 16 tests.*
 - [ ] **GK-71** `geom/__init__.py` public surface: export the new
   `closest_point`, `surface_to_face`, `sew`, `boolean`, `to_body`
   verbs as the stable façade; docstring the OCCT vs pure-Py split. —
