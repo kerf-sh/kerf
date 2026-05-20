@@ -735,7 +735,7 @@ estimates: **S** = ½ day, **M** = 1-2 days, **L** = 3-5 days, **XL** =
 
 ### T-327 Automatic Feature Recognition (AFR) — STEP → editable feature tree (sim pillar)
 
-🔴 not started · **Tier A · P1**
+✅ shipped (2026-05-20) v1 · **Tier A · P1** — pure-Python AAG engine recognises 11 features (through/blind hole, counterbore, countersink, pocket, slot, boss, fillet, chamfer, rib, step) → ordered editable feature_tree; 27 tests green; LLM tool afr_recognize_features. **Deferred to T-327b:** revolve/sweep/loft, pattern features, real-STEP round-trip + Hausdorff oracle (needs headless OCCT).
 
 - **Why:** ROADMAP §3.5 — "edit ANY model" enabler. Today, an
   imported "dumb" STEP is read-only B-rep; the LLM cannot
