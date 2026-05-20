@@ -263,21 +263,19 @@ from kerf_cad_core.geom.io.gltf import (
     GltfReadError,
     GltfWriteError,
 )
-<<<<<<< HEAD
 # GK-80: Wavefront OBJ read + write (mesh + groups + mtllib)
 from kerf_cad_core.geom.io.obj import (
     read_obj,
     write_obj,
     ObjReadError,
     ObjWriteError,
-=======
+)
 # GK-81: STL read (binary + ASCII) + write
 from kerf_cad_core.geom.io.stl import (
     read_stl,
     write_stl,
     StlReadError,
     StlWriteError,
->>>>>>> dbb81639 (feat(geom): GK-81 STL read (binary + ASCII) + write verify)
 )
 
 __all__ = [
@@ -442,17 +440,14 @@ __all__ = [
     "write_gltf",
     "GltfReadError",
     "GltfWriteError",
-<<<<<<< HEAD
     # GK-80
     "read_obj",
     "write_obj",
     "ObjReadError",
     "ObjWriteError",
-=======
     # GK-81
     "read_stl",
     "write_stl",
     "StlReadError",
     "StlWriteError",
->>>>>>> dbb81639 (feat(geom): GK-81 STL read (binary + ASCII) + write verify)
 ]
