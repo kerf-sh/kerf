@@ -5316,7 +5316,7 @@ User-direction 2026-05-19. Extends T-179 (apparel pattern-making) with deeper te
 ### T-284 Production-scale cut-room nesting
 - **Tier:** B
 - **Priority:** P2
-- **Status:** 🔴 not started
+- **Status:** ✅ shipped (2026-05-20)
 - **Scope:** extends T-179's marker-making with production-grade No-Fit-Polygon nesting on multiple fabric rolls of varying widths; supports grain-line constraints + ply-direction. Reuses kerf-cad-core.nesting if available; otherwise pure-Python NFP.
 - **Target files/packages:** `packages/kerf-textiles/src/kerf_textiles/cut_room.py`, tests.
 - **Definition of Done:** marker utilisation on a known input ≥ 80%; grain-line constraint honoured; pytest oracles.
