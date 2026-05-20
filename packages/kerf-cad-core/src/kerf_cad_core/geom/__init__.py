@@ -218,6 +218,8 @@ from kerf_cad_core.geom.boolean import (
     body_intersection,
     body_difference,
 )
+# GK-76: wall-thickness map (printability gate)
+from kerf_cad_core.geom.wall_thickness import wall_thickness_map
 # GK-29: solid edge/corner blend (concave/convex; degree-3 cylinder/sphere faces)
 from kerf_cad_core.geom.blend_solid import (
     BlendResult,
@@ -386,6 +388,8 @@ __all__ = [
     "NurbsToSubdError",
     "nurbs_body_to_subd_cage",
     "nurbs_to_subd_cage",
+    # GK-76
+    "wall_thickness_map",
     # GK-29
     "BlendResult",
     "blend_edge",
