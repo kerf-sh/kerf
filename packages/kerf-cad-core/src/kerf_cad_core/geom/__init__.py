@@ -115,6 +115,15 @@ from kerf_cad_core.geom.io.iges import (
     IgesReadError,
     IgesWriteError,
 )
+# GK-56: 2D region boolean on planar curve loops
+from kerf_cad_core.geom.region2d import (
+    region_union,
+    region_intersection,
+    region_difference,
+    region_area,
+    make_rect_loop,
+    make_circle_loop,
+)
 
 __all__ = [
     "NurbsCurve",
@@ -195,4 +204,7 @@ __all__ = [
     "read_iges",
     "IgesReadError",
     "IgesWriteError",
+    # GK-56
+    "region_union","region_intersection","region_difference",
+    "region_area","make_rect_loop","make_circle_loop",
 ]
