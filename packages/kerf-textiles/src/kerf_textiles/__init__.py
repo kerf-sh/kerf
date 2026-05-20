@@ -103,6 +103,37 @@ from kerf_textiles.screen_print import (
     PrintReadySeparation,
     ScreenPrintResult,
 )
+from kerf_textiles.etextiles import (
+    ResistiveYarn,
+    HeaterSegment,
+    heating_calc,
+    ThreadRoute,
+    thread_route,
+    LEDNode,
+    LEDBranch,
+    LEDLayout,
+    led_layout,
+    YARN_SHIELDEX_117,
+    YARN_BEKINOX_50,
+    LED_FLORA_NEOPIXEL,
+    LED_FLORA_RGB,
+)
+from kerf_textiles.materials import (
+    TextileMaterial,
+    CATALOGUE,
+    CATEGORIES,
+    by_id,
+    by_category,
+    by_subcategory,
+    with_certification,
+    biodegradable_materials,
+)
+from kerf_textiles.sustainability import (
+    GarmentImpact,
+    MaterialContribution,
+    score_garment,
+    compare_garments,
+)
 
 __all__ = [
     # weave
@@ -161,4 +192,32 @@ __all__ = [
     "SeparationResult",
     "PrintReadySeparation",
     "ScreenPrintResult",
+    # etextiles
+    "ResistiveYarn",
+    "HeaterSegment",
+    "heating_calc",
+    "ThreadRoute",
+    "thread_route",
+    "LEDNode",
+    "LEDBranch",
+    "LEDLayout",
+    "led_layout",
+    "YARN_SHIELDEX_117",
+    "YARN_BEKINOX_50",
+    "LED_FLORA_NEOPIXEL",
+    "LED_FLORA_RGB",
+    # materials
+    "TextileMaterial",
+    "CATALOGUE",
+    "CATEGORIES",
+    "by_id",
+    "by_category",
+    "by_subcategory",
+    "with_certification",
+    "biodegradable_materials",
+    # sustainability
+    "GarmentImpact",
+    "MaterialContribution",
+    "score_garment",
+    "compare_garments",
 ]

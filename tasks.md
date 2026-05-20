@@ -5325,7 +5325,7 @@ User-direction 2026-05-19. Extends T-179 (apparel pattern-making) with deeper te
 ### T-285 E-textile / smart-textile design
 - **Tier:** B
 - **Priority:** P2
-- **Status:** 🔴 not started
+- **Status:** ✅ shipped (2026-05-20)
 - **Scope:** integrate conductive thread routing on a garment pattern; pair with kerf-electronics PCB design for the rigid controller + flex transition. Resistance + heating calc for resistive yarns; LED-fabric layout (Adafruit Flora-class).
 - **Target files/packages:** `packages/kerf-textiles/src/kerf_textiles/etextiles.py`, tests.
 - **Definition of Done:** resistive heating calc matches I²R to 1%; LED-fabric layout has correct serial+parallel current; pytest.
@@ -5334,7 +5334,7 @@ User-direction 2026-05-19. Extends T-179 (apparel pattern-making) with deeper te
 ### T-286 Textile material catalogue + sustainability metrics
 - **Tier:** B
 - **Priority:** P2
-- **Status:** 🔴 not started
+- **Status:** ✅ shipped (2026-05-20)
 - **Scope:** curated catalogue of 50+ textile materials: cotton (organic/conventional), polyester (virgin/recycled), wool, silk, linen, viscose, lyocell, nylon, hemp, leather (full-grain/PU). Each entry: density (g/m²), tensile strength, elongation, water consumption (L/kg), CO₂ footprint (kg CO₂e/kg), biodegradability, certifications (GOTS, OEKO-TEX, Bluesign).
 - **Target files/packages:** `packages/kerf-textiles/src/kerf_textiles/materials.py`, `packages/kerf-textiles/src/kerf_textiles/sustainability.py`, tests.
 - **Definition of Done:** 50+ entries; lookup by category; LCA sustainability score for a garment from its material mix; pytest oracles.
