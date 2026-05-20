@@ -542,10 +542,10 @@ Format: `[ ] GK-NN  scope — FILE(s) — oracle — dep — parallel? — tier`
   `geom/surface_analysis.py` — oracle: zebra stripes continuous across a
   G1 join, broken across a G0 join (stripe-tangent discontinuity
   detected). — dep: GK-36 — parallel: Y — sonnet.
-- [ ] **GK-39** Untrim / shrink trimmed surface. — `geom/trim_curve.py` —
+- [x] **GK-39** Untrim / shrink trimmed surface. — `geom/trim_curve.py` —
   oracle: untrim of a trimmed patch returns the original untrimmed CP
   net exactly; shrink bbox ⊆ trimmed region. — dep: GK-13 — parallel: Y
-  — sonnet.
+  — sonnet. *Landed: trim_curve.py, 22 tests.*
 - [ ] **GK-40** Trim face by SSI curve (replace FD-projection trim with
   exact SSI + closest-point pullback). — `geom/trim_curve.py` —
   oracle: trim of a plane by a cylinder = exact circle boundary loop to

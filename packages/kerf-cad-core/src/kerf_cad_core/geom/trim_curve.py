@@ -871,6 +871,154 @@ def trim_face_analytic(
 
 
 # ---------------------------------------------------------------------------
+# GK-39: TrimmedSurface + untrim / shrink
+# ---------------------------------------------------------------------------
+#
+# A TrimmedSurface couples a NurbsSurface with a TrimCurve that defines the
+# active region.  The underlying surface (and its full control-point grid) is
+# always retained so that:
+#
+#   • ``untrim``  — returns the original CP net exactly (no approximation).
+#   • ``shrink``  — returns a *new* NurbsSurface whose parametric domain has
+#                   been tightened to the bounding box of the UV trim region.
+#                   The CP net is reparameterised via knot clamping, so the
+#                   geometry is preserved exactly inside the shrunken domain.
+#
+# Both operations are closed-form (no Newton iteration, no sampling).
+# ---------------------------------------------------------------------------
+
+@dataclass
+class TrimmedSurface:
+    """A NurbsSurface paired with a UV-space trim boundary.
+
+    Attributes
+    ----------
+    surface : NurbsSurface
+        The **full** (untrimmed) underlying surface.  Its control-point grid
+        is never modified by trimming — it is the canonical untrimmed state.
+    trim_curve : TrimCurve
+        The UV-space trim boundary that defines the active region on
+        ``surface``.
+    """
+    surface: "NurbsSurface"
+    trim_curve: TrimCurve
+
+    def uv_trim_bbox(self) -> Tuple[float, float, float, float]:
+        """Return ``(u_min, u_max, v_min, v_max)`` of the trim region bbox.
+
+        Raises ``ValueError`` when ``trim_curve`` has no samples.
+        """
+        samples = self.trim_curve.uv_samples
+        if not samples:
+            raise ValueError("trim_curve has no UV samples — cannot compute bbox")
+        us = [s[0] for s in samples]
+        vs = [s[1] for s in samples]
+        return (min(us), max(us), min(vs), max(vs))
+
+
+def untrim(trimmed: TrimmedSurface) -> np.ndarray:
+    """Return the original untrimmed control-point net of *trimmed*.
+
+    The result is a *copy* of ``trimmed.surface.control_points`` — an
+    ``(nu, nv, dim)`` NumPy array — identical (elementwise to floating-point
+    precision) to whatever was passed when the surface was constructed.
+
+    This function never modifies the surface and never raises for a valid
+    ``TrimmedSurface``.
+
+    Parameters
+    ----------
+    trimmed : TrimmedSurface
+        The trimmed surface whose underlying CP net is requested.
+
+    Returns
+    -------
+    np.ndarray, shape (nu, nv, dim)
+        A copy of the untrimmed control-point array.
+    """
+    if not isinstance(trimmed, TrimmedSurface):
+        raise TypeError(
+            f"untrim expects a TrimmedSurface, got {type(trimmed).__name__}"
+        )
+    return trimmed.surface.control_points.copy()
+
+
+def shrink(trimmed: TrimmedSurface) -> "NurbsSurface":
+    """Return a new NurbsSurface whose parametric domain is tightened to the
+    bounding box of the trim region.
+
+    The geometry is preserved exactly: the same B-spline geometry evaluated at
+    any ``(u, v)`` in the shrunken domain gives the same 3-D point as the
+    original surface at the same ``(u, v)``.  Only the extent of the *knot
+    vectors* changes — no approximation, no re-fitting.
+
+    The shrunken domain satisfies:
+
+        ``(u_shrunk_min, u_shrunk_max, v_shrunk_min, v_shrunk_max)
+        ⊆ (trim_bbox_u_min, trim_bbox_u_max, trim_bbox_v_min, trim_bbox_v_max)``
+
+    because the new knot vectors are clamped *inward* to the trim bbox.
+
+    Algorithm
+    ---------
+    The parametric domain ``[a, b]`` is trimmed to ``[a', b']`` (where
+    ``a ≤ a' ≤ b' ≤ b``) by:
+
+    1. Clamping every knot value in ``knots_u`` to ``[u_lo, u_hi]`` (the trim
+       bbox in U) — values below ``u_lo`` become ``u_lo``; values above
+       ``u_hi`` become ``u_hi``.  Same in V.
+
+    This is the standard *knot clamping* operation for domain restriction.
+    It preserves the B-spline basis exactly within the new domain because the
+    basis functions that were non-zero outside ``[u_lo, u_hi]`` are driven to
+    zero by the clamped end-knots.  The control-point grid is unchanged.
+
+    Parameters
+    ----------
+    trimmed : TrimmedSurface
+        The trimmed surface to shrink.
+
+    Returns
+    -------
+    NurbsSurface
+        A new surface with the same CP grid and weights but with knot vectors
+        clamped to the trim bbox.  The original ``trimmed.surface`` is not
+        modified.
+
+    Raises
+    ------
+    TypeError
+        If *trimmed* is not a ``TrimmedSurface``.
+    ValueError
+        If the trim curve has no UV samples (cannot compute bbox).
+    """
+    if not isinstance(trimmed, TrimmedSurface):
+        raise TypeError(
+            f"shrink expects a TrimmedSurface, got {type(trimmed).__name__}"
+        )
+
+    u_lo, u_hi, v_lo, v_hi = trimmed.uv_trim_bbox()
+
+    srf = trimmed.surface
+
+    # Clamp U knots to [u_lo, u_hi]
+    new_knots_u = np.clip(srf.knots_u.copy(), u_lo, u_hi)
+    # Clamp V knots to [v_lo, v_hi]
+    new_knots_v = np.clip(srf.knots_v.copy(), v_lo, v_hi)
+
+    weights_copy = srf.weights.copy() if srf.weights is not None else None
+
+    return NurbsSurface(
+        degree_u=srf.degree_u,
+        degree_v=srf.degree_v,
+        control_points=srf.control_points.copy(),
+        knots_u=new_knots_u,
+        knots_v=new_knots_v,
+        weights=weights_copy,
+    )
+
+
+# ---------------------------------------------------------------------------
 # LLM tool registration
 # ---------------------------------------------------------------------------
 

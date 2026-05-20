@@ -82,6 +82,13 @@ from kerf_cad_core.geom.trim_validation import (
     validate_body_post_trim,
 )
 
+# GK-39: untrim / shrink trimmed surface.
+from kerf_cad_core.geom.trim_curve import (
+    TrimmedSurface,
+    untrim,
+    shrink,
+)
+
 __all__ = [
     "NurbsCurve",
     "NurbsSurface",
@@ -138,4 +145,7 @@ __all__ = [
     "AmbiguousPoint",
     "select_side",
     "validate_body_post_trim",
+    "TrimmedSurface",
+    "untrim",
+    "shrink",
 ]
