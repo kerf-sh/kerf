@@ -39,6 +39,10 @@ subd_bevel(cage, edge_ids, amount) -> SubDCage
 subd_loop_cut(cage, edge_ring, t=0.5) -> SubDCage
     Insert a loop cut across a ring of quad faces at parameter ``t`` ∈ (0, 1).
 
+subd_loop_slide(cage, edge_loop, t) -> SubDCage
+    Slide an edge loop along its adjacent quad faces.  ``t`` in [-1, 1]
+    where 0 = identity.  Topology (V/E/F) is unchanged.
+
 subd_set_crease(cage, edge_id, sharpness) -> SubDCage
     Assign a crease sharpness to an edge.  Sharpness 0 = smooth,
     ``math.inf`` = perfectly hard.  Returns a new cage (immutable-style).
@@ -754,6 +758,166 @@ def subd_loop_cut(
 
         # Preserve sharpness where edge ids are still valid
         result = SubDCage(vertices=verts, faces=new_faces, sharpness=dict(cage.sharpness))
+        return result
+    except Exception:
+        return _copy_cage(cage)
+
+
+# ---------------------------------------------------------------------------
+# Public: subd_loop_slide
+# ---------------------------------------------------------------------------
+
+def subd_loop_slide(
+    cage: SubDCage,
+    edge_loop: Sequence[int],
+    t: float,
+) -> SubDCage:
+    """Slide an edge loop along its adjacent quad faces.
+
+    Each vertex that belongs to exactly the edges in the loop is moved
+    along the face-tangent direction of its adjacent faces.  Topology is
+    unchanged (vertex, edge, and face counts stay the same).
+
+    Parameters
+    ----------
+    cage : SubDCage
+        Source cage.  Must have at least some quad faces.
+    edge_loop : sequence of int
+        Edge ids (from ``cage.cage_edges()``) forming the loop to slide.
+        All edges must belong to quad faces.
+    t : float
+        Slide parameter in [-1, 1].  ``t=0`` → identity (no movement).
+        ``t=+1`` → vertex moves to the position of the parallel edge on the
+        +normal side.  ``t=-1`` → moves to the parallel edge on the -normal
+        side.
+
+    Returns
+    -------
+    SubDCage
+        New cage with updated vertex positions and identical topology.
+        Never raises; returns a copy of the input cage on any error.
+    """
+    try:
+        t = float(t)
+        if abs(t) < 1e-15:
+            return _copy_cage(cage)
+
+        edges = cage.cage_edges()
+        loop_eids = set(int(eid) for eid in edge_loop if 0 <= int(eid) < len(edges))
+        if not loop_eids:
+            return _copy_cage(cage)
+
+        # Collect the raw (a, b) edge pairs in the loop
+        loop_edge_pairs: Set[Tuple[int, int]] = set()
+        for eid in loop_eids:
+            a, b = edges[eid]
+            loop_edge_pairs.add((min(a, b), max(a, b)))
+
+        # Build vertex → adjacent faces map
+        vert_to_faces: Dict[int, List[int]] = {}
+        for fi, face in enumerate(cage.faces):
+            for vi in face:
+                vert_to_faces.setdefault(vi, []).append(fi)
+
+        # Identify which vertices belong to the loop edges
+        loop_verts: Set[int] = set()
+        for a, b in loop_edge_pairs:
+            loop_verts.add(a)
+            loop_verts.add(b)
+
+        # For each loop vertex, compute the slide displacement.
+        #
+        # Strategy: for each face adjacent to the vertex, if that face
+        # contains one of the loop edges, find the "opposite" edge of the
+        # quad (the edge parallel to the loop edge on the other side of the
+        # quad face).  The displacement is t * (midpoint_of_opposite_edge -
+        # vertex_position), averaged over all contributing faces.
+        #
+        # Sign convention: positive t moves toward the opposite edge in the
+        # face-traversal direction; negative t reverses.  For a box edge-loop
+        # this means vertices move by t·edge_length in the face-tangent
+        # direction.
+
+        result = _copy_cage(cage)
+        verts = result.vertices
+
+        # Collect per-vertex slide vectors from each incident loop edge.
+        vert_slide: Dict[int, List[List[float]]] = {}
+
+        for a, b in loop_edge_pairs:
+            pa = cage.vertices[a]
+            pb = cage.vertices[b]
+            edge_raw = _vec3_sub(pb, pa)
+            edge_len = _vec3_length(edge_raw)
+            if edge_len < 1e-15:
+                continue
+
+            # Gather "outward" faces: faces containing this edge whose
+            # opposite edge is NOT in the loop (i.e. not a cap face).
+            outward_face_tangents: List[List[float]] = []
+
+            for face in cage.faces:
+                if len(face) != 4:
+                    continue
+                n = 4
+                edge_pos = -1
+                for i in range(n):
+                    u, v_ = face[i], face[(i + 1) % n]
+                    if (min(u, v_), max(u, v_)) == (a, b):
+                        edge_pos = i
+                        break
+                if edge_pos < 0:
+                    continue
+
+                # Opposite edge of this quad.
+                opp_i = (edge_pos + 2) % n
+                oc = face[opp_i]
+                od = face[(opp_i + 1) % n]
+                opp_key = (min(oc, od), max(oc, od))
+                if opp_key in loop_edge_pairs:
+                    continue  # cap face — skip
+
+                # Use the face-traversal direction of the edge so that the
+                # cross product with the face normal is consistently signed.
+                # face[edge_pos] → face[(edge_pos+1)%n] is the traversal dir.
+                if face[edge_pos] == a:
+                    face_edge = _vec3_normalize(edge_raw)
+                else:
+                    face_edge = _vec3_normalize(_vec3_scale(edge_raw, -1.0))
+
+                # tangent = normal × face_edge_dir, pointing "into" the face
+                # (away from the loop edge, along the face plane).
+                fn = _face_normal(cage.vertices, face)
+                tang = _vec3_normalize(_vec3_cross(fn, face_edge))
+                outward_face_tangents.append(tang)
+
+            if not outward_face_tangents:
+                continue
+
+            # Average the tangent directions.
+            nt = len(outward_face_tangents)
+            avg_tang = [
+                sum(tg[j] for tg in outward_face_tangents) / nt
+                for j in range(3)
+            ]
+            avg_tang = _vec3_normalize(avg_tang)
+
+            # Slide displacement = t * edge_len * avg_tang
+            disp = _vec3_scale(avg_tang, t * edge_len)
+
+            # Apply to both endpoints of the loop edge.
+            for vi in (a, b):
+                vert_slide.setdefault(vi, []).append(disp)
+
+        for vi, displacements in vert_slide.items():
+            nd = len(displacements)
+            dx = sum(d[0] for d in displacements) / nd
+            dy = sum(d[1] for d in displacements) / nd
+            dz = sum(d[2] for d in displacements) / nd
+
+            cv = cage.vertices[vi]
+            verts[vi] = [cv[0] + dx, cv[1] + dy, cv[2] + dz]
+
         return result
     except Exception:
         return _copy_cage(cage)

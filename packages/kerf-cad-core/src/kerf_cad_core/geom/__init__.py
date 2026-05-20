@@ -280,6 +280,8 @@ from kerf_cad_core.geom.io.stl import (
     StlReadError,
     StlWriteError,
 )
+# GK-88: loop slide (SubD)
+from kerf_cad_core.geom.subd_authoring import subd_loop_slide
 # GK-87: pattern (linear / circular / path)
 from kerf_cad_core.geom.pattern import (
     linear_pattern,
