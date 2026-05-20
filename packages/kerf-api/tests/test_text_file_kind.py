@@ -116,14 +116,22 @@ _MIGRATIONS = (
 
 
 def _latest_kind_check_set() -> set[str]:
-    pat = re.compile(
-        r"files_kind_check\s+check\s*\(\s*kind in \(([^)]*)\)", re.I
-    )
+    # The baseline (post-T-307 clean-up) declares the files.kind allow-list
+    # as an INLINE check inside `create table ... files (... kind text ...
+    # check (kind in (...)))`, NOT as a named `files_kind_check` constraint
+    # (that was an alter-table shim that T-307 folded away). Match both
+    # forms so the drift-guard works whichever style the baseline uses.
+    pats = [
+        re.compile(r"files_kind_check\s+check\s*\(\s*kind in \(([^)]*)\)", re.I),
+        re.compile(r"kind\s+text\s+not null\s+default\s+'file'\s+check\s*\(\s*kind in \(([^)]*)\)", re.I),
+    ]
     found: str | None = None
     for path in sorted(_MIGRATIONS.glob("*.sql")):
-        for m in pat.finditer(path.read_text()):
-            found = m.group(1)
-    assert found, "no files_kind_check definition found in migrations"
+        text = path.read_text()
+        for pat in pats:
+            for m in pat.finditer(text):
+                found = m.group(1)
+    assert found, "no files.kind check (inline or named) found in migrations"
     return set(re.findall(r"'([a-z_-]+)'", found))
 
 
