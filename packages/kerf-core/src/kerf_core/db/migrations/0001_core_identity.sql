@@ -158,7 +158,7 @@ create table if not exists files (
     name text not null,
     -- final kind enumeration folded from 29 incremental kind migrations
     -- (010,011,012,019,021,023,026,033-046,053,054,056-061_kind_wiring)
-    kind text not null default 'file' check (kind in ('file','text','folder','assembly','step','drawing','sketch','part','feature','circuit','equations','material','simulation','script','step-ref','assembly_lock','canvas','schedule','view','sheet','duct','pipe','conduit','subd','mesh','render','section','cam_layered','tool','plc_st','plc_ld','quadmesh','print','gem','wiring','firmware','mold','pid','optics','layup','dental','hdl_vhdl','hdl_verilog','spice_netlist','gds_layout','oasis_layout','lef_lib','def_design','liberty_lib','silicon_flow','silicon_pdk','firmware_project','eco','sysml','system')),
+    kind text not null default 'file' check (kind in ('file','text','folder','assembly','step','drawing','sketch','part','feature','circuit','equations','material','simulation','script','step-ref','assembly_lock','canvas','schedule','view','sheet','duct','pipe','conduit','subd','mesh','render','section','cam_layered','tool','plc_st','plc_ld','quadmesh','print','gem','wiring','firmware','mold','pid','optics','layup','dental','hdl_vhdl','hdl_verilog','spice_netlist','gds_layout','oasis_layout','lef_lib','def_design','liberty_lib','silicon_flow','silicon_pdk','firmware_project','eco','sysml','system','harness')),
     content text not null default '',
     storage_key text,
     mime_type text,

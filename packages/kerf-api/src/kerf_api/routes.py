@@ -1554,6 +1554,8 @@ FILE_KINDS = (
     "eco", "sysml",
     # T-325: 1D system simulation — .system lumped-parameter network
     "system",
+    # T-323: 3D in-vehicle wiring harness — .harness routed through the DMU
+    "harness",
 )
 
 
