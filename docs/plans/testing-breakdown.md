@@ -115,7 +115,7 @@ noted.
   File: `packages/kerf-cad-core/tests/test_feature_mech_feature_ops_chain.py`
   Success: 25 5-op chains; face naming stable across rebuild; persistent IDs after boolean.
 
-- [ ] T-19 Mech: GD&T datum/tolerance framework
+- [x] T-19 Mech: GD&T datum/tolerance framework
   Scope: `gdt/` + `gdt_callouts/` → drawing annotation surface.
   File: `packages/kerf-cad-core/tests/test_feature_mech_gdt.py`
   Success: 25 callout types (Y14.5); datum reference frames build correctly; round-trip into drawing JSON.
