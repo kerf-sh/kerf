@@ -97,6 +97,13 @@ from kerf_cad_core.geom.trim_validation import (
 )
 # GK-45: shell/hollow a Body (offset faces inward, re-sew).
 from kerf_cad_core.geom.solid_features import shell_body
+# GK-46: draft/rib/wirecut/pipe as validated Body-producing ops.
+from kerf_cad_core.geom.solid_features import (
+    draft_body,
+    rib_body,
+    wirecut_body,
+    pipe_body,
+)
 # GK-44: match-surface analytic G1/G2 verification.
 from kerf_cad_core.geom.match_srf import (
     MatchResult,
@@ -276,4 +283,9 @@ __all__ = [
     "MatchResult","match_surface_edge","verify_seam_g1_analytic","verify_seam_g2_analytic",
     # GK-45
     "shell_body",
+    # GK-46
+    "draft_body",
+    "rib_body",
+    "wirecut_body",
+    "pipe_body",
 ]

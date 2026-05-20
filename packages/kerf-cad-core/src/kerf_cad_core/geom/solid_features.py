@@ -73,6 +73,7 @@ import numpy as np
 
 from kerf_cad_core.occ_helpers import _OCC_AVAILABLE  # noqa: F401 (re-exported below)
 from kerf_cad_core.geom.brep_build import BuildError, extrude_to_body as _brep_extrude_to_body
+_BuildError = BuildError  # local alias for use in GK-46 body-producing functions
 from kerf_cad_core.geom.brep import (
     Body as _Body,
     Coedge as _Coedge,
@@ -1424,6 +1425,766 @@ def extrude_to_body(
             "profile_area": profile_area,
             "direction": d.tolist(),
             "height": d_len,
+            "tol": tol,
+            "occ_available": _OCC_AVAILABLE,
+        },
+    }
+
+
+# ---------------------------------------------------------------------------
+# GK-46  Body-producing ops: draft_body, rib_body, wirecut_body, pipe_body
+# ---------------------------------------------------------------------------
+
+
+def draft_body(
+    base_width: float,
+    base_depth: float,
+    face_height: float,
+    draft_angle_deg: float,
+    *,
+    neutral_plane_offset: float = 0.0,
+    tol: float = 1e-7,
+) -> dict:
+    """Extrude a rectangular face with a draft angle into a validated ``Body``.
+
+    The rectangular base (``base_width`` × ``base_depth``) is tapered by
+    ``draft_angle_deg`` degrees about a horizontal neutral plane at
+    ``neutral_plane_offset`` (fraction [0,1] of ``face_height``).  Above and
+    below the neutral plane each face shrinks inward by
+    ``t = h × tan(draft_angle_deg)``.
+
+    The resulting solid is a frustum-like prism whose bottom face is a
+    rectangle widened by the taper below the neutral plane and whose top face
+    is narrowed by the taper above the neutral plane.  All four lateral faces
+    are planar quadrilaterals; the body passes ``validate_body``.
+
+    Parameters
+    ----------
+    base_width, base_depth : float
+        Dimensions of the rectangle at the neutral plane (both > 0).
+    face_height : float
+        Total height of the solid (> 0).
+    draft_angle_deg : float
+        Draft angle in degrees; must be in (0, 90).  The taper offset at
+        each end is ``h_end × tan(draft_angle_deg)``.
+    neutral_plane_offset : float
+        Fraction [0, 1] of ``face_height`` for the neutral plane.  0 = bottom,
+        1 = top.  Default 0 means the draft opens upward from the base.
+    tol : float
+        Topological tolerance forwarded to the B-rep builder.
+
+    Returns
+    -------
+    dict
+        ok, body (:class:`~kerf_cad_core.geom.brep.Body`), volume,
+        taper_at_top, taper_at_bottom, n_faces, n_edges, n_vertices,
+        geometry_params.  On error: ok=False, reason, body=None.
+    """
+    _ZERO: dict = {
+        "ok": False,
+        "reason": "",
+        "body": None,
+        "volume": 0.0,
+        "taper_at_top": 0.0,
+        "taper_at_bottom": 0.0,
+        "n_faces": 0,
+        "n_edges": 0,
+        "n_vertices": 0,
+        "geometry_params": {},
+    }
+
+    for name, val in [("base_width", base_width), ("base_depth", base_depth),
+                      ("face_height", face_height)]:
+        if not isinstance(val, (int, float)) or val <= 0:
+            return {**_ZERO, "reason": f"{name} must be > 0; got {val!r}"}
+
+    if not isinstance(draft_angle_deg, (int, float)) or not (0 < draft_angle_deg < 90):
+        return {**_ZERO, "reason": f"draft_angle_deg must be in (0, 90); got {draft_angle_deg!r}"}
+
+    if not isinstance(neutral_plane_offset, (int, float)) or not (0.0 <= neutral_plane_offset <= 1.0):
+        return {**_ZERO, "reason": (
+            f"neutral_plane_offset must be in [0, 1]; got {neutral_plane_offset!r}"
+        )}
+
+    base_width = float(base_width)
+    base_depth = float(base_depth)
+    face_height = float(face_height)
+    angle_rad = math.radians(float(draft_angle_deg))
+    h_neutral = face_height * float(neutral_plane_offset)
+    h_above = face_height - h_neutral
+    h_below = h_neutral
+
+    taper_top = h_above * math.tan(angle_rad)
+    taper_bottom = h_below * math.tan(angle_rad)
+
+    # ── Compute corner widths / depths at bottom and top ──────────────────
+    # At the neutral plane the cross-section is base_width × base_depth.
+    # Below: each side expands by taper_bottom (symmetric).
+    # Above: each side contracts by taper_top (symmetric).
+    w_bottom = base_width + 2.0 * taper_bottom   # wider at base
+    d_bottom = base_depth + 2.0 * taper_bottom
+    w_top = base_width - 2.0 * taper_top         # narrower at top
+    d_top = base_depth - 2.0 * taper_top
+
+    if w_top <= 0 or d_top <= 0:
+        return {**_ZERO, "reason": (
+            f"draft_angle_deg {draft_angle_deg} is too large; "
+            f"top face collapses (w_top={w_top:.4g}, d_top={d_top:.4g})"
+        )}
+
+    # Analytic volume: trapezoidal prism  =  Σ (area_at_z * dz) but since
+    # width and depth both vary linearly we integrate exactly:
+    # V = h * (A_bottom + A_top + A_neutral) / 3  (Simpson for linear taper)
+    # Actually it's a prismatoid: V = h/6*(A_bottom + 4*A_mid + A_top)
+    # For linear taper: A(z) = w(z)*d(z), linear in z, so the product is
+    # quadratic.  Prismatoid formula is exact.
+    A_bot = w_bottom * d_bottom
+    A_top = w_top * d_top
+    w_mid = (w_bottom + w_top) / 2.0
+    d_mid = (d_bottom + d_top) / 2.0
+    A_mid = w_mid * d_mid
+    volume = face_height / 6.0 * (A_bot + 4.0 * A_mid + A_top)
+
+    # ── Build geometry: the solid is an extrusion of the bottom quadrilateral
+    # with corresponding top quadrilateral (trapezoidal prism).
+    # We express it as 8 corners of a frustum and build a box-like body via
+    # brep_build.extrude_to_body, using a tapered polygon.  However
+    # extrude_to_body only does straight prisms.  Instead we build directly
+    # using box_to_body won't work either.
+    #
+    # Strategy: build via box_to_body with custom corners — use the low-level
+    # brep API directly (8 vertices, 12 edges, 6 planar quad faces).
+    # This mirrors box_to_body in brep_build.py but with arbitrary corners.
+    from kerf_cad_core.geom.brep_build import box_to_body as _box_to_body
+
+    # Corner layout (z grows upward):
+    # Bottom quad (z=0): (-w_b/2, -d_b/2), (w_b/2, -d_b/2),
+    #                    (w_b/2, d_b/2), (-w_b/2, d_b/2)
+    # Top quad (z=H):    (-w_t/2, -d_t/2), (w_t/2, -d_t/2),
+    #                    (w_t/2, d_t/2), (-w_t/2, d_t/2)
+
+    hw_b, hd_b = w_bottom / 2.0, d_bottom / 2.0
+    hw_t, hd_t = w_top / 2.0, d_top / 2.0
+    H = face_height
+
+    P = [
+        np.array([-hw_b, -hd_b, 0.0]),  # 0: bot front-left
+        np.array([ hw_b, -hd_b, 0.0]),  # 1: bot front-right
+        np.array([ hw_b,  hd_b, 0.0]),  # 2: bot back-right
+        np.array([-hw_b,  hd_b, 0.0]),  # 3: bot back-left
+        np.array([-hw_t, -hd_t,   H]),  # 4: top front-left
+        np.array([ hw_t, -hd_t,   H]),  # 5: top front-right
+        np.array([ hw_t,  hd_t,   H]),  # 6: top back-right
+        np.array([-hw_t,  hd_t,   H]),  # 7: top back-left
+    ]
+
+    try:
+        body = _build_frustum_body(P, tol=tol)
+    except Exception as exc:
+        return {**_ZERO, "reason": f"draft_body build failed: {exc}"}
+
+    counts = body.euler_counts()
+    return {
+        "ok": True,
+        "reason": "",
+        "body": body,
+        "volume": volume,
+        "taper_at_top": taper_top,
+        "taper_at_bottom": taper_bottom,
+        "n_faces": counts["F"],
+        "n_edges": counts["E"],
+        "n_vertices": counts["V"],
+        "geometry_params": {
+            "base_width": base_width,
+            "base_depth": base_depth,
+            "face_height": face_height,
+            "draft_angle_deg": float(draft_angle_deg),
+            "neutral_plane_offset": float(neutral_plane_offset),
+            "w_bottom": w_bottom,
+            "d_bottom": d_bottom,
+            "w_top": w_top,
+            "d_top": d_top,
+            "tol": tol,
+            "occ_available": _OCC_AVAILABLE,
+        },
+    }
+
+
+def _build_frustum_body(P: List[np.ndarray], tol: float = 1e-7) -> "_Body":
+    """Build a closed 6-faced frustum Body from 8 corners P[0..7].
+
+    Corner layout:
+        P[0..3] = bottom quad (CCW when viewed from -z)
+        P[4..7] = top quad    (matching indices: P[4] above P[0], etc.)
+
+    All six faces are planar quadrilaterals.  The body satisfies
+    ``validate_body``.  This is the raw topology builder reused by both
+    ``draft_body`` and ``rib_body``.
+    """
+    # 8 vertices
+    V = [_Vertex(p.copy(), tol) for p in P]
+
+    # 12 edges: 4 bottom + 4 top + 4 vertical
+    # Bottom ring: 0→1, 1→2, 2→3, 3→0
+    # Top ring:    4→5, 5→6, 6→7, 7→4
+    # Verticals:   0→4, 1→5, 2→6, 3→7
+    edef_bot = [(0,1),(1,2),(2,3),(3,0)]
+    edef_top = [(4,5),(5,6),(6,7),(7,4)]
+    edef_vert = [(0,4),(1,5),(2,6),(3,7)]
+
+    def _mk_edge(a: int, b: int) -> "_Edge":
+        return _Edge(_Line3(P[a], P[b]), 0.0, 1.0, V[a], V[b], tol)
+
+    bot_E = [_mk_edge(a, b) for (a, b) in edef_bot]   # indices 0-3
+    top_E = [_mk_edge(a, b) for (a, b) in edef_top]   # indices 0-3
+    vert_E = [_mk_edge(a, b) for (a, b) in edef_vert] # indices 0-3
+
+    def _edge_of(a: int, b: int):
+        """Return (edge, orientation) for directed edge a→b."""
+        for e, (ia, ib) in zip(bot_E, edef_bot):
+            if ia == a and ib == b:
+                return e, True
+            if ia == b and ib == a:
+                return e, False
+        for e, (ia, ib) in zip(top_E, edef_top):
+            if ia == a and ib == b:
+                return e, True
+            if ia == b and ib == a:
+                return e, False
+        for e, (ia, ib) in zip(vert_E, edef_vert):
+            if ia == a and ib == b:
+                return e, True
+            if ia == b and ib == a:
+                return e, False
+        raise ValueError(f"No edge found for {a}→{b}")
+
+    def _build_face(ring: List[int]) -> "_Face":
+        """Build a planar Face from a CCW ring of vertex indices (outward normal)."""
+        coedges = []
+        n = len(ring)
+        for i in range(n):
+            a, b = ring[i], ring[(i + 1) % n]
+            e, o = _edge_of(a, b)
+            coedges.append(_Coedge(e, o))
+        loop = _Loop(coedges, is_outer=True)
+        # Plane from first 3 points
+        p0 = P[ring[0]]
+        p1 = P[ring[1]]
+        p2 = P[ring[-1]]
+        x_ax = _unit3(p1 - p0)
+        # Compute outward normal via cross product of consecutive edges
+        area_vec = np.zeros(3)
+        centroid = np.mean([P[i] for i in ring], axis=0)
+        for i in range(n):
+            a_pt = P[ring[i]] - centroid
+            b_pt = P[ring[(i+1) % n]] - centroid
+            area_vec += np.cross(a_pt, b_pt)
+        nrm = area_vec / (np.linalg.norm(area_vec) + 1e-30)
+        y_ax = _unit3(np.cross(nrm, x_ax))
+        plane = _Plane(origin=p0.copy(), x_axis=x_ax, y_axis=y_ax)
+        return _Face(plane, [loop], orientation=True, tol=tol)
+
+    # Six faces:
+    # Bottom (viewed from -z: CCW): 0,3,2,1 (reversed so normal points -z)
+    # Top (viewed from +z: CCW):    4,5,6,7
+    # Front (y- face):  0,1,5,4
+    # Right (x+ face):  1,2,6,5
+    # Back  (y+ face):  2,3,7,6
+    # Left  (x- face):  3,0,4,7
+    face_rings = [
+        [0, 3, 2, 1],   # bottom — normal points -z
+        [4, 5, 6, 7],   # top    — normal points +z
+        [0, 1, 5, 4],   # front
+        [1, 2, 6, 5],   # right
+        [2, 3, 7, 6],   # back
+        [3, 0, 4, 7],   # left
+    ]
+    faces = [_build_face(ring) for ring in face_rings]
+    shell = _Shell(faces, is_closed=True)
+    body = _Body(solids=[_Solid([shell])])
+    res = _validate_body(body)
+    if not res["ok"]:
+        raise ValueError(f"_build_frustum_body produced invalid Body: {res['errors']}")
+    return body
+
+
+def rib_body(
+    profile_length: float,
+    rib_thickness: float,
+    rib_height: float,
+    *,
+    draft_angle_deg: float = 0.0,
+    tol: float = 1e-7,
+) -> dict:
+    """Extrude a rib's trapezoidal cross-section into a validated ``Body``.
+
+    The rib has a trapezoidal cross-section (width varying from ``w_bottom``
+    at the base to ``w_top = rib_thickness`` at the top) extruded along the
+    rib's profile length.  The resulting solid passes ``validate_body``.
+
+    Parameters
+    ----------
+    profile_length : float
+        Length of the rib along the attachment surface (> 0).
+    rib_thickness : float
+        Rib width at the top (neutral plane, > 0).
+    rib_height : float
+        Rib height from attachment surface (> 0).
+    draft_angle_deg : float
+        Draft angle applied symmetrically to both sides of the rib (0 ≤ < 90).
+    tol : float
+        Topological tolerance.
+
+    Returns
+    -------
+    dict
+        ok, body, volume, cross_section_area, w_top, w_bottom, n_faces,
+        n_edges, n_vertices, geometry_params.  On error: ok=False, reason.
+    """
+    _ZERO: dict = {
+        "ok": False,
+        "reason": "",
+        "body": None,
+        "volume": 0.0,
+        "cross_section_area": 0.0,
+        "w_top": 0.0,
+        "w_bottom": 0.0,
+        "n_faces": 0,
+        "n_edges": 0,
+        "n_vertices": 0,
+        "geometry_params": {},
+    }
+
+    for name, val in [("profile_length", profile_length), ("rib_thickness", rib_thickness),
+                      ("rib_height", rib_height)]:
+        if not isinstance(val, (int, float)) or val <= 0:
+            return {**_ZERO, "reason": f"{name} must be > 0; got {val!r}"}
+
+    if not isinstance(draft_angle_deg, (int, float)) or not (0.0 <= draft_angle_deg < 90.0):
+        return {**_ZERO, "reason": f"draft_angle_deg must be in [0, 90); got {draft_angle_deg!r}"}
+
+    profile_length = float(profile_length)
+    rib_thickness = float(rib_thickness)
+    rib_height = float(rib_height)
+    draft_rad = math.radians(float(draft_angle_deg))
+    draft_taper = rib_height * math.tan(draft_rad)
+
+    w_top = rib_thickness
+    w_bottom = rib_thickness + 2.0 * draft_taper
+    cross_section_area = 0.5 * (w_top + w_bottom) * rib_height
+    volume = cross_section_area * profile_length
+
+    # Build the trapezoidal cross-section as a polygon in the YZ plane,
+    # then extrude along X (profile_length).
+    # Cross-section corners (in XZ plane for readability, extruded along Y):
+    #   z=0: x = -w_bottom/2 to +w_bottom/2
+    #   z=H: x = -w_top/2 to +w_top/2
+    # We place this in the XZ plane and extrude along Y.
+    hw_b = w_bottom / 2.0
+    hw_t = w_top / 2.0
+    H = rib_height
+    L = profile_length
+
+    # 8 corner points:
+    # Bottom face (y=0): corners of trapezoidal cross-section at y=0
+    # Top face    (y=L): same cross-section at y=L
+    P = [
+        np.array([-hw_b,  0.0, 0.0]),  # 0: bot-left-base
+        np.array([ hw_b,  0.0, 0.0]),  # 1: bot-right-base
+        np.array([ hw_t,  0.0,   H]),  # 2: bot-right-top
+        np.array([-hw_t,  0.0,   H]),  # 3: bot-left-top
+        np.array([-hw_b,    L, 0.0]),  # 4: top-left-base
+        np.array([ hw_b,    L, 0.0]),  # 5: top-right-base
+        np.array([ hw_t,    L,   H]),  # 6: top-right-top
+        np.array([-hw_t,    L,   H]),  # 7: top-left-top
+    ]
+
+    try:
+        body = _build_frustum_body(P, tol=tol)
+    except Exception as exc:
+        return {**_ZERO, "reason": f"rib_body build failed: {exc}"}
+
+    counts = body.euler_counts()
+    return {
+        "ok": True,
+        "reason": "",
+        "body": body,
+        "volume": volume,
+        "cross_section_area": cross_section_area,
+        "w_top": w_top,
+        "w_bottom": w_bottom,
+        "n_faces": counts["F"],
+        "n_edges": counts["E"],
+        "n_vertices": counts["V"],
+        "geometry_params": {
+            "profile_length": profile_length,
+            "rib_thickness": rib_thickness,
+            "rib_height": rib_height,
+            "draft_angle_deg": float(draft_angle_deg),
+            "draft_taper": draft_taper,
+            "tol": tol,
+            "occ_available": _OCC_AVAILABLE,
+        },
+    }
+
+
+def wirecut_body(
+    solid_bbox: Sequence,
+    cut_profile_points: Sequence,
+    *,
+    direction: Tuple[float, float, float] = (0.0, 0.0, 1.0),
+    tol: float = 1e-7,
+) -> dict:
+    """Build a validated cutter ``Body`` for a wirecut operation.
+
+    The cutter is an extruded prism whose profile is the 2-D cut profile
+    (expressed in the plane perpendicular to *direction*) extruded through-all
+    along *direction* by the full depth of the solid bounding box.  The
+    returned ``body`` is the cutter solid, not the result of the boolean cut.
+
+    Parameters
+    ----------
+    solid_bbox : [width, depth, height]
+        Bounding box of the solid being cut (all > 0).
+    cut_profile_points : sequence of [x, y]
+        2-D profile points in the XY plane (at least 3).  The polygon must
+        be convex or simply connected (no self-intersections).
+    direction : (dx, dy, dz)
+        Through-cut direction (default: (0, 0, 1) = cut along Z).
+    tol : float
+        Topological tolerance.
+
+    Returns
+    -------
+    dict
+        ok, body, cut_depth, cut_area, path_length, n_faces, n_edges,
+        n_vertices, geometry_params.  On error: ok=False, reason.
+    """
+    _ZERO: dict = {
+        "ok": False,
+        "reason": "",
+        "body": None,
+        "cut_depth": 0.0,
+        "cut_area": 0.0,
+        "path_length": 0.0,
+        "n_faces": 0,
+        "n_edges": 0,
+        "n_vertices": 0,
+        "geometry_params": {},
+    }
+
+    try:
+        bbox = [float(d) for d in solid_bbox]
+    except Exception as exc:
+        return {**_ZERO, "reason": f"invalid solid_bbox: {exc}"}
+    if len(bbox) != 3 or any(d <= 0 for d in bbox):
+        return {**_ZERO, "reason": f"solid_bbox must be 3 positive dims; got {bbox}"}
+
+    try:
+        profile_pts_2d = [np.asarray(p, dtype=float).reshape(-1)[:2]
+                          for p in cut_profile_points]
+    except Exception as exc:
+        return {**_ZERO, "reason": f"invalid cut_profile_points: {exc}"}
+
+    if len(profile_pts_2d) < 3:
+        return {**_ZERO, "reason": "cut_profile_points needs at least 3 points for a closed polygon"}
+
+    try:
+        dir_vec = _vec3(direction)
+    except Exception as exc:
+        return {**_ZERO, "reason": f"invalid direction: {exc}"}
+    dir_norm = float(np.linalg.norm(dir_vec))
+    if dir_norm < 1e-10:
+        return {**_ZERO, "reason": "direction must be a non-zero vector"}
+    dir_unit = dir_vec / dir_norm
+
+    # Cut depth: max extent of bbox along direction
+    bbox_corners = np.array([
+        [sx * bbox[0], sy * bbox[1], sz * bbox[2]]
+        for sx in (0, 1) for sy in (0, 1) for sz in (0, 1)
+    ])
+    projections = bbox_corners @ dir_unit
+    cut_depth = float(projections.max() - projections.min())
+
+    # Path length (2-D perimeter of profile)
+    path_length_2d = sum(
+        float(np.linalg.norm(profile_pts_2d[i + 1] - profile_pts_2d[i]))
+        for i in range(len(profile_pts_2d) - 1)
+    )
+    # Close the loop for area computation
+    cut_area = path_length_2d * cut_depth
+
+    # ── Build cutter solid ──────────────────────────────────────────────
+    # Lift 2-D profile into 3-D (embed in the plane perpendicular to direction).
+    # We build a local coordinate frame (u, v) perpendicular to dir_unit.
+    # For direction=(0,0,1): u=(1,0,0), v=(0,1,0) → 2D XY maps directly.
+    # For general direction: u = perp to dir_unit, v = dir_unit × u.
+    ref = np.array([1.0, 0.0, 0.0])
+    if abs(float(np.dot(ref, dir_unit))) > 0.9:
+        ref = np.array([0.0, 1.0, 0.0])
+    u_ax = _unit3(np.cross(dir_unit, ref))
+    v_ax = _unit3(np.cross(dir_unit, u_ax))
+
+    profile_3d = [
+        pt[0] * u_ax + pt[1] * v_ax
+        for pt in profile_pts_2d
+    ]
+
+    # Extrusion vector: dir_unit * cut_depth
+    extrude_dir = dir_unit * cut_depth
+
+    try:
+        body = _brep_extrude_to_body(profile_3d, extrude_dir, tol=tol)
+    except _BuildError as exc:
+        return {**_ZERO, "reason": f"wirecut_body build failed: {exc}"}
+    except Exception as exc:
+        return {**_ZERO, "reason": f"wirecut_body failed: {exc}"}
+
+    # Validate explicitly
+    res = _validate_body(body)
+    if not res["ok"]:
+        return {**_ZERO, "reason": f"wirecut_body: invalid Body: {res['errors']}"}
+
+    counts = body.euler_counts()
+    return {
+        "ok": True,
+        "reason": "",
+        "body": body,
+        "cut_depth": cut_depth,
+        "cut_area": cut_area,
+        "path_length": path_length_2d,
+        "n_faces": counts["F"],
+        "n_edges": counts["E"],
+        "n_vertices": counts["V"],
+        "geometry_params": {
+            "solid_bbox": bbox,
+            "num_profile_points": len(profile_pts_2d),
+            "direction": dir_unit.tolist(),
+            "cut_depth": cut_depth,
+            "tol": tol,
+            "occ_available": _OCC_AVAILABLE,
+        },
+    }
+
+
+def pipe_body(
+    path_points: Sequence,
+    outer_radius: float,
+    inner_radius: float,
+    *,
+    tol: float = 1e-7,
+) -> dict:
+    """Sweep an annular (washer) cross-section along a straight line → ``Body``.
+
+    For a straight-line path, the result is an exact annular cylinder with
+    volume ``π(R_out² − R_in²) × L``.  The body passes ``validate_body`` with
+    genus 1 (one through-hole).
+
+    Parameters
+    ----------
+    path_points : sequence of [x, y, z]
+        Spine polyline (at least 2 points).  Currently only the first and
+        last points are used; intermediate points are ignored (straight-line
+        approximation).  For a single-segment straight path the result is
+        analytic.
+    outer_radius : float
+        Outer radius of the annular cross-section (> 0).
+    inner_radius : float
+        Inner radius (> 0, < outer_radius).
+    tol : float
+        Topological tolerance.
+
+    Returns
+    -------
+    dict
+        ok, body, volume, length, outer_radius, inner_radius, n_faces,
+        n_edges, n_vertices, geometry_params.  On error: ok=False, reason.
+
+    Notes
+    -----
+    Oracle: ``volume = π(R_out² − R_in²) × L`` exact to ≤ 1e-6 relative
+    tolerance.  ``validate_body`` passes with genus 1.
+    """
+    _ZERO: dict = {
+        "ok": False,
+        "reason": "",
+        "body": None,
+        "volume": 0.0,
+        "length": 0.0,
+        "outer_radius": 0.0,
+        "inner_radius": 0.0,
+        "n_faces": 0,
+        "n_edges": 0,
+        "n_vertices": 0,
+        "geometry_params": {},
+    }
+
+    try:
+        pts = [_vec3(p) for p in path_points]
+    except Exception as exc:
+        return {**_ZERO, "reason": f"invalid path_points: {exc}"}
+
+    if len(pts) < 2:
+        return {**_ZERO, "reason": "path_points must have at least 2 points"}
+
+    if not isinstance(outer_radius, (int, float)) or outer_radius <= 0:
+        return {**_ZERO, "reason": f"outer_radius must be > 0; got {outer_radius!r}"}
+    if not isinstance(inner_radius, (int, float)) or inner_radius <= 0:
+        return {**_ZERO, "reason": f"inner_radius must be > 0; got {inner_radius!r}"}
+    if inner_radius >= outer_radius:
+        return {**_ZERO, "reason": (
+            f"inner_radius ({inner_radius}) must be < outer_radius ({outer_radius})"
+        )}
+
+    outer_radius = float(outer_radius)
+    inner_radius = float(inner_radius)
+
+    # Use start and end points (straight-line path)
+    p_start = pts[0]
+    p_end = pts[-1]
+    d_vec = p_end - p_start
+    length = float(np.linalg.norm(d_vec))
+
+    if length < 1e-12:
+        return {**_ZERO, "reason": "path_points are coincident (zero length)"}
+
+    # Analytic volume: annular cylinder
+    volume = math.pi * (outer_radius ** 2 - inner_radius ** 2) * length
+
+    # ── Build washer face using region_difference ─────────────────────────
+    # The outer loop is a circle of radius R_out; the inner loop is a circle
+    # of radius R_in.  region_difference(outer_loop, inner_loop) returns a
+    # Face with one outer CCW loop and one inner CW hole loop.
+    from kerf_cad_core.geom.region2d import make_circle_loop, region_difference
+    from kerf_cad_core.geom.brep_build import extrude_face_to_body as _extrude_face
+
+    outer_loop = make_circle_loop(0.0, 0.0, outer_radius)
+    inner_loop = make_circle_loop(0.0, 0.0, inner_radius)
+    washer_face = region_difference(outer_loop, inner_loop)
+    if washer_face is None:
+        return {**_ZERO, "reason": "region_difference returned None; inner circle may be outside outer"}
+
+    # The washer face is in the Z=0 plane; extrude along the path direction.
+    # We need to transform the washer face so its plane normal aligns with
+    # the path direction.
+    #
+    # The path direction is d_vec; the washer face's plane normal is (0,0,1).
+    # We need to rotate the washer face so (0,0,1) maps to d_unit.
+    # However, extrude_face_to_body takes a face + direction, so we can
+    # simply pass d_vec as the direction and let the function handle it.
+    # The face is already in the Z=0 plane; the extrusion will go along d_vec.
+    #
+    # The extrude_face_to_body function uses the face's plane normal and the
+    # direction vector, then builds a washer-like solid. We use the default
+    # Z-up washer and extrude in the path direction. If the path isn't along Z
+    # we need to transform the face first.
+    #
+    # Simplest approach: always build the washer in the plane perpendicular to
+    # d_vec by transforming the face vertices.
+
+    d_unit = d_vec / length
+
+    # Check if d_unit is already (0,0,1)
+    z_ax = np.array([0.0, 0.0, 1.0])
+    dot_z = float(np.dot(d_unit, z_ax))
+    if abs(dot_z - 1.0) > 1e-9:
+        # Need to rotate the washer face to be perpendicular to d_unit.
+        # We build the face anew using make_circle_loop but in 3D.
+        # The washer face from region_difference is in the Z=0 plane.
+        # extrude_face_to_body will extrude along d_vec regardless of face orientation.
+        # The key check: face_normal · d must not be zero (the two must not be parallel).
+        # Our face_normal = (0,0,1) and d = d_unit; if they are anti-parallel or parallel
+        # extrude_face_to_body still works (it uses the dot product sign to decide winding).
+        # For completely arbitrary directions we need to transform the face.
+        #
+        # Since we're always using a circle centered at origin in Z=0 plane,
+        # we'll use cylinder_to_body and subtract — but that requires boolean ops.
+        #
+        # Better: build the face directly in the correct plane using CircleArc3
+        # with the correct x/y axes.
+        from kerf_cad_core.geom.brep import CircleArc3, Vertex, Edge, Loop, Coedge, Face, Plane
+
+        # Build orthogonal frame for the cross-section plane
+        ref_ax = np.array([1.0, 0.0, 0.0])
+        if abs(float(np.dot(ref_ax, d_unit))) > 0.9:
+            ref_ax = np.array([0.0, 1.0, 0.0])
+        x_ax = _unit3(np.cross(d_unit, ref_ax))
+        y_ax = _unit3(np.cross(d_unit, x_ax))
+
+        def _make_circle_face_3d(cx, cy, cz, r, x_axis, y_axis):
+            center = np.array([cx, cy, cz], dtype=float)
+            arc = CircleArc3(
+                center=center, radius=r,
+                x_axis=x_axis.copy(), y_axis=y_axis.copy(),
+                t0=0.0, t1=2.0 * math.pi,
+            )
+            p0 = np.asarray(arc.evaluate(0.0), dtype=float)
+            v = Vertex(p0, tol)
+            edge = Edge(arc, 0.0, 2.0 * math.pi, v, v, tol)
+            return Loop(coedges=[Coedge(edge, True)], is_outer=True)
+
+        origin_3d = p_start
+        outer_loop_3d = _make_circle_face_3d(
+            origin_3d[0], origin_3d[1], origin_3d[2],
+            outer_radius, x_ax, y_ax
+        )
+        inner_loop_3d = _make_circle_face_3d(
+            origin_3d[0], origin_3d[1], origin_3d[2],
+            inner_radius, x_ax, y_ax
+        )
+
+        # Build a washer face directly
+        from kerf_cad_core.geom.brep import Shell, Solid, Body as _BrepBody
+        from kerf_cad_core.geom.brep_build import extrude_face_to_body as _eftb
+
+        # Create the washer plane
+        washer_plane = Plane(origin=origin_3d.copy(), x_axis=x_ax.copy(), y_axis=y_ax.copy())
+        outer_outer = outer_loop_3d
+        outer_inner = inner_loop_3d
+        # inner loop must be CW in the face
+        inner_loop_3d_cw = Loop(
+            coedges=[Coedge(outer_inner.coedges[0].edge, False)],
+            is_outer=False,
+        )
+        washer_face_3d = Face(
+            washer_plane, [outer_outer, inner_loop_3d_cw],
+            orientation=True, tol=tol
+        )
+        try:
+            body = _eftb(washer_face_3d, d_vec, tol=tol)
+        except Exception as exc:
+            return {**_ZERO, "reason": f"pipe_body (3D) build failed: {exc}"}
+    else:
+        # Path is along Z: washer is already in correct plane, just extrude
+        try:
+            body = _extrude_face(washer_face, d_vec, tol=tol)
+        except Exception as exc:
+            return {**_ZERO, "reason": f"pipe_body build failed: {exc}"}
+
+    # Validate
+    res = _validate_body(body)
+    if not res["ok"]:
+        return {**_ZERO, "reason": f"pipe_body: invalid Body: {res['errors']}"}
+
+    counts = body.euler_counts()
+    return {
+        "ok": True,
+        "reason": "",
+        "body": body,
+        "volume": volume,
+        "length": length,
+        "outer_radius": outer_radius,
+        "inner_radius": inner_radius,
+        "n_faces": counts["F"],
+        "n_edges": counts["E"],
+        "n_vertices": counts["V"],
+        "geometry_params": {
+            "p_start": p_start.tolist(),
+            "p_end": p_end.tolist(),
+            "length": length,
+            "outer_radius": outer_radius,
+            "inner_radius": inner_radius,
+            "volume_analytic": volume,
             "tol": tol,
             "occ_available": _OCC_AVAILABLE,
         },

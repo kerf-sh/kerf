@@ -576,11 +576,11 @@ Format: `[ ] GK-NN  scope — FILE(s) — oracle — dep — parallel? — tier`
   `geom/sew.py` — oracle: shelled box wall thickness = t exact; inner +
   outer `validate_body` ok; volume = outer − inner. — dep: GK-30, GK-17
   — parallel: N — opus. *Landed: 40 tests.*
-- [ ] **GK-46** Draft/rib/wirecut/pipe re-expressed as `Body`-producing,
+- [x] **GK-46** Draft/rib/wirecut/pipe re-expressed as `Body`-producing,
   validated ops. — `geom/solid_features.py`, `geom/brep_build.py` —
   oracle: pipe along a line = annular cylinder volume exact;
   validate_body ok. — dep: GK-15, GK-18 — parallel: Y (per-op files
-  disjoint within module — serialise within module) — sonnet.
+  disjoint within module — serialise within module) — sonnet. *Landed: 50 tests.*
 
 ### P2 — Interop fidelity + SubD/mesh
 
