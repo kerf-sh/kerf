@@ -691,10 +691,11 @@ Format: `[ ] GK-NN  scope — FILE(s) — oracle — dep — parallel? — tier`
   (zero-length rail, coincident control points, NaN). —
   per-module test files — oracle: structured failure, never an
   exception or invalid `Body`. — dep: GK-16 — parallel: Y — sonnet.
-- [ ] **GK-68** Tolerance-sweep robustness: every P0/P1 op run across a
+- [x] **GK-68** Tolerance-sweep robustness: every P0/P1 op run across a
   tol ladder; assert monotone behaviour + no validity regressions. —
   test harness — oracle: looser tol never makes a previously valid
   body invalid. — dep: GK-21 — parallel: Y — sonnet.
+  *Landed: test_tolerance_sweep.py, 394 tests.*
 - [ ] **GK-69** Numerical-conditioning audit of Newton solvers (SSI,
   inversion, boolean): condition-number guards + lstsq fallbacks
   asserted on near-singular Jacobians. — `geom/intersection.py`,
