@@ -444,9 +444,11 @@ function Chip({ active, onClick, children, count }) {
     <button
       type="button"
       onClick={onClick}
+      aria-pressed={active}
       className={clsx(
         'inline-flex items-center gap-1.5 rounded-full px-3 h-7 text-xs font-mono uppercase tracking-widest',
         'border transition-colors select-none',
+        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-kerf-300/60 focus-visible:ring-offset-1 focus-visible:ring-offset-ink-950',
         active
           ? 'bg-kerf-300 text-ink-950 border-kerf-300 hover:bg-kerf-200'
           : 'bg-ink-900/60 text-ink-300 border-ink-800 hover:border-ink-700 hover:text-ink-100',
@@ -570,7 +572,7 @@ export default function Roadmap() {
       <Header />
 
       {/* Hero */}
-      <section className="relative border-b border-ink-900 overflow-hidden">
+      <section aria-labelledby="roadmap-hero-heading" className="relative border-b border-ink-900 overflow-hidden">
         <div
           aria-hidden
           className="absolute inset-0 -z-10 bg-[radial-gradient(60%_60%_at_50%_0%,rgba(255,214,51,0.06),transparent_60%)]"
@@ -579,7 +581,7 @@ export default function Roadmap() {
           <p className="font-mono text-xs uppercase tracking-[0.2em] text-kerf-300">
             Roadmap
           </p>
-          <h1 className="mt-3 font-display text-4xl sm:text-5xl lg:text-[3.75rem] font-semibold tracking-[-0.025em] leading-[1.05]">
+          <h1 id="roadmap-hero-heading" className="mt-3 font-display text-4xl sm:text-5xl lg:text-[3.75rem] font-semibold tracking-[-0.025em] leading-[1.05]">
             What&apos;s done.{' '}
             <span className="text-kerf-300">What&apos;s next.</span>{' '}
             What&apos;s coming.
@@ -616,10 +618,10 @@ export default function Roadmap() {
       </section>
 
       {/* Filter strip */}
-      <section className="border-b border-ink-900 bg-ink-950/80 backdrop-blur sticky top-16 z-20">
+      <section aria-label="Roadmap filters" className="border-b border-ink-900 bg-ink-950/80 backdrop-blur sticky top-16 z-20">
         <div className="mx-auto max-w-7xl px-6 py-4 flex flex-col gap-3">
-          <div className="flex items-center gap-3 flex-wrap">
-            <div className="inline-flex items-center gap-1.5 text-[10px] font-mono uppercase tracking-widest text-ink-500 pr-1">
+          <div role="group" aria-label="Filter by status" className="flex items-center gap-3 flex-wrap">
+            <div className="inline-flex items-center gap-1.5 text-[10px] font-mono uppercase tracking-widest text-ink-500 pr-1" aria-hidden>
               <FilterIcon size={11} />
               Status
             </div>
@@ -642,8 +644,8 @@ export default function Roadmap() {
             ))}
           </div>
 
-          <div className="flex items-center gap-3 flex-wrap">
-            <div className="inline-flex items-center gap-1.5 text-[10px] font-mono uppercase tracking-widest text-ink-500 pr-1">
+          <div role="group" aria-label="Filter by area" className="flex items-center gap-3 flex-wrap">
+            <div className="inline-flex items-center gap-1.5 text-[10px] font-mono uppercase tracking-widest text-ink-500 pr-1" aria-hidden>
               <FilterIcon size={11} />
               Area
             </div>
@@ -669,7 +671,7 @@ export default function Roadmap() {
       </section>
 
       {/* Items */}
-      <main className="flex-1">
+      <main className="flex-1" aria-label="Roadmap items">
         <div className="mx-auto max-w-7xl px-6 py-10 lg:py-12">
           {grouped.length === 0 && (
             <div className="rounded-xl border border-dashed border-ink-800 bg-ink-900/30 p-10 text-center">
@@ -734,9 +736,10 @@ export default function Roadmap() {
                 href={ROADMAP_URL}
                 target="_blank"
                 rel="noreferrer"
+                aria-label="View ROADMAP.md on GitHub (opens in new tab)"
                 className="inline-flex items-center gap-1.5 rounded-md border border-ink-800 bg-ink-900/60 px-3 h-9 text-xs text-ink-300 hover:border-ink-700 hover:text-ink-100 transition-colors font-mono"
               >
-                <Github size={13} />
+                <Github size={13} aria-hidden />
                 ROADMAP.md
               </a>
               <Link

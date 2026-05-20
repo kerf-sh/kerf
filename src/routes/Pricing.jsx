@@ -50,8 +50,9 @@ export default function Pricing() {
     <div className="min-h-screen bg-ink-950 text-ink-100">
       <Header />
 
+      <main>
       {/* HERO */}
-      <section className="relative">
+      <section aria-labelledby="pricing-hero-heading" className="relative">
         <div
           aria-hidden
           className="absolute inset-x-0 top-0 h-[400px] pointer-events-none"
@@ -62,10 +63,10 @@ export default function Pricing() {
         />
         <div className="relative mx-auto max-w-5xl px-6 pt-14 pb-8 lg:pt-20 text-center">
           <span className="inline-flex items-center gap-2 rounded-full border border-ink-800 bg-ink-900/70 backdrop-blur px-3 py-1 text-xs text-ink-300 font-mono">
-            <Wallet size={11} className="text-kerf-300" />
+            <Wallet size={11} className="text-kerf-300" aria-hidden />
             at-cost LLM · no markup
           </span>
-          <h1 className="mt-4 font-display text-4xl sm:text-5xl lg:text-6xl font-semibold tracking-[-0.02em] leading-[1.05]">
+          <h1 id="pricing-hero-heading" className="mt-4 font-display text-4xl sm:text-5xl lg:text-6xl font-semibold tracking-[-0.02em] leading-[1.05]">
             Pay for hosting, not for tokens.
           </h1>
           <p className="mt-3 text-lg text-ink-300 leading-relaxed max-w-2xl mx-auto">
@@ -78,7 +79,7 @@ export default function Pricing() {
       </section>
 
       {/* PLAN GRID */}
-      <section className="relative">
+      <section aria-label="Pricing plans" className="relative">
         <div className="mx-auto max-w-7xl px-6 pb-10">
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
             <PlanCard
@@ -149,13 +150,13 @@ export default function Pricing() {
       </section>
 
       {/* HONEST BILLING */}
-      <section className="relative border-t border-ink-900 bg-gradient-to-b from-ink-950 to-ink-900/40">
+      <section aria-labelledby="pricing-billing-heading" className="relative border-t border-ink-900 bg-gradient-to-b from-ink-950 to-ink-900/40">
         <div className="mx-auto max-w-5xl px-6 py-12 lg:py-14">
           <div className="max-w-2xl mb-6">
-            <p className="font-mono text-xs uppercase tracking-[0.2em] text-kerf-300">
+            <p className="font-mono text-xs uppercase tracking-[0.2em] text-kerf-300" aria-hidden>
               How billing actually works
             </p>
-            <h2 className="mt-2 font-display text-3xl sm:text-4xl font-semibold tracking-tight">
+            <h2 id="pricing-billing-heading" className="mt-2 font-display text-3xl sm:text-4xl font-semibold tracking-tight">
               Honest, metered, predictable.
             </h2>
             <p className="mt-3 text-ink-300 leading-relaxed">
@@ -207,9 +208,10 @@ export default function Pricing() {
             </div>
             <a
               href={`mailto:${ENTERPRISE_EMAIL}?subject=Kerf%20Enterprise`}
-              className="inline-flex items-center gap-2 rounded-md border border-kerf-300/40 bg-kerf-300/10 px-4 py-2 text-sm text-kerf-300 hover:bg-kerf-300/20 transition-colors"
+              aria-label={`Email ${ENTERPRISE_EMAIL} about enterprise`}
+              className="inline-flex items-center gap-2 rounded-md border border-kerf-300/40 bg-kerf-300/10 px-4 py-2 text-sm text-kerf-300 hover:bg-kerf-300/20 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-kerf-300/60"
             >
-              <Mail size={14} />
+              <Mail size={14} aria-hidden />
               {ENTERPRISE_EMAIL}
             </a>
           </div>
@@ -217,13 +219,13 @@ export default function Pricing() {
       </section>
 
       {/* FAQ */}
-      <section className="relative border-t border-ink-900">
+      <section aria-labelledby="pricing-faq-heading" className="relative border-t border-ink-900">
         <div className="mx-auto max-w-3xl px-6 py-12 lg:py-14">
           <div className="mb-6 text-center">
-            <p className="font-mono text-xs uppercase tracking-[0.2em] text-kerf-300">
+            <p className="font-mono text-xs uppercase tracking-[0.2em] text-kerf-300" aria-hidden>
               FAQ
             </p>
-            <h2 className="mt-2 font-display text-3xl sm:text-4xl font-semibold tracking-tight">
+            <h2 id="pricing-faq-heading" className="mt-2 font-display text-3xl sm:text-4xl font-semibold tracking-tight">
               Questions, answered.
             </h2>
           </div>
@@ -370,6 +372,7 @@ export default function Pricing() {
         </div>
       </section>
 
+      </main>
       <Footer />
     </div>
   )
@@ -377,7 +380,8 @@ export default function Pricing() {
 
 function PlanCard({ icon, name, tagline, price, priceSub, features, cta, highlighted }) {
   return (
-    <div
+    <article
+      aria-label={`${name} plan`}
       className={
         'relative rounded-2xl border bg-ink-900/40 backdrop-blur p-5 flex flex-col gap-4 transition-colors ' +
         (highlighted
@@ -393,7 +397,7 @@ function PlanCard({ icon, name, tagline, price, priceSub, features, cta, highlig
 
       <div>
         <div className="flex items-center gap-2.5">
-          <span className="grid place-items-center w-8 h-8 rounded-lg bg-kerf-300/15 border border-kerf-300/30 text-kerf-300">
+          <span className="grid place-items-center w-8 h-8 rounded-lg bg-kerf-300/15 border border-kerf-300/30 text-kerf-300" aria-hidden>
             {icon}
           </span>
           <h3 className="font-display text-lg font-semibold tracking-tight text-ink-100">
@@ -413,14 +417,14 @@ function PlanCard({ icon, name, tagline, price, priceSub, features, cta, highlig
       <ul className="flex flex-col gap-2">
         {features.map((f) => (
           <li key={f} className="flex items-start gap-2.5 text-sm text-ink-200">
-            <Check size={14} className="mt-0.5 text-kerf-300 shrink-0" />
+            <Check size={14} aria-hidden className="mt-0.5 text-kerf-300 shrink-0" />
             <span>{f}</span>
           </li>
         ))}
       </ul>
 
       <div className="mt-auto pt-1">{cta}</div>
-    </div>
+    </article>
   )
 }
 
@@ -440,10 +444,14 @@ function FAQItem({ q, a }) {
       className="group rounded-xl border border-ink-800 bg-ink-900/40 hover:border-ink-700 transition-colors open:border-kerf-300/30"
       onToggle={(e) => setOpen(e.currentTarget.open)}
     >
-      <summary className="flex items-center justify-between gap-4 px-5 py-3.5 cursor-pointer list-none select-none">
+      <summary
+        className="flex items-center justify-between gap-4 px-5 py-3.5 cursor-pointer list-none select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-kerf-300/60 focus-visible:ring-offset-1 focus-visible:ring-offset-ink-950 rounded-xl"
+        aria-expanded={open}
+      >
         <span className="text-sm font-medium text-ink-100">{q}</span>
         <ChevronDown
           size={16}
+          aria-hidden
           className={
             'shrink-0 text-ink-400 transition-transform duration-200 ' +
             (open ? 'rotate-180 text-kerf-300' : '')

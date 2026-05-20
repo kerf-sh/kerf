@@ -76,7 +76,7 @@ function DomainHead({ meta }) {
 function Hero({ headline, paragraph, tags, accentColor, comingSoon, slug }) {
   const accent = accentColor || 'kerf-300'
   return (
-    <section className="relative overflow-hidden">
+    <section aria-label="Hero" className="relative overflow-hidden">
       <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
         <div
           className="absolute inset-0 opacity-[0.14]"
@@ -103,7 +103,7 @@ function Hero({ headline, paragraph, tags, accentColor, comingSoon, slug }) {
         <div className="max-w-3xl">
           <div className="flex items-center gap-3 flex-wrap">
             <span className={`inline-flex items-center gap-2 rounded-full border border-ink-800 bg-ink-900/70 backdrop-blur px-3 py-1 text-xs text-ink-300 font-mono`}>
-              <span className={`w-1.5 h-1.5 rounded-full bg-${accent} animate-pulse`} />
+              <span aria-hidden className={`w-1.5 h-1.5 rounded-full bg-${accent} animate-pulse`} />
               {slug} · open source
             </span>
             {comingSoon && (
@@ -237,9 +237,9 @@ function WhatYouGet({ bullets, accentColor }) {
 /* -------------------------------------------------------------------------- */
 
 function CellIcon({ value }) {
-  if (value === true) return <Check size={15} className="text-emerald-400 mx-auto" />
-  if (value === false) return <X size={15} className="text-ink-600 mx-auto" />
-  if (value === null) return <Minus size={15} className="text-ink-500 mx-auto" />
+  if (value === true) return <Check size={15} aria-label="Yes" className="text-emerald-400 mx-auto" />
+  if (value === false) return <X size={15} aria-label="No" className="text-ink-600 mx-auto" />
+  if (value === null) return <Minus size={15} aria-label="Partial" className="text-ink-500 mx-auto" />
   return <span className="text-xs text-ink-300 font-mono">{value}</span>
 }
 
@@ -263,14 +263,16 @@ function ComparisonTable({ products, rows, accentColor }) {
         <div className="overflow-x-auto -mx-6 sm:mx-0">
           <div className="rounded-2xl border border-ink-800 bg-ink-900/30 overflow-x-auto">
             <table className="w-full min-w-[640px] text-sm border-collapse">
+              <caption className="sr-only">Honest feature comparison: Kerf vs {products.join(', ')}</caption>
               <thead>
                 <tr className="border-b border-ink-800 bg-ink-900/60">
-                  <th className="text-left px-4 py-3 text-[11px] font-mono uppercase tracking-[0.15em] text-ink-400 w-44">
+                  <th scope="col" className="text-left px-4 py-3 text-[11px] font-mono uppercase tracking-[0.15em] text-ink-400 w-44">
                     Feature
                   </th>
                   {products.map((p, i) => (
                     <th
                       key={p}
+                      scope="col"
                       className={`text-center px-3 py-3 text-[11px] font-mono uppercase tracking-[0.12em] ${
                         i === products.length - 1
                           ? `text-${accent} bg-${accent}/5`
@@ -285,17 +287,17 @@ function ComparisonTable({ products, rows, accentColor }) {
               <tbody className="divide-y divide-ink-900">
                 {rows.map((row) => (
                   <tr key={row.feature} className="hover:bg-ink-900/30 transition-colors">
-                    <td className="px-4 py-3 text-ink-200 text-sm">
+                    <th scope="row" className="px-4 py-3 text-ink-200 text-sm font-normal text-left">
                       <div>{row.feature}</div>
                       {row.note && (
                         <div className="flex items-start gap-1 mt-0.5">
-                          <Info size={10} className="text-ink-600 mt-0.5 shrink-0" />
+                          <Info size={10} aria-hidden className="text-ink-600 mt-0.5 shrink-0" />
                           <span className="text-[10px] text-ink-500 leading-tight font-mono">
                             {row.note}
                           </span>
                         </div>
                       )}
-                    </td>
+                    </th>
                     {row.values.map((v, i) => (
                       <td
                         key={i}
@@ -312,10 +314,10 @@ function ComparisonTable({ products, rows, accentColor }) {
             </table>
           </div>
         </div>
-        <div className="mt-4 flex flex-wrap items-center gap-4 text-[11px] text-ink-500 font-mono">
-          <span className="flex items-center gap-1.5"><Check size={11} className="text-emerald-400" />Yes</span>
-          <span className="flex items-center gap-1.5"><Minus size={11} />Partial</span>
-          <span className="flex items-center gap-1.5"><X size={11} className="text-ink-600" />No</span>
+        <div className="mt-4 flex flex-wrap items-center gap-4 text-[11px] text-ink-500 font-mono" aria-label="Table legend">
+          <span className="flex items-center gap-1.5"><Check size={11} aria-hidden className="text-emerald-400" />Yes</span>
+          <span className="flex items-center gap-1.5"><Minus size={11} aria-hidden />Partial</span>
+          <span className="flex items-center gap-1.5"><X size={11} aria-hidden className="text-ink-600" />No</span>
           <span className="ml-auto text-ink-600">Comparisons updated 2026-05-18</span>
         </div>
       </div>

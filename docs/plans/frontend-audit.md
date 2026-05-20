@@ -213,10 +213,18 @@ Each task ≈1–3h sonnet unless `[HARD]`. Always isolate in a worktree.
 
 ### Group H — Landing / Marketing
 
-- [ ] **T-H1 Scan + fix marketing/domain/compare/docs pages**
+- [x] **T-H1 Scan + fix marketing/domain/compare/docs pages**
   Scope: responsive + a11y pass over `Pricing.jsx`, `Roadmap.jsx`, `domains/*`, `compare/*`, `Docs/*` (sidebar likely needs a mobile drawer / disclosure). Use `Landing.jsx` as the breakpoint reference. Record per-file status as sub-bullets here.
   Files: `src/routes/Pricing.jsx`, `src/routes/Roadmap.jsx`, `src/routes/domains/*.jsx`, `src/routes/compare/*.jsx`, `src/routes/Docs/*.jsx`.
   Success: each page works mobile→desktop; Docs sidebar collapses on mobile; statuses logged.
+  - **Pricing.jsx** — added `<main>`, `aria-labelledby` on hero/billing/FAQ sections, `<article aria-label="… plan">` for plan cards, `aria-expanded` on FAQ summary, `aria-hidden` on decorative icons, `focus-visible` ring on FAQ summary and enterprise email link.
+  - **Roadmap.jsx** — added `aria-labelledby` on hero section, `aria-label="Roadmap filters"` on filter strip, `role="group" + aria-label` on status/area filter rows, `aria-pressed` on all filter chips, `aria-label` on ROADMAP.md external link, `aria-hidden` on decorative icons.
+  - **DomainPage.jsx** — added `aria-label="Hero"` on hero section, `<caption>` on comparison table, `scope="col"` on column headers, `scope="row"` on feature name cells, `aria-label="Yes/No/Partial"` on CellIcon, `aria-label="Table legend"` on legend strip, `aria-hidden` on decorative Info icon + animated pulse dot.
+  - **compare/index.jsx (CompareHub)** — pre-existing `aria-label` on `<main>` confirmed; `CompareCard` `aria-label` confirmed; CategoryMatrix `scope="col"` confirmed; no additional fixes required.
+  - **compare/CompareLanding.jsx** — pre-existing `aria-label` on `<main>`, sr-only label on search input confirmed; no additional fixes required.
+  - **Docs/Sidebar.jsx** — mobile drawer (focus trap, Esc, body-scroll-lock, `role="dialog" aria-modal`, hamburger with `aria-label`/`aria-expanded`, route-change auto-close) already implemented; `aria-current="page"` on active links confirmed.
+  - **Docs/index.jsx** — `<main>` landmark confirmed; hamburger with `aria-label="Open navigation"` confirmed; hero search `aria-label` confirmed.
+  - **Docs/Article.jsx** — breadcrumb `aria-label="Breadcrumb"`, prev/next nav `aria-label`, `aria-current="page"` on breadcrumb current page, `AnchorButton` with `aria-label` all confirmed.
 
 - [ ] **T-H2 [HARD] Docs sidebar → responsive mobile drawer**
   Scope: if the Docs sidebar is a fixed side column (confirm in T-H1), convert to a slide-in drawer < `lg` with a hamburger toggle, focus trap, Esc, and route-change auto-close, keeping desktop two-column intact.
