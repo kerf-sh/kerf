@@ -1,5 +1,5 @@
 """
-Firmware build and monitor routes.
+Firmware build, monitor, and debug routes.
 
 POST /firmware/build
     Body:  { "sketch_dir": "<abs-path>", "board": "uno", "framework": "arduino",
@@ -13,8 +13,20 @@ POST /firmware/monitor
 GET /firmware/boards
     Returns: { "boards": [...] }
 
+POST /firmware/debug/attach
+    Body:  { "elf_path": "<abs-path>", "target": "stm32f4", "rtos": "kerfrtos" }
+    Returns: DebugSnapshot JSON or the JTAG sentinel when running in cloud mode.
+
+GET /firmware/debug/snapshot
+    Returns: last cached DebugSnapshot or the JTAG sentinel.
+
 The routes never crash — errors are expressed as structured JSON payloads so
-the frontend (FirmwareView panel) can always render a meaningful state.
+the frontend (FirmwareView panel / FirmwareDebugPanel) can always render a
+meaningful state.
+
+Cloud path: all /firmware/debug/* routes return the JTAG sentinel
+("JTAG requires the local Kerf CLI") because JTAG/SWD is a local-hardware
+operation that cannot be proxied through the cloud.
 """
 from __future__ import annotations
 
@@ -101,6 +113,67 @@ async def firmware_boards_route() -> dict:
     """Return the Kerf board manifest."""
     from kerf_firmware.boards import boards_as_json_manifest
     return boards_as_json_manifest()
+
+
+# ── debug routes (cloud sentinel) ─────────────────────────────────────────────
+
+_JTAG_SENTINEL = "JTAG requires the local Kerf CLI"
+
+
+def _debug_sentinel() -> dict:
+    """Return the JTAG cloud sentinel — JTAG/SWD is local-hardware only."""
+    return {
+        "ok": False,
+        "error": "JTAG_LOCAL_ONLY",
+        "message": _JTAG_SENTINEL,
+        "tasks": [],
+        "sync_objects": [],
+        "edges": [],
+        "warnings": [_JTAG_SENTINEL],
+    }
+
+
+@router.post("/firmware/debug/attach")
+async def firmware_debug_attach_route(req: dict) -> dict:
+    """
+    Attach to a target and return a live RTOS debug snapshot.
+
+    Cloud path: always returns the JTAG sentinel.
+    Local CLI path: delegates to kerf_cli.commands.firmware_debug.attach_and_snapshot().
+    """
+    # Detect whether we are running inside the local CLI server.  The local CLI
+    # sets the KERF_LOCAL_CLI env-var to "1"; the cloud deployment does not.
+    import os
+    if os.environ.get("KERF_LOCAL_CLI") == "1":
+        from kerf_cli.commands.firmware_debug import attach_and_snapshot
+        elf_path = req.get("elf_path") or ""
+        target = req.get("target") or "stm32f4"
+        rtos = req.get("rtos") or "kerfrtos"
+        return attach_and_snapshot(elf_path=elf_path, target=target, rtos=rtos)
+    return _debug_sentinel()
+
+
+@router.get("/firmware/debug/snapshot")
+async def firmware_debug_snapshot_route() -> dict:
+    """
+    Return the last cached RTOS debug snapshot.
+
+    Cloud path: always returns the JTAG sentinel.
+    """
+    import os
+    if os.environ.get("KERF_LOCAL_CLI") == "1":
+        # In a real implementation we'd return the last cached snapshot.
+        # For now, return a minimal sentinel indicating no snapshot yet.
+        return {
+            "ok": False,
+            "error": "NO_SNAPSHOT",
+            "message": "No debug session active. Use POST /firmware/debug/attach first.",
+            "tasks": [],
+            "sync_objects": [],
+            "edges": [],
+            "warnings": [],
+        }
+    return _debug_sentinel()
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
