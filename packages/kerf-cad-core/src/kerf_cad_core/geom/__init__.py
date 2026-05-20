@@ -247,6 +247,13 @@ from kerf_cad_core.geom.bridge_loops import (
     BridgeResult,
     bridge_loops,
 )
+# GK-78: 3MF read/write (sealed manifold + materials + colour + thumbnail)
+from kerf_cad_core.geom.io.threemf import (
+    read_threemf,
+    write_threemf,
+    ThreeMFReadError,
+    ThreeMFWriteError,
+)
 
 __all__ = [
     "NurbsCurve",
@@ -398,4 +405,9 @@ __all__ = [
     # GK-74
     "BridgeResult",
     "bridge_loops",
+    # GK-78
+    "read_threemf",
+    "write_threemf",
+    "ThreeMFReadError",
+    "ThreeMFWriteError",
 ]

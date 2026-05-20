@@ -765,7 +765,7 @@ in `geom/__init__.py`.
   settings. — `geom/sweep1.py` — oracle: helical sweep of a circular
   profile yields a torus-like Body with volume ≈ 2π R · π r² · turns. —
   dep: GK-15 — parallel: Y — sonnet.
-- [ ] **GK-78** 3MF read + write (sealed manifold + materials + colour
+- [x] **GK-78** 3MF read + write (sealed manifold + materials + colour
   + thumbnail). — `geom/io/threemf.py` — oracle: write→read round-trip
   preserves V, F, per-face material id; thumbnail PNG round-trips. —
   dep: GK-21, GK-49 — parallel: Y — sonnet.

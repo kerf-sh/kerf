@@ -5,6 +5,7 @@ Modules
 iges        IGES 144 trimmed-surface reader/writer (GK-49).
 step_read   Pure-Python STEP AP203/214 B-rep reader (GK-47).
 step_write  Pure-Python STEP AP214 B-rep writer (GK-48).
+threemf     3MF read/write (sealed manifold + materials + colour + thumbnail) (GK-78).
 """
 from kerf_cad_core.geom.io.iges import (
     IgesReadError,
@@ -21,6 +22,13 @@ from kerf_cad_core.geom.io.step_write import (
     write_step,
     StepWriteError,
 )
+# GK-78: 3MF read/write
+from kerf_cad_core.geom.io.threemf import (
+    read_threemf,
+    write_threemf,
+    ThreeMFReadError,
+    ThreeMFWriteError,
+)
 
 __all__ = [
     "IgesReadError",
@@ -32,4 +40,9 @@ __all__ = [
     "StepReadError",
     "write_step",
     "StepWriteError",
+    # GK-78
+    "read_threemf",
+    "write_threemf",
+    "ThreeMFReadError",
+    "ThreeMFWriteError",
 ]
