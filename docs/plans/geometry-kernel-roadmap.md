@@ -501,11 +501,12 @@ Format: `[ ] GK-NN  scope — FILE(s) — oracle — dep — parallel? — tier`
   along the spine equals the input law to `1e-7`; tangency held. — dep:
   GK-24 — parallel: N — opus.
   *Landed: surface_fillet.py, 66 tests.*
-- [ ] **GK-29** Solid edge/vertex blend (constant radius) on a `Body`
+- [x] **GK-29** Solid edge/vertex blend (constant radius) on a `Body`
   edge using SSI + fillet + boolean. — new `geom/blend_solid.py` —
   oracle: blended cube edge volume = cube − (1−π/4)r²·edge_len; corner
   three-edge blend `validate_body` ok. — dep: GK-26, GK-18 — parallel: N
   — opus.
+  *Landed: blend_solid.py, 30 tests green (blend_edge + blend_edges + blend_corner_vertex, all 8 corners).*
 - [x] **GK-30** Surface offset (true offset along normal, refit to tol). —
   new `geom/offset_srf.py` — oracle: offset of a sphere radius r by d =
   sphere radius r+d to `1e-6`; offset of a plane = parallel plane exact.
