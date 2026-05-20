@@ -434,7 +434,7 @@ class TestGK43NonRegression:
         from kerf_cad_core.geom.blend_srf import blend_srf_g1
         s1 = _plane_surface()
         s2 = _plane_surface(origin=(0.0, 1.0, 0.0))
-        result = blend_srf_g1(s1, s2, edge1_idx=4, edge2_idx=0, blend_dist=0.2)
+        result = blend_srf_g1(s1, s2, edge="v1_v0", blend_width=0.2)
         assert isinstance(result, NurbsSurface)
 
     def test_blend_srf_g1_g3_coexist(self):
@@ -442,7 +442,7 @@ class TestGK43NonRegression:
         from kerf_cad_core.geom.blend_srf import blend_srf_g1, blend_srf_g3
         s1 = _plane_surface()
         s2 = _plane_surface(origin=(0.0, 1.0, 0.0))
-        r1 = blend_srf_g1(s1, s2, edge1_idx=4, edge2_idx=0, blend_dist=0.2)
+        r1 = blend_srf_g1(s1, s2, edge="v1_v0", blend_width=0.2)
         r3 = blend_srf_g3(s1, s2, edge1_idx=4, edge2_idx=0, blend_dist=0.2)
         assert isinstance(r1, NurbsSurface)
         assert isinstance(r3, NurbsSurface)
