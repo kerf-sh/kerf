@@ -496,10 +496,11 @@ Format: `[ ] GK-NN  scope — FILE(s) — oracle — dep — parallel? — tier`
   validate_body ok. — dep: GK-26 — parallel: Y — sonnet.
   *Landed as `chamfer.py` (1 040 LOC) — constant, asymmetric, and
   variable-width edge chamfer; `test_chamfer.py` 30 tests.*
-- [ ] **GK-28** [HARD] Variable-radius fillet with G1 along a varying
+- [x] **GK-28** [HARD] Variable-radius fillet with G1 along a varying
   radius law. — `geom/surface_fillet.py` — oracle: radius(s) sampled
   along the spine equals the input law to `1e-7`; tangency held. — dep:
   GK-24 — parallel: N — opus.
+  *Landed: surface_fillet.py, 66 tests.*
 - [ ] **GK-29** Solid edge/vertex blend (constant radius) on a `Body`
   edge using SSI + fillet + boolean. — new `geom/blend_solid.py` —
   oracle: blended cube edge volume = cube − (1−π/4)r²·edge_len; corner
