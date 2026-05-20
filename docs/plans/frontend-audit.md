@@ -194,7 +194,7 @@ Each task ≈1–3h sonnet unless `[HARD]`. Always isolate in a worktree.
 
 ### Group F — Settings / Billing
 
-- [ ] **T-F1 Billing tables: overflow + semantics**
+- [x] **T-F1 Billing tables: overflow + semantics**
   Scope: wrap the credits/ledger tables in `overflow-x-auto`; add `<caption class="sr-only">`, `scope="col"` on headers; relax `truncate max-w-[…]` so values aren't silently clipped on desktop.
   Files: `src/cloud/BillingPanel.jsx`.
   Success: tables scroll instead of clip on narrow widths; screen reader announces table purpose + column headers.
