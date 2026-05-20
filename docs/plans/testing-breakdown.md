@@ -150,7 +150,7 @@ noted.
   File: `packages/kerf-cad-core/tests/test_feature_mech_gears.py`
   Success: 25 gear pair specs; module / addendum / dedendum vs AGMA; mesh clash check.
 
-- [ ] T-26 Mech: bearings catalog → housing fit
+- [x] T-26 Mech: bearings catalog → housing fit
   Scope: `bearings/` standard catalog + housing bore generation.
   File: `packages/kerf-cad-core/tests/test_feature_mech_bearings.py`
   Success: 25 bearing codes; ISO 286 fits H7/g6 etc.; lip / shoulder geometry.

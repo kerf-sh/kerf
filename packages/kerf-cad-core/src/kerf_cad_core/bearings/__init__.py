@@ -34,6 +34,10 @@ from kerf_cad_core.bearings.select import (
     bearing_grease_interval,
     bearing_select,
 )
+from kerf_cad_core.bearings.housing import (
+    bearing_housing_fit,
+    bearing_shoulder_geometry,
+)
 
 __all__ = [
     "bearing_rating_life",
@@ -44,4 +48,6 @@ __all__ = [
     "bearing_limiting_speed",
     "bearing_grease_interval",
     "bearing_select",
+    "bearing_housing_fit",
+    "bearing_shoulder_geometry",
 ]
