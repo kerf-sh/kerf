@@ -95,7 +95,7 @@ noted.
   File: `packages/kerf-render/tests/test_feature_jewelry_pbr.py`
   Success: 25 material assignments; correct dispersion / IOR / metal Fresnel parameters reach render payload.
 
-- [ ] T-15 Jewelry: gem report card
+- [x] T-15 Jewelry: gem report card
   Scope: `gem_studio.py` faceting → report (4 Cs, ASET, dispersion).
   File: `packages/kerf-cad-core/tests/test_feature_jewelry_gem_report.py`
   Success: 25 cuts × proportions; numerical 4Cs match catalog; light-return metric stable run-to-run.
