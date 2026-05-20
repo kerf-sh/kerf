@@ -2078,7 +2078,7 @@ Tier A (single persona unlock), render / SubD / direct-edit → Tier B
   enum + reference-tool match. FEM-hardening stream is in flight in
   parallel; this task captures **what's left after that lands**.
 - **Priority:** P2
-- **Status:** 🚧 umbrella — split into bounded sub-tasks **T-100a..h**.
+- **Status:** ✅ shipped (2026-05-20) — all sub-tasks T-100a..h complete.
   Reference-value suite landed (2026-05-17): `kerf_fem.pressure_load` +
   43-test `test_fem_refvalues.py` with Roark / Blevins / Incropera
   oracles, 42 green, one ASTM E1049 rainflow test skipped (real bug
@@ -2105,7 +2105,7 @@ Tier A (single persona unlock), render / SubD / direct-edit → Tier B
   flow (`cfd_potential.py`) is the seed already in flight; full CfdOF
   parity is engine-class.
 - **Priority:** P2
-- **Status:** 🚧 umbrella — split into bounded sub-tasks **T-101a..f**.
+- **Status:** ✅ shipped (2026-05-20) — all sub-tasks T-101a..f complete.
   2-D laminar foundation landed (2026-05-17): `kerf_fem.cfd_potential`
   (potential flow, `Cp(θ)=1−4sin²θ` analytic oracle) +
   `kerf_fem.cfd_navier_stokes` (lid-driven cavity, Ghia Re=100 reference);
@@ -2166,7 +2166,7 @@ Tier A (single persona unlock), render / SubD / direct-edit → Tier B
   imprint (GK-19) + class-A leading still to go. Kernel-side depth →
   opus-spine; cross-sector reach via the surfacing path.
 - **Priority:** P1
-- **Status:** 🚧 umbrella — split into bounded sub-tasks **T-104a..h**
+- **Status:** ✅ shipped (2026-05-20) — all sub-tasks T-104a..h complete.
   (same shape as T-106a..f). Decomposition rationale, current kernel
   state, dependency graph + the structural-impossibility call-outs in
   `docs/plans/occt-phase4.md`. **Honest scope line:** algorithmic G3 is
