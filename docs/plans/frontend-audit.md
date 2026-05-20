@@ -239,7 +239,7 @@ Each task ≈1–3h sonnet unless `[HARD]`. Always isolate in a worktree.
 
 ### Group K — Overlays
 
-- [ ] **T-K1 DFM tooltip SR text + z-index token**
+- [x] **T-K1 DFM tooltip SR text + z-index token**
   Scope: mirror the `dfmOverlay` tooltip content into an off-screen `aria-live` node so SR users get DFM warnings; replace the hard-coded `z-index:9999` with the shared z-scale from T-L2.
   Files: `src/lib/dfmOverlay.js`.
   Success: DFM issues are announced; tooltip z-index comes from the token scale.

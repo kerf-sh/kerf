@@ -27,6 +27,23 @@
 import * as THREE from 'three'
 
 // ---------------------------------------------------------------------------
+// Z-index token scale
+// Shared overlay layer constants.  When T-L2 lands this will be imported
+// from the shell token file; for now the values live here.
+// ---------------------------------------------------------------------------
+
+export const Z_INDEX = Object.freeze({
+  /** Base layer for most floating UI (dropdowns, popovers). */
+  overlay:  1000,
+  /** Modals sit above overlays. */
+  modal:    1100,
+  /** Tooltips sit above modals. */
+  tooltip:  1200,
+  /** Full-screen take-over (e.g. command palette, auth wall). */
+  takeover: 9000,
+})
+
+// ---------------------------------------------------------------------------
 // Severity colour map
 // ---------------------------------------------------------------------------
 
@@ -48,7 +65,7 @@ export function severityColor(severity) {
 // Module-level state (one active overlay at a time)
 // ---------------------------------------------------------------------------
 
-let _state = null  // { scene, camera, renderer, markers, raycaster, pointer, moveHandler, tooltip }
+let _state = null  // { scene, camera, renderer, markers, raycaster, pointer, moveHandler, tooltip, srLive }
 
 // ---------------------------------------------------------------------------
 // Internal helpers
@@ -73,11 +90,37 @@ function _buildMarker(issue) {
   return mesh
 }
 
+/**
+ * Build an off-screen aria-live region that SR users receive DFM announcements
+ * through.  The element is visually hidden but remains in the accessibility
+ * tree; assertive priority is used so warnings interrupt the current reading
+ * position (matching the urgency of DFM error/warning feedback).
+ */
+function _buildSrLive() {
+  const el = document.createElement('div')
+  el.setAttribute('aria-live', 'assertive')
+  el.setAttribute('aria-atomic', 'true')
+  el.setAttribute('role', 'status')
+  el.style.cssText = [
+    'position:absolute',
+    'width:1px',
+    'height:1px',
+    'padding:0',
+    'margin:-1px',
+    'overflow:hidden',
+    'clip:rect(0,0,0,0)',
+    'white-space:nowrap',
+    'border:0',
+  ].join(';')
+  document.body.appendChild(el)
+  return el
+}
+
 function _buildTooltip() {
   const el = document.createElement('div')
   el.style.cssText = [
     'position:fixed',
-    'z-index:9999',
+    `z-index:${Z_INDEX.tooltip}`,
     'pointer-events:none',
     'display:none',
     'max-width:280px',
@@ -95,7 +138,20 @@ function _buildTooltip() {
   return el
 }
 
-function _showTooltip(el, issue, clientX, clientY) {
+/**
+ * Build a plain-text summary of a DFM issue suitable for SR announcement.
+ * @param {object} issue
+ * @returns {string}
+ */
+export function dfmIssueSrText(issue) {
+  const sev = issue.severity || 'info'
+  const kind = issue.kind ? `, ${issue.kind}` : ''
+  const value = issue.value != null ? `, value ${Number(issue.value).toFixed(3)}` : ''
+  const suggestion = issue.suggestion ? `. ${issue.suggestion}` : ''
+  return `DFM ${sev}${kind}${value}${suggestion}`
+}
+
+function _showTooltip(el, srLive, issue, clientX, clientY) {
   const sev = issue.severity || 'info'
   const sevColor = { error: '#ef4444', warning: '#f59e0b', info: '#60a5fa' }[sev] || '#9ca3af'
   el.innerHTML = [
@@ -107,10 +163,15 @@ function _showTooltip(el, issue, clientX, clientY) {
   el.style.display = 'block'
   el.style.left = `${clientX + 14}px`
   el.style.top  = `${clientY - 8}px`
+  // Announce to screen-reader users via the aria-live region.
+  if (srLive) srLive.textContent = dfmIssueSrText(issue)
 }
 
-function _hideTooltip(el) {
+function _hideTooltip(el, srLive) {
   if (el) el.style.display = 'none'
+  // Clear the live region so the same issue is re-announced if the user
+  // moves off and back onto the same marker.
+  if (srLive) srLive.textContent = ''
 }
 
 function _disposeMarkers(markers, scene) {
@@ -142,6 +203,7 @@ export function attachDfmOverlay(scene, camera, renderer, issues) {
   const raycaster = new THREE.Raycaster()
   const pointer = new THREE.Vector2()
   const tooltip = _buildTooltip()
+  const srLive = _buildSrLive()
 
   const issueList = Array.isArray(issues) ? issues : []
   for (const issue of issueList) {
@@ -159,15 +221,15 @@ export function attachDfmOverlay(scene, camera, renderer, issues) {
     raycaster.setFromCamera(pointer, camera)
     const hits = raycaster.intersectObjects(markers, false)
     if (hits.length > 0) {
-      _showTooltip(tooltip, hits[0].object.userData.issue, ev.clientX, ev.clientY)
+      _showTooltip(tooltip, srLive, hits[0].object.userData.issue, ev.clientX, ev.clientY)
     } else {
-      _hideTooltip(tooltip)
+      _hideTooltip(tooltip, srLive)
     }
   }
 
   renderer.domElement.addEventListener('mousemove', onMove)
 
-  _state = { scene, camera, renderer, markers, raycaster, pointer, moveHandler: onMove, tooltip }
+  _state = { scene, camera, renderer, markers, raycaster, pointer, moveHandler: onMove, tooltip, srLive }
 }
 
 /**
@@ -175,10 +237,11 @@ export function attachDfmOverlay(scene, camera, renderer, issues) {
  */
 export function detachDfmOverlay() {
   if (!_state) return
-  const { scene, renderer, markers, moveHandler, tooltip } = _state
+  const { scene, renderer, markers, moveHandler, tooltip, srLive } = _state
   renderer.domElement.removeEventListener('mousemove', moveHandler)
   _disposeMarkers(markers, scene)
   if (tooltip && tooltip.parentNode) tooltip.parentNode.removeChild(tooltip)
+  if (srLive && srLive.parentNode) srLive.parentNode.removeChild(srLive)
   _state = null
 }
 
@@ -201,5 +264,5 @@ export function refreshDfm(issues) {
     scene.add(m)
     _state.markers.push(m)
   }
-  _hideTooltip(_state.tooltip)
+  _hideTooltip(_state.tooltip, _state.srLive)
 }

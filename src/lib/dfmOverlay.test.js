@@ -64,7 +64,7 @@ vi.mock('three', () => {
 })
 
 // Import AFTER the mock is registered so the overlay uses fake THREE classes.
-import { attachDfmOverlay, detachDfmOverlay, refreshDfm, severityColor } from './dfmOverlay.js'
+import { attachDfmOverlay, detachDfmOverlay, refreshDfm, severityColor, dfmIssueSrText, Z_INDEX } from './dfmOverlay.js'
 import * as THREE from 'three'
 
 // ---------------------------------------------------------------------------
@@ -86,20 +86,27 @@ function makeIssue(overrides = {}) {
   }
 }
 
-// Stub document.body.appendChild used by _buildTooltip inside dfmOverlay.
-// jsdom is not available in the default vitest node environment so we patch
-// the minimal surface the overlay touches.
-function stubDocument() {
-  const fakeEl = {
+// Stub document.body.appendChild used by _buildTooltip and _buildSrLive inside
+// dfmOverlay.  jsdom is not available in the default vitest node environment so
+// we patch the minimal surface the overlay touches.
+function makeFakeEl() {
+  return {
     style: { cssText: '', display: 'none', left: '', top: '' },
     innerHTML: '',
+    textContent: '',
     parentNode: null,
+    _attrs: {},
+    setAttribute(k, v) { this._attrs[k] = v },
+    getAttribute(k) { return this._attrs[k] ?? null },
   }
+}
+
+function stubDocument() {
   const origDoc = globalThis.document
   globalThis.document = {
     createElement: () => {
-      fakeEl.parentNode = null
-      return fakeEl
+      const el = makeFakeEl()
+      return el
     },
     body: {
       appendChild: (el) => {
@@ -269,5 +276,135 @@ describe('refreshDfm', () => {
     attachDfmOverlay(scene, makeCamera(), makeRenderer(), [makeIssue({ severity: 'error' })])
     const marker = scene.children[0]
     expect(marker.material.color).toBe(severityColor('error'))
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Z_INDEX token
+// ---------------------------------------------------------------------------
+
+describe('Z_INDEX', () => {
+  it('exports a frozen token object', () => {
+    expect(Z_INDEX).toBeDefined()
+    expect(Object.isFrozen(Z_INDEX)).toBe(true)
+  })
+
+  it('tooltip layer is higher than overlay layer', () => {
+    expect(Z_INDEX.tooltip).toBeGreaterThan(Z_INDEX.overlay)
+  })
+
+  it('tooltip layer is higher than modal layer', () => {
+    expect(Z_INDEX.tooltip).toBeGreaterThan(Z_INDEX.modal)
+  })
+
+  it('tooltip z-index is not the legacy hard-coded 9999', () => {
+    expect(Z_INDEX.tooltip).not.toBe(9999)
+  })
+
+  it('tooltip cssText uses the Z_INDEX.tooltip token value', () => {
+    const restoreDoc = stubDocument()
+    try {
+      let capturedCssText = ''
+      const origCreateElement = globalThis.document.createElement
+      globalThis.document.createElement = () => {
+        const el = makeFakeEl()
+        Object.defineProperty(el.style, 'cssText', {
+          set(v) { capturedCssText += v },
+          get() { return capturedCssText },
+          configurable: true,
+        })
+        return el
+      }
+      attachDfmOverlay(makeScene(), makeCamera(), makeRenderer(), [])
+      expect(capturedCssText).toContain(`z-index:${Z_INDEX.tooltip}`)
+    } finally {
+      detachDfmOverlay()
+      restoreDoc()
+    }
+  })
+})
+
+// ---------------------------------------------------------------------------
+// dfmIssueSrText
+// ---------------------------------------------------------------------------
+
+describe('dfmIssueSrText', () => {
+  it('includes severity and kind', () => {
+    const text = dfmIssueSrText({ severity: 'warning', kind: 'thin_wall', value: 0.5, suggestion: 'Increase thickness.' })
+    expect(text).toContain('warning')
+    expect(text).toContain('thin_wall')
+  })
+
+  it('includes formatted value', () => {
+    const text = dfmIssueSrText({ severity: 'error', kind: 'undercut', value: 1.23456 })
+    expect(text).toContain('1.235')
+  })
+
+  it('includes suggestion', () => {
+    const text = dfmIssueSrText({ severity: 'info', kind: 'draft_angle', suggestion: 'Add draft.' })
+    expect(text).toContain('Add draft.')
+  })
+
+  it('defaults severity to info when missing', () => {
+    const text = dfmIssueSrText({ kind: 'thin_wall' })
+    expect(text).toMatch(/^DFM info/)
+  })
+
+  it('omits value section when value is null/undefined', () => {
+    const text = dfmIssueSrText({ severity: 'warning', kind: 'overhang' })
+    expect(text).not.toContain('value')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// SR live region — attachment lifecycle + announcement
+// ---------------------------------------------------------------------------
+
+describe('SR live region', () => {
+  let restoreDoc
+  // Track all elements created via createElement so we can inspect srLive.
+  let createdEls
+
+  beforeEach(() => {
+    restoreDoc = stubDocument()
+    createdEls = []
+    const origCreate = globalThis.document.createElement
+    globalThis.document.createElement = (...args) => {
+      const el = origCreate(...args)
+      createdEls.push(el)
+      return el
+    }
+  })
+
+  afterEach(() => {
+    detachDfmOverlay()
+    restoreDoc()
+    vi.restoreAllMocks()
+  })
+
+  function getSrLiveEl() {
+    // The srLive element is the one with aria-live attribute set.
+    return createdEls.find((el) => el._attrs?.['aria-live'] === 'assertive')
+  }
+
+  it('creates an aria-live=assertive element on attach', () => {
+    attachDfmOverlay(makeScene(), makeCamera(), makeRenderer(), [])
+    const srEl = getSrLiveEl()
+    expect(srEl).toBeDefined()
+    expect(srEl.getAttribute('aria-live')).toBe('assertive')
+  })
+
+  it('sets aria-atomic and role=status on the SR node', () => {
+    attachDfmOverlay(makeScene(), makeCamera(), makeRenderer(), [])
+    const srEl = getSrLiveEl()
+    expect(srEl.getAttribute('aria-atomic')).toBe('true')
+    expect(srEl.getAttribute('role')).toBe('status')
+  })
+
+  it('removes the SR live node on detach', () => {
+    attachDfmOverlay(makeScene(), makeCamera(), makeRenderer(), [])
+    const srEl = getSrLiveEl()
+    detachDfmOverlay()
+    expect(srEl.parentNode.removeChild).toHaveBeenCalledWith(srEl)
   })
 })
