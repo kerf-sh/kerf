@@ -355,6 +355,22 @@ def _add_sync_parser(
         metavar="TOKEN",
         help="API token (kerf_sk_…).  $KERF_API_TOKEN is preferred.",
     )
+    p.add_argument(
+        "--watch",
+        action="store_true",
+        default=False,
+        help=(
+            "Run as a foreground daemon: poll both sides every --interval seconds\n"
+            "and propagate changes either way.  Stops on OCC conflict (exit 4)."
+        ),
+    )
+    p.add_argument(
+        "--interval",
+        type=float,
+        default=5.0,
+        metavar="SECS",
+        help="Polling interval in seconds for --watch mode (default: 5).",
+    )
     p.set_defaults(func=_cmd_sync)
 
 
