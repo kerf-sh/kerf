@@ -726,6 +726,130 @@ Format: `[ ] GK-NN  scope — FILE(s) — oracle — dep — parallel? — tier`
 
 ---
 
+## 4b. Phase 4 — SubD modeling depth + interop (GK-73 … GK-93)
+
+Added 2026-05-21. Phase 4 closes the most user-visible gaps that surface
+once the spine + long-tail (GK-01..GK-72) are done: Blender-style SubD
+authoring depth, the parametric "hole/helical/pattern" wizards every
+mainstream CAD ships, robustness ops (heal/split/replace) for imported
+geometry, and the round-trip mesh formats (3MF/GLB/OBJ) the print + viewer
+ecosystem expects. **Priority order is the listing order** — top-9 are
+highest user-value × smallest effort (sonnet, parallel); later items
+unlock harder workflows. All pure-Python, additive to the public façade
+in `geom/__init__.py`.
+
+- [ ] **GK-73** Inset face (SubD cage + Body face): offset a face inward
+  with a per-edge gap, creating a ring of new quads/faces around the
+  original. — `geom/inset_face.py` — oracle: inset(area=A, gap=g) on a
+  planar quad yields outer quad of area A, inner of area
+  (sqrt(A) - 2g)², area-preserving ring count + sealed topology. — dep:
+  GK-18 — parallel: Y — sonnet.
+- [ ] **GK-74** Bridge edge loops (SubD + B-rep): connect two open
+  boundary loops of equal vertex count with a quad strip; auto-match by
+  closest-vertex; handle twist correction. — `geom/bridge_loops.py` —
+  oracle: bridge two coaxial circles of N segments → N quads, watertight
+  manifold, Euler V−E+F=0. — dep: GK-18 — parallel: Y — sonnet.
+- [ ] **GK-75** Hole feature wrapper (drill / counterbore / countersink
+  / tapped): place a parametric hole on a face by (point, normal, type,
+  diameters, depth) → boolean-difference with auto-fillet on lip. —
+  `geom/hole_feature.py` — oracle: through-hole on box reduces volume
+  by π r² h ± tol; counterbore subtracts both cylinders; csink subtracts
+  cylinder + cone. — dep: GK-18 — parallel: Y — sonnet.
+- [ ] **GK-76** Wall-thickness map: sample N rays from inside the body,
+  return min wall thickness + per-face min map + heatmap-ready array.
+  Critical printability gate for jewelry. — `geom/wall_thickness.py` —
+  oracle: hollowed sphere of wall t returns min ≈ t ± tol on every
+  face. — dep: GK-21, GK-45 — parallel: Y — sonnet.
+- [ ] **GK-77** Helical sweep: extend `sweep1` with a helical rail
+  (axis, radius, pitch, turns) for springs / threads / spiral
+  settings. — `geom/sweep1.py` — oracle: helical sweep of a circular
+  profile yields a torus-like Body with volume ≈ 2π R · π r² · turns. —
+  dep: GK-15 — parallel: Y — sonnet.
+- [ ] **GK-78** 3MF read + write (sealed manifold + materials + colour
+  + thumbnail). — `geom/io/threemf.py` — oracle: write→read round-trip
+  preserves V, F, per-face material id; thumbnail PNG round-trips. —
+  dep: GK-21, GK-49 — parallel: Y — sonnet.
+- [ ] **GK-79** glTF 2.0 / GLB read + write (mesh + PBR materials). —
+  `geom/io/gltf.py` — oracle: write a unit cube with metallic-roughness
+  → read back vertex count + base-colour + roughness within ε. — dep:
+  GK-21 — parallel: Y — sonnet.
+- [ ] **GK-80** OBJ read + write (mesh + groups + mtllib). —
+  `geom/io/obj.py` — oracle: write→read round-trip preserves V, F,
+  group names; MTL lookup resolves diffuse/colour. — dep: GK-21 —
+  parallel: Y — sonnet.
+- [ ] **GK-81** STL read (binary + ASCII) — verify writer already
+  exists; add reader and round-trip oracle. — `geom/io/stl.py` —
+  oracle: write a body to STL, read back triangles == original mesh
+  triangulation ± vertex-merge tolerance. — dep: GK-21 — parallel: Y —
+  sonnet.
+- [ ] **GK-82** Imprint (3D curve → new face edges): project a 3D curve
+  onto a face, creating new edges that split the face along the
+  projected path. Precondition for clean trim_face_by_3d_curve. —
+  `geom/imprint.py` — oracle: imprint a great-circle on a sphere face
+  splits it into two equal-area hemispheres ± tol. — dep: GK-11,
+  GK-39 — parallel: N — opus.
+- [ ] **GK-83** Surface offset / parallel surface (true offset, not
+  shell): produce a NURBS surface offset by signed distance d along
+  surface normal; preserve UV. — `geom/surface_offset.py` — oracle:
+  offset of a unit sphere by d yields a sphere of radius 1+d ± tol. —
+  dep: GK-06 — parallel: Y — sonnet.
+- [ ] **GK-84** Split body by plane / by surface (no-fill cut): split a
+  Body into N pieces along a cutting plane/surface; pieces are not
+  filled (open shells), unlike boolean difference. —
+  `geom/split_body.py` — oracle: split a box by its midplane → 2 open
+  half-shells, sum of surface areas = original surface + 2·section
+  area. — dep: GK-11 — parallel: Y — sonnet.
+- [ ] **GK-85** Body simplify / heal: remove sub-tolerance faces and
+  edges, close sliver gaps, weld near-duplicate vertices. Robustness
+  layer for imported STEP/IGES bodies. — `geom/body_heal.py` —
+  oracle: imported body with intentionally-introduced 1e-9 sliver
+  → simplify removes it, validate_body passes. — dep: GK-21 —
+  parallel: N — opus.
+- [ ] **GK-86** Replace face / surface swap: swap the underlying
+  surface of one face in a Body for a new compatible surface; re-sew
+  adjacent faces. — `geom/replace_face.py` — oracle: replace a planar
+  face with an equivalent NURBS plane → topology unchanged, volume
+  within ε. — dep: GK-18 — parallel: Y — sonnet.
+- [ ] **GK-87** Pattern (linear / circular / path, kernel-level):
+  duplicate a sub-body or feature N times along a linear / circular /
+  path rail. — `geom/pattern.py` — oracle: 4× circular pattern of a
+  cylinder around an axis yields 4 disjoint bodies at correct angles
+  ± tol. — dep: GK-18 — parallel: Y — sonnet.
+- [ ] **GK-88** Loop slide (SubD): move an edge loop along its
+  adjacent faces (preserve tangency / topology). —
+  `geom/subd_authoring.py` — oracle: loop-slide a box edge-loop by t
+  along adjacent face → vertex positions move by t in face-tangent
+  direction, topology unchanged. — dep: GK-52 — parallel: Y — sonnet.
+- [ ] **GK-89** Knife / cut face by 3D curve (B-rep + SubD): split a
+  face by an arbitrary 3D curve (projected then imprinted). Different
+  cut-mode than split_body — face-local. — `geom/knife.py` — oracle:
+  knife a planar face by a diagonal → 2 triangle-faces of equal area
+  ± tol. — dep: GK-82 — parallel: Y — sonnet.
+- [ ] **GK-90** N-rail sweep (sweepN, 3+ rails): generalize sweep2 to
+  3+ guide rails; profile evolves to satisfy all rails at each
+  station. — `geom/sweep_n.py` — oracle: 3-rail sweep of three
+  parallel circles yields a cylinder of equivalent volume ± tol. —
+  dep: GK-15, GK-16 — parallel: N — opus.
+- [ ] **GK-91** Sheet metal bend / unfold (K-factor + bend tables):
+  bend a planar sheet along a line at given angle / radius; unfold
+  any bent sheet to flat pattern. K-factor lookup table. —
+  `geom/sheet_metal.py` — oracle: bend a sheet 90° at r=1, t=2,
+  K=0.4 → unfold yields flat length L = 2·flange + π·(r+K·t)/2 ±
+  tol. — dep: GK-46 — parallel: N — opus.
+- [ ] **GK-92** Draft analysis overlay (angle to pull direction):
+  per-face draft angle vs a pull direction, with positive/negative/
+  vertical thresholds and a colour-coded face map. —
+  `geom/surface_analysis.py` — oracle: cylinder pulled along its
+  axis → all side faces report 0° (vertical), end caps report 90°. —
+  dep: GK-21 — parallel: Y — sonnet.
+- [ ] **GK-93** Symmetry detection: detect reflective + rotational
+  symmetry planes of a Body (returns list of planes/axes + order). —
+  `geom/symmetry.py` — oracle: a box returns 3 mirror planes + 3
+  rotation axes (orders 2,2,2); a sphere returns ∞-mark. — dep:
+  GK-23 — parallel: Y — sonnet.
+
+---
+
 ## 5. Parallelization plan
 
 The coupled numerical/topology core is **opus-owned and serialized** because

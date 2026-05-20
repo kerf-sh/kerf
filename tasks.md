@@ -5440,3 +5440,18 @@ User-direction 2026-05-19. Extends T-179 (apparel pattern-making) with deeper te
   - MODELLED (no GPU): fps_proxy / fps_full estimated from 500 Mtri/s budget + 0.03 ms/draw-call overhead — documented in `scripts/perf_assembly.py`.
 - **Depends-on:** T-15, T-16
 
+## Kernel Phase 4 — SubD depth + interop (T-340)
+
+### T-340 Kernel Phase 4 — SubD modeling depth + parametric wizards + interop
+- **Tier:** A
+- **Priority:** P0
+- **Status:** 🟡 open (2026-05-21) — kernel spine (GK-01..GK-72) complete; Phase 4 closes user-visible gaps
+- **Scope:** 21 GK items (GK-73..GK-93) covering Blender-style SubD authoring depth (inset face, bridge loops, loop slide, knife), parametric wizards every CAD ships (hole, helical sweep, n-rail sweep, pattern), robustness ops for imported geometry (body simplify/heal, split, replace face, imprint), printability analysis (wall-thickness map, draft analysis, symmetry detection), sheet metal bend/unfold, and round-trip mesh I/O (3MF, glTF/GLB, OBJ, STL reader). Listed in `docs/plans/geometry-kernel-roadmap.md` §4b. **Priority order is the listing order** — top-9 (GK-73..GK-81) are highest user-value × smallest effort, sonnet-parallel; later items unlock harder workflows. All pure-Python, additive to the public façade.
+- **Target files/packages:** see per-item `geom/<file>.py` references in roadmap §4b; tests live in `packages/kerf-cad-core/tests/`. Public exports added to `geom/__init__.py`.
+- **Definition of Done:**
+  - All 21 GK-73..GK-93 entries ticked in `docs/plans/geometry-kernel-roadmap.md` with `*Landed: N tests.*`
+  - `python -m pytest packages/kerf-cad-core/tests/ -q` green
+  - `geom/__init__.py` exports each new public symbol; import-snapshot test passes
+  - `npm run build` clean
+- **Depends-on:** GK-01..GK-72 (all kernel spine + long-tail) — complete
+
