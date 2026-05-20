@@ -738,7 +738,7 @@ highest user-value × smallest effort (sonnet, parallel); later items
 unlock harder workflows. All pure-Python, additive to the public façade
 in `geom/__init__.py`.
 
-- [ ] **GK-73** Inset face (SubD cage + Body face): offset a face inward
+- [x] **GK-73** Inset face (SubD cage + Body face): offset a face inward
   with a per-edge gap, creating a ring of new quads/faces around the
   original. — `geom/inset_face.py` — oracle: inset(area=A, gap=g) on a
   planar quad yields outer quad of area A, inner of area
