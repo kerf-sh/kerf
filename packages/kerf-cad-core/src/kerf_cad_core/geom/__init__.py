@@ -121,6 +121,7 @@ from kerf_cad_core.geom.io.iges import (
     IgesWriteError,
 )
 # GK-37: certified Hausdorff surface deviation
+from kerf_cad_core.geom.surface_fillet import variable_radius_fillet_g1
 from kerf_cad_core.geom.surface_analysis import hausdorff_deviation, zebra_stripe, zebra_stripe_continuity_analyser
 # GK-47: STEP reader
 from kerf_cad_core.geom.io.step_read import read_step, StepReadError
@@ -220,6 +221,7 @@ __all__ = [
     "IgesReadError",
     "IgesWriteError",
     # GK-37
+    "variable_radius_fillet_g1",
     "hausdorff_deviation","zebra_stripe","zebra_stripe_continuity_analyser",
     "read_step","StepReadError",
     # GK-23
