@@ -629,7 +629,7 @@ estimates: **S** = ½ day, **M** = 1-2 days, **L** = 3-5 days, **XL** =
 
 ### T-323 3D in-vehicle wiring harness — route through DMU (P1-7)
 
-🔴 not started · **Tier A · P1**
+✅ shipped (2026-05-20) · **Tier A · P1**
 
 - **Why:** ROADMAP §3 P1-7 — automotive / ECAD personas need 3D
   routing through the digital mock-up. Today only 2D WireViz
