@@ -1143,3 +1143,196 @@ __all__ = [
     "sphere_to_body",
     "revolve_to_body",
 ]
+
+
+def extrude_to_body(
+    profile_vertices: Sequence[Sequence[float]],
+    direction: Sequence[float],
+    tol: float = 1e-7,
+) -> Body:
+    """Extrude a closed planar polygon (cap-style) into a solid ``Body``.
+
+    Parameters
+    ----------
+    profile_vertices
+        Ordered sequence of N 3-D points forming a **closed** planar polygon.
+        The polygon must be convex or at least simply connected (no
+        self-intersections).  The last point need not repeat the first.
+    direction
+        3-D extrusion vector whose magnitude is the extrusion height.
+    tol
+        Topological tolerance for ``Vertex`` / ``Edge`` / ``Face``.
+
+    Returns
+    -------
+    Body
+        A closed solid with N+2 faces (N side quads + bottom cap + top cap),
+        2N vertices, 3N edges.  For a 4-sided polygon (rectangle/square) the
+        oracle is V=8, E=12, F=6 — identical to a box.  ``validate_body`` is
+        asserted clean before return.
+
+    Notes
+    -----
+    The bottom cap normal points *opposite* to ``direction`` (outward from the
+    solid); the top cap normal points *along* ``direction``.  Side face normals
+    point radially outward.
+    """
+    verts_raw = [np.asarray(p, dtype=float).reshape(3) for p in profile_vertices]
+    n = len(verts_raw)
+    if n < 3:
+        raise BuildError(
+            f"extrude_to_body requires at least 3 profile vertices; got {n}"
+        )
+    d = np.asarray(direction, dtype=float).reshape(3)
+    d_len = float(np.linalg.norm(d))
+    if d_len < 1e-14:
+        raise BuildError("extrude_to_body direction vector has zero length")
+
+    # Compute profile normal to detect and enforce CCW bottom winding.
+    # For each polygon vertex pair compute the cross product accumulation.
+    centroid_bot = np.mean(verts_raw, axis=0)
+    area_vec = np.zeros(3)
+    for i in range(n):
+        a = verts_raw[i] - centroid_bot
+        b = verts_raw[(i + 1) % n] - centroid_bot
+        area_vec += np.cross(a, b)
+    # We want the bottom face normal to point anti-parallel to d (outward).
+    # If area_vec is parallel to d, the polygon is wound CCW w.r.t. d; we
+    # want it wound CW w.r.t. d so the bottom face normal (= profile normal
+    # from CCW winding via right-hand rule) opposes d.
+    # Equivalently: bottom loops should be wound CW when viewed from the d
+    # direction, i.e. CCW when viewed from -d (the outward direction).
+    # Reverse if area_vec is anti-parallel to d (which means CCW from -d is
+    # actually CW — the normal already matches -d via the polygon's current
+    # winding; in that case leave it as-is).
+    # Simpler: we want area_vec · d < 0 for correct outward-normal bottom.
+    if float(np.dot(area_vec, d)) > 0:
+        # Currently wound CCW w.r.t. d -> reverse so it winds CW w.r.t. d
+        # (= CCW w.r.t. -d, outward normal = -d direction).
+        verts_raw = list(reversed(verts_raw))
+
+    # Build 2N vertices
+    bot_V = [Vertex(p.copy(), tol) for p in verts_raw]
+    top_V = [Vertex(p + d, tol) for p in verts_raw]
+
+    # Build edges
+    # Bottom ring: bot_V[i] -> bot_V[(i+1)%n]
+    bot_edges: List[Edge] = []
+    for i in range(n):
+        p0 = bot_V[i].point
+        p1 = bot_V[(i + 1) % n].point
+        bot_edges.append(Edge(Line3(p0, p1), 0.0, 1.0, bot_V[i], bot_V[(i + 1) % n], tol))
+
+    # Top ring: top_V[i] -> top_V[(i+1)%n]
+    top_edges: List[Edge] = []
+    for i in range(n):
+        p0 = top_V[i].point
+        p1 = top_V[(i + 1) % n].point
+        top_edges.append(Edge(Line3(p0, p1), 0.0, 1.0, top_V[i], top_V[(i + 1) % n], tol))
+
+    # Vertical edges: bot_V[i] -> top_V[i]
+    vert_edges: List[Edge] = []
+    for i in range(n):
+        p0 = bot_V[i].point
+        p1 = top_V[i].point
+        vert_edges.append(Edge(Line3(p0, p1), 0.0, 1.0, bot_V[i], top_V[i], tol))
+
+    d_unit = d / d_len
+
+    # -----------------------------------------------------------------------
+    # Bottom cap face: loop traverses bot_V[0] -> bot_V[1] -> ... -> bot_V[n-1]
+    # (forward, using orientation=True for each bot_edge[i]).
+    # After the `verts_raw` winding normalisation (area_vec · d < 0), the
+    # polygon normal (from CCW right-hand rule) already points in the -d
+    # direction.  The Plane's x_axis × y_axis must equal -d_unit.
+    # With x_axis = edge_dir and y_axis = (-d_unit) × edge_dir the product
+    # is edge_dir × ((-d_unit) × edge_dir) = -d_unit (by triple-product
+    # identity, given edge_dir ⊥ d_unit for a planar profile). ✓
+    bot_coedges: List[Coedge] = [Coedge(bot_edges[i], True) for i in range(n)]
+    bot_loop = Loop(bot_coedges, is_outer=True)
+    x_axis_bot = _unit(verts_raw[1] - verts_raw[0])
+    y_axis_bot = _unit(np.cross(-d_unit, x_axis_bot))
+    bot_plane = Plane(origin=verts_raw[0].copy(), x_axis=x_axis_bot, y_axis=y_axis_bot)
+    bot_face = Face(bot_plane, [bot_loop], orientation=True, tol=tol)
+
+    # -----------------------------------------------------------------------
+    # Top cap face: loop traverses top_V[n-1] -> top_V[n-2] -> ... -> top_V[0]
+    # (reversed relative to the bottom), so the right-hand normal points in
+    # the +d direction (outward from the top of the solid).
+    # Coedge k uses top_edges[(n-1-k) % n] reversed:
+    #   k=0: top_edges[n-1] reversed  -> top_V[0] -> top_V[n-1]
+    #   k=1: top_edges[n-2] reversed  -> top_V[n-1] -> top_V[n-2]
+    #   ...
+    # Traversal sequence: top_V[0], top_V[n-1], top_V[n-2], ..., top_V[1]
+    # which is a valid (cyclic) reversed polygon.
+    # The Plane's x_axis × y_axis must equal +d_unit.
+    # With x_axis = edge_dir and y_axis = d_unit × edge_dir the product is
+    # edge_dir × (d_unit × edge_dir) = d_unit. ✓
+    top_coedges: List[Coedge] = [
+        Coedge(top_edges[(n - 1 - k) % n], False) for k in range(n)
+    ]
+    top_loop = Loop(top_coedges, is_outer=True)
+    x_axis_top = _unit(verts_raw[1] - verts_raw[0])
+    y_axis_top = _unit(np.cross(d_unit, x_axis_top))
+    top_plane = Plane(origin=(verts_raw[0] + d).copy(), x_axis=x_axis_top, y_axis=y_axis_top)
+    top_face = Face(top_plane, [top_loop], orientation=True, tol=tol)
+
+    # -----------------------------------------------------------------------
+    # Side faces: one per edge i -> j where j=(i+1)%n.
+    # CCW traversal (outward normal = d_unit × edge_dir by right-hand rule):
+    #   bot_V[i] -> top_V[i] -> top_V[j] -> bot_V[j] -> bot_V[i]
+    # Coedges:
+    #   vert_edge[i]     forward  (bot_V[i]   -> top_V[i])
+    #   top_edge[i]      forward  (top_V[i]   -> top_V[j])
+    #   vert_edge[j]     reversed (top_V[j]   -> bot_V[j])
+    #   bot_edge[i]      reversed (bot_V[j]   -> bot_V[i])
+    #
+    # 2-manifold consistency:
+    #   • bot_edges[i] reversed here ↔ forward in bottom cap → opposite ✓
+    #   • top_edges[i] forward here  ↔ reversed in top cap   → opposite ✓
+    #   • vert_edges[i] forward here ↔ reversed in side face (i-1) → opposite ✓
+    #   • vert_edges[j] reversed here↔ forward in side face i+1    → opposite ✓
+    #
+    # Plane: x_axis = edge_dir, y_axis = d_unit → x × y = edge_dir × d_unit
+    # = -(d_unit × edge_dir) = -outward. So we flip: x_axis = -d_unit, y_axis = edge_dir
+    # → x × y = (-d_unit) × edge_dir = -(d_unit × edge_dir) ... still wrong.
+    # Correct: outward_normal = cross(d_unit, edge_dir).
+    # Use x_axis = d_unit, y_axis = edge_dir → x × y = d_unit × edge_dir = outward ✓
+    side_faces: List[Face] = []
+    for i in range(n):
+        j = (i + 1) % n
+        ce0 = Coedge(vert_edges[i], True)       # bot_V[i]   -> top_V[i]
+        ce1 = Coedge(top_edges[i], True)        # top_V[i]   -> top_V[j]
+        ce2 = Coedge(vert_edges[j], False)      # top_V[j]   -> bot_V[j]
+        ce3 = Coedge(bot_edges[i], False)       # bot_V[j]   -> bot_V[i]
+        side_loop = Loop([ce0, ce1, ce2, ce3], is_outer=True)
+        p_i = bot_V[i].point
+        p_j = bot_V[j].point
+        edge_dir = _unit(p_j - p_i)
+        sx = d_unit              # x-axis = extrusion direction
+        sy = edge_dir            # y-axis = edge direction  →  x×y = d_unit × edge_dir = outward ✓
+        side_plane = Plane(origin=p_i.copy(), x_axis=sx, y_axis=sy)
+        side_faces.append(Face(side_plane, [side_loop], orientation=True, tol=tol))
+
+    # -----------------------------------------------------------------------
+    all_faces: List[Face] = [bot_face, top_face] + side_faces
+    shell = Shell(all_faces, is_closed=True)
+    body = Body(solids=[Solid([shell])])
+    res = validate_body(body)
+    if not res["ok"]:
+        raise BuildError(
+            f"extrude_to_body produced invalid Body: {res['errors']}", res
+        )
+    return body
+
+
+__all__ = [
+    "BuildError",
+    "surface_to_face",
+    "surfaces_to_shell",
+    "closed_shell_to_solid",
+    "box_to_body",
+    "cylinder_to_body",
+    "sphere_to_body",
+    "extrude_to_body",
+]

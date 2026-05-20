@@ -72,6 +72,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 import numpy as np
 
 from kerf_cad_core.occ_helpers import _OCC_AVAILABLE  # noqa: F401 (re-exported below)
+from kerf_cad_core.geom.brep_build import BuildError, extrude_to_body as _brep_extrude_to_body
 
 # ---------------------------------------------------------------------------
 # Internal helpers
@@ -809,6 +810,108 @@ def wirecut(
                 "BRepPrimAPI_MakePrism + BRepAlgoAPI_Cut require pythonOCC; "
                 "analytic spec ready for OCCT worker."
             ),
+        },
+    }
+
+
+# ---------------------------------------------------------------------------
+# 7. extrude_to_body
+# ---------------------------------------------------------------------------
+
+def extrude_to_body(
+    profile_vertices: Sequence,
+    direction: Sequence,
+    *,
+    tol: float = 1e-7,
+) -> dict:
+    """Extrude a closed planar polygon into a capped solid ``Body``.
+
+    Parameters
+    ----------
+    profile_vertices : sequence of [x, y, z]
+        Ordered N-point closed planar polygon (N ≥ 3).  The last point need
+        not repeat the first.
+    direction : [dx, dy, dz]
+        Extrusion vector; its magnitude is the extrusion height.
+    tol : float
+        Topological tolerance forwarded to the B-rep builder.
+
+    Returns
+    -------
+    dict
+        ok, body (:class:`kerf_cad_core.geom.brep.Body`), volume, n_faces,
+        n_edges, n_vertices, geometry_params.
+        On error: ok=False, reason, zero-value fields, body=None.
+
+    Notes
+    -----
+    The returned ``body`` satisfies ``validate_body(body)["ok"] is True``.
+    For a 4-sided profile the topology is V=8, E=12, F=6 (identical to a
+    box); the Euler–Poincaré residual is 0.
+    Volume is computed analytically as ``|profile_area| * |direction|``.
+    """
+    _ZERO: dict = {
+        "ok": False,
+        "reason": "",
+        "body": None,
+        "volume": 0.0,
+        "n_faces": 0,
+        "n_edges": 0,
+        "n_vertices": 0,
+        "geometry_params": {},
+    }
+
+    # Validate inputs
+    try:
+        verts = [_vec3(p) for p in profile_vertices]
+    except Exception as exc:
+        return {**_ZERO, "reason": f"invalid profile_vertices: {exc}"}
+
+    if len(verts) < 3:
+        return {**_ZERO, "reason": "profile_vertices must have at least 3 points"}
+
+    try:
+        d = _vec3(direction)
+    except Exception as exc:
+        return {**_ZERO, "reason": f"invalid direction: {exc}"}
+
+    d_len = float(np.linalg.norm(d))
+    if d_len < 1e-14:
+        return {**_ZERO, "reason": "direction must be a non-zero vector"}
+
+    # Analytic volume = |profile_area| * height
+    centroid = np.mean(verts, axis=0)
+    area_vec = np.zeros(3)
+    for i in range(len(verts)):
+        a = verts[i] - centroid
+        b = verts[(i + 1) % len(verts)] - centroid
+        area_vec += np.cross(a, b)
+    profile_area = float(np.linalg.norm(area_vec)) * 0.5
+    volume = profile_area * d_len
+
+    try:
+        body = _brep_extrude_to_body(verts, d, tol=tol)
+    except BuildError as exc:
+        return {**_ZERO, "reason": str(exc)}
+    except Exception as exc:
+        return {**_ZERO, "reason": f"extrude_to_body failed: {exc}"}
+
+    counts = body.euler_counts()
+    return {
+        "ok": True,
+        "reason": "",
+        "body": body,
+        "volume": volume,
+        "n_faces": counts["F"],
+        "n_edges": counts["E"],
+        "n_vertices": counts["V"],
+        "geometry_params": {
+            "n_profile_verts": len(verts),
+            "profile_area": profile_area,
+            "direction": d.tolist(),
+            "height": d_len,
+            "tol": tol,
+            "occ_available": _OCC_AVAILABLE,
         },
     }
 
