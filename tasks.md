@@ -881,19 +881,8 @@ estimates: **S** = ½ day, **M** = 1-2 days, **L** = 3-5 days, **XL** =
 
 ### T-332b Reverse-engineering pipeline v2 — deferred sub-capabilities
 
-🔴 not started · **Tier A · P2**
+✅ shipped (2026-05-20) · **Tier A · P2** — binary PLY/PCD (LE+BE) parsers, statistical-outlier noise filter + Laplacian smoothing, cone LM refinement (≤0.0008° half-angle), torus RANSAC (≤0.6% R/r); 166 tests. **Still deferred (OCC/NURBS-blocked):**
 
-Deferred from T-332 v1 (shipped 2026-05-20).  Pick up any/all of:
-
-- **Real scanner noise handling** — robust outlier pre-filtering (statistical
-  outlier removal, bilateral smoothing) before RANSAC.  Current RANSAC
-  thresholds are tuned for ≤ 0.5 % synthetic noise.
-- **Binary PLY / binary PCD** — add binary-LE / binary-BE parsers in
-  `reverse_engineering/io.py` (v1 raises `UnsupportedFormatError`).
-- **Cone accuracy** — the v1 pure-Python linear fitter has ~0.8° half-angle
-  error (no Levenberg-Marquardt refinement).  Add iterative non-linear
-  refinement for cone parameters.
-- **Torus primitive** — RANSAC torus fitting for common swept features.
 - **Topology / feature ordering** — constructive history reconstruction
   (which feature is additive vs. subtractive) requires an OCC Boolean
   evaluation pass (depends on T-327 AFR).
