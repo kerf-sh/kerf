@@ -42,25 +42,19 @@ curve_curve_intersect(curve_a, curve_b, *, tol, samples_a, samples_b)
         point   : list[float, float, float]
     Never raises.  Duplicate hits closer than ``tol`` are merged.
 
-<<<<<<< HEAD
     GK-11 additions:
       Overlap / coincidence: if both curves share a locus (e.g. identical
       circles) returns [{"overlap": True}] — a single sentinel dict with no
       "point" key — rather than a flood of discrete points.
       Tangency multiplicity: tangent intersections (curves touch without
       crossing) produce exactly ONE hit, not a numerically doubled pair.
-=======
-curve_self_intersect(curve, *, tol, samples)
-    -> list[dict]
-    Find all self-intersection points of a single NurbsCurve.  Splits the
-    curve into sub-segments, tests non-adjacent segment AABB pairs, and
-    refines each candidate via Newton iteration, excluding trivial
-    endpoint-adjacency.  Returns a list of dicts, each with:
-        ta      : float  -- smaller parameter at the self-intersection
-        tb      : float  -- larger parameter at the self-intersection
-        point   : list[float, float, float]
-    Never raises.  Duplicate hits closer than ``tol`` are merged.
->>>>>>> 35d03880 (feat(geom): GK-12 curve self-intersection (lemniscate oracle))
+
+    GK-12 — curve_self_intersect(curve, *, tol, samples) -> list[dict]:
+      Find all self-intersection points of a single NurbsCurve.  Splits the
+      curve into sub-segments, tests non-adjacent segment AABB pairs, and
+      refines each candidate via Newton iteration, excluding trivial
+      endpoint-adjacency.  Each dict has ta (smaller param), tb (larger
+      param), point.  Never raises.  Duplicate hits within ``tol`` merged.
 
 Implementation note
 -------------------

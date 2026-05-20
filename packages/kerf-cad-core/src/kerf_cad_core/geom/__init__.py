@@ -118,6 +118,8 @@ from kerf_cad_core.geom.io.iges import (
 )
 # GK-37: certified Hausdorff surface deviation
 from kerf_cad_core.geom.surface_analysis import hausdorff_deviation
+# GK-47: STEP reader
+from kerf_cad_core.geom.io.step_read import read_step, StepReadError
 # GK-23: body mass properties
 from kerf_cad_core.geom.mass_props import body_mass_props
 # GK-55: mesh boolean sealed-manifold
@@ -214,6 +216,7 @@ __all__ = [
     "IgesWriteError",
     # GK-37
     "hausdorff_deviation",
+    "read_step","StepReadError",
     # GK-23
     "body_mass_props",
     # GK-55
