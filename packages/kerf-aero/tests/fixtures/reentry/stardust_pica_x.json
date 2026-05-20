@@ -1,0 +1,26 @@
+{
+  "_comment": "Stardust SRC stagnation-point re-entry scenario — PICA-X heat shield.",
+  "_references": [
+    "Sepka & Kontinos (2007) AIAA 2007-1248 — Stardust aerothermal environment",
+    "Covington et al. (2009) JSR 45-4 — PICA arc-jet tests, recession data",
+    "Milos & Chen (2009) JSR 46-3 — FIAT ablation code validation"
+  ],
+  "scenario": "Stardust SRC entry, 15 January 2006",
+  "vehicle": {
+    "nose_radius_m": 0.2,
+    "entry_velocity_km_s": 12.8,
+    "entry_fpa_deg": -8.2,
+    "entry_altitude_km": 135
+  },
+  "tps_stack": {
+    "description": "PICA + LI-900 + Al-2024 structural wall",
+    "layers": [
+      {"material": "PICA",   "thickness_mm": 60.0, "n_nodes": 25},
+      {"material": "LI-900", "thickness_mm": 20.0, "n_nodes": 12},
+      {"material": "Al-2024","thickness_mm":  5.0, "n_nodes":  6}
+    ]
+  },
+  "heat_flux_profile": "stardust_src_flux_profile",
+  "T_initial_K": 300.0,
+  "output_interval_s": 2.0
+}

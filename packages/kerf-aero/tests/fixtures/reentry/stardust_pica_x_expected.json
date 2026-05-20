@@ -1,0 +1,24 @@
+{
+  "_comment": "Expected (published) oracle values for Stardust SRC PICA-X case.",
+  "_references": [
+    "Sepka & Kontinos (2007) AIAA 2007-1248",
+    "Covington et al. (2009) JSR 45-4 — total recession ~5 mm",
+    "Poteet et al. — bondline temperature well below 250°C structural limit"
+  ],
+  "peak_surface_temp_K": {
+    "value": 2700,
+    "tolerance_pct": 10,
+    "_note": "Published stagnation surface temperature at peak heating; 1-D model accuracy ±10%"
+  },
+  "total_recession_mm": {
+    "value": 5.0,
+    "tolerance_pct": 20,
+    "_note": "Published total ablative recession depth for Stardust SRC PICA heat shield"
+  },
+  "max_bondline_temp_K": {
+    "value": 523.15,
+    "threshold_K": 523.15,
+    "direction": "below",
+    "_note": "Bondline must stay below 250°C (523.15 K) for structural integrity"
+  }
+}
