@@ -1,0 +1,17 @@
+{
+  "_comment": "Latch-up fixture: nwell with no tap within 20 µm of centroid. All coordinates in µm.",
+  "layers": {
+    "nwell": [
+      {
+        "_comment": "A 30×30 µm nwell. Centroid at (15, 15).",
+        "polygon": [[0, 0], [30, 0], [30, 30], [0, 30]]
+      }
+    ],
+    "tap": [
+      {
+        "_comment": "Tap placed 25 µm to the right of the nwell — well outside the 15 µm radius.",
+        "polygon": [[55, 14], [57, 14], [57, 16], [55, 16]]
+      }
+    ]
+  }
+}

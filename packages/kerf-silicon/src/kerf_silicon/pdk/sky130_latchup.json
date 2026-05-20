@@ -1,0 +1,44 @@
+{
+  "pdk": "sky130",
+  "version": "1.0",
+  "description": "SKY130 latch-up design-rule deck. All distances in micrometres (µm).",
+  "sources": [
+    "SkyWater SKY130 PDK DRC manual: https://skywater-pdk.readthedocs.io/en/main/rules/periphery.html#latch-up",
+    "SKY130A latch-up rule LU.x from SkyWater DRC deck"
+  ],
+  "well_tap": {
+    "description": "Every nwell must have a tap to VDD, and every p-substrate region must have a tap to VSS, within max_distance_um. Taps are identified by the 'tap' layer (GDS 65/44).",
+    "max_distance_um": 15.0,
+    "note": "SKY130 spec 15–25 µm; we enforce the tighter 15 µm as default. Waiver layer areaid.lowTapDensity (GDS 81/14) overrides this limit.",
+    "taps_required_for": [
+      {
+        "well_type": "nwell",
+        "tap_purpose": "VDD",
+        "well_layer": "nwell",
+        "tap_layer": "tap"
+      },
+      {
+        "well_type": "psub",
+        "tap_purpose": "VSS",
+        "well_layer": "pwell",
+        "tap_layer": "tap"
+      }
+    ]
+  },
+  "np_adjacency": {
+    "description": "n+ source/drain (nsdm) regions must not sit closer than min_separation_um to p+ source/drain (psdm) regions across an nwell boundary. Regions on the same side of a well boundary (both in nwell or both in psub) are exempt.",
+    "min_separation_um": 0.84,
+    "n_plus_layer": "nsdm",
+    "p_plus_layer": "psdm",
+    "well_boundary_layer": "nwell",
+    "note": "SKY130 LU.3 / LU.4: minimum n+/p+ separation across well boundary ≈ 0.84 µm (nwell width minimum). Closer than this risks parasitic bipolar latch-up."
+  },
+  "layers": {
+    "nwell": {"gds_layer": 64, "gds_datatype": 20},
+    "pwell": {"gds_layer": 122, "gds_datatype": 16},
+    "tap":   {"gds_layer": 65,  "gds_datatype": 44},
+    "nsdm":  {"gds_layer": 93,  "gds_datatype": 44},
+    "psdm":  {"gds_layer": 94,  "gds_datatype": 20},
+    "areaid.lowTapDensity": {"gds_layer": 81, "gds_datatype": 14}
+  }
+}

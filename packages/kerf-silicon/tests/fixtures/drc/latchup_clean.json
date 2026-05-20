@@ -1,0 +1,29 @@
+{
+  "_comment": "Latch-up control fixture: nwell with tap within 5 µm, n+/p+ separated by 1.5 µm across the well boundary. Expects 0 violations. All coordinates in µm.",
+  "layers": {
+    "nwell": [
+      {
+        "_comment": "nwell spanning x=0..10, y=0..10. Centroid at (5, 5).",
+        "polygon": [[0, 0], [10, 0], [10, 10], [0, 10]]
+      }
+    ],
+    "tap": [
+      {
+        "_comment": "Tap inside nwell. Distance from nwell centroid (5,5) to tap centroid (2,2) ≈ 4.24 µm < 15 µm. Passes well-tap rule.",
+        "polygon": [[0.5, 0.5], [3.5, 0.5], [3.5, 3.5], [0.5, 3.5]]
+      }
+    ],
+    "nsdm": [
+      {
+        "_comment": "n+ region inside nwell. Right edge at x=8.0.",
+        "polygon": [[5.0, 4.0], [8.0, 4.0], [8.0, 6.0], [5.0, 6.0]]
+      }
+    ],
+    "psdm": [
+      {
+        "_comment": "p+ region outside nwell. Left edge at x=11.5. Distance to nsdm right edge (8.0): 11.5 - 8.0 = 3.5 µm > 0.84 µm. Passes adjacency rule.",
+        "polygon": [[11.5, 4.0], [14.5, 4.0], [14.5, 6.0], [11.5, 6.0]]
+      }
+    ]
+  }
+}
