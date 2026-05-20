@@ -175,7 +175,7 @@ noted.
   File: `packages/kerf-electronics/tests/test_feature_pcb_3d_step.py`
   Success: 25 boards; STEP solid valid; component placement matches PnP; IDF round-trip back to PCB.
 
-- [ ] T-31 Electronic: netlist + ERC depth
+- [x] T-31 Electronic: netlist + ERC depth
   Scope: full ERC pass + KiCad / EAGLE / Allegro netlist export.
   File: `packages/kerf-electronics/tests/test_feature_pcb_netlist_erc.py`
   Success: 25 schematics; ERC catches floating-input / power-conflict / multi-driver classes; netlist round-trip.
