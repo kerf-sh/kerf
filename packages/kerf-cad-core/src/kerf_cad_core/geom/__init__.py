@@ -299,6 +299,8 @@ from kerf_cad_core.geom.split_body import (
 from kerf_cad_core.geom.knife import knife_face
 
 from kerf_cad_core.geom.replace_face import replace_face
+# GK-93: symmetry detection (reflective + rotational)
+from kerf_cad_core.geom.symmetry import detect_symmetry
 
 __all__ = [
     "NurbsCurve",
@@ -491,4 +493,6 @@ __all__ = [
     "replace_face",
     # GK-88
     "subd_loop_slide",
+    # GK-93
+    "detect_symmetry",
 ]

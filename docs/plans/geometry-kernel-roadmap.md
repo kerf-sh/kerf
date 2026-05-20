@@ -842,7 +842,7 @@ in `geom/__init__.py`.
   `geom/surface_analysis.py` — oracle: cylinder pulled along its
   axis → all side faces report 0° (vertical), end caps report 90°. —
   dep: GK-21 — parallel: Y — sonnet.
-- [ ] **GK-93** Symmetry detection: detect reflective + rotational
+- [x] **GK-93** Symmetry detection: detect reflective + rotational
   symmetry planes of a Body (returns list of planes/axes + order). —
   `geom/symmetry.py` — oracle: a box returns 3 mirror planes + 3
   rotation axes (orders 2,2,2); a sphere returns ∞-mark. — dep:
