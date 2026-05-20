@@ -218,6 +218,13 @@ from kerf_cad_core.geom.boolean import (
     body_intersection,
     body_difference,
 )
+# GK-29: solid edge/corner blend (concave/convex; degree-3 cylinder/sphere faces)
+from kerf_cad_core.geom.blend_solid import (
+    BlendResult,
+    blend_edge,
+    blend_edges,
+    blend_corner_vertex,
+)
 # GK-52: SubD cage → watertight NURBS Body (Catmull-Clark limit surface)
 # GK-53: NURBS Body → SubD cage (reverse, quad-dominant)
 from kerf_cad_core.geom.subd_to_nurbs import (
@@ -373,4 +380,9 @@ __all__ = [
     "NurbsToSubdError",
     "nurbs_body_to_subd_cage",
     "nurbs_to_subd_cage",
+    # GK-29
+    "BlendResult",
+    "blend_edge",
+    "blend_edges",
+    "blend_corner_vertex",
 ]
