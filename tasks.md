@@ -3100,6 +3100,30 @@ are captured in the 2026-05-18 status comment above.
 
 ---
 
+### T-322 `kerf export` / `kerf import` — project portability (materialized tree)
+- **Tier:** A
+- **Priority:** P0
+- **Status:** ✅ shipped (2026-05-20) · **Tier A · P0**
+- **Scope:** `kerf export <project-id> --out <dir>` materialises the full
+  project as a plain directory tree with `.kerf/metadata.json` (project
+  name, IDs, tags) and `.kerf/manifest.lock` (per-file SHA-256 OIDs,
+  cloud_git_repo default_branch, workspace_id_hint). `kerf import <dir>`
+  reverses the operation losslessly. Both commands are symmetric across
+  cloud and self-hosted instances.
+- **Target files:**
+  - `packages/kerf-cli/src/kerf_cli/export.py`
+  - `packages/kerf-cli/src/kerf_cli/import_.py`
+  - `packages/kerf-cli/tests/test_export_import_roundtrip.py`
+  - `docs/architecture/portability.md`
+- **Definition of Done:** export writes files + `.kerf/metadata.json` +
+  `.kerf/manifest.lock`; import reverses losslessly; round-trip test
+  (export → wipe → import → diff = empty) passes; manifest.lock records
+  file SHAs + cloud_git_repo default_branch + workspace_id hint; pytest
+  32 tests green.
+- **Depends-on:** T-128 (existing ZIP spine)
+
+---
+
 ## Sector depth — embedded/firmware + PLC (T-129 … T-130)
 
 ### T-129 Ladder logic / PLC — IEC 61131-3 LD editor (complements `plc_st`)

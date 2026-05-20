@@ -84,19 +84,14 @@ class TestExportParserSmoke:
         from kerf_cli.main import _build_parser
         args = _build_parser().parse_args(["export", "proj-uuid"])
         assert args.project_id == "proj-uuid"
-        assert args.output == ""
+        assert args.out == ""
         assert args.url == ""
         assert args.token == ""
 
-    def test_export_output_flag(self):
+    def test_export_out_flag(self):
         from kerf_cli.main import _build_parser
-        args = _build_parser().parse_args(["export", "proj-uuid", "-o", "out.zip"])
-        assert args.output == "out.zip"
-
-    def test_export_long_output_flag(self):
-        from kerf_cli.main import _build_parser
-        args = _build_parser().parse_args(["export", "proj-uuid", "--output", "out.zip"])
-        assert args.output == "out.zip"
+        args = _build_parser().parse_args(["export", "proj-uuid", "--out", "my-dir"])
+        assert args.out == "my-dir"
 
     def test_export_dispatches_to_cmd_export(self):
         from kerf_cli.main import _build_parser, _cmd_export
@@ -117,20 +112,20 @@ class TestImportParserSmoke:
 
     def test_import_defaults(self):
         from kerf_cli.main import _build_parser
-        args = _build_parser().parse_args(["import", "archive.zip"])
-        assert args.archive == "archive.zip"
+        args = _build_parser().parse_args(["import", "/some/dir"])
+        assert args.import_dir == "/some/dir"
         assert args.name == ""
         assert args.url == ""
         assert args.token == ""
 
     def test_import_name_flag(self):
         from kerf_cli.main import _build_parser
-        args = _build_parser().parse_args(["import", "a.zip", "--name", "My Project"])
+        args = _build_parser().parse_args(["import", "/some/dir", "--name", "My Project"])
         assert args.name == "My Project"
 
     def test_import_dispatches_to_cmd_import(self):
         from kerf_cli.main import _build_parser, _cmd_import
-        args = _build_parser().parse_args(["import", "a.zip"])
+        args = _build_parser().parse_args(["import", "/a/dir"])
         assert args.func is _cmd_import
 
 
@@ -139,52 +134,68 @@ class TestImportParserSmoke:
 # ---------------------------------------------------------------------------
 
 class TestExportBehaviour:
-    def test_export_writes_zip_to_disk(self, tmp_path, monkeypatch):
+    def test_export_writes_directory_tree(self, tmp_path, monkeypatch):
         monkeypatch.setenv("KERF_API_TOKEN", "kerf_sk_test")
 
-        zip_content = _make_zip({"design.step": b"STEP data"})
-        mock = _mock_resp(
-            zip_content,
-            headers={"Content-Disposition": 'attachment; filename="my-project-abcd1234.zip"'},
-        )
+        import hashlib, zipfile as _zf
+        content = b"STEP data"
+        manifest = {
+            "version": 1, "name": "Test", "description": "", "tags": [],
+            "created_at": "", "workspace_id_hint": "aaaabbbb",
+            "files": [{"path": "design.step", "kind": "file", "classification": "inline",
+                       "oid": hashlib.sha256(content).hexdigest(), "size": len(content)}],
+        }
+        buf = io.BytesIO()
+        with _zf.ZipFile(buf, "w") as zf:
+            zf.writestr("kerf-manifest.json", json.dumps(manifest))
+            zf.writestr("design.step", content)
+        zip_content = buf.getvalue()
 
-        output_path = tmp_path / "out.zip"
+        mock = _mock_resp(zip_content)
+        out_dir = tmp_path / "out-dir"
 
         with patch("urllib.request.urlopen", return_value=mock):
             code, _, err = _run_cmd([
                 "export", "proj-uuid",
-                "-o", str(output_path),
+                "--out", str(out_dir),
                 "--url", "http://fake-api",
                 "--token", "kerf_sk_test",
             ])
 
         assert code == 0
-        assert output_path.exists()
-        assert output_path.read_bytes() == zip_content
+        assert out_dir.is_dir()
+        assert (out_dir / "design.step").read_bytes() == content
         assert "Exported" in err
 
-    def test_export_uses_content_disposition_filename(self, tmp_path, monkeypatch):
+    def test_export_writes_kerf_metadata(self, tmp_path, monkeypatch):
         monkeypatch.setenv("KERF_API_TOKEN", "kerf_sk_test")
 
-        zip_content = _make_zip({"f.txt": b"hello"})
-        mock = _mock_resp(
-            zip_content,
-            headers={"Content-Disposition": 'attachment; filename="slug-00001111.zip"'},
-        )
+        import hashlib, zipfile as _zf
+        content = b"hello"
+        manifest = {
+            "version": 1, "name": "Slug Test", "description": "", "tags": [],
+            "created_at": "", "workspace_id_hint": "00001111",
+            "files": [{"path": "f.txt", "kind": "file", "classification": "inline",
+                       "oid": hashlib.sha256(content).hexdigest(), "size": len(content)}],
+        }
+        buf = io.BytesIO()
+        with _zf.ZipFile(buf, "w") as zf:
+            zf.writestr("kerf-manifest.json", json.dumps(manifest))
+            zf.writestr("f.txt", content)
+        zip_content = buf.getvalue()
+
+        mock = _mock_resp(zip_content)
+        out_dir = tmp_path / "slug-test"
 
         with patch("urllib.request.urlopen", return_value=mock):
             code, _, err = _run_cmd([
                 "export", "00001111-0000-0000-0000-000000000000",
+                "--out", str(out_dir),
                 "--url", "http://fake-api",
             ])
 
         assert code == 0
-        # Should write to the filename from Content-Disposition
-        assert (Path.cwd() / "slug-00001111.zip").exists() or "slug-00001111.zip" in err
-        # Clean up
-        p = Path("slug-00001111.zip")
-        if p.exists():
-            p.unlink()
+        assert (out_dir / ".kerf" / "metadata.json").exists()
 
     def test_export_no_token_exits_2(self, tmp_path, monkeypatch):
         monkeypatch.delenv("KERF_API_TOKEN", raising=False)
@@ -234,32 +245,51 @@ class TestExportBehaviour:
 # import — behaviour tests
 # ---------------------------------------------------------------------------
 
+def _make_export_dir(tmp_path: Path, files: dict, project_name: str = "Test Project") -> Path:
+    """Build a minimal export directory (as kerf export would produce)."""
+    import hashlib, zipfile as _zf, json as _json
+    out_dir = tmp_path
+    manifest_files = []
+    for path, content in files.items():
+        oid = hashlib.sha256(content).hexdigest()
+        manifest_files.append({
+            "path": path, "kind": "file", "classification": "inline",
+            "oid": oid, "size": len(content),
+        })
+        dest = out_dir / path
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(content)
+
+    kerf_dir = out_dir / ".kerf"
+    kerf_dir.mkdir(parents=True, exist_ok=True)
+    metadata = {
+        "kerf_export_version": 1,
+        "project_id": "test-pid",
+        "name": project_name,
+        "description": "", "tags": [],
+        "created_at": "", "workspace_id_hint": "aaaabbbb",
+    }
+    (kerf_dir / "metadata.json").write_text(_json.dumps(metadata), encoding="utf-8")
+    lock = {
+        "kerf_lock_version": 1,
+        "files": manifest_files,
+    }
+    (kerf_dir / "manifest.lock").write_text(_json.dumps(lock), encoding="utf-8")
+    return out_dir
+
+
 class TestImportBehaviour:
     def test_import_creates_project_and_uploads_files(self, tmp_path, monkeypatch):
         monkeypatch.setenv("KERF_API_TOKEN", "kerf_sk_test")
 
-        manifest = {
-            "name": "Test Project",
-            "files": [
-                {"path": "design.step", "kind": "step"},
-                {"path": "notes.txt", "kind": "file"},
-            ],
-        }
-        zip_path = tmp_path / "export.zip"
-        zip_path.write_bytes(_make_zip(
-            {
-                "design.step": b"STEP AP214",
-                "notes.txt": b"some notes",
-            },
-            manifest=manifest,
-        ))
+        files = {"design.step": b"STEP AP214", "notes.txt": b"some notes"}
+        export_dir = _make_export_dir(tmp_path / "exp", files, project_name="Test Project")
 
         create_resp = _mock_resp(json.dumps({"id": "new-proj-id"}).encode())
-        upload_resp1 = _mock_resp(json.dumps({"id": "f1"}).encode())
-        upload_resp2 = _mock_resp(json.dumps({"id": "f2"}).encode())
+        upload_resp = _mock_resp(json.dumps({"id": "f1"}).encode())
 
         call_index = [0]
-        resps = [create_resp, upload_resp1, upload_resp2]
+        resps = [create_resp] + [upload_resp] * len(files)
 
         def _urlopen(req, timeout=None):
             idx = call_index[0]
@@ -268,7 +298,7 @@ class TestImportBehaviour:
 
         with patch("urllib.request.urlopen", side_effect=_urlopen):
             code, _, err = _run_cmd([
-                "import", str(zip_path),
+                "import", str(export_dir),
                 "--url", "http://fake-api",
                 "--token", "kerf_sk_test",
             ])
@@ -277,17 +307,14 @@ class TestImportBehaviour:
         assert "new-proj-id" in err
         assert "2/2" in err
 
-    def test_import_uses_manifest_name(self, tmp_path, monkeypatch):
+    def test_import_uses_metadata_name(self, tmp_path, monkeypatch):
         monkeypatch.setenv("KERF_API_TOKEN", "kerf_sk_test")
 
-        manifest = {"name": "From Manifest", "files": [{"path": "a.txt", "kind": "file"}]}
-        zip_path = tmp_path / "proj.zip"
-        zip_path.write_bytes(_make_zip({"a.txt": b"hello"}, manifest=manifest))
+        export_dir = _make_export_dir(tmp_path / "exp", {"a.txt": b"hello"}, project_name="From Metadata")
 
         captured_name = []
 
         def _urlopen(req, timeout=None):
-            # First call: POST /api/projects — capture payload
             if hasattr(req, "data") and req.data:
                 body = json.loads(req.data.decode())
                 if "name" in body and "content" not in body:
@@ -296,19 +323,17 @@ class TestImportBehaviour:
 
         with patch("urllib.request.urlopen", side_effect=_urlopen):
             code, _, _ = _run_cmd([
-                "import", str(zip_path),
+                "import", str(export_dir),
                 "--url", "http://fake-api",
             ])
 
         assert code == 0
-        assert "From Manifest" in captured_name
+        assert "From Metadata" in captured_name
 
-    def test_import_custom_name_overrides_manifest(self, tmp_path, monkeypatch):
+    def test_import_custom_name_overrides_metadata(self, tmp_path, monkeypatch):
         monkeypatch.setenv("KERF_API_TOKEN", "kerf_sk_test")
 
-        manifest = {"name": "Old Name", "files": []}
-        zip_path = tmp_path / "proj.zip"
-        zip_path.write_bytes(_make_zip({}, manifest=manifest))
+        export_dir = _make_export_dir(tmp_path / "exp", {}, project_name="Old Name")
 
         captured_name = []
 
@@ -321,7 +346,7 @@ class TestImportBehaviour:
 
         with patch("urllib.request.urlopen", side_effect=_urlopen):
             _run_cmd([
-                "import", str(zip_path),
+                "import", str(export_dir),
                 "--name", "Custom Name",
                 "--url", "http://fake-api",
             ])
@@ -336,44 +361,29 @@ class TestImportBehaviour:
         import importlib
         importlib.reload(credentials)
 
-        zip_path = tmp_path / "x.zip"
-        zip_path.write_bytes(_make_zip({}))
+        fake_dir = tmp_path / "export-dir"
+        fake_dir.mkdir()
 
-        code, _, err = _run_cmd(["import", str(zip_path)])
+        code, _, err = _run_cmd(["import", str(fake_dir)])
         assert code == 2
         assert "KERF_API_TOKEN" in err
 
-    def test_import_missing_archive_exits_1(self, tmp_path, monkeypatch):
+    def test_import_missing_dir_exits_1(self, tmp_path, monkeypatch):
         monkeypatch.setenv("KERF_API_TOKEN", "kerf_sk_test")
 
         code, _, err = _run_cmd([
-            "import", str(tmp_path / "nonexistent.zip"),
+            "import", str(tmp_path / "nonexistent"),
             "--url", "http://fake-api",
         ])
         assert code == 1
-        assert "not found" in err.lower() or "archive" in err.lower()
-
-    def test_import_bad_zip_exits_1(self, tmp_path, monkeypatch):
-        monkeypatch.setenv("KERF_API_TOKEN", "kerf_sk_test")
-
-        bad_zip = tmp_path / "bad.zip"
-        bad_zip.write_bytes(b"this is not a zip file")
-
-        code, _, err = _run_cmd([
-            "import", str(bad_zip),
-            "--url", "http://fake-api",
-        ])
-        assert code == 1
-        assert "zip" in err.lower() or "archive" in err.lower()
+        assert "not found" in err.lower() or "directory" in err.lower()
 
     def test_import_round_trip(self, tmp_path, monkeypatch):
-        """Round-trip: content uploaded matches content in the archive."""
+        """Round-trip: content uploaded matches content in the export directory."""
         monkeypatch.setenv("KERF_API_TOKEN", "kerf_sk_test")
 
         original_content = b"This is the source of truth."
-        manifest = {"name": "RT", "files": [{"path": "src.txt", "kind": "file"}]}
-        zip_path = tmp_path / "rt.zip"
-        zip_path.write_bytes(_make_zip({"src.txt": original_content}, manifest=manifest))
+        export_dir = _make_export_dir(tmp_path / "exp", {"src.txt": original_content}, project_name="RT")
 
         uploaded_content = []
 
@@ -386,7 +396,7 @@ class TestImportBehaviour:
 
         with patch("urllib.request.urlopen", side_effect=_urlopen):
             code, _, _ = _run_cmd([
-                "import", str(zip_path),
+                "import", str(export_dir),
                 "--url", "http://fake-api",
             ])
 

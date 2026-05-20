@@ -9,8 +9,8 @@ kerf hydrate     Resolve LFS pointer stubs → real bytes from Kerf cloud storag
 kerf pull-blobs  Alias for kerf hydrate (plain-git-clone context).
 kerf sync        Two-way folder mirror between a local directory and a cloud
                  project (T-127).
-kerf export      Download a project as a self-contained ZIP archive (T-128).
-kerf import      Create a new project from a kerf export ZIP archive (T-128).
+kerf export      Materialise a project as a plain file tree on disk (T-322).
+kerf import      Re-create a project from a materialised export directory (T-322).
 """
 
 from __future__ import annotations
@@ -71,7 +71,7 @@ def _cmd_sync(args: argparse.Namespace) -> int:
 # ---------------------------------------------------------------------------
 
 def _cmd_export(args: argparse.Namespace) -> int:
-    from kerf_cli.portability import cmd_export  # noqa: PLC0415
+    from kerf_cli.export import cmd_export  # noqa: PLC0415
     return cmd_export(args)
 
 
@@ -80,7 +80,7 @@ def _cmd_export(args: argparse.Namespace) -> int:
 # ---------------------------------------------------------------------------
 
 def _cmd_import(args: argparse.Namespace) -> int:
-    from kerf_cli.portability import cmd_import  # noqa: PLC0415
+    from kerf_cli.import_ import cmd_import  # noqa: PLC0415
     return cmd_import(args)
 
 
@@ -368,11 +368,13 @@ def _add_export_parser(
     """Register the `export` sub-parser."""
     p = sub.add_parser(
         "export",
-        help="Download a project as a self-contained ZIP archive",
+        help="Materialise a project as a plain file tree on disk",
         description=(
-            "Call GET /api/projects/{id}/export and write the resulting ZIP\n"
-            "archive to disk.  The archive contains all project files plus a\n"
-            "kerf-manifest.json index.\n\n"
+            "Download a project from the Kerf server and write it as a\n"
+            "plain directory tree.  The output directory contains all project\n"
+            "files plus a .kerf/ sub-directory with:\n\n"
+            "  .kerf/metadata.json  — project name, description, tags, IDs\n"
+            "  .kerf/manifest.lock  — per-file SHA-256 OIDs + git/workspace info\n\n"
             "KERF_API_URL / KERF_API_TOKEN or `kerf login` credentials are\n"
             "used for authentication."
         ),
@@ -384,12 +386,12 @@ def _add_export_parser(
         help="Kerf project UUID.",
     )
     p.add_argument(
-        "-o", "--output",
+        "--out",
         default="",
-        metavar="FILE",
+        metavar="DIR",
         help=(
-            "Output file path.  Defaults to <slug>-<short-id>.zip as returned\n"
-            "by the server Content-Disposition header, or <short-id>.zip."
+            "Output directory.  Defaults to kerf-export-<short-id> in the\n"
+            "current working directory."
         ),
     )
     p.add_argument(
@@ -417,23 +419,23 @@ def _add_import_parser(
     """Register the `import` sub-parser."""
     p = sub.add_parser(
         "import",
-        help="Create a new project from a kerf export ZIP archive",
+        help="Re-create a project from a materialised export directory",
         description=(
-            "Read a ZIP archive produced by `kerf export`, create a new project\n"
+            "Read a directory produced by `kerf export`, create a new project\n"
             "via POST /api/projects, then upload each file.  The round-trip\n"
-            "export → import produces identical file content.\n\n"
-            "Note: a bulk POST /api/projects/import endpoint does not yet exist\n"
-            "on the server; files are uploaded individually via the existing\n"
-            "POST /api/projects/{id}/files endpoint.\n\n"
+            "export → import produces a new project with identical file content.\n\n"
+            "Project name comes from .kerf/metadata.json (--name overrides).\n"
+            "Per-file SHA-256 OIDs in .kerf/manifest.lock are verified before\n"
+            "upload so corrupted files are detected early.\n\n"
             "KERF_API_URL / KERF_API_TOKEN or `kerf login` credentials are\n"
             "used for authentication."
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     p.add_argument(
-        "archive",
-        metavar="archive",
-        help="Path to the ZIP archive (produced by `kerf export`).",
+        "import_dir",
+        metavar="dir",
+        help="Path to the export directory (produced by `kerf export`).",
     )
     p.add_argument(
         "--name",
@@ -441,7 +443,7 @@ def _add_import_parser(
         metavar="NAME",
         help=(
             "Project name for the newly created project.  Defaults to the\n"
-            "name stored in kerf-manifest.json, or the archive filename stem."
+            "name stored in .kerf/metadata.json, or the directory name."
         ),
     )
     p.add_argument(
