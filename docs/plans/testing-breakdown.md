@@ -100,7 +100,7 @@ noted.
   File: `packages/kerf-cad-core/tests/test_feature_jewelry_gem_report.py`
   Success: 25 cuts × proportions; numerical 4Cs match catalog; light-return metric stable run-to-run.
 
-- [ ] T-16 Jewelry: preset / template library round-trip
+- [x] T-16 Jewelry: preset / template library round-trip
   Scope: `templates.py` save / load / apply.
   File: `packages/kerf-cad-core/tests/test_feature_jewelry_templates.py`
   Success: 25 templates; deterministic re-instantiation; parameter migration on schema bump.
