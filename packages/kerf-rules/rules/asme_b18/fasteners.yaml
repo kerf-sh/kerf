@@ -1,0 +1,184 @@
+rules:
+  # ── ASME B18 — Fastener Standards ─────────────────────────────────────────
+  # B18.2.1: Square and Hex Bolts and Screws
+  # B18.2.2: Square and Hex Nuts
+  # B18.3: Socket Cap, Shoulder, and Set Screws
+
+  - id: ASME-B18-2.1-1
+    standard: ASME B18.2.1-2010
+    clause: Table 1
+    description: Hex bolt shank diameter tolerance — Class 2A fit for 1/4–4 inch
+    domain: mechanical
+    tags: [fastener, bolt, tolerance, hex]
+    when:
+      element_type: hex_bolt
+      has_properties:
+        - nominal_diameter_mm
+        - grade
+    then:
+      check: not_in
+      expr: grade
+      values: [""]
+      severity: error
+      message: "ASME B18.2.1 — bolt {id}: grade not specified; grade selection required per Table 1"
+
+  - id: ASME-B18-2.1-2
+    standard: ASME B18.2.1-2010
+    clause: "2.3"
+    description: SAE Grade 5 minimum yield 92 ksi (634 MPa) for bolts ≤ 1 inch
+    domain: mechanical
+    tags: [fastener, bolt, grade-5, strength]
+    when:
+      element_type: hex_bolt
+      has_properties:
+        - grade
+        - yield_strength_mpa
+        - nominal_diameter_mm
+    then:
+      check: ge
+      expr: "yield_strength_mpa"
+      limit: 634
+      severity: error
+      message: "ASME B18.2.1 §2.3 — bolt {id}: grade 5 requires Fy ≥ 634 MPa; got {value:.0f} MPa"
+
+  - id: ASME-B18-2.1-3
+    standard: ASME B18.2.1-2010
+    clause: "2.4"
+    description: SAE Grade 8 minimum yield 130 ksi (896 MPa)
+    domain: mechanical
+    tags: [fastener, bolt, grade-8, strength]
+    when:
+      element_type: hex_bolt
+      has_properties:
+        - grade
+        - yield_strength_mpa
+    then:
+      check: ge
+      expr: "yield_strength_mpa"
+      limit: 896
+      severity: error
+      message: "ASME B18.2.1 §2.4 — bolt {id}: grade 8 requires Fy ≥ 896 MPa; got {value:.0f} MPa"
+
+  - id: ASME-B18-2.2-1
+    standard: ASME B18.2.2-2010
+    clause: Table 1
+    description: Nut proof load — Grade C nut proof load ≥ 580 MPa equivalent
+    domain: mechanical
+    tags: [fastener, nut, proof-load]
+    when:
+      element_type: hex_nut
+      has_properties:
+        - grade
+        - proof_load_mpa
+    then:
+      check: ge
+      expr: "proof_load_mpa"
+      limit: 580
+      severity: error
+      message: "ASME B18.2.2 Table 1 — nut {id}: proof load {value:.0f} MPa < 580 MPa for Grade C"
+
+  - id: ASME-B18-3-1
+    standard: ASME B18.3-2003
+    clause: Table 1
+    description: Socket head cap screw — minimum tensile 180 ksi (1241 MPa) for alloy steel
+    domain: mechanical
+    tags: [fastener, socket-cap, tensile]
+    when:
+      element_type: socket_cap_screw
+      has_properties:
+        - tensile_strength_mpa
+    then:
+      check: ge
+      expr: "tensile_strength_mpa"
+      limit: 1241
+      severity: error
+      message: "ASME B18.3 Table 1 — screw {id}: tensile strength {value:.0f} MPa < 1241 MPa (alloy steel min)"
+
+  - id: ASME-B18-2.1-4
+    standard: ASME B18.2.1-2010
+    clause: "3.2"
+    description: Thread engagement length ≥ 1.0 × nominal diameter in steel
+    domain: mechanical
+    tags: [fastener, thread, engagement]
+    when:
+      element_type: threaded_fastener
+      has_properties:
+        - thread_engagement_mm
+        - nominal_diameter_mm
+    then:
+      check: ge
+      expr: "thread_engagement_mm / nominal_diameter_mm"
+      limit: 1.0
+      severity: error
+      message: "ASME B18.2.1 §3.2 — fastener {id}: thread engagement / d = {value:.2f} < 1.0"
+
+  - id: ASME-B18-2.1-5
+    standard: ASME B18.2.1-2010
+    clause: "4.1"
+    description: Bolt length tolerance — full thread ≥ 1-inch nominal length
+    domain: mechanical
+    tags: [fastener, bolt, length]
+    when:
+      element_type: hex_bolt
+      has_properties:
+        - nominal_length_mm
+        - grip_length_mm
+    then:
+      check: ge
+      expr: "nominal_length_mm"
+      limit: 6.35
+      severity: warning
+      message: "ASME B18.2.1 §4.1 — bolt {id}: nominal length {value:.2f} mm < 1/4-inch; check availability"
+
+  - id: ASME-B18-2.2-2
+    standard: ASME B18.2.2-2010
+    clause: "3.1"
+    description: Nut width across flats ≥ specified in Table 1
+    domain: mechanical
+    tags: [fastener, nut, dimensions]
+    when:
+      element_type: hex_nut
+      has_properties:
+        - width_across_flats_mm
+        - nominal_diameter_mm
+    then:
+      check: ge
+      expr: "width_across_flats_mm / nominal_diameter_mm"
+      limit: 1.5
+      severity: error
+      message: "ASME B18.2.2 §3.1 — nut {id}: width / d = {value:.2f} < 1.5 — undersized nut"
+
+  - id: ASME-B18-3-2
+    standard: ASME B18.3-2003
+    clause: Table 3
+    description: Set screw cup point hardness — alloy steel ≥ Rockwell C45
+    domain: mechanical
+    tags: [fastener, set-screw, hardness]
+    when:
+      element_type: set_screw
+      has_properties:
+        - rockwell_c_hardness
+    then:
+      check: ge
+      expr: "rockwell_c_hardness"
+      limit: 45
+      severity: warning
+      message: "ASME B18.3 Table 3 — set screw {id}: HRC = {value:.0f} < 45 (alloy steel cup point min)"
+
+  - id: ASME-B18-2.1-6
+    standard: ASME B18.2.1-2010
+    clause: "2.2"
+    description: Metric class 8.8 bolt yield strength ≥ 640 MPa (ISO 898-1)
+    domain: mechanical
+    tags: [fastener, metric, class-8.8, strength]
+    when:
+      element_type: metric_bolt
+      has_properties:
+        - property_class
+        - yield_strength_mpa
+    then:
+      check: ge
+      expr: "yield_strength_mpa"
+      limit: 640
+      severity: error
+      message: "ASME B18 / ISO 898-1 — bolt {id}: class 8.8 requires Fy ≥ 640 MPa; got {value:.0f} MPa"

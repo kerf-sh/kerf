@@ -1,0 +1,182 @@
+rules:
+  # ── AISC 360-22  Chapter E — Compression Members ──────────────────────────
+
+  - id: AISC-360-E3-1
+    standard: AISC 360-22
+    clause: E3.1
+    description: Steel column preferrd slenderness Kl/r ≤ 200 (commentary recommendation)
+    domain: structural
+    tags: [steel, column, slenderness]
+    when:
+      element_type: steel_column
+      has_properties:
+        - effective_length_mm
+        - radius_of_gyration_mm
+    then:
+      check: le
+      expr: "effective_length_mm / radius_of_gyration_mm"
+      limit: 200
+      severity: error
+      message: "AISC 360-22 §E3.1 — column {id}: Kl/r = {value:.1f} exceeds preferred limit of 200"
+
+  - id: AISC-360-E3-2
+    standard: AISC 360-22
+    clause: E3.2
+    description: Compact W-shape web h/tw ≤ 2.24√(E/Fy) for uniform compression
+    domain: structural
+    tags: [steel, column, web, compactness]
+    when:
+      element_type: steel_column
+      has_properties:
+        - web_height_mm
+        - web_thickness_mm
+    then:
+      check: le
+      expr: "web_height_mm / web_thickness_mm"
+      limit: 63.4
+      severity: warning
+      message: "AISC 360-22 §E3.2 — column {id}: web h/tw = {value:.1f} may be non-compact (limit ~63.4 for Fy=345 MPa)"
+
+  - id: AISC-360-E4-1
+    standard: AISC 360-22
+    clause: E4
+    description: Torsional slenderness Lcz/rz check for doubly-symmetric I-shapes
+    domain: structural
+    tags: [steel, column, torsion]
+    when:
+      element_type: steel_column
+      has_properties:
+        - torsional_length_mm
+        - polar_radius_of_gyration_mm
+    then:
+      check: le
+      expr: "torsional_length_mm / polar_radius_of_gyration_mm"
+      limit: 200
+      severity: error
+      message: "AISC 360-22 §E4 — column {id}: torsional Lc/r = {value:.1f} exceeds 200"
+
+  - id: AISC-360-B4-1
+    standard: AISC 360-22
+    clause: B4.1
+    description: Flange compactness λp = 0.38√(E/Fy) ≈ 9.15 for Fy=345 MPa
+    domain: structural
+    tags: [steel, column, flange, compactness]
+    when:
+      element_type: steel_column
+      has_properties:
+        - flange_width_mm
+        - flange_thickness_mm
+    then:
+      check: le
+      expr: "flange_width_mm / (2 * flange_thickness_mm)"
+      limit: 9.15
+      severity: warning
+      message: "AISC 360-22 §B4.1 — column {id}: flange bf/2tf = {value:.2f} exceeds compact limit ~9.15"
+
+  - id: AISC-360-J3-1
+    standard: AISC 360-22
+    clause: J3.3
+    description: Minimum bolt spacing ≥ 2.67d (preferred ≥ 3d)
+    domain: structural
+    tags: [steel, bolt, spacing]
+    when:
+      element_type: bolt_group
+      has_properties:
+        - bolt_spacing_mm
+        - bolt_diameter_mm
+    then:
+      check: ge
+      expr: "bolt_spacing_mm / bolt_diameter_mm"
+      limit: 2.67
+      severity: error
+      message: "AISC 360-22 §J3.3 — bolt group {id}: s/d = {value:.2f} is below minimum 2.67d"
+
+  - id: AISC-360-J3-2
+    standard: AISC 360-22
+    clause: J3.4
+    description: Minimum edge distance from center of bolt ≥ 1.5d (Table J3.4)
+    domain: structural
+    tags: [steel, bolt, edge-distance]
+    when:
+      element_type: bolt_group
+      has_properties:
+        - edge_distance_mm
+        - bolt_diameter_mm
+    then:
+      check: ge
+      expr: "edge_distance_mm / bolt_diameter_mm"
+      limit: 1.5
+      severity: error
+      message: "AISC 360-22 §J3.4 — bolt group {id}: edge distance / d = {value:.2f} below 1.5"
+
+  - id: AISC-360-J3-3
+    standard: AISC 360-22
+    clause: J3.5
+    description: Maximum bolt spacing ≤ 24t or 300 mm (J3.5)
+    domain: structural
+    tags: [steel, bolt, max-spacing]
+    when:
+      element_type: bolt_group
+      has_properties:
+        - bolt_spacing_mm
+        - plate_thickness_mm
+    then:
+      check: le
+      expr: "bolt_spacing_mm"
+      limit: 300.0
+      severity: warning
+      message: "AISC 360-22 §J3.5 — bolt group {id}: spacing {value:.1f} mm may exceed 300 mm maximum"
+
+  - id: AISC-360-D2-1
+    standard: AISC 360-22
+    clause: D2
+    description: Tension member slenderness L/r ≤ 300 preferred
+    domain: structural
+    tags: [steel, tension, slenderness]
+    when:
+      element_type: steel_tension_member
+      has_properties:
+        - length_mm
+        - radius_of_gyration_mm
+    then:
+      check: le
+      expr: "length_mm / radius_of_gyration_mm"
+      limit: 300
+      severity: warning
+      message: "AISC 360-22 §D2 — tension member {id}: L/r = {value:.1f} exceeds preferred limit 300"
+
+  - id: AISC-360-F2-1
+    standard: AISC 360-22
+    clause: F2.2
+    description: Beam compact section limit for lateral-torsional buckling Lp
+    domain: structural
+    tags: [steel, beam, ltb]
+    when:
+      element_type: steel_beam
+      has_properties:
+        - unbraced_length_mm
+        - plastic_moment_length_mm
+    then:
+      check: le
+      expr: "unbraced_length_mm / plastic_moment_length_mm"
+      limit: 1.0
+      severity: error
+      message: "AISC 360-22 §F2.2 — beam {id}: Lb/Lp = {value:.2f} > 1 — inelastic LTB region; verify capacity reduction"
+
+  - id: AISC-360-G2-1
+    standard: AISC 360-22
+    clause: G2.1
+    description: Shear web slenderness h/tw ≤ 2.24√(E/Fy) ≈ 63.4 for Fy=345 MPa
+    domain: structural
+    tags: [steel, beam, shear, web]
+    when:
+      element_type: steel_beam
+      has_properties:
+        - web_height_mm
+        - web_thickness_mm
+    then:
+      check: le
+      expr: "web_height_mm / web_thickness_mm"
+      limit: 63.4
+      severity: warning
+      message: "AISC 360-22 §G2.1 — beam {id}: h/tw = {value:.1f} exceeds compact shear web limit 63.4"
