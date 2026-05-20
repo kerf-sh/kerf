@@ -330,12 +330,13 @@ export function BillingPanel() {
         </CardHeader>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
+            <caption className="sr-only">Recent invoices</caption>
             <thead className="text-left text-[10px] uppercase tracking-widest font-mono text-ink-400 border-y border-ink-800">
               <tr>
-                <th className="px-5 py-2 font-medium">Date</th>
-                <th className="px-5 py-2 font-medium">Amount</th>
-                <th className="px-5 py-2 font-medium">Status</th>
-                <th className="px-5 py-2 font-medium">Reference</th>
+                <th scope="col" className="px-5 py-2 font-medium">Date</th>
+                <th scope="col" className="px-5 py-2 font-medium">Amount</th>
+                <th scope="col" className="px-5 py-2 font-medium">Status</th>
+                <th scope="col" className="px-5 py-2 font-medium">Reference</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-ink-800">
@@ -347,7 +348,7 @@ export function BillingPanel() {
                     <td className="px-5 py-3 text-ink-200">{fmtDate(inv.created_at || inv.date)}</td>
                     <td className="px-5 py-3 font-mono">{fmtUSD(inv.amount_usd)}</td>
                     <td className="px-5 py-3"><StatusBadge status={inv.status} /></td>
-                    <td className="px-5 py-3 font-mono text-xs text-ink-400 truncate max-w-[180px]">
+                    <td className="px-5 py-3 font-mono text-xs text-ink-400 break-all">
                       {inv.reference || '—'}
                     </td>
                   </tr>
@@ -386,13 +387,14 @@ export function BillingPanel() {
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
+              <caption className="sr-only">Usage breakdown by model</caption>
               <thead className="text-left text-[10px] uppercase tracking-widest font-mono text-ink-400 border-y border-ink-800">
                 <tr>
-                  <th className="px-4 py-2 font-medium">Model</th>
-                  <th className="px-4 py-2 font-medium text-right">Input tok</th>
-                  <th className="px-4 py-2 font-medium text-right">Output tok</th>
-                  <th className="px-4 py-2 font-medium text-right">Events</th>
-                  <th className="px-4 py-2 font-medium text-right">Cost</th>
+                  <th scope="col" className="px-4 py-2 font-medium">Model</th>
+                  <th scope="col" className="px-4 py-2 font-medium text-right">Input tok</th>
+                  <th scope="col" className="px-4 py-2 font-medium text-right">Output tok</th>
+                  <th scope="col" className="px-4 py-2 font-medium text-right">Events</th>
+                  <th scope="col" className="px-4 py-2 font-medium text-right">Cost</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-ink-800">
@@ -401,7 +403,7 @@ export function BillingPanel() {
                 ) : (
                   summary.by_model.map((m, i) => (
                     <tr key={m.model || `none-${i}`} className="hover:bg-ink-850/50">
-                      <td className="px-4 py-2.5 font-mono text-xs text-ink-200 truncate max-w-[220px]">{m.model || '—'}</td>
+                      <td className="px-4 py-2.5 font-mono text-xs text-ink-200 min-w-[10rem]">{m.model || '—'}</td>
                       <td className="px-4 py-2.5 font-mono text-right text-ink-300">{(m.input_tokens || 0).toLocaleString()}</td>
                       <td className="px-4 py-2.5 font-mono text-right text-ink-300">{(m.output_tokens || 0).toLocaleString()}</td>
                       <td className="px-4 py-2.5 font-mono text-right text-ink-400">{m.count || 0}</td>
@@ -424,12 +426,13 @@ export function BillingPanel() {
         </CardHeader>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
+            <caption className="sr-only">Recent usage events</caption>
             <thead className="text-left text-[10px] uppercase tracking-widest font-mono text-ink-400 border-y border-ink-800">
               <tr>
-                <th className="px-5 py-2 font-medium">Date</th>
-                <th className="px-5 py-2 font-medium">Kind</th>
-                <th className="px-5 py-2 font-medium">Detail</th>
-                <th className="px-5 py-2 font-medium text-right">Cost</th>
+                <th scope="col" className="px-5 py-2 font-medium">Date</th>
+                <th scope="col" className="px-5 py-2 font-medium">Kind</th>
+                <th scope="col" className="px-5 py-2 font-medium">Detail</th>
+                <th scope="col" className="px-5 py-2 font-medium text-right">Cost</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-ink-800">
@@ -442,7 +445,7 @@ export function BillingPanel() {
                     <td className="px-5 py-3">
                       <span className="font-mono text-xs text-ink-300">{u.kind || 'usage'}</span>
                     </td>
-                    <td className="px-5 py-3 text-ink-300 font-mono text-xs truncate max-w-[280px]">
+                    <td className="px-5 py-3 text-ink-300 font-mono text-xs break-all min-w-[8rem]">
                       {u.model || u.path || '—'}
                     </td>
                     <td className="px-5 py-3 font-mono text-right">{fmtUSD(u.cost_usd)}</td>
