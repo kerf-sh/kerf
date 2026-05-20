@@ -50,7 +50,7 @@ noted.
   File: `packages/kerf-cad-core/tests/test_feature_jewelry_chain.py`
   Success: 25 link styles × lengths; total length matches input ±1 link pitch; per-link non-intersection.
 
-- [ ] T-6 Jewelry: findings (clasps, jump rings, bails)
+- [x] T-6 Jewelry: findings (clasps, jump rings, bails)
   Scope: `findings.py` library; round-trip into chains and earrings.
   File: `packages/kerf-cad-core/tests/test_feature_jewelry_findings.py`
   Success: 25 finding-attachment combos; correct wire gauge; female/male mate clearance.
