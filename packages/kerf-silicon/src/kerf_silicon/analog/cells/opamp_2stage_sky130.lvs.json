@@ -1,0 +1,26 @@
+{
+  "description": "Golden LVS reference netlist for opamp_2stage_sky130",
+  "cells": [
+    {"ref": "M1", "type": "sky130_fd_pr__pfet_01v8", "ports": ["S", "G", "D", "B"]},
+    {"ref": "M2", "type": "sky130_fd_pr__pfet_01v8", "ports": ["S", "G", "D", "B"]},
+    {"ref": "M3", "type": "sky130_fd_pr__pfet_01v8", "ports": ["S", "G", "D", "B"]},
+    {"ref": "M4", "type": "sky130_fd_pr__pfet_01v8", "ports": ["S", "G", "D", "B"]},
+    {"ref": "M5", "type": "sky130_fd_pr__nfet_01v8",  "ports": ["S", "G", "D", "B"]},
+    {"ref": "M6", "type": "sky130_fd_pr__nfet_01v8",  "ports": ["S", "G", "D", "B"]},
+    {"ref": "M7", "type": "sky130_fd_pr__pfet_01v8", "ports": ["S", "G", "D", "B"]},
+    {"ref": "Cc", "type": "sky130_fd_pr__cap_mim_m3_1", "ports": ["PLUS", "MINUS"]}
+  ],
+  "nets": [
+    {"name": "VDD",      "pin_refs": ["M1/S", "M2/S", "M3/S", "M4/S", "M7/S",
+                                      "M1/B", "M2/B", "M3/B", "M4/B", "M7/B"]},
+    {"name": "VSS",      "pin_refs": ["M5/S", "M6/S", "M5/B", "M6/B"]},
+    {"name": "INP",      "pin_refs": ["M1/G"]},
+    {"name": "INN",      "pin_refs": ["M2/G"]},
+    {"name": "VBIAS",    "pin_refs": ["M5/G"]},
+    {"name": "OUT",      "pin_refs": ["M6/D", "M7/D", "M7/G", "Cc/MINUS"]},
+    {"name": "net_d1",   "pin_refs": ["M1/D", "M3/G", "M3/D", "M4/G"]},
+    {"name": "net_d2",   "pin_refs": ["M2/D"]},
+    {"name": "net_vg2",  "pin_refs": ["M4/D", "M6/G", "Cc/PLUS"]},
+    {"name": "net_tail", "pin_refs": ["M5/D"]}
+  ]
+}

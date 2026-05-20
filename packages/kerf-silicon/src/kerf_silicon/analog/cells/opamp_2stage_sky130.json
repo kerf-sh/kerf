@@ -1,0 +1,128 @@
+{
+  "cell_name": "opamp_2stage_sky130",
+  "pdk": "sky130",
+  "description": "Two-stage Miller-compensated PMOS-input op-amp, SKY130A",
+  "ports": ["VDD", "VSS", "INP", "INN", "OUT", "VBIAS"],
+  "layers": [
+    {"name": "nwell",  "gds_layer": 64, "gds_datatype": 20},
+    {"name": "diff",   "gds_layer": 65, "gds_datatype": 20},
+    {"name": "poly",   "gds_layer": 66, "gds_datatype": 20},
+    {"name": "li1",    "gds_layer": 67, "gds_datatype": 20},
+    {"name": "met1",   "gds_layer": 68, "gds_datatype": 20},
+    {"name": "met2",   "gds_layer": 69, "gds_datatype": 20}
+  ],
+  "polygons": [
+    {
+      "layer": "nwell", "datatype": 20,
+      "points": [[0, 0], [40000, 0], [40000, 20000], [0, 20000]]
+    },
+    {
+      "layer": "diff", "datatype": 20,
+      "comment": "M1/M2 PMOS diff pair source",
+      "points": [[1000, 14000], [9000, 14000], [9000, 18000], [1000, 18000]]
+    },
+    {
+      "layer": "diff", "datatype": 20,
+      "comment": "M3 PMOS current-mirror load left",
+      "points": [[11000, 14000], [16000, 14000], [16000, 18000], [11000, 18000]]
+    },
+    {
+      "layer": "diff", "datatype": 20,
+      "comment": "M4 PMOS current-mirror load right",
+      "points": [[18000, 14000], [23000, 14000], [23000, 18000], [18000, 18000]]
+    },
+    {
+      "layer": "diff", "datatype": 20,
+      "comment": "M5 NMOS tail-current source",
+      "points": [[2000, 2000], [8000, 2000], [8000, 6000], [2000, 6000]]
+    },
+    {
+      "layer": "diff", "datatype": 20,
+      "comment": "M6 NMOS second-stage",
+      "points": [[25000, 2000], [33000, 2000], [33000, 10000], [25000, 10000]]
+    },
+    {
+      "layer": "diff", "datatype": 20,
+      "comment": "M7 PMOS second-stage load",
+      "points": [[25000, 12000], [33000, 12000], [33000, 18000], [25000, 18000]]
+    },
+    {
+      "layer": "poly", "datatype": 20,
+      "comment": "M1 PMOS gate (INP)",
+      "points": [[3000, 12000], [4500, 12000], [4500, 19000], [3000, 19000]]
+    },
+    {
+      "layer": "poly", "datatype": 20,
+      "comment": "M2 PMOS gate (INN)",
+      "points": [[6000, 12000], [7500, 12000], [7500, 19000], [6000, 19000]]
+    },
+    {
+      "layer": "poly", "datatype": 20,
+      "comment": "M5 NMOS tail gate (VBIAS)",
+      "points": [[4000, 1000], [6000, 1000], [6000, 7000], [4000, 7000]]
+    },
+    {
+      "layer": "poly", "datatype": 20,
+      "comment": "M6 NMOS second-stage gate",
+      "points": [[27000, 1000], [29000, 1000], [29000, 11000], [27000, 11000]]
+    },
+    {
+      "layer": "poly", "datatype": 20,
+      "comment": "M7 PMOS second-stage gate (diode-conn or Vg2)",
+      "points": [[30000, 11000], [32000, 11000], [32000, 19000], [30000, 19000]]
+    },
+    {
+      "layer": "met1", "datatype": 20,
+      "comment": "VDD bus",
+      "points": [[0, 19000], [40000, 19000], [40000, 20000], [0, 20000]]
+    },
+    {
+      "layer": "met1", "datatype": 20,
+      "comment": "VSS bus",
+      "points": [[0, 0], [40000, 0], [40000, 1000], [0, 1000]]
+    },
+    {
+      "layer": "met2", "datatype": 20,
+      "comment": "Miller compensation capacitor Cc (met2 plate)",
+      "points": [[20000, 6000], [24000, 6000], [24000, 10000], [20000, 10000]]
+    },
+    {
+      "layer": "met1", "datatype": 20,
+      "comment": "Miller compensation capacitor Cc (met1 plate)",
+      "points": [[20000, 4000], [24000, 4000], [24000, 8000], [20000, 8000]]
+    },
+    {
+      "layer": "met1", "datatype": 20,
+      "comment": "OUT port connection",
+      "points": [[33000, 5000], [37000, 5000], [37000, 7000], [33000, 7000]]
+    }
+  ],
+  "devices": [
+    {"ref": "M1", "type": "sky130_fd_pr__pfet_01v8",
+     "ports": {"S": "VDD", "G": "INP", "D": "net_d1", "B": "VDD"},
+     "params": {"W": 6, "L": 0.5, "nf": 2}},
+    {"ref": "M2", "type": "sky130_fd_pr__pfet_01v8",
+     "ports": {"S": "VDD", "G": "INN", "D": "net_d2", "B": "VDD"},
+     "params": {"W": 6, "L": 0.5, "nf": 2}},
+    {"ref": "M3", "type": "sky130_fd_pr__pfet_01v8",
+     "ports": {"S": "VDD", "G": "net_d1", "D": "net_d1", "B": "VDD"},
+     "params": {"W": 6, "L": 0.5, "nf": 2}},
+    {"ref": "M4", "type": "sky130_fd_pr__pfet_01v8",
+     "ports": {"S": "VDD", "G": "net_d1", "D": "net_vg2", "B": "VDD"},
+     "params": {"W": 6, "L": 0.5, "nf": 2}},
+    {"ref": "M5", "type": "sky130_fd_pr__nfet_01v8",
+     "ports": {"S": "VSS", "G": "VBIAS", "D": "net_tail", "B": "VSS"},
+     "params": {"W": 4, "L": 0.5, "nf": 1}},
+    {"ref": "M6", "type": "sky130_fd_pr__nfet_01v8",
+     "ports": {"S": "VSS", "G": "net_vg2", "D": "OUT", "B": "VSS"},
+     "params": {"W": 12, "L": 0.5, "nf": 4}},
+    {"ref": "M7", "type": "sky130_fd_pr__pfet_01v8",
+     "ports": {"S": "VDD", "G": "OUT", "D": "OUT", "B": "VDD"},
+     "params": {"W": 12, "L": 0.5, "nf": 4}},
+    {"ref": "Cc", "type": "sky130_fd_pr__cap_mim_m3_1",
+     "ports": {"PLUS": "net_vg2", "MINUS": "OUT"},
+     "params": {"W": 4, "L": 4}}
+  ],
+  "schematic_nets": ["VDD", "VSS", "INP", "INN", "OUT", "VBIAS",
+                     "net_d1", "net_d2", "net_vg2", "net_tail"]
+}

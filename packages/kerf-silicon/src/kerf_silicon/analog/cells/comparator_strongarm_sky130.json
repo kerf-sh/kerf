@@ -1,0 +1,33 @@
+{
+  "cell_name": "comparator_strongarm_sky130",
+  "pdk": "sky130",
+  "description": "Strong-arm latched comparator (clocked), SKY130A — STUB",
+  "ports": ["VDD", "VSS", "INP", "INN", "CLK", "OUTP", "OUTN"],
+  "layers": [
+    {"name": "nwell",  "gds_layer": 64, "gds_datatype": 20},
+    {"name": "diff",   "gds_layer": 65, "gds_datatype": 20},
+    {"name": "poly",   "gds_layer": 66, "gds_datatype": 20},
+    {"name": "li1",    "gds_layer": 67, "gds_datatype": 20},
+    {"name": "met1",   "gds_layer": 68, "gds_datatype": 20}
+  ],
+  "polygons": [
+    {
+      "layer": "nwell", "datatype": 20,
+      "comment": "STUB — placeholder bounding box",
+      "points": [[0, 0], [30000, 0], [30000, 20000], [0, 20000]]
+    },
+    {
+      "layer": "met1", "datatype": 20,
+      "comment": "VDD bus stub",
+      "points": [[0, 19000], [30000, 19000], [30000, 20000], [0, 20000]]
+    },
+    {
+      "layer": "met1", "datatype": 20,
+      "comment": "VSS bus stub",
+      "points": [[0, 0], [30000, 0], [30000, 1000], [0, 1000]]
+    }
+  ],
+  "devices": [],
+  "schematic_nets": ["VDD", "VSS", "INP", "INN", "CLK", "OUTP", "OUTN"],
+  "TODO": "Full strong-arm latch transistor sizing + routing pending"
+}
