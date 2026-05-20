@@ -1552,6 +1552,8 @@ FILE_KINDS = (
     "firmware_project",
     # T-330: PLM depth — ECO (Engineering Change Order) and SysML-light trace
     "eco", "sysml",
+    # T-325: 1D system simulation — .system lumped-parameter network
+    "system",
 )
 
 

@@ -809,7 +809,7 @@ estimates: **S** = ½ day, **M** = 1-2 days, **L** = 3-5 days, **XL** =
 
 ### T-330 PLM depth — 150% / effectivity BOM, where-used, ECR/ECO, MBSE/SysML trace
 
-🔴 not started · **Tier A · P1**
+✅ shipped (2026-05-20) · **Tier A · P1**
 
 - **Why:** ROADMAP §3.5 — shipped: file revisions + cloud git +
   configurations + BOM rollup. Missing: configurator UX, 150% /
