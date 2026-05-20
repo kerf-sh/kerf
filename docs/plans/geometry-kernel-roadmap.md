@@ -567,7 +567,7 @@ Format: `[ ] GK-NN  scope — FILE(s) — oracle — dep — parallel? — tier`
   `blend_srf_g1`/`g2` to enforce, not approximate). — `geom/blend_srf.py`
   — oracle: cross-boundary tangent (G1) / curvature (G2) match to `1e-7`.
   — dep: GK-02 — parallel: Y — sonnet. *Landed: blend_srf.py, 29 tests.*
-- [ ] **GK-44** Match-surface analytic verification + G2 fix. —
+- [x] **GK-44** Match-surface analytic verification + G2 fix. —
   `geom/match_srf.py` — oracle: matching a flat patch to a cylinder edge
   G1 ⇒ cross-tangent parallel to `1e-8`; G2 ⇒ curvature equal to `1e-7`.
   — dep: GK-43 — parallel: Y — sonnet.
