@@ -165,7 +165,7 @@ noted.
   File: `packages/kerf-electronics/tests/test_feature_pcb_routing_complete.py`
   Success: 25 boards (mixed digital + RF + diff-pair); 100% net completion; length matching ±2%; copper-pour DRC clean.
 
-- [ ] T-29 Electronic: SPICE simulation hand-off
+- [x] T-29 Electronic: SPICE simulation hand-off
   Scope: `routes_spice.py` + circuit → `.cir` → result parse.
   File: `packages/kerf-electronics/tests/test_feature_pcb_spice.py`
   Success: 25 analog circuits (RC, opamp, regulator, oscillator); DC op-point / AC sweep / transient match analytic.

@@ -149,7 +149,6 @@ def parse_raw_file(raw_path: str) -> list[Waveform]:
     if idx >= len(lines) or lines[idx - 1].strip() != "Variables:":
         return waveforms
 
-    idx += 1
     num_vars = int(header.get("No. Variables", 0))
     var_names = []
     var_types = []
@@ -164,10 +163,18 @@ def parse_raw_file(raw_path: str) -> list[Waveform]:
             var_names.append(parts[1].strip())
             var_types.append(parts[2].strip())
 
-    if idx >= len(lines) or lines[idx - 1].strip() != "Values:":
+    # Advance past the "Values:" separator (may not have been consumed by the
+    # while loop above when it exited after filling all num_vars entries).
+    while idx < len(lines):
+        line = lines[idx].strip()
+        idx += 1
+        if line == "Values:":
+            break
+        if line and not line.startswith("."):
+            # Non-empty non-directive line before Values: — not a valid raw file
+            break
+    else:
         return waveforms
-
-    idx += 1
 
     x_vals = []
     y_vals_by_var = [[] for _ in var_names]
