@@ -836,7 +836,7 @@ estimates: **S** = ½ day, **M** = 1-2 days, **L** = 3-5 days, **XL** =
 
 ### T-331 Multi-CAD interop + geometry healing — AP242 / JT / Parasolid / QIF
 
-🔴 not started · **Tier A · P1**
+✅ shipped (2026-05-20) v1 · **Tier A · P1** — AP242 PMI/datum/GD&T text-level reader → drawing annotations + heal_geometry LLM tool (weld/unify-normals/fill-holes/remove-degenerate); 56 tests. **Deferred to T-331b:** JT reader, Parasolid bridge (pyOCCT, license-required-at-runtime), QIF reader.
 
 - **Why:** ROADMAP §3.5 — STEP I/O shipped. Missing: AP242
   (semantic GD&T / PMI), JT (Siemens), Parasolid (.x_t / .x_b), QIF
