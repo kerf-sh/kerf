@@ -35,7 +35,7 @@ noted.
   File: `packages/kerf-cad-core/tests/test_feature_jewelry_eternity.py`
   Success: 25 size/stone/style permutations; expected stone count matches calibration table; total perimeter consumed = sum(seat widths) ± 0.05 mm.
 
-- [ ] T-3 Jewelry: bezel_auto wizard
+- [x] T-3 Jewelry: bezel_auto wizard
   Scope: `bezel_auto.py` from arbitrary stone geometry through bezel/tube setting.
   File: `packages/kerf-cad-core/tests/test_feature_jewelry_bezel_auto.py`
   Success: 25 stone shapes (round/oval/marquise/pear/cushion/emerald + irregular cabochons); generated bezel wall thickness & seat depth within spec; clean boolean.

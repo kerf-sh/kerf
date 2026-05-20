@@ -286,22 +286,27 @@ class TestIdempotency:
 # ---------------------------------------------------------------------------
 
 class TestCabochonIrregular:
-    """Cabochon and bead-family cuts that map to circle / ellipse profiles."""
+    """Cabochon-adjacent and bead-family cuts that map to circle / ellipse profiles.
 
-    def test_cabochon_circle_profile(self):
-        spec = bezel_auto_from_stone("cabochon", 8.0, "straight")
+    rose_cut is the closest equivalent to a cabochon in GEMSTONE_CUTS —
+    flat-bottom, dome-top, no faceted pavilion, typically bezel-set.
+    """
+
+    def test_rose_cut_circle_profile(self):
+        """rose_cut (cabochon-adjacent) should use a circle inner profile."""
+        spec = bezel_auto_from_stone("rose_cut", 8.0, "straight")
         assert spec["inner_profile_shape"] == "circle"
 
-    def test_cabochon_no_error(self):
-        spec = bezel_auto_from_stone("cabochon", 8.0, "straight")
+    def test_rose_cut_no_error(self):
+        spec = bezel_auto_from_stone("rose_cut", 8.0, "straight")
         assert _clean_boolean(spec)
 
-    def test_cabochon_wall_within_spec(self):
-        spec = bezel_auto_from_stone("cabochon", 8.0, "straight")
+    def test_rose_cut_wall_within_spec(self):
+        spec = bezel_auto_from_stone("rose_cut", 8.0, "straight")
         assert _wall_in_spec(spec)
 
-    def test_cabochon_seat_within_spec(self):
-        spec = bezel_auto_from_stone("cabochon", 8.0, "straight")
+    def test_rose_cut_seat_within_spec(self):
+        spec = bezel_auto_from_stone("rose_cut", 8.0, "straight")
         assert _seat_depth_in_spec(spec)
 
     def test_briolette_clean_boolean(self):
