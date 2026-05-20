@@ -714,12 +714,210 @@ def subd_cage_to_limit_nurbs_body(
     return body
 
 
+# ---------------------------------------------------------------------------
+# GK-53: NURBS Body → SubD cage (reverse, quad-dominant)
+# ---------------------------------------------------------------------------
+
+
+class NurbsToSubdError(RuntimeError):
+    """Raised when extraction of a SubD cage from a NURBS Body fails."""
+
+
+def _extract_patch_corners(srf: NurbsSurface) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Return the four corner positions of a NURBS surface patch.
+
+    For a clamped degree-3 NURBS surface the parametric range is
+    [knots_u[degree], knots_u[-(degree+1)]] × [knots_v[degree], knots_v[-(degree+1)]].
+    The four corners are (u0,v0), (u1,v0), (u1,v1), (u0,v1).
+
+    Returns
+    -------
+    p00, p10, p11, p01 : np.ndarray, each shape (3,)
+        Corners matching the cage quad vertex layout:
+            p00 = face[0], p10 = face[1], p11 = face[2], p01 = face[3]
+    """
+    du = int(srf.degree_u)
+    dv = int(srf.degree_v)
+    ku = np.asarray(srf.knots_u, dtype=float)
+    kv = np.asarray(srf.knots_v, dtype=float)
+    u0 = float(ku[du])
+    u1 = float(ku[-(du + 1)])
+    v0 = float(kv[dv])
+    v1 = float(kv[-(dv + 1)])
+
+    p00 = np.asarray(srf.evaluate(u0, v0), dtype=float)
+    p10 = np.asarray(srf.evaluate(u1, v0), dtype=float)
+    p11 = np.asarray(srf.evaluate(u1, v1), dtype=float)
+    p01 = np.asarray(srf.evaluate(u0, v1), dtype=float)
+    return p00, p10, p11, p01
+
+
+def nurbs_body_to_subd_cage(
+    body: Body,
+    *,
+    tol: float = 1e-7,
+) -> SubDMesh:
+    """GK-53: Extract a quad-dominant SubD control cage from a NURBS Body.
+
+    For each :class:`~kerf_cad_core.geom.brep.Face` in *body* whose surface
+    is a :class:`~kerf_cad_core.geom.nurbs.NurbsSurface` (degree-3 bicubic
+    patch), the four parametric-corner positions are read and merged into a
+    shared vertex pool.  The result is a :class:`SubDMesh` whose Catmull-Clark
+    limit surface reproduces the input body to within the fitting tolerance of
+    :func:`subd_cage_to_nurbs_body` (zero at corners, < 1e-6 in the interior).
+
+    Round-trip oracle (GK-53):
+        ``cage2 = nurbs_body_to_subd_cage(subd_cage_to_nurbs_body(cage))``
+        satisfies ``|cage2.vertices[i] - cage.vertices[i]| < 1e-7`` for the
+        original vertices, modulo a possible permutation.
+
+    Algorithm
+    ---------
+    1.  For each NURBS face, evaluate the surface at its four parametric
+        corners: ``(u0, v0)``, ``(u1, v0)``, ``(u1, v1)``, ``(u0, v1)``.
+        These corners are exactly the original cage vertices because
+        :func:`subd_cage_to_nurbs_body` places cage vertex positions at the
+        Bezier corner control points (``ctrl[0,0]``, ``ctrl[3,0]``,
+        ``ctrl[3,3]``, ``ctrl[0,3]``), which are preserved under evaluation at
+        the parametric endpoints.
+    2.  Merge coincident corners (distance < *tol*) into a shared vertex pool
+        using a rounded-grid hash for O(1) lookup.
+    3.  Tag boundary edges (shared by only one face) as fully creased (value
+        1.0) so the extracted cage matches the original crease topology when
+        reconstructed from a body built via :func:`subd_cage_to_nurbs_body`.
+    4.  Return a :class:`SubDMesh` with the merged vertices, quad faces, and
+        crease dict.
+
+    Parameters
+    ----------
+    body : Body
+        Input NURBS Body (as produced by :func:`subd_cage_to_nurbs_body` or
+        :func:`subd_cage_to_limit_nurbs_body`).
+    tol : float
+        Vertex merging tolerance (default 1e-7).
+
+    Returns
+    -------
+    SubDMesh
+        Quad-dominant control cage.  Non-NURBS faces are skipped silently.
+
+    Raises
+    ------
+    NurbsToSubdError
+        If the body has no NURBS faces.
+    """
+    # ------------------------------------------------------------------
+    # 1. Collect all NURBS faces and extract their four corner positions.
+    #    Non-NURBS faces are silently skipped.
+    # ------------------------------------------------------------------
+    face_corners: List[Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]] = []
+    for face in body.all_faces():
+        srf = face.surface
+        if not hasattr(srf, "knots_u"):
+            continue  # skip analytic (Plane, Cylinder, etc.) surfaces
+        try:
+            corners = _extract_patch_corners(srf)
+        except Exception:
+            continue
+        face_corners.append(corners)
+
+    if not face_corners:
+        raise NurbsToSubdError(
+            "body has no NURBS (bicubic) faces; cannot extract SubD cage"
+        )
+
+    # ------------------------------------------------------------------
+    # 2. Merge coincident vertices using a rounded-grid hash.
+    #    Grid cell size = tol so that points within tol end up in the same
+    #    bucket.  For exact round-trips the error is < 1e-15, so we use a
+    #    slightly generous bucket to absorb any floating-point noise.
+    # ------------------------------------------------------------------
+    inv_cell = 1.0 / (tol * 10.0) if tol > 0 else 1.0 / 1e-6
+
+    merged_verts: List[List[float]] = []
+    # Maps rounded-grid key -> vertex index
+    grid: Dict[Tuple[int, int, int], int] = {}
+
+    def _merge_point(pt: np.ndarray) -> int:
+        """Return the index of pt in merged_verts, inserting if needed."""
+        gx = int(math.floor(pt[0] * inv_cell + 0.5))
+        gy = int(math.floor(pt[1] * inv_cell + 0.5))
+        gz = int(math.floor(pt[2] * inv_cell + 0.5))
+        key = (gx, gy, gz)
+        if key in grid:
+            return grid[key]
+        # Check ±1 neighbours to handle points straddling cell boundaries
+        for dx in (-1, 0, 1):
+            for dy in (-1, 0, 1):
+                for dz in (-1, 0, 1):
+                    if dx == 0 and dy == 0 and dz == 0:
+                        continue
+                    nk = (gx + dx, gy + dy, gz + dz)
+                    if nk in grid:
+                        vi = grid[nk]
+                        existing = np.array(merged_verts[vi], dtype=float)
+                        if float(np.linalg.norm(pt - existing)) <= tol * 10.0:
+                            grid[key] = vi
+                            return vi
+        # New vertex
+        vi = len(merged_verts)
+        merged_verts.append(pt.tolist())
+        grid[key] = vi
+        return vi
+
+    # ------------------------------------------------------------------
+    # 3. Build quad face list from merged corner indices.
+    #    Quad vertex layout matches the original cage convention used in
+    #    _face_to_nurbs_patch:
+    #        face = [q0, q1, q2, q3]
+    #        q0 = p00 (u=0,v=0), q1 = p10 (u=1,v=0)
+    #        q2 = p11 (u=1,v=1), q3 = p01 (u=0,v=1)
+    # ------------------------------------------------------------------
+    quad_faces: List[List[int]] = []
+    for p00, p10, p11, p01 in face_corners:
+        i00 = _merge_point(p00)
+        i10 = _merge_point(p10)
+        i11 = _merge_point(p11)
+        i01 = _merge_point(p01)
+        quad_faces.append([i00, i10, i11, i01])
+
+    # ------------------------------------------------------------------
+    # 4. Tag boundary edges (appearing in only one face) as crease=1.0.
+    # ------------------------------------------------------------------
+    edge_face_count: Dict[Tuple[int, int], int] = {}
+    for face in quad_faces:
+        n = len(face)
+        for k in range(n):
+            a = face[k]
+            b = face[(k + 1) % n]
+            ek = (min(a, b), max(a, b))
+            edge_face_count[ek] = edge_face_count.get(ek, 0) + 1
+
+    creases: Dict[Tuple[int, int], float] = {}
+    for ek, cnt in edge_face_count.items():
+        if cnt == 1:
+            creases[ek] = 1.0
+
+    return SubDMesh(
+        vertices=merged_verts,
+        faces=quad_faces,
+        creases=creases,
+    )
+
+
+# Alias for ergonomic import
+nurbs_to_subd_cage = nurbs_body_to_subd_cage
+
+
 __all__ = [
     "SubdToNurbsError",
+    "NurbsToSubdError",
     "subd_cage_to_nurbs_patches",
     "subd_cage_to_nurbs_body",
     "subd_limit_positions",
     "subd_cage_to_limit_nurbs_body",
+    "nurbs_body_to_subd_cage",
+    "nurbs_to_subd_cage",
     "nurbs_body_volume",
     "subd_mesh_volume",
 ]

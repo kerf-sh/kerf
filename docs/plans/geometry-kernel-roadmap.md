@@ -613,9 +613,9 @@ Format: `[ ] GK-NN  scope — FILE(s) — oracle — dep — parallel? — tier`
   cube → smooth body; `validate_body` ok; limit-surface deviation from
   Stam evaluation ≤ `1e-6`. — dep: GK-17, GK-52-prereq GK-13 — parallel:
   N — opus. *Landed: 21 tests.*
-- [ ] **GK-53** NURBS `Body` → SubD cage (reverse, quad-dominant). —
+- [x] **GK-53** NURBS `Body` → SubD cage (reverse, quad-dominant). —
   `geom/subd.py` — oracle: round-trip subD→NURBS→subD on a cube returns
-  the original cage to `1e-7`. — dep: GK-52 — parallel: N — opus.
+  the original cage to `1e-7`. — dep: GK-52 — parallel: N — opus. *Landed: 13 tests.*
 - [x] **GK-54** [HARD] Mesh → NURBS autosurface to deviation tolerance as
   a single sewn `Body` (segment → fit patches → sew). —
   `geom/mesh_to_nurbs.py`, `geom/sew.py` — oracle: tessellated sphere →

@@ -172,6 +172,7 @@ from kerf_cad_core.geom.region2d import (
     make_circle_loop,
 )
 # GK-52: SubD cage → watertight NURBS Body (Catmull-Clark limit surface)
+# GK-53: NURBS Body → SubD cage (reverse, quad-dominant)
 from kerf_cad_core.geom.subd_to_nurbs import (
     SubdToNurbsError,
     subd_limit_positions,
@@ -180,6 +181,9 @@ from kerf_cad_core.geom.subd_to_nurbs import (
     subd_cage_to_nurbs_patches,
     nurbs_body_volume,
     subd_mesh_volume,
+    NurbsToSubdError,
+    nurbs_body_to_subd_cage,
+    nurbs_to_subd_cage,
 )
 
 __all__ = [
@@ -306,4 +310,8 @@ __all__ = [
     "subd_cage_to_nurbs_patches",
     "nurbs_body_volume",
     "subd_mesh_volume",
+    # GK-53
+    "NurbsToSubdError",
+    "nurbs_body_to_subd_cage",
+    "nurbs_to_subd_cage",
 ]
