@@ -240,7 +240,7 @@ noted.
   File: `packages/kerf-cad-core/tests/test_feature_nurbs_surface_ops_phase23.py`
   Success: 25 surface constructions; tangency continuity (G1) along join edges; CV count sanity.
 
-- [ ] T-44 NURBS Phase 4 — match_srf / unroll_srf / fillet / intersection
+- [x] T-44 NURBS Phase 4 — match_srf / unroll_srf / fillet / intersection
   Scope: `geom/match_srf.py` + `unroll_srf.py` + `surface_fillet.py` + `intersection.py`.
   File: `packages/kerf-cad-core/tests/test_feature_nurbs_phase4_ops.py`
   Success: 25 cases mixed across the four ops; G2 continuity for match_srf; developable detection for unroll_srf.
