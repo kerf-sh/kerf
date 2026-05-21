@@ -159,6 +159,7 @@ from kerf_cad_core.geom.trim_curve import (
 # GK-98: arc-length parameterization + curve length
 # GK-99: mid-curve (average of two NURBS curves)
 # GK-100: composite curve (poly-NURBS chain + continuity tags)
+# GK-103: text-on-curve / text-on-surface (engraving outlines)
 from kerf_cad_core.geom.curve_toolkit import (
     fair_curve,
     curvature_variance,
@@ -168,6 +169,8 @@ from kerf_cad_core.geom.curve_toolkit import (
     mid_curve,
     composite_curve,
     split_composite,
+    text_on_curve,
+    text_on_surface,
 )
 # GK-11: curve-curve intersection hardening
 from kerf_cad_core.geom.intersection import (
@@ -460,6 +463,9 @@ __all__ = [
     # GK-100
     "composite_curve",
     "split_composite",
+    # GK-103
+    "text_on_curve",
+    "text_on_surface",
     # GK-11
     "curve_curve_intersect",
     "curve_surface_intersect",

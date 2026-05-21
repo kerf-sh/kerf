@@ -907,7 +907,7 @@ effort.
   within tol; shape-preserving curve simplification). — `geom/nurbs.py` —
   oracle: a degree-elevated-then-reduced curve recovers the original CP
   count ± tol. — dep: GK-01 — parallel: N — opus.
-- [ ] **GK-103** Text-on-curve / text-on-surface: glyph outlines (vector
+- [x] **GK-103** Text-on-curve / text-on-surface: glyph outlines (vector
   font) laid along a curve or mapped onto a surface — engraving / jewelry
   inscription. — `geom/curve_toolkit.py` — oracle: a single glyph's
   closed outline area is preserved ± tol when mapped onto a plane; on a

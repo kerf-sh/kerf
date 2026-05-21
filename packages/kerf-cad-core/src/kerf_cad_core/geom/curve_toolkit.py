@@ -2059,3 +2059,507 @@ def mid_curve(curve_a: NurbsCurve, curve_b: NurbsCurve) -> NurbsCurve:
         mid_weights = 0.5 * (wa + wb)
     return NurbsCurve(degree=a.degree, control_points=mid_pts, knots=a.knots.copy(),
                       weights=mid_weights)
+
+
+# ---------------------------------------------------------------------------
+# GK-103 — Text-on-curve / text-on-surface (engraving outlines)
+# ---------------------------------------------------------------------------
+#
+# Built-in minimal Hershey-style stroke font: each glyph is described as a
+# list of polyline strokes in a 0..1 × 0..1 cell (origin = bottom-left).
+# Each stroke is a list of (x, y) tuples.  Strokes within a glyph are
+# returned as separate outline contours.
+#
+# Only printable ASCII (32..126) are included.  Unknown chars fall back to a
+# simple rectangular outline so the caller always gets geometry.
+# ---------------------------------------------------------------------------
+
+# Type alias used in signatures
+Point3 = Tuple[float, float, float]
+
+
+def _hershey_glyph(char: str) -> List[List[Tuple[float, float]]]:
+    """Return stroke polylines for *char* in a unit [0,1]×[0,1] cell.
+
+    Each inner list is one continuous stroke (pen-down segment).
+    Coordinates are (x, y) with y=0 at baseline, y=1 at cap-height.
+    """
+    c = char
+    # --- space ---
+    if c == ' ':
+        return []
+    # --- digits ---
+    if c == '0':
+        return [[(0.15,0),(0.85,0),(0.85,1),(0.15,1),(0.15,0)]]
+    if c == '1':
+        return [[(0.3,0.7),(0.5,1),(0.5,0)], [(0.3,0),(0.7,0)]]
+    if c == '2':
+        return [[(0.1,0.75),(0.2,1),(0.8,1),(0.9,0.75),(0.5,0.4),(0.1,0),(0.9,0)]]
+    if c == '3':
+        return [[(0.1,1),(0.9,1),(0.5,0.55),(0.9,0.1),(0.8,0),(0.2,0),(0.1,0.1)]]
+    if c == '4':
+        return [[(0.7,0),(0.7,1),(0.1,0.4),(0.9,0.4)]]
+    if c == '5':
+        return [[(0.9,1),(0.1,1),(0.1,0.55),(0.8,0.55),(0.9,0.4),(0.9,0.1),(0.8,0),(0.2,0),(0.1,0.1)]]
+    if c == '6':
+        return [[(0.85,0.9),(0.5,1),(0.15,0.8),(0.1,0.1),(0.2,0),(0.8,0),(0.9,0.1),(0.9,0.5),(0.8,0.6),(0.1,0.6)]]
+    if c == '7':
+        return [[(0.1,1),(0.9,1),(0.3,0)]]
+    if c == '8':
+        return [[(0.5,0.55),(0.1,0.7),(0.1,0.9),(0.5,1),(0.9,0.9),(0.9,0.7),(0.5,0.55),
+                 (0.1,0.4),(0.1,0.1),(0.5,0),(0.9,0.1),(0.9,0.4),(0.5,0.55)]]
+    if c == '9':
+        return [[(0.15,0.1),(0.5,0),(0.85,0),(0.9,0.9),(0.5,1),(0.1,0.9),(0.1,0.4),
+                 (0.2,0.35),(0.9,0.35)]]
+    # --- uppercase letters ---
+    if c == 'A':
+        return [[(0.05,0),(0.5,1),(0.95,0)], [(0.2,0.4),(0.8,0.4)]]
+    if c == 'B':
+        return [[(0.1,0),(0.1,1),(0.75,1),(0.9,0.85),(0.9,0.65),(0.75,0.5),
+                 (0.1,0.5),(0.75,0.5),(0.9,0.35),(0.9,0.15),(0.75,0),(0.1,0)]]
+    if c == 'C':
+        return [[(0.9,0.8),(0.7,1),(0.3,1),(0.1,0.8),(0.1,0.2),(0.3,0),(0.7,0),(0.9,0.2)]]
+    if c == 'D':
+        return [[(0.1,0),(0.1,1),(0.65,1),(0.9,0.8),(0.9,0.2),(0.65,0),(0.1,0)]]
+    if c == 'E':
+        return [[(0.9,1),(0.1,1),(0.1,0),(0.9,0)], [(0.1,0.5),(0.75,0.5)]]
+    if c == 'F':
+        return [[(0.1,0),(0.1,1),(0.9,1)], [(0.1,0.5),(0.75,0.5)]]
+    if c == 'G':
+        return [[(0.9,0.8),(0.7,1),(0.3,1),(0.1,0.8),(0.1,0.2),(0.3,0),(0.7,0),
+                 (0.9,0.2),(0.9,0.5),(0.55,0.5)]]
+    if c == 'H':
+        return [[(0.1,0),(0.1,1)], [(0.9,0),(0.9,1)], [(0.1,0.5),(0.9,0.5)]]
+    if c == 'I':
+        return [[(0.3,0),(0.7,0)], [(0.5,0),(0.5,1)], [(0.3,1),(0.7,1)]]
+    if c == 'J':
+        return [[(0.7,1),(0.7,0.15),(0.6,0),(0.4,0),(0.3,0.15),(0.3,0.35)]]
+    if c == 'K':
+        return [[(0.1,0),(0.1,1)], [(0.9,1),(0.1,0.5),(0.9,0)]]
+    if c == 'L':
+        return [[(0.1,1),(0.1,0),(0.9,0)]]
+    if c == 'M':
+        return [[(0.1,0),(0.1,1),(0.5,0.4),(0.9,1),(0.9,0)]]
+    if c == 'N':
+        return [[(0.1,0),(0.1,1),(0.9,0),(0.9,1)]]
+    if c == 'O':
+        return [[(0.3,0),(0.1,0.2),(0.1,0.8),(0.3,1),(0.7,1),(0.9,0.8),
+                 (0.9,0.2),(0.7,0),(0.3,0)]]
+    if c == 'P':
+        return [[(0.1,0),(0.1,1),(0.75,1),(0.9,0.85),(0.9,0.65),(0.75,0.5),(0.1,0.5)]]
+    if c == 'Q':
+        return [[(0.3,0),(0.1,0.2),(0.1,0.8),(0.3,1),(0.7,1),(0.9,0.8),
+                 (0.9,0.2),(0.7,0),(0.3,0)], [(0.6,0.2),(0.95,0)]]
+    if c == 'R':
+        return [[(0.1,0),(0.1,1),(0.75,1),(0.9,0.85),(0.9,0.65),(0.75,0.5),
+                 (0.1,0.5),(0.9,0)]]
+    if c == 'S':
+        return [[(0.9,0.8),(0.7,1),(0.3,1),(0.1,0.8),(0.1,0.6),(0.9,0.4),
+                 (0.9,0.2),(0.7,0),(0.3,0),(0.1,0.2)]]
+    if c == 'T':
+        return [[(0.1,1),(0.9,1)], [(0.5,1),(0.5,0)]]
+    if c == 'U':
+        return [[(0.1,1),(0.1,0.2),(0.3,0),(0.7,0),(0.9,0.2),(0.9,1)]]
+    if c == 'V':
+        return [[(0.1,1),(0.5,0),(0.9,1)]]
+    if c == 'W':
+        return [[(0.05,1),(0.25,0),(0.5,0.5),(0.75,0),(0.95,1)]]
+    if c == 'X':
+        return [[(0.1,1),(0.9,0)], [(0.9,1),(0.1,0)]]
+    if c == 'Y':
+        return [[(0.1,1),(0.5,0.5),(0.9,1)], [(0.5,0.5),(0.5,0)]]
+    if c == 'Z':
+        return [[(0.1,1),(0.9,1),(0.1,0),(0.9,0)]]
+    # --- lowercase (simplified, same height for brevity) ---
+    if c == 'a':
+        return [[(0.8,0.7),(0.5,0.75),(0.2,0.6),(0.2,0.1),(0.5,0),(0.8,0.1),(0.8,0.75)]]
+    if c == 'b':
+        return [[(0.2,0),(0.2,1)], [(0.2,0.7),(0.6,0.75),(0.8,0.6),(0.8,0.1),(0.6,0),(0.2,0)]]
+    if c == 'c':
+        return [[(0.8,0.65),(0.6,0.75),(0.3,0.7),(0.15,0.5),(0.15,0.25),(0.3,0.05),
+                 (0.6,0),(0.8,0.1)]]
+    if c == 'd':
+        return [[(0.8,0),(0.8,1)], [(0.8,0.7),(0.4,0.75),(0.2,0.6),(0.2,0.1),(0.4,0),(0.8,0)]]
+    if c == 'e':
+        return [[(0.15,0.4),(0.85,0.4),(0.85,0.6),(0.5,0.75),(0.2,0.6),
+                 (0.15,0.4),(0.15,0.1),(0.35,0),(0.75,0),(0.85,0.15)]]
+    if c == 'f':
+        return [[(0.7,1),(0.4,1),(0.25,0.85),(0.25,0)], [(0.15,0.6),(0.65,0.6)]]
+    if c == 'g':
+        return [[(0.8,0.7),(0.5,0.75),(0.2,0.6),(0.2,0.1),(0.5,0),(0.8,0.1),
+                 (0.8,0.75),(0.8,-0.2),(0.5,-0.35),(0.2,-0.2)]]
+    if c == 'h':
+        return [[(0.2,0),(0.2,1)], [(0.2,0.55),(0.5,0.75),(0.8,0.65),(0.8,0)]]
+    if c == 'i':
+        return [[(0.5,0.55),(0.5,0)], [(0.5,0.8),(0.5,0.75)]]
+    if c == 'j':
+        return [[(0.55,0.55),(0.55,-0.15),(0.4,-0.35),(0.2,-0.2)], [(0.55,0.8),(0.55,0.75)]]
+    if c == 'k':
+        return [[(0.2,0),(0.2,1)], [(0.7,0.75),(0.2,0.4),(0.7,0)]]
+    if c == 'l':
+        return [[(0.35,1),(0.5,1),(0.5,0.1),(0.6,0),(0.75,0)]]
+    if c == 'm':
+        return [[(0.1,0.75),(0.1,0)], [(0.1,0.55),(0.35,0.75),(0.55,0.65),(0.55,0)],
+                [(0.55,0.55),(0.8,0.75),(1.0,0.65),(1.0,0)]]
+    if c == 'n':
+        return [[(0.2,0.75),(0.2,0)], [(0.2,0.55),(0.5,0.75),(0.8,0.65),(0.8,0)]]
+    if c == 'o':
+        return [[(0.3,0),(0.1,0.15),(0.1,0.6),(0.3,0.75),(0.7,0.75),(0.9,0.6),
+                 (0.9,0.15),(0.7,0),(0.3,0)]]
+    if c == 'p':
+        return [[(0.2,0.75),(0.2,-0.35)], [(0.2,0.7),(0.6,0.75),(0.8,0.6),(0.8,0.1),(0.6,0),(0.2,0)]]
+    if c == 'q':
+        return [[(0.8,0.75),(0.8,-0.35)], [(0.8,0.7),(0.4,0.75),(0.2,0.6),(0.2,0.1),(0.4,0),(0.8,0)]]
+    if c == 'r':
+        return [[(0.2,0.75),(0.2,0)], [(0.2,0.5),(0.4,0.7),(0.6,0.75),(0.8,0.7)]]
+    if c == 's':
+        return [[(0.8,0.65),(0.5,0.75),(0.2,0.65),(0.2,0.45),(0.8,0.3),
+                 (0.8,0.1),(0.5,0),(0.2,0.1)]]
+    if c == 't':
+        return [[(0.5,1),(0.5,0.1),(0.6,0),(0.75,0)], [(0.2,0.65),(0.75,0.65)]]
+    if c == 'u':
+        return [[(0.2,0.75),(0.2,0.15),(0.4,0),(0.6,0),(0.8,0.15),(0.8,0.75)]]
+    if c == 'v':
+        return [[(0.15,0.75),(0.5,0),(0.85,0.75)]]
+    if c == 'w':
+        return [[(0.1,0.75),(0.3,0),(0.5,0.4),(0.7,0),(0.9,0.75)]]
+    if c == 'x':
+        return [[(0.15,0.75),(0.85,0)], [(0.85,0.75),(0.15,0)]]
+    if c == 'y':
+        return [[(0.15,0.75),(0.5,0.1)], [(0.85,0.75),(0.5,0.1),(0.35,-0.3),(0.15,-0.35)]]
+    if c == 'z':
+        return [[(0.2,0.75),(0.8,0.75),(0.2,0),(0.8,0)]]
+    # --- common punctuation ---
+    if c == '.':
+        return [[(0.45,0),(0.55,0),(0.55,0.08),(0.45,0.08),(0.45,0)]]
+    if c == ',':
+        return [[(0.45,0.05),(0.55,0.05),(0.55,0.13),(0.45,0.13),(0.45,0.05)],
+                [(0.5,0.05),(0.35,-0.1)]]
+    if c == '-':
+        return [[(0.1,0.5),(0.9,0.5)]]
+    if c == '_':
+        return [[(0.05,0),(0.95,0)]]
+    if c == '!':
+        return [[(0.5,0.25),(0.5,1)], [(0.45,0),(0.55,0),(0.55,0.1),(0.45,0.1),(0.45,0)]]
+    if c == '?':
+        return [[(0.15,0.8),(0.3,1),(0.7,1),(0.85,0.8),(0.85,0.65),(0.5,0.45),(0.5,0.3)],
+                [(0.45,0.05),(0.55,0.05),(0.55,0.15),(0.45,0.15),(0.45,0.05)]]
+    if c == ':':
+        return [[(0.45,0.2),(0.55,0.2),(0.55,0.3),(0.45,0.3),(0.45,0.2)],
+                [(0.45,0.6),(0.55,0.6),(0.55,0.7),(0.45,0.7),(0.45,0.6)]]
+    if c == ';':
+        return [[(0.45,0.6),(0.55,0.6),(0.55,0.7),(0.45,0.7),(0.45,0.6)],
+                [(0.45,0.2),(0.55,0.2),(0.55,0.28),(0.45,0.28),(0.45,0.2)],
+                [(0.5,0.2),(0.35,0.05)]]
+    if c == '(':
+        return [[(0.6,1),(0.35,0.75),(0.35,0.25),(0.6,0)]]
+    if c == ')':
+        return [[(0.4,1),(0.65,0.75),(0.65,0.25),(0.4,0)]]
+    if c == '[':
+        return [[(0.65,1),(0.35,1),(0.35,0),(0.65,0)]]
+    if c == ']':
+        return [[(0.35,1),(0.65,1),(0.65,0),(0.35,0)]]
+    if c == '+':
+        return [[(0.5,0.1),(0.5,0.9)], [(0.1,0.5),(0.9,0.5)]]
+    if c == '=':
+        return [[(0.1,0.35),(0.9,0.35)], [(0.1,0.65),(0.9,0.65)]]
+    if c == '/':
+        return [[(0.8,1),(0.2,0)]]
+    if c == '\\':
+        return [[(0.2,1),(0.8,0)]]
+    if c == '*':
+        return [[(0.5,0.3),(0.5,0.9)], [(0.2,0.45),(0.8,0.75)], [(0.8,0.45),(0.2,0.75)]]
+    if c == '#':
+        return [[(0.3,0),(0.2,1)], [(0.7,0),(0.6,1)],
+                [(0.1,0.3),(0.9,0.3)], [(0.1,0.7),(0.9,0.7)]]
+    if c == '@':
+        return [[(0.65,0.45),(0.5,0.35),(0.35,0.45),(0.35,0.65),(0.5,0.7),(0.65,0.6),
+                 (0.65,0.35),(0.5,0.2),(0.25,0.2),(0.1,0.35),(0.1,0.8),(0.25,1),
+                 (0.6,1),(0.9,0.8),(0.9,0.2),(0.7,0),(0.3,0),(0.1,0.2)]]
+    if c == '"':
+        return [[(0.3,0.75),(0.3,0.95)], [(0.7,0.75),(0.7,0.95)]]
+    if c == "'":
+        return [[(0.5,0.75),(0.5,0.95)]]
+    if c == '`':
+        return [[(0.3,0.9),(0.7,1)]]
+    if c == '^':
+        return [[(0.1,0.6),(0.5,1),(0.9,0.6)]]
+    if c == '~':
+        return [[(0.1,0.55),(0.3,0.65),(0.7,0.45),(0.9,0.55)]]
+    if c == '<':
+        return [[(0.8,0.8),(0.2,0.5),(0.8,0.2)]]
+    if c == '>':
+        return [[(0.2,0.8),(0.8,0.5),(0.2,0.2)]]
+    if c == '|':
+        return [[(0.5,0),(0.5,1)]]
+    if c == '&':
+        return [[(0.8,0.7),(0.5,1),(0.2,0.7),(0.2,0.55),(0.8,0.2),(0.8,0.05),
+                 (0.5,0),(0.15,0.1),(0.15,0.3),(0.4,0.55),(0.85,0)]]
+    if c == '%':
+        return [[(0.15,0.75),(0.3,0.9),(0.45,0.75),(0.3,0.6),(0.15,0.75)],
+                [(0.85,0.25),(0.7,0.4),(0.55,0.25),(0.7,0.1),(0.85,0.25)],
+                [(0.85,0.9),(0.15,0.1)]]
+    # --- fallback: simple rectangle outline ---
+    return [[(0.1,0.05),(0.9,0.05),(0.9,0.95),(0.1,0.95),(0.1,0.05)]]
+
+
+# Advance width per glyph (fraction of height).  Wide chars get more space.
+_GLYPH_ADVANCE: dict = {
+    'i': 0.45, 'j': 0.45, 'l': 0.45, '!': 0.45, '|': 0.35, "'": 0.35, '`': 0.35,
+    ' ': 0.35,
+    'm': 1.05, 'w': 1.05, 'W': 1.05, 'M': 1.05,
+    '@': 1.1,
+}
+_DEFAULT_ADVANCE = 0.65   # fraction of height
+_INTER_GLYPH_GAP = 0.10   # fraction of height
+
+
+def _text_strokes_flat(
+    text: str,
+    height: float,
+    *,
+    font: str = 'hershey',
+) -> List[List[Tuple[float, float]]]:
+    """Return all strokes for *text* in a flat 2-D coordinate frame.
+
+    Returns a list of strokes; each stroke is a list of (x, y) pairs.
+    ``y`` is in [0, height], ``x`` starts at 0 and grows right.
+    """
+    strokes: List[List[Tuple[float, float]]] = []
+    cursor_x = 0.0
+    for ch in text:
+        glyph_strokes = _hershey_glyph(ch)
+        for stroke in glyph_strokes:
+            world_stroke: List[Tuple[float, float]] = [
+                (cursor_x + sx * height, sy * height)
+                for sx, sy in stroke
+            ]
+            strokes.append(world_stroke)
+        advance = _GLYPH_ADVANCE.get(ch, _DEFAULT_ADVANCE)
+        cursor_x += (advance + _INTER_GLYPH_GAP) * height
+    return strokes
+
+
+def _text_total_width(text: str, height: float) -> float:
+    """Total advance width of *text* in world units."""
+    w = 0.0
+    for i, ch in enumerate(text):
+        advance = _GLYPH_ADVANCE.get(ch, _DEFAULT_ADVANCE)
+        w += advance * height
+        if i < len(text) - 1:
+            w += _INTER_GLYPH_GAP * height
+    return w
+
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
+
+def text_on_curve(
+    text: str,
+    curve: "NurbsCurve",
+    height: float,
+    *,
+    font: str = 'hershey',
+) -> List[List[Point3]]:
+    """Place glyph outlines (stroke polylines) along *curve*.
+
+    Each character is sampled from the built-in vector font, then mapped onto
+    the curve using the Frenet–Serret (RMF) frame:
+    * The baseline advances along the curve arc-length.
+    * The up direction is the local curve normal (or a fallback up vector when
+      the curvature is zero).
+
+    Parameters
+    ----------
+    text:
+        The string to place.
+    curve:
+        A :class:`NurbsCurve` to follow.  Must have at least two distinct
+        control points.
+    height:
+        Cap-height of the glyphs in the same units as *curve*.
+    font:
+        Reserved for future font variants; currently only ``'hershey'`` is
+        supported.
+
+    Returns
+    -------
+    List[List[Point3]]
+        One sub-list per stroke, each containing 3-D points in world space.
+        The number of sub-lists equals the total number of strokes across all
+        glyphs.
+    """
+    if not text:
+        return []
+    height = float(height)
+    if height <= 0:
+        raise ValueError("text_on_curve: height must be positive")
+
+    from kerf_cad_core.geom.nurbs import curve_derivative
+
+    # Arc-length parameterisation
+    al_param = arc_length_param(curve, n=512)
+    total_len = al_param.total_length
+
+    # Build strokes in flat 2-D
+    flat_strokes = _text_strokes_flat(text, height, font=font)
+
+    # Helper: evaluate point + tangent at arc-length s
+    def _frame_at_s(s: float):
+        """Return (origin, tangent_unit, up_unit) at arc-length s."""
+        s = max(0.0, min(s, total_len))
+        t = al_param.t_at_length(s)
+        origin = np.asarray(de_boor(curve, t), dtype=float)
+        # tangent via finite difference if derivative not available
+        eps = max(1e-6, total_len * 1e-4)
+        t1 = al_param.t_at_length(min(s + eps, total_len))
+        t0 = al_param.t_at_length(max(s - eps, 0.0))
+        if abs(t1 - t0) < 1e-14:
+            tan = np.array([1.0, 0.0, 0.0])
+        else:
+            p1 = np.asarray(de_boor(curve, t1), dtype=float)
+            p0 = np.asarray(de_boor(curve, t0), dtype=float)
+            tan = p1 - p0
+            n_tan = np.linalg.norm(tan)
+            if n_tan < 1e-14:
+                tan = np.array([1.0, 0.0, 0.0])
+            else:
+                tan = tan / n_tan
+        # Build an up vector perpendicular to tangent
+        # Prefer Z-up if tangent not too aligned with Z
+        ref = np.array([0.0, 0.0, 1.0])
+        if abs(np.dot(tan, ref)) > 0.9:
+            ref = np.array([0.0, 1.0, 0.0])
+        up = ref - np.dot(ref, tan) * tan
+        up_n = np.linalg.norm(up)
+        if up_n < 1e-14:
+            up = np.array([0.0, 1.0, 0.0])
+        else:
+            up = up / up_n
+        return origin, tan, up
+
+    result: List[List[Point3]] = []
+    for stroke_2d in flat_strokes:
+        stroke_3d: List[Point3] = []
+        for x2d, y2d in stroke_2d:
+            origin, tan, up = _frame_at_s(x2d)
+            pt = origin + float(y2d) * up
+            stroke_3d.append((float(pt[0]), float(pt[1]), float(pt[2])))
+        if stroke_3d:
+            result.append(stroke_3d)
+    return result
+
+
+def text_on_surface(
+    text: str,
+    surface: "NurbsSurface",
+    u0: float,
+    v0: float,
+    height: float,
+    *,
+    font: str = 'hershey',
+) -> List[List[Point3]]:
+    """Place glyph outlines on a NURBS *surface* starting at *(u0, v0)*.
+
+    The text is laid out in the surface's *u*-direction starting at the
+    parameter pair *(u0, v0)*.  The local surface tangent ``∂S/∂u`` is used
+    as the baseline direction; the surface normal provides the "up" direction
+    (the glyphs are *lifted* from the surface along the normal by the glyph
+    y-coordinate scaled by ``height``).
+
+    Parameters
+    ----------
+    text:
+        The string to place.
+    surface:
+        A :class:`~kerf_cad_core.geom.nurbs.NurbsSurface`.
+    u0, v0:
+        Starting parameter values in the surface domain.
+    height:
+        Glyph cap-height in world units.
+    font:
+        Reserved; only ``'hershey'`` currently supported.
+
+    Returns
+    -------
+    List[List[Point3]]
+        One sub-list per stroke in world space (lifted onto / above the
+        surface).
+    """
+    if not text:
+        return []
+    height = float(height)
+    if height <= 0:
+        raise ValueError("text_on_surface: height must be positive")
+
+    from kerf_cad_core.geom.nurbs import (
+        NurbsSurface,
+        surface_evaluate,
+        surface_derivatives,
+    )
+
+    u0 = float(u0)
+    v0 = float(v0)
+
+    # Surface parameter ranges
+    u_min = float(surface.knots_u[surface.degree_u])
+    u_max = float(surface.knots_u[-(surface.degree_u + 1)])
+    v_min = float(surface.knots_v[surface.degree_v])
+    v_max = float(surface.knots_v[-(surface.degree_v + 1)])
+    u_span = u_max - u_min
+    v_span = v_max - v_min
+
+    # Estimate world-space length of a unit step in u (at the anchor point)
+    eps_u = u_span * 1e-3
+    p_plus = np.asarray(surface_evaluate(surface, min(u0 + eps_u, u_max), v0))
+    p_minus = np.asarray(surface_evaluate(surface, max(u0 - eps_u, u_min), v0))
+    du_world = np.linalg.norm(p_plus - p_minus) / (2 * eps_u)
+    if du_world < 1e-14:
+        du_world = 1.0  # degenerate surface fallback
+
+    # Estimate world-space length of a unit step in v (at the anchor point)
+    eps_v = v_span * 1e-3
+    q_plus = np.asarray(surface_evaluate(surface, u0, min(v0 + eps_v, v_max)))
+    q_minus = np.asarray(surface_evaluate(surface, u0, max(v0 - eps_v, v_min)))
+    dv_world = np.linalg.norm(q_plus - q_minus) / (2 * eps_v)
+    if dv_world < 1e-14:
+        dv_world = 1.0
+
+    # Scale factors: world units → parameter units
+    du_per_world = 1.0 / du_world  # Δu per world unit along u
+    dv_per_world = 1.0 / dv_world  # Δv per world unit along v
+
+    def _pt_on_surface(x_world: float, y_world: float) -> Point3:
+        """Map flat glyph (x_world baseline, y_world height) → 3-D point on surface."""
+        u = u0 + x_world * du_per_world
+        v = v0  # keep v constant; advance only along u for baseline
+        # Clamp to domain
+        u = max(u_min, min(u_max, u))
+        v = max(v_min, min(v_max, v))
+        # Base point on the surface
+        base = np.asarray(surface_evaluate(surface, u, v), dtype=float)
+        # Surface tangent and normal at this (u, v)
+        SKL = surface_derivatives(surface, u, v, d=1)
+        du_vec = np.asarray(SKL[1, 0], dtype=float)  # ∂S/∂u
+        dv_vec = np.asarray(SKL[0, 1], dtype=float)  # ∂S/∂v
+        # Normal = du × dv
+        normal = np.cross(du_vec, dv_vec)
+        nlen = np.linalg.norm(normal)
+        if nlen < 1e-14:
+            normal = np.array([0.0, 0.0, 1.0])
+        else:
+            normal = normal / nlen
+        # Lift the point along the normal by y_world
+        pt = base + float(y_world) * normal
+        return (float(pt[0]), float(pt[1]), float(pt[2]))
+
+    flat_strokes = _text_strokes_flat(text, height, font=font)
+    result: List[List[Point3]] = []
+    for stroke_2d in flat_strokes:
+        stroke_3d: List[Point3] = [
+            _pt_on_surface(x2d, y2d) for x2d, y2d in stroke_2d
+        ]
+        if stroke_3d:
+            result.append(stroke_3d)
+    return result
