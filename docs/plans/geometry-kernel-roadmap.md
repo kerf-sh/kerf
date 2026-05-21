@@ -973,7 +973,7 @@ effort.
   `geom/lattice.py` — oracle: a gyroid cell evaluated at its implicit
   zero-level is periodic; octet strut count per cell = 36. — dep:
   GK-112 — parallel: Y — sonnet.
-- [ ] **GK-116** Lattice fill of a Body to a target relative density
+- [x] **GK-116** Lattice fill of a Body to a target relative density
   (intersect lattice with body, trim to walls). — `geom/lattice.py` —
   oracle: filling a box at 0.2 relative density yields a body whose
   volume ≈ 0.2·box volume ± tol. — dep: GK-115, GK-114 — parallel: N —
