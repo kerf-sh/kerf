@@ -320,7 +320,7 @@ noted.
   File: `packages/kerf-chat/tests/test_feature_chat_prompt_cache.py`
   Success: 25 multi-turn sessions; first turn primes cache, subsequent turns hit; provider client mocked.
 
-- [ ] T-60 Workshop: gallery / readme / likes
+- [x] T-60 Workshop: gallery / readme / likes
   Scope: workshop publish flow (`project_workshop_images`, `workshop_likes`, `workshop_readme`).
   File: `packages/kerf-api/tests/test_feature_workshop.py`
   Success: 25 publish/like/edit cycles; primary-image selection; README markdown safe-render.
