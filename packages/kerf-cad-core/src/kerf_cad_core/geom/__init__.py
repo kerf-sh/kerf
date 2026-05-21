@@ -498,6 +498,8 @@ __all__ = [
     "write_stl",
     "StlReadError",
     "StlWriteError",
+    # GK-96
+    "reverse_curve","reverse_surface",
     # GK-83
     "surface_offset",
     # GK-87

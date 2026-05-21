@@ -923,3 +923,93 @@ def occt_surface_to_nurbs(occt_surface) -> NurbsSurface:
                             control_points=poles, knots_u=knots_u, knots_v=knots_v)
     except ImportError:
         return None
+
+
+# ---------------------------------------------------------------------------
+# GK-96 — Reverse curve / reverse surface direction
+# ---------------------------------------------------------------------------
+
+def reverse_curve(curve: NurbsCurve) -> NurbsCurve:
+    """Return a new NurbsCurve with the parameterisation reversed.
+
+    The *geometry* is identical: the physical point at parameter *t* on the
+    reversed curve equals the point at parameter ``(a + b - t)`` on the
+    original, where ``[a, b]`` is the knot domain.  In normalised form
+    (domain [0, 1]) this is simply ``1 - t``.
+
+    Algorithm (Piegl & Tiller §5.4):
+      * Reverse the control-point sequence.
+      * Reverse and reflect the knot vector:
+        ``knots_rev[i] = a + b - knots[m - i]``  (``m = len(knots) - 1``).
+      * Reverse the weight sequence (if present).
+
+    Oracle: ``reverse_curve(reverse_curve(c))`` is identical to ``c``.
+    """
+    n = len(curve.knots)
+    a = curve.knots[0]
+    b = curve.knots[-1]
+    knots_rev = a + b - curve.knots[::-1]
+
+    cp_rev = curve.control_points[::-1].copy()
+    weights_rev = curve.weights[::-1].copy() if curve.weights is not None else None
+
+    return NurbsCurve(
+        degree=curve.degree,
+        control_points=cp_rev,
+        knots=knots_rev,
+        weights=weights_rev,
+    )
+
+
+def reverse_surface(surface: NurbsSurface, direction: str = 'u') -> NurbsSurface:
+    """Return a new NurbsSurface with the parameterisation reversed along *direction*.
+
+    *direction* must be ``'u'`` or ``'v'``.
+
+    * ``'u'``: flip rows (u-direction CPs), reflect knots_u.
+    * ``'v'``: flip columns (v-direction CPs), reflect knots_v.
+
+    The geometry is preserved; only the parameterisation (and therefore surface
+    normals, which flip sign in the reversed direction) change.
+
+    Oracle: ``reverse_surface(reverse_surface(s, d), d)`` is identical to ``s``.
+    """
+    if direction not in ('u', 'v'):
+        raise ValueError("direction must be 'u' or 'v'")
+
+    if direction == 'u':
+        a = surface.knots_u[0]
+        b = surface.knots_u[-1]
+        knots_u_rev = a + b - surface.knots_u[::-1]
+        knots_v_rev = surface.knots_v.copy()
+        # Flip control-point rows (axis 0 = u).
+        cp_rev = surface.control_points[::-1, :, :].copy()
+        weights_rev = (
+            surface.weights[::-1, :].copy() if surface.weights is not None else None
+        )
+        return NurbsSurface(
+            degree_u=surface.degree_u,
+            degree_v=surface.degree_v,
+            control_points=cp_rev,
+            knots_u=knots_u_rev,
+            knots_v=knots_v_rev,
+            weights=weights_rev,
+        )
+    else:  # direction == 'v'
+        a = surface.knots_v[0]
+        b = surface.knots_v[-1]
+        knots_u_rev = surface.knots_u.copy()
+        knots_v_rev = a + b - surface.knots_v[::-1]
+        # Flip control-point columns (axis 1 = v).
+        cp_rev = surface.control_points[:, ::-1, :].copy()
+        weights_rev = (
+            surface.weights[:, ::-1].copy() if surface.weights is not None else None
+        )
+        return NurbsSurface(
+            degree_u=surface.degree_u,
+            degree_v=surface.degree_v,
+            control_points=cp_rev,
+            knots_u=knots_u_rev,
+            knots_v=knots_v_rev,
+            weights=weights_rev,
+        )
