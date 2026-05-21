@@ -347,6 +347,9 @@ from kerf_cad_core.geom.mold import parting_line
 # GK-125: DXF read+write
 from kerf_cad_core.geom.io.dxf import read_dxf, write_dxf, DxfReadError, DxfWriteError
 
+# GK-128: gear tooth profile generator
+from kerf_cad_core.geom.gears import involute_gear, cycloid_gear
+
 __all__ = [
     "read_dxf","write_dxf","DxfReadError","DxfWriteError",
     "parting_line",
@@ -580,6 +583,8 @@ __all__ = [
     # GK-112
     "body_sdf",
     "sdf_sample",
+    # GK-128
+    "involute_gear","cycloid_gear",
 ]
 
 # GK-122: interference / collision detection
