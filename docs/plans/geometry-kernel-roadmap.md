@@ -986,7 +986,7 @@ effort.
 
 ### Group E — Manufacturing prep / mould tooling
 
-- [ ] **GK-118** Parting-line generation (silhouette w.r.t. a pull
+- [x] **GK-118** Parting-line generation (silhouette w.r.t. a pull
   direction → closed parting curve on a Body). — `geom/mold.py` —
   oracle: parting line of a sphere pulled along Z is the equator ±
   tol. — dep: GK-92 — parallel: Y — sonnet.
