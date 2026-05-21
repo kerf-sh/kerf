@@ -1010,7 +1010,7 @@ effort.
   `geom/assembly.py` — oracle: two overlapping boxes report interference
   volume = overlap; disjoint boxes report none. — dep: GK-18 —
   parallel: Y — sonnet.
-- [ ] **GK-123** Clearance / minimum-gap analysis (closest distance
+- [x] **GK-123** Clearance / minimum-gap analysis (closest distance
   between two disjoint Bodies + witness points). — `geom/assembly.py` —
   oracle: two spheres centre-distance D radii r1,r2 → gap = D−r1−r2 ±
   tol. — dep: GK-06 — parallel: Y — sonnet.

@@ -616,6 +616,8 @@ __all__ = [
     "involute_gear","cycloid_gear",
     # GK-115
     "gyroid","schwarz_p","octet_truss","kelvin_cell",
+    # GK-123
+    "clearance",
 ]
 
 # GK-122: interference / collision detection
@@ -626,3 +628,5 @@ from kerf_cad_core.geom.sdf import body_sdf, sdf_sample
 
 # GK-115: lattice unit-cell library (gyroid, Schwarz-P, octet truss, Kelvin cell)
 from kerf_cad_core.geom.lattice import gyroid, schwarz_p, octet_truss, kelvin_cell
+# GK-123: clearance / minimum-gap analysis
+from kerf_cad_core.geom.assembly import clearance  # noqa: E402
