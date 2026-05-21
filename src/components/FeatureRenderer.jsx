@@ -302,12 +302,12 @@ const FeatureRenderer = forwardRef(function FeatureRenderer({
       setHoverInfo(null)
     }
 
-    function onClick(ev) {
-      // Suppress the click if it's the tail end of a drag.
+    // ---- Shared pick-fire logic (used by onClick and tap path) ----
+    // `ev` must have: clientX, clientY, shiftKey; it may lack pointerType.
+    function firePick(ev) {
       if (stateRef.current?.drag) return
       const mode = pickModeRef.current
       if (!mode) return
-      // Push/pull's click is handled in mousedown; ignore here.
       if (mode === 'pushpull') return
       pointerFromEvent(ev)
       raycaster.setFromCamera(pointer, camera)
@@ -318,7 +318,6 @@ const FeatureRenderer = forwardRef(function FeatureRenderer({
         edgeIds: new Set(sel.edgeIds),
       }
       if (!hit) {
-        // Click in empty space: clear unless modifier held.
         if (!ev.shiftKey) {
           next.faceIds = new Set()
           next.edgeIds = new Set()
@@ -336,7 +335,6 @@ const FeatureRenderer = forwardRef(function FeatureRenderer({
           next.edgeIds = new Set()
         }
         onSelectionChangeRef.current?.(next)
-        // T5: emit persistent face name alongside integer id.
         const pickPart = stateRef.current?.perPart?.get(hit.partId)
         const pickFaceName = pickPart?.faceNames?.[String(hit.faceId)] || ''
         onFacePickRef.current?.({ id: hit.faceId, name: pickFaceName, partId: hit.partId })
@@ -353,10 +351,50 @@ const FeatureRenderer = forwardRef(function FeatureRenderer({
       }
     }
 
+    function onClick(ev) {
+      // Suppress the click if it's the tail end of a drag.
+      if (stateRef.current?.drag) return
+      // Touch/pen events are handled by the tap-vs-drag path (onPointerUp);
+      // skip here to avoid double-fire on touch devices.
+      if (ev.pointerType === 'touch' || ev.pointerType === 'pen') return
+      firePick(ev)
+    }
+
+    // ---- Tap-vs-drag discriminator for touch/pen (T-C2) ----
+    // TAP thresholds: ≤250 ms and ≤8 px movement.
+    const TAP_MS = 250
+    const TAP_PX = 8
+    // tapState tracks the most recent non-mouse pointerdown per pointerId.
+    const tapState = new Map() // pointerId → { x, y, t }
+
+    function onPointerDown(ev) {
+      // Only track touch/pen for the tap discriminator.
+      // Mouse clicks are handled by the existing 'click' listener.
+      if (ev.pointerType === 'mouse') return
+      tapState.set(ev.pointerId, { x: ev.clientX, y: ev.clientY, t: Date.now() })
+    }
+
+    function onPointerUp(ev) {
+      if (ev.pointerType === 'mouse') return
+      const start = tapState.get(ev.pointerId)
+      tapState.delete(ev.pointerId)
+      if (!start) return
+      const dt = Date.now() - start.t
+      const dx = ev.clientX - start.x
+      const dy = ev.clientY - start.y
+      const dist = Math.sqrt(dx * dx + dy * dy)
+      // Only fire pick when the gesture qualifies as a tap.
+      if (dt <= TAP_MS && dist <= TAP_PX) {
+        firePick(ev)
+      }
+    }
+
     renderer.domElement.addEventListener('mousemove', onMove)
     renderer.domElement.addEventListener('mousedown', onDown)
     window.addEventListener('mouseup', onUp)
     renderer.domElement.addEventListener('click', onClick)
+    renderer.domElement.addEventListener('pointerdown', onPointerDown)
+    renderer.domElement.addEventListener('pointerup', onPointerUp)
 
     return () => {
       running = false
@@ -366,6 +404,8 @@ const FeatureRenderer = forwardRef(function FeatureRenderer({
       renderer.domElement.removeEventListener('mousedown', onDown)
       window.removeEventListener('mouseup', onUp)
       renderer.domElement.removeEventListener('click', onClick)
+      renderer.domElement.removeEventListener('pointerdown', onPointerDown)
+      renderer.domElement.removeEventListener('pointerup', onPointerUp)
       controls.dispose()
       studioEnv.dispose()
       renderer.dispose()
@@ -624,7 +664,13 @@ const FeatureRenderer = forwardRef(function FeatureRenderer({
 
   return (
     <div className={`relative ${className}`}>
-      <div ref={mountRef} className="w-full h-full" />
+      {/* T-C2: crosshair cursor when a pick mode is active so users know
+          tapping will select rather than orbit. */}
+      <div
+        ref={mountRef}
+        className="w-full h-full"
+        style={pickMode ? { cursor: 'crosshair' } : undefined}
+      />
       {hoverInfo && (
         <div className="pointer-events-none absolute bottom-2 left-2 px-2 py-1 rounded bg-ink-900/90 border border-ink-700 text-[11px] text-kerf-200 font-mono">
           {hoverInfo.label}

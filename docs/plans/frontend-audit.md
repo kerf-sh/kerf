@@ -153,7 +153,7 @@ Each task ≈1–3h sonnet unless `[HARD]`. Always isolate in a worktree.
   Files: `src/components/Renderer.jsx`.
   Success: on a touch device the model can be rotated, pinch-zoomed, two-finger-panned, and parts tapped to select; desktop behaviour byte-for-byte unchanged; existing renderer tests green.
 
-- [ ] **T-C2 [HARD] Touch feature-pick (face/edge/vertex) + tap-vs-drag**
+- [x] **T-C2 [HARD] Touch feature-pick (face/edge/vertex) + tap-vs-drag**
   Scope: extend the feature-pick (`onClick`/`pickFeature`) path to fire on a tap that didn't move beyond a px threshold; keep shift-add behaviour reachable (long-press or an on-canvas "add to selection" toggle).
   Files: `src/components/Renderer.jsx`.
   Success: measure/inspect works by tapping faces/edges on touch; accidental orbit no longer mis-selects.
