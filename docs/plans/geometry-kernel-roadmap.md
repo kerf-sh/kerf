@@ -998,7 +998,7 @@ effort.
   distance — casting shrinkage / machining stock). — `geom/solid_features.py`
   — oracle: offsetting a sphere of r by d → validated body of radius r+d
   ± tol. — dep: GK-45 — parallel: Y — sonnet.
-- [ ] **GK-121** Undercut-region detection (faces unreachable along a
+- [x] **GK-121** Undercut-region detection (faces unreachable along a
   pull direction → grouped undercut report + colour map). — `geom/mold.py`
   — oracle: an overhang box reports its under-face as an undercut; a
   draft-positive box reports none. — dep: GK-92 — parallel: Y — sonnet.
