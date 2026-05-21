@@ -290,7 +290,7 @@ noted.
   File: `packages/kerf-plc/tests/test_feature_plc_st.py`
   Success: 25 ST programs; lint clean / dirty mix; IEC 61131-3 conformance subset.
 
-- [ ] T-54 Wiring harness diagrams
+- [x] T-54 Wiring harness diagrams
   Scope: `kerf-wiring/wireviz_runner.py` end-to-end.
   File: `packages/kerf-wiring/tests/test_feature_wiring_harness.py`
   Success: 25 harness specs; SVG/JSON output; pinmap integrity vs source schematic.
