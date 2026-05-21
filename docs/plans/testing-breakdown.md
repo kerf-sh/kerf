@@ -225,7 +225,7 @@ noted.
   File: `packages/kerf-fem/tests/test_feature_fem_linear_static.py`
   Success: 25 canonical problems (cantilever, plate, etc.); displacement / stress match analytic ±2%.
 
-- [ ] T-41 Sketcher v2 (constraint solver)
+- [x] T-41 Sketcher v2 (constraint solver)
   Scope: `kerf-cad-core/geom/curve_toolkit.py` + frontend sketch ops chained server-side.
   File: `packages/kerf-cad-core/tests/test_feature_sketcher_v2.py`
   Success: 25 sketches (incl. over-/under-constrained); solver converges; DOF report.
