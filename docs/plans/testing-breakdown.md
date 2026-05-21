@@ -509,7 +509,7 @@ escalation}).
   File: `packages/kerf-core/tests/test_rls_model_prices.py`
   Success: 10 cases — non-admin INSERT/UPDATE refused; SELECT public; admin elevation enforced via account_role.
 
-- [ ] T-94 RLS: library_part_submissions
+- [x] T-94 RLS: library_part_submissions
   Scope: `library_part_submissions` (mig 020) submitter-scoped + admin moderation.
   File: `packages/kerf-core/tests/test_rls_library_submissions.py`
   Success: 10 cases — submitter sees own, admin sees all, non-admin cannot approve.
