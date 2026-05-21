@@ -398,7 +398,7 @@ variants, timing).
   File: `packages/kerf-auth/tests/test_pen_password_reset.py`
   Success: 12 cases — single-use enforced, expired refused, cross-account refused, reset invalidates existing sessions.
 
-- [ ] T-74 OAuth state / PKCE
+- [x] T-74 OAuth state / PKCE
   Scope: Google + GitHub OAuth state randomness + PKCE verifier check.
   File: `packages/kerf-auth/tests/test_pen_oauth_state_pkce.py`
   Success: 12 cases — missing/mismatched state rejected; PKCE downgrade rejected; CSRF on callback caught.
