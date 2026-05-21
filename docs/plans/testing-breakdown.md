@@ -305,7 +305,7 @@ noted.
   File: `packages/kerf-cloud/tests/test_feature_distributors.py`
   Success: 25 part lookups across mocked DigiKey/Mouser/LCSC/Octopart; FX conversion; cache TTL behaviour.
 
-- [ ] T-57 BOM (mech + electronic) consolidation
+- [x] T-57 BOM (mech + electronic) consolidation
   Scope: BOM table aggregation across `kerf-parts`, `kerf-electronics`, `kerf-cad-core` weldment / fasteners.
   File: `packages/kerf-cad-core/tests/test_feature_bom_consolidation.py`
   Success: 25 mixed assemblies; deduped quantities; cost roll-up; alternates resolution.
