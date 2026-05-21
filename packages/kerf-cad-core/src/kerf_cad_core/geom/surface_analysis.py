@@ -3329,3 +3329,119 @@ def draft_analysis(
             "vertical_faces": [],
             "face_colours": {},
         }
+
+
+# ---------------------------------------------------------------------------
+# GK-94: Gaussian + mean curvature heatmap
+# ---------------------------------------------------------------------------
+
+def curvature_heatmap(
+    surface: NurbsSurface,
+    nu: int = 64,
+    nv: int = 64,
+) -> dict:
+    """Gaussian and mean curvature heatmap over a UV grid (GK-94).
+
+    Samples a ``nu × nv`` grid across the surface's natural parameter domain
+    and computes, at each point, the Gaussian curvature K, mean curvature H,
+    and principal curvatures κ1 / κ2 from the first and second fundamental
+    forms (do Carmo §3.3; Goldman CAGD 2005).
+
+    Degenerate sample points (zero cross-product, or EG − F² < ε) are filled
+    with ``nan`` so they do not corrupt aggregate statistics.
+
+    Parameters
+    ----------
+    surface:
+        A :class:`~kerf_cad_core.geom.nurbs.NurbsSurface` instance.
+    nu, nv:
+        Number of sample points in the U and V directions.  Clamped to
+        [3, 200].
+
+    Returns
+    -------
+    dict with keys:
+
+    ``gaussian``
+        2-D :class:`numpy.ndarray` of shape ``(nu, nv)`` — Gaussian curvature
+        K = (eg − f²) / (EG − F²) at each sample.
+    ``mean``
+        2-D :class:`numpy.ndarray` of shape ``(nu, nv)`` — mean curvature
+        H = (eG − 2fF + gE) / (2(EG − F²)) at each sample.
+    ``principal_k1``
+        2-D :class:`numpy.ndarray` of shape ``(nu, nv)`` — larger principal
+        curvature κ₁ = H + √(H² − K).
+    ``principal_k2``
+        2-D :class:`numpy.ndarray` of shape ``(nu, nv)`` — smaller principal
+        curvature κ₂ = H − √(H² − K).
+    ``k_min``, ``k_max``
+        Finite min / max of the ``gaussian`` array (``nan`` excluded).
+    ``h_min``, ``h_max``
+        Finite min / max of the ``mean`` array (``nan`` excluded).
+    ``ok``
+        ``True`` on success.
+    ``reason``
+        Empty string on success; error description otherwise.
+
+    References
+    ----------
+    do Carmo, M.P., *Differential Geometry of Curves and Surfaces*,
+    Prentice-Hall 1976 — §3.3 first/second fundamental forms, §3.4 formulas.
+
+    Goldman, R., "Curvature formulas for implicit curves and surfaces",
+    *CAGD* 22(7) 2005.
+    """
+    try:
+        nu, nv = _clamp_grid(nu, nv)
+        us, vs = _uv_grid(surface, nu, nv)
+
+        K_grid  = np.full((nu, nv), float("nan"))
+        H_grid  = np.full((nu, nv), float("nan"))
+        k1_grid = np.full((nu, nv), float("nan"))
+        k2_grid = np.full((nu, nv), float("nan"))
+
+        for i, u in enumerate(us):
+            for j, v in enumerate(vs):
+                data = _analytic_curvature_data(surface, u, v)
+                if data is None:
+                    continue
+                K_grid[i, j]  = data["K"]
+                H_grid[i, j]  = data["H"]
+                k1_grid[i, j] = data["k1"]
+                k2_grid[i, j] = data["k2"]
+
+        finite_K = K_grid[np.isfinite(K_grid)]
+        finite_H = H_grid[np.isfinite(H_grid)]
+
+        k_min = float(np.min(finite_K)) if finite_K.size > 0 else float("nan")
+        k_max = float(np.max(finite_K)) if finite_K.size > 0 else float("nan")
+        h_min = float(np.min(finite_H)) if finite_H.size > 0 else float("nan")
+        h_max = float(np.max(finite_H)) if finite_H.size > 0 else float("nan")
+
+        return {
+            "ok": True,
+            "reason": "",
+            "gaussian":     K_grid,
+            "mean":         H_grid,
+            "principal_k1": k1_grid,
+            "principal_k2": k2_grid,
+            "k_min": k_min,
+            "k_max": k_max,
+            "h_min": h_min,
+            "h_max": h_max,
+        }
+
+    except Exception as exc:
+        empty = np.full((max(nu, _MIN_GRID), max(nv, _MIN_GRID)), float("nan"))
+        return {
+            "ok": False,
+            "reason": str(exc),
+            "gaussian":     empty.copy(),
+            "mean":         empty.copy(),
+            "principal_k1": empty.copy(),
+            "principal_k2": empty.copy(),
+            "k_min": float("nan"),
+            "k_max": float("nan"),
+            "h_min": float("nan"),
+            "h_max": float("nan"),
+        }
