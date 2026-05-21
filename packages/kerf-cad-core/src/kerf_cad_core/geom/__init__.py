@@ -213,6 +213,8 @@ from kerf_cad_core.geom.mesh_repair import mesh_boolean_sealed, boolean_volume_o
 from kerf_cad_core.geom.mesh_repair import mesh_decimate
 # GK-110: mesh repair (hole-fill / weld / manifold / normal-consistency)
 from kerf_cad_core.geom.mesh_repair import mesh_repair
+# GK-111: mesh smoothing (Laplacian + Taubin λ|μ no-shrink)
+from kerf_cad_core.geom.mesh_repair import mesh_smooth
 # GK-56: 2D region boolean on planar curve loops
 from kerf_cad_core.geom.region2d import (
     region_union,
@@ -496,6 +498,8 @@ __all__ = [
     "mesh_decimate",
     # GK-110
     "mesh_repair",
+    # GK-111
+    "mesh_smooth",
     # GK-56
     "region_union","region_intersection","region_difference",
     "region_area","make_rect_loop","make_circle_loop",

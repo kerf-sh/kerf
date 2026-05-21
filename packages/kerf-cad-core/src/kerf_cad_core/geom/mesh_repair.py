@@ -1590,6 +1590,132 @@ def mesh_decimate(
 
 
 # ===========================================================================
+# mesh_smooth  (GK-111) — Laplacian / Taubin λ|μ smoothing
+# ===========================================================================
+
+def mesh_smooth(
+    verts: Sequence,
+    faces: Sequence,
+    iterations: int = 10,
+    method: str = "taubin",
+    lam: float = 0.33,
+    mu: float = -0.34,
+) -> Tuple[List[Vert], List[Face]]:
+    """Smooth a triangle mesh using Laplacian or Taubin λ|μ filtering.
+
+    Laplacian smoothing iteratively moves each vertex toward the average of
+    its neighbours.  It is simple but causes well-known shrinkage.
+
+    Taubin smoothing (Taubin 1995) alternates two Laplacian passes per
+    iteration — one with step *lam* (> 0, smoothing) and one with *mu*
+    (< 0, inflation) — converging to a smooth shape without the bounding-box
+    shrinkage of pure Laplacian smoothing.  Choose |mu| slightly larger than
+    lam (e.g. lam=0.33, mu=−0.34) to satisfy the no-shrink criterion.
+
+    Parameters
+    ----------
+    verts : list of [x, y, z]
+    faces : list of [i, j, k]  (0-based CCW winding)
+    iterations : int, optional
+        Number of smoothing iterations (default 10).
+    method : str, optional
+        ``"taubin"`` (default) or ``"laplacian"``.
+    lam : float, optional
+        Laplacian step size (Taubin λ, also used for ``"laplacian"``).
+        Default 0.33.
+    mu : float, optional
+        Taubin μ (inflation step, < 0).  Ignored for ``"laplacian"``.
+        Default −0.34.
+
+    Returns
+    -------
+    (verts, faces) : Tuple[list, list]
+        Smoothed mesh.  Faces are unchanged; only vertex positions move.
+        Returns the original mesh unchanged on any error.
+
+    Raises
+    ------
+    Never raises.
+    """
+    try:
+        err = _validate_mesh(verts, faces)
+        if err:
+            vs, fs = _copy_mesh(verts, faces)
+            return vs, fs
+
+        try:
+            iterations = int(iterations)
+        except (TypeError, ValueError):
+            vs, fs = _copy_mesh(verts, faces)
+            return vs, fs
+        if iterations < 1:
+            vs, fs = _copy_mesh(verts, faces)
+            return vs, fs
+
+        if method not in ("taubin", "laplacian"):
+            vs, fs = _copy_mesh(verts, faces)
+            return vs, fs
+
+        try:
+            lam = float(lam)
+            mu = float(mu)
+        except (TypeError, ValueError):
+            vs, fs = _copy_mesh(verts, faces)
+            return vs, fs
+
+        vs, fs = _copy_mesh(verts, faces)
+        nv = len(vs)
+        if nv == 0 or not fs:
+            return vs, fs
+
+        # Build adjacency list: vertex → set of neighbouring vertex indices
+        adj: List[Set[int]] = [set() for _ in range(nv)]
+        for f in fs:
+            a, b, c = f[0], f[1], f[2]
+            adj[a].add(b); adj[a].add(c)
+            adj[b].add(a); adj[b].add(c)
+            adj[c].add(a); adj[c].add(b)
+
+        def _laplacian_step(coords: List[Vert], step: float) -> List[Vert]:
+            """One umbrella-Laplacian displacement pass."""
+            new_coords: List[Vert] = [list(v) for v in coords]
+            for i in range(nv):
+                nbrs = adj[i]
+                if not nbrs:
+                    continue
+                n = len(nbrs)
+                sx = sy = sz = 0.0
+                for j in nbrs:
+                    sx += coords[j][0]
+                    sy += coords[j][1]
+                    sz += coords[j][2]
+                lx = sx / n - coords[i][0]
+                ly = sy / n - coords[i][1]
+                lz = sz / n - coords[i][2]
+                new_coords[i][0] = coords[i][0] + step * lx
+                new_coords[i][1] = coords[i][1] + step * ly
+                new_coords[i][2] = coords[i][2] + step * lz
+            return new_coords
+
+        if method == "laplacian":
+            for _ in range(iterations):
+                vs = _laplacian_step(vs, lam)
+        else:  # taubin
+            for _ in range(iterations):
+                vs = _laplacian_step(vs, lam)   # smooth (shrink)
+                vs = _laplacian_step(vs, mu)    # inflate (anti-shrink)
+
+        return vs, fs
+
+    except Exception:
+        try:
+            vs2, fs2 = _copy_mesh(verts, faces)
+            return vs2, fs2
+        except Exception:
+            return list(verts), list(faces)
+
+
+# ===========================================================================
 # LLM tool registration (gated — graceful no-op when registry absent)
 # ===========================================================================
 

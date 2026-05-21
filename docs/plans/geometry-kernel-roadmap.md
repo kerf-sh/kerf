@@ -949,7 +949,7 @@ effort.
   duplicate-vertex weld, normal-consistency. — `geom/mesh_repair.py` —
   oracle: a sphere mesh with a deleted triangle → hole-filled to closed
   manifold (Euler χ=2). — dep: GK-55 — parallel: Y — sonnet.
-- [ ] **GK-111** Mesh smoothing (Laplacian + Taubin λ|μ no-shrink). —
+- [x] **GK-111** Mesh smoothing (Laplacian + Taubin λ|μ no-shrink). —
   `geom/mesh_repair.py` — oracle: Taubin smoothing of a noisy sphere
   reduces normal variance without shrinking the bounding radius > tol. —
   dep: GK-55 — parallel: Y — sonnet.
