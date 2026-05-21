@@ -568,7 +568,7 @@ Postgres schema. ≥10 user-visible assertions per spec.
   File: `tests/e2e/specs/persona_workshop.spec.ts`
   Success: gallery card has primary image; README markdown safe-rendered; like count increments.
 
-- [ ] T-104 E2E chat regression matrix
+- [x] T-104 E2E chat regression matrix
   Scope: chat agent does NOT silently break the editor — 10 representative tool calls (sketch / feature / sheet-metal / weldment / drawing / PCB / jewelry / arch / FEM / CAM) each leave the project re-openable.
   File: `tests/e2e/specs/persona_chat_regression.spec.ts`
   Success: after each tool call: project list refresh, reopen, last revision restorable, no orphan jobs.
