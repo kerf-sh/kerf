@@ -1066,6 +1066,40 @@ effort.
   filleted edge → recogniser reports 1 hole + 1 fillet feature with
   correct face ids. — dep: GK-23 — parallel: N — opus.
 
+### Group I — Final scope-closing items (direct modelling, FEM prep, recon)
+
+These six close the *last* gaps found in the exhaustive audit (see §7).
+After GK-139 the kernel scope is **closed** — anything not in the §7 matrix
+is a deliberate non-goal (§6), not an oversight.
+
+- [ ] **GK-134** Direct modelling — move-face / push-pull (translate or
+  offset a face along its normal, re-heal adjacent faces; the
+  history-free local edit). — `geom/direct_edit.py` — oracle: push a box
+  top-face up by d → volume increases by face_area·d ± tol; topology
+  unchanged. — dep: GK-86 — parallel: N — opus.
+- [ ] **GK-135** Degree reduction (curve + surface; the inverse of
+  degree elevation, within tol). — `geom/nurbs.py` — oracle: elevate
+  then reduce recovers the original degree + CP set ± tol. — dep:
+  GK-01 — parallel: Y — sonnet.
+- [ ] **GK-136** Tetrahedralize (Delaunay volume mesh of a closed Body
+  for FEM hand-off). — `geom/tetmesh.py` — oracle: tet-mesh a unit cube →
+  Σ tet volumes = 1 ± tol; all tets positive-oriented. — dep: GK-21 —
+  parallel: N — opus.
+- [ ] **GK-137** Point-cloud → mesh reconstruction (ball-pivoting /
+  Poisson-lite surface recovery). — `geom/recon.py` — oracle: sampled
+  points on a sphere → reconstructed closed mesh whose Hausdorff to the
+  analytic sphere < tol·r. — dep: GK-55 — parallel: N — opus.
+- [ ] **GK-138** Global continuity audit (walk every edge of a Body /
+  surface set, classify each shared edge G0 / G1 / G2 / G3, return a
+  whole-body continuity report). — `geom/surface_analysis.py` — oracle:
+  a sewn-from-fillets body reports G1 across fillet seams, G0 across
+  sharp edges. — dep: GK-44 — parallel: Y — sonnet.
+- [ ] **GK-139** Curve / surface extension (extend beyond the parametric
+  domain by tangent (G1) or curvature (G2) continuation). —
+  `geom/curve_toolkit.py`, `geom/patch_srf.py` — oracle: tangent-extend a
+  line stays collinear; G2-extend an arc keeps the radius ± tol. — dep:
+  GK-01 — parallel: Y — sonnet.
+
 ---
 
 ## 5. Parallelization plan
@@ -1142,4 +1176,196 @@ just plumbing?" — we own the former, delegate the latter.
 
 ---
 
-STATUS: COMPLETE
+## 7. Kernel completeness matrix — DEFINITIVE SCOPE (2026-05-21)
+
+This is the **once-and-for-all** map of the geometry-kernel feature space,
+built from an exhaustive audit against OCCT, Parasolid, ACIS, OpenSubdiv,
+CGAL, libIGL, Rhino/OpenNURBS and Blender. Every capability a production
+parametric + freeform + SubD + mesh kernel can have is listed below and
+marked **✅ shipped**, **🟡 Phase 5 (GK-94..GK-139, planned)**, or
+**⛔ deliberate non-goal** (with the §6 reason). **If a capability is not in
+this matrix, it does not belong in this kernel** — the search for "more
+features" ends here. New work attaches to an existing row or it is a product
+layer (history/UI/CAM/FEM packages), not the geometry kernel.
+
+### A. Mathematical foundation
+| Capability | Status |
+|---|---|
+| Vectors / matrices / rigid + affine transforms | ✅ |
+| Point / line / plane / circle / arc primitives | ✅ |
+| NURBS curve & surface eval + derivatives | ✅ |
+| Knot insertion / refinement | ✅ |
+| Degree elevation | ✅ · reduction 🟡 GK-135 |
+| Knot removal / minimal-CP refit | 🟡 GK-102 |
+
+### B. Curves
+| Capability | Status |
+|---|---|
+| Intersection (curve-curve / -surface / surface-surface) | ✅ GK-11 |
+| Self-intersection | ✅ GK-12 |
+| Closest-point / projection / inversion | ✅ GK-06/07 |
+| Offset | ✅ (`offset.py`) |
+| Fairing / smoothing | ✅ GK-35 |
+| Fit / approximate to tolerance | ✅ GK-34 |
+| Trim / trim-to-surface | ✅ GK-39/40 |
+| Length + arc-length parameterization | 🟡 GK-98 |
+| Reparametrize / normalize | 🟡 GK-97 |
+| Reverse direction | 🟡 GK-96 |
+| Composite (join/split, continuity-tagged) | 🟡 GK-100 |
+| Geodesic (curve-on-surface) | 🟡 GK-101 |
+| Extension (tangent / curvature) | 🟡 GK-139 |
+| Curvature comb / porcupine | ✅ GK-65 |
+| Text-on-curve (engraving) | 🟡 GK-103 |
+
+### C. Surfaces
+| Capability | Status |
+|---|---|
+| Sweep1 / Sweep2 / SweepN | ✅ GK-14/15/16/90 |
+| Loft / skin / revolve | ✅ |
+| Coons / patch / network / Gordon | ✅ GK-42 |
+| Blend G1 / G2 / G3 | ✅ GK-43/62 |
+| Variable-radius fillet (G1) | ✅ GK-28 |
+| Match-surface (G1/G2 verify) | ✅ GK-44 |
+| Offset / parallel surface | ✅ GK-83 |
+| Trim by SSI / analytic; untrim / shrink | ✅ GK-39/40 |
+| Unroll / developable test | ✅ (`unroll_srf.py`) |
+| Mid-surface | 🟡 GK-99 |
+| Reverse direction | 🟡 GK-96 |
+| Extension (tangent / curvature) | 🟡 GK-139 |
+| Gaussian/mean curvature heatmap | 🟡 GK-94 |
+| Reflection / highlight lines | 🟡 GK-95 |
+| Zebra continuity | ✅ GK-38 |
+| Adaptive refinement | ✅ GK-63 |
+| Hausdorff deviation | ✅ GK-37 |
+| Class-A hotspot report | ✅ (`leading.py`) |
+| Global continuity audit (whole body) | 🟡 GK-138 |
+
+### D. Solid B-rep
+| Capability | Status |
+|---|---|
+| Build face/shell/solid + validate | ✅ GK spine |
+| Sew / knit | ✅ GK-18 |
+| Boolean union/intersect/difference | ✅ GK-18 (pure-Py default GK-72) |
+| Primitives box/cyl/sphere | ✅; revolve/extrude/loft/sweep→body ✅ GK-14/15/16/57 |
+| Shell / hollow | ✅ GK-45 |
+| Draft / rib / wirecut / pipe | ✅ GK-46 |
+| Edge fillet / chamfer | ✅ (`fillet_solid.py`, `chamfer.py`) |
+| Solid edge / corner blend | ✅ GK-29 |
+| Hole feature (drill/cbore/csink/tap) | ✅ GK-75 |
+| Split body (plane/surface, no-fill) | ✅ GK-84 |
+| Simplify / heal | ✅ GK-85 |
+| Replace face | ✅ GK-86 |
+| Pattern (linear/circular/path) | ✅ GK-87 |
+| Imprint (curve→edges) | ✅ GK-82 |
+| Knife / cut face | ✅ GK-89 |
+| Inset face | ✅ GK-73 |
+| Bridge edge loops | ✅ GK-74 |
+| Whole-body offset (shrinkage/stock) | 🟡 GK-120 |
+| Direct edit (move-face / push-pull) | 🟡 GK-134 |
+| Tangent-chain edge select | 🟡 GK-131 |
+| G3 chain blend | 🟡 GK-132 |
+| Mass properties | ✅ GK-23 |
+| Wall thickness | ✅ GK-76 |
+| Draft analysis | ✅ GK-92 |
+| Undercut detection | 🟡 GK-121 |
+| Symmetry detection | ✅ GK-93 |
+| Feature recognition | 🟡 GK-133 |
+
+### E. SubD
+| Capability | Status |
+|---|---|
+| Cage authoring + primitives | ✅ |
+| Extrude / bevel / loop-cut / crease | ✅ |
+| SubD ↔ NURBS (Catmull-Clark limit, Stam) | ✅ GK-52/53 |
+| Loop slide | ✅ GK-88 |
+| Edge slide / vertex slide | 🟡 GK-104/105 |
+| Edge split | 🟡 GK-106 |
+| Bevel weight (graded crease) | 🟡 GK-107 |
+| Loop subdivision (triangle scheme) | 🟡 GK-108 |
+
+### F. Mesh & implicit
+| Capability | Status |
+|---|---|
+| Mesh → NURBS autosurface | ✅ GK-54 |
+| Mesh boolean (sealed manifold) | ✅ GK-55 |
+| Decimate (QEM) | 🟡 GK-109 |
+| Repair (hole-fill / weld / manifold) | 🟡 GK-110 |
+| Smoothing (Laplacian / Taubin) | 🟡 GK-111 |
+| SDF from body | 🟡 GK-112 |
+| Marching cubes (SDF→mesh) | 🟡 GK-113 |
+| Voxel CSG | 🟡 GK-114 |
+| Tetrahedralize (FEM prep) | 🟡 GK-136 |
+| Point-cloud reconstruction | 🟡 GK-137 |
+
+### G. Generative / lattice
+| Capability | Status |
+|---|---|
+| Lattice unit cells (gyroid/octet/Schwarz-P/Kelvin) | 🟡 GK-115 |
+| Lattice fill to relative density | 🟡 GK-116 |
+| TPMS implicit sheets | 🟡 GK-117 |
+
+### H. 2D / drawing-view
+| Capability | Status |
+|---|---|
+| Region boolean (planar loops) | ✅ GK-56 |
+| Hidden-line 2D projection | ✅ (`make2d.py`) |
+| Section / cross-section contour | ✅ (`section_contour.py`) |
+
+### I. Manufacturing prep
+| Capability | Status |
+|---|---|
+| Sheet metal bend / unfold (K-factor) | ✅ GK-91 |
+| Parting-line generation | 🟡 GK-118 |
+| Cavity / core mould split | 🟡 GK-119 |
+| Undercut detection | 🟡 GK-121 |
+
+### J. Assembly
+| Capability | Status |
+|---|---|
+| Interference / collision | 🟡 GK-122 |
+| Clearance / min-gap | 🟡 GK-123 |
+| Mate constraint solver | 🟡 GK-124 |
+
+### K. Mechanical primitives
+| Capability | Status |
+|---|---|
+| Gear tooth profiles (involute/cycloid) | 🟡 GK-128 |
+| Helical thread profiles | 🟡 GK-129 |
+| Springs / coils | 🟡 GK-130 |
+| Fastener / bearing catalogs | ✅ (`fasteners/`, `bearings/`) |
+
+### L. Interop (I/O)
+| Format | Status |
+|---|---|
+| STEP (AP203/214) read+write | ✅ GK-47/48 |
+| IGES read+write | ✅ GK-49 |
+| STL read+write | ✅ GK-81 |
+| OBJ read+write | ✅ GK-80 |
+| glTF / GLB read+write | ✅ GK-79 |
+| 3MF read+write | ✅ GK-78 |
+| DXF read+write | 🟡 GK-125 |
+| PLY read+write | 🟡 GK-126 |
+| 3DM (Rhino) read | 🟡 GK-127 |
+
+### Z. Deliberate non-goals (⛔ — never in this kernel; see §6)
+| Capability | Why not |
+|---|---|
+| Cloning OCCT/Parasolid/ACIS | Buy/wrap, don't reinvent |
+| Messy real-world STEP/IGES import hardening | 30-yr problem → delegate to OCCT |
+| Display-scale tessellation / BRepMesh | Delegate; pure-Py only where an oracle needs it |
+| GPU / native-extension geometry | Stays NumPy/pure-Py: in-process, hermetic, single-binary |
+| Parametric history / feature DAG | Product layer (not kernel) — owned separately |
+| CAM toolpathing | `kerf-cam` package |
+| FEA solving | `kerf-fem` package (kernel only feeds it meshes via GK-136) |
+| Rendering / UV-unwrap / texturing | Frontend / viewer concern |
+| Kinematics / motion / CFD simulation | Out of geometry-kernel scope entirely |
+
+**Conclusion:** Phases 1-4 (GK-01..GK-93) shipped. Phase 5 (GK-94..GK-139,
+46 items) covers every remaining ✅-able row. When Phase 5 lands, the
+geometry kernel is **feature-complete against the industry** — the only
+things left are the ⛔ rows, which are intentional product/package
+boundaries, not gaps. No further "what are we missing" audits are needed.
+
+---
+
+STATUS: Phases 1-4 COMPLETE (GK-01..GK-93). Phase 5 in progress (GK-94..GK-139). Scope CLOSED per §7 matrix.
