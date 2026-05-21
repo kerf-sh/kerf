@@ -1509,3 +1509,304 @@ def reduce_degree_surface(surface: NurbsSurface,
             knots_v=new_knots_v,
             weights=new_W,
         )
+
+
+# ---------------------------------------------------------------------------
+# GK-102 — Knot removal / minimal-CP refit
+# ---------------------------------------------------------------------------
+#
+# References:
+#   Piegl & Tiller, "The NURBS Book", 2nd ed., §5.4 — RemoveCurveKnot.
+#
+# Strategy
+# --------
+# For each attempted removal of one instance of *knot_value*:
+#   1. Locate the knot span *r* (rightmost occurrence) and current multiplicity *s*.
+#   2. Build candidate new control points in homogeneous space (rational support)
+#      by solving the two-sided linear system for the knot-removal equations.
+#   3. Evaluate the maximum geometric deviation over CHECK_SAMPLES sample points
+#      comparing the original curve with the would-be candidate curve.
+#   4. Accept the removal only if deviation <= tol; otherwise stop early.
+
+
+def remove_knot(
+    curve: NurbsCurve,
+    knot_value: float,
+    num: int = 1,
+    tol: float = 1e-6,
+) -> "NurbsCurve":
+    """Remove up to *num* instances of *knot_value* from *curve* within *tol*.
+
+    Implements Piegl & Tiller §5.4 RemoveCurveKnot.  Only removals that keep
+    the maximum geometric deviation ≤ *tol* are accepted; the rest are silently
+    skipped (returning the curve with as many removals as were feasible).
+
+    Parameters
+    ----------
+    curve:
+        Input NURBS curve.
+    knot_value:
+        The knot to remove (must be an interior knot; clamped end-knots whose
+        multiplicity equals ``degree+1`` cannot be removed without changing the
+        curve endpoints).
+    num:
+        Maximum number of times to remove this knot.  Defaults to 1.
+    tol:
+        Maximum allowable deviation (Euclidean, same units as control points).
+
+    Returns
+    -------
+    NurbsCurve
+        A new curve with up to *num* instances of *knot_value* removed, or the
+        original curve if zero removals were feasible.
+    """
+    current = curve
+    for _ in range(num):
+        result = _remove_knot_once(current, knot_value, tol)
+        if result is current:
+            break  # no progress — stop
+        current = result
+    return current
+
+
+def _remove_knot_once(
+    curve: NurbsCurve,
+    u_remove: float,
+    tol: float,
+) -> "NurbsCurve":
+    """Attempt to remove one instance of *u_remove* from *curve*.
+
+    Implements the knot-removal algorithm from Piegl & Tiller §5.4.
+    Returns *curve* unchanged if the removal would exceed *tol*.
+
+    The knot-removal equations (inverted Boehm blending):
+      Forward (knot insertion):
+        P_old[i] = (1 - alpha_i) * P_new[i-1] + alpha_i * P_new[i]
+      Invert from left:
+        P_new[i] = (P_old[i] - (1-alpha_i) * P_new[i-1]) / alpha_i
+      Invert from right:
+        P_new[i-1] = (P_old[i] - alpha_i * P_new[i]) / (1 - alpha_i)
+
+    where alpha_i = (u - U[i]) / (U[i+p+1] - U[i]).
+
+    We solve from both ends inward, then compare at the midpoint to decide
+    whether the removal is compatible with the tolerance.
+    """
+    p = curve.degree
+    U = curve.knots.astype(float)
+    P = curve.control_points.astype(float)
+    W = curve.weights
+    num_cp = curve.num_control_points  # = n+1
+    n = num_cp - 1                     # last old CP index
+    m = len(U) - 1                     # last knot index
+
+    # Work in homogeneous space for rational curves
+    if W is not None:
+        Pw = np.column_stack([P * W[:, None], W])
+    else:
+        Pw = P.copy()
+    dim_h = Pw.shape[1]
+
+    # Locate rightmost occurrence index of u_remove in U
+    r = -1
+    for idx in range(m, -1, -1):
+        if abs(U[idx] - u_remove) < 1e-12:
+            r = idx
+            break
+    if r == -1:
+        return curve  # knot not present
+
+    # Current multiplicity of u_remove
+    s = int(np.sum(np.abs(U - u_remove) < 1e-12))
+
+    # Never touch end clamps (multiplicity = p+1)
+    if abs(u_remove - U[0]) < 1e-12 and s >= p + 1:
+        return curve
+    if abs(u_remove - U[-1]) < 1e-12 and s >= p + 1:
+        return curve
+
+    # After removing one instance the new array has (n) CPs (indices 0..n-1)
+    # and (m) knots (one fewer).
+    #
+    # The affected CP indices in the OLD array are [first..last+1] where:
+    #   first = r - p
+    #   last  = r - s   (last affected index; after the loop last+1 is unaffected)
+    first = r - p
+    last = r - s
+
+    # Blending coefficients alpha[i] = (u - U[i]) / (U[i+p+1] - U[i])
+    # These come from the ORIGINAL knot vector U (before removal).
+    def alpha(i: int) -> float:
+        denom = U[i + p + 1] - U[i]
+        if abs(denom) < 1e-14:
+            return 0.0
+        return (u_remove - U[i]) / denom
+
+    # Temp arrays in the NEW CP indexing (0..n-1).
+    # We solve from the left (indices first..mid) and from the right (last..mid).
+    # In the new array, old index k maps to new index k for k < r, and k-1 for k > r.
+    # But it is simpler to keep a full-length working buffer and build Pw_cand from it.
+
+    # Left-side solution array (new-index space): new[first-1] = old[first-1] is known.
+    # We compute new[first], new[first+1], ...
+    left = np.zeros((num_cp, dim_h))    # indexed by NEW CP index
+    right = np.zeros((num_cp, dim_h))   # indexed by NEW CP index
+
+    # Boundary: the unaffected CPs on both sides are known.
+    # On the left, the last unaffected new CP is new[first-1] = old[first-1] = Pw[first-1].
+    # (If first == 0 this boundary isn't needed because alpha[0] should be 0.)
+    # On the right, the first unaffected new CP is new[last] = old[last+1] = Pw[last+1].
+    # (new index = old index - 1 for indices > r; old[last+1] → new[last+1-1] = new[last])
+
+    if first > 0:
+        left[first - 1] = Pw[first - 1]
+    right[last] = Pw[last + 1]
+
+    # Left inversion: compute new[first .. ?] from the left
+    # P_old[i] = (1-a)*new[i-1] + a*new[i]  →  new[i] = (P_old[i] - (1-a)*new[i-1])/a
+    # Here i runs from first to some mid_L, using OLD Pw[i] and alpha(i).
+    lft = first    # next new-index to compute from left
+    rgt = last - 1  # next new-index to compute from right (starts just left of new[last])
+
+    # Compute left side
+    for i in range(first, last + 1):
+        a = alpha(i)
+        if abs(a) < 1e-14:
+            # alpha==0 means new[i] == Pw[i] (no blend from left)
+            left[i] = Pw[i]
+        else:
+            left[i] = (Pw[i] - (1.0 - a) * left[i - 1]) / a
+
+    # Compute right side:
+    # P_old[j+1] = (1-a)*new[j] + a*new[j+1]  →  new[j] = (P_old[j+1] - a*new[j+1])/(1-a)
+    # j = last-1, last-2, ...  (new index), P_old index = j+1+1 = j+2
+    # Wait: in old indexing, new[k] corresponds to old[k] for k <= r-1 and old[k+1] for k >= r.
+    # After one removal at position r, the mapping is:
+    #   new_CP[k] = old_CP[k]     for k in [0, r-1]  (left of removed knot)
+    #   new_CP[k] = old_CP[k+1]   for k in [r, n-1]  (right of removed knot, shifted)
+    # The Boehm insertion formula (in old indices) is:
+    #   old[i] = (1-alpha(i))*new[i-1] + alpha(i)*new[i]   for i in [first, last+1]
+    #
+    # For the right side we go from the right. Let's index differently:
+    # For j in [first, last] (new indices), the "right equation" uses old[j+1]:
+    #   old[j+1] = (1-alpha(j+1))*new[j] + alpha(j+1)*new[j+1]
+    #   → new[j] = (old[j+1] - alpha(j+1)*new[j+1]) / (1 - alpha(j+1))
+
+    for j in range(last - 1, first - 1, -1):
+        a = alpha(j + 1)
+        if abs(1.0 - a) < 1e-14:
+            right[j] = Pw[j + 1]
+        else:
+            right[j] = (Pw[j + 1] - a * right[j + 1]) / (1.0 - a)
+
+    # Determine the split point: how many steps from each side
+    # For a single removal (t=1 in P&T) the overlap condition is checked at
+    # new index floor((first + last - 1) / 2) for even, exact mid for odd.
+    # A simpler approach: pick the midpoint and compare left vs right.
+
+    # Check if left and right agree within tol at the midpoint
+    mid = (first + last - 1) // 2  # midpoint in new-index space
+    if last >= first:
+        err_mid = float(np.linalg.norm(left[mid] - right[mid]))
+        if err_mid > tol:
+            return curve
+
+    # Build Pw_cand: take left side up to mid, right side after mid
+    Pw_cand = np.zeros((n, dim_h))
+    # Copy left-unaffected part
+    for k in range(first):
+        Pw_cand[k] = Pw[k]
+    # Left solved part: new indices [first .. mid]
+    for k in range(first, mid + 1):
+        Pw_cand[k] = left[k]
+    # Right solved part: new indices [mid+1 .. last-1]
+    for k in range(mid + 1, last):
+        Pw_cand[k] = right[k]
+    # Right boundary (new[last] = old[last+1])
+    if last < n:
+        Pw_cand[last] = right[last]
+    # Copy right-unaffected part (new indices [last+1 .. n-1] = old[last+2 .. n])
+    for k in range(last + 1, n):
+        Pw_cand[k] = Pw[k + 1]
+
+    # Build candidate new knot vector: remove one instance at index r
+    U_new = np.concatenate([U[:r], U[r + 1:]])
+
+    # Sanity: new num_cp = n, new knot length = n + p + 1
+    if len(U_new) != n + p + 1:
+        return curve
+
+    # Build candidate curve
+    if W is not None:
+        new_W_arr = Pw_cand[:, -1].copy()
+        safe_w = np.where(np.abs(new_W_arr) > 1e-14, new_W_arr, 1.0)
+        new_P_cart = Pw_cand[:, :-1] / safe_w[:, None]
+        candidate = NurbsCurve(
+            degree=p, control_points=new_P_cart, knots=U_new, weights=new_W_arr,
+        )
+    else:
+        candidate = NurbsCurve(degree=p, control_points=Pw_cand, knots=U_new)
+
+    # Final deviation check: sample over full parameter domain
+    CHECK_SAMPLES = 32
+    u0 = float(U[p])
+    u1 = float(U[-(p + 1)])
+    max_err = 0.0
+    for k in range(CHECK_SAMPLES + 1):
+        t = u0 + (u1 - u0) * k / CHECK_SAMPLES
+        pt_orig = curve.evaluate(t)
+        pt_cand = candidate.evaluate(t)
+        err = float(np.linalg.norm(pt_orig - pt_cand))
+        if err > max_err:
+            max_err = err
+
+    if max_err > tol:
+        return curve
+
+    return candidate
+
+
+def minimal_cp_refit(curve: NurbsCurve, tol: float = 1e-6) -> "NurbsCurve":
+    """Remove all removable interior knots from *curve*, minimising CP count.
+
+    Iterates over each distinct interior knot value, attempting to remove all
+    instances of it within *tol* via :func:`remove_knot`.  Repeats until no
+    further removal is possible.
+
+    This is the curve-simplification operation from Piegl & Tiller §5.4:
+    given a curve that may have been produced by knot insertion (e.g. for
+    editing or splitting), recover the minimal representation.
+
+    Parameters
+    ----------
+    curve:
+        Input NURBS curve.
+    tol:
+        Maximum allowable geometric deviation for each knot removal step.
+
+    Returns
+    -------
+    NurbsCurve
+        A new curve with the same geometry (within *tol*) but potentially
+        fewer control points (and knots).
+    """
+    current = curve
+    changed = True
+    while changed:
+        changed = False
+        p = current.degree
+        U = current.knots
+        # Collect distinct interior knot values (exclude clamped ends)
+        u0 = U[p]
+        u1 = U[-(p + 1)]
+        interior = [
+            v for v in np.unique(U)
+            if v > u0 + 1e-12 and v < u1 - 1e-12
+        ]
+        for uv in interior:
+            prev_n = current.num_control_points
+            next_curve = remove_knot(current, float(uv), num=p + 1, tol=tol)
+            if next_curve.num_control_points < prev_n:
+                current = next_curve
+                changed = True
+    return current

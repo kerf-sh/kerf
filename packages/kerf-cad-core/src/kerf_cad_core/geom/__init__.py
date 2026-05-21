@@ -342,6 +342,8 @@ from kerf_cad_core.geom.surface_offset import surface_offset
 from kerf_cad_core.geom.nurbs import reverse_curve, reverse_surface
 # GK-135: degree reduction (curve + surface)
 from kerf_cad_core.geom.nurbs import reduce_degree_curve, reduce_degree_surface
+# GK-102: knot removal / minimal-CP refit
+from kerf_cad_core.geom.nurbs import remove_knot, minimal_cp_refit
 # GK-84: split body by plane / surface (no-fill cut)
 from kerf_cad_core.geom.split_body import (
     split_body_by_plane,
@@ -599,6 +601,8 @@ __all__ = [
     "reverse_curve","reverse_surface",
     # GK-135
     "reduce_degree_curve","reduce_degree_surface",
+    # GK-102
+    "remove_knot","minimal_cp_refit",
     # GK-83
     "surface_offset",
     # GK-87

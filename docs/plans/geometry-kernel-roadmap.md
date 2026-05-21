@@ -903,7 +903,7 @@ effort.
   `geom/curve_toolkit.py` — oracle: geodesic on a plane is a straight
   line; on a cylinder it is a helix segment of correct pitch. — dep:
   GK-06 — parallel: N — opus.
-- [ ] **GK-102** Knot removal / minimal-CP refit (remove removable knots
+- [x] **GK-102** Knot removal / minimal-CP refit (remove removable knots
   within tol; shape-preserving curve simplification). — `geom/nurbs.py` —
   oracle: a degree-elevated-then-reduced curve recovers the original CP
   count ± tol. — dep: GK-01 — parallel: N — opus.
