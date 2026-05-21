@@ -255,7 +255,7 @@ noted.
   File: `packages/kerf-cad-core/tests/test_feature_mesh_pipeline.py`
   Success: 25 input meshes (broken / non-manifold included); repaired manifold; quad-dominant remesh; auto-surface fits.
 
-- [ ] T-47 Persistent face naming (Phase 4)
+- [x] T-47 Persistent face naming (Phase 4)
   Scope: `face_name_registry.py` across boolean / pattern / mates / sweep.
   File: `packages/kerf-cad-core/tests/test_feature_face_name_stability_full.py`
   Success: 25 rebuild scenarios; names stable; rename-on-collision deterministic.
