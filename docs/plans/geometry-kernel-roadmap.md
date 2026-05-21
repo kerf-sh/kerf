@@ -1042,7 +1042,7 @@ effort.
   curve). — `geom/gears.py` — oracle: involute base-circle radius =
   pitch·cos(α); generated wheel has the requested tooth count. — dep:
   GK-100 — parallel: Y — sonnet.
-- [ ] **GK-129** Helical thread profile (ISO metric / Acme cutting
+- [x] **GK-129** Helical thread profile (ISO metric / Acme cutting
   profile swept helically into a screw). — `geom/threads.py` — oracle:
   M6×1 thread → pitch 1 mm, crest-to-root depth = 0.6134·pitch ± tol. —
   dep: GK-77 — parallel: Y — sonnet.

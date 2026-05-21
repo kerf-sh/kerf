@@ -335,6 +335,11 @@ from kerf_cad_core.geom.sheet_metal import (
     bend_sheet,
     unfold_sheet,
 )
+# GK-129: helical thread profiles (ISO metric + Acme)
+from kerf_cad_core.geom.threads import (
+    iso_metric_thread,
+    acme_thread,
+)
 
 # GK-118: parting line generation
 from kerf_cad_core.geom.mold import parting_line
@@ -569,6 +574,9 @@ __all__ = [
     "tapped_hole",
     # GK-122
     "interference",
+    # GK-129
+    "iso_metric_thread",
+    "acme_thread",
 ]
 
 # GK-122: interference / collision detection
