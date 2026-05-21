@@ -158,7 +158,7 @@ Each task ≈1–3h sonnet unless `[HARD]`. Always isolate in a worktree.
   Files: `src/components/Renderer.jsx`.
   Success: measure/inspect works by tapping faces/edges on touch; accidental orbit no longer mis-selects.
 
-- [ ] **T-C3 [HARD] Gumball touch transforms**
+- [x] **T-C3 [HARD] Gumball touch transforms**
   Scope: convert Gumball's `mousedown/mousemove/mouseup` to Pointer Events with `setPointerCapture`; raise hit threshold for finger-size targets.
   Files: `src/components/Gumball.jsx`.
   Success: translate/rotate/scale handles are draggable by finger; mouse path unchanged; `gumball.test.js` green.

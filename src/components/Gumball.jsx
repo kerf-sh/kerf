@@ -196,6 +196,233 @@ export function projectScreenDeltaToRadialDistance(
 }
 
 // ---------------------------------------------------------------------------
+// Exported drag-handler factory — used by the component and directly by
+// unit tests (T-C3: touch drag coverage).
+//
+// Returns `{ onDown, onMove, onUp, dispose }`.  The caller is responsible
+// for registering/deregistering these on the domElement.
+//
+// Parameters
+//   handles        — array of { kind, axisId, axisDir, object, baseColor }
+//   dragRef        — { current: dragState | null }
+//   controls       — OrbitControls (or mock with `.enabled`)
+//   camera         — THREE.Camera
+//   domElement     — canvas (must have getBoundingClientRect)
+//   centroid       — [x, y, z] world-space face centroid
+//   partId         — string
+//   faceId         — number
+//   perPart        — Map<partId, partData>
+//   overlay        — HTMLElement for numeric readout (may be null in tests)
+//   updateFeature  — callback(updater)
+//   newFeatureIdFn — () => string  (injectable for test determinism)
+export function buildFaceModeHandlers({
+  handles,
+  dragRef,
+  controls,
+  camera,
+  domElement,
+  centroid,
+  partId,
+  faceId,
+  perPart,
+  overlay,
+  updateFeature,
+  newFeatureIdFn = newFeatureId,
+}) {
+  const MOUSE_HIT_THRESHOLD_PX = 0
+  const TOUCH_HIT_THRESHOLD_PX = 18
+
+  const raycaster = new THREE.Raycaster()
+  raycaster.params.Line = { threshold: 0.5 }
+  const pointer = new THREE.Vector2()
+
+  // eslint-disable-next-line no-undef
+  const globalFallback = typeof window !== 'undefined' ? window : null
+
+  let activePointerId = null
+  let captureTarget = null
+
+  function pointerFromEvent(ev) {
+    const rect = domElement.getBoundingClientRect()
+    pointer.x = ((ev.clientX - rect.left) / rect.width) * 2 - 1
+    pointer.y = -((ev.clientY - rect.top) / rect.height) * 2 + 1
+  }
+
+  function intersectHandlesAtNdc(ndcX, ndcY) {
+    pointer.x = ndcX; pointer.y = ndcY
+    raycaster.setFromCamera(pointer, camera)
+    const targets = handles.map((h) => h.object)
+    return raycaster.intersectObjects(targets, false)
+  }
+
+  function pickHandle(pointerType) {
+    const rect = domElement.getBoundingClientRect()
+    raycaster.setFromCamera(pointer, camera)
+    const targets = handles.map((h) => h.object)
+    let hits = raycaster.intersectObjects(targets, false)
+    const threshold = pointerType === 'touch'
+      ? TOUCH_HIT_THRESHOLD_PX
+      : MOUSE_HIT_THRESHOLD_PX
+    if (hits.length === 0 && threshold > 0 && rect.width > 0 && rect.height > 0) {
+      const offsets = [
+        [threshold, 0], [-threshold, 0],
+        [0, threshold], [0, -threshold],
+      ]
+      const cx = pointer.x
+      const cy = pointer.y
+      for (const [ox, oy] of offsets) {
+        const ndcDx = (ox / rect.width) * 2
+        const ndcDy = -(oy / rect.height) * 2
+        const fanHits = intersectHandlesAtNdc(cx + ndcDx, cy + ndcDy)
+        if (fanHits.length > 0) { hits = fanHits; break }
+      }
+    }
+    if (hits.length === 0) return null
+    const h = hits[0].object.userData
+    return handles.find((x) => x.kind === h.kind && x.axisId === h.axisId) || null
+  }
+
+  function worldToScreen(world) {
+    const v = new THREE.Vector3(world[0], world[1], world[2]).project(camera)
+    const rect = domElement.getBoundingClientRect()
+    return [
+      (v.x * 0.5 + 0.5) * rect.width,
+      (-v.y * 0.5 + 0.5) * rect.height,
+    ]
+  }
+
+  function showOverlay(text, screenXY) {
+    if (!overlay) return
+    overlay.textContent = text
+    overlay.style.display = 'block'
+    overlay.style.left = `${screenXY[0] + 12}px`
+    overlay.style.top = `${screenXY[1] + 12}px`
+  }
+  function hideOverlay() {
+    if (overlay) overlay.style.display = 'none'
+  }
+
+  function onDown(ev) {
+    if (ev.pointerType === 'mouse' && ev.button !== 0) return
+    pointerFromEvent(ev)
+    const handle = pickHandle(ev.pointerType)
+    if (!handle) return
+    ev.preventDefault?.()
+    ev.stopPropagation?.()
+    try {
+      ev.target.setPointerCapture(ev.pointerId)
+      captureTarget = ev.target
+    } catch (_e) {
+      captureTarget = null
+    }
+    activePointerId = ev.pointerId
+    controls.enabled = false
+    dragRef.current = {
+      handle,
+      startX: ev.clientX,
+      startY: ev.clientY,
+      centroid: centroid.slice(),
+      partId,
+      faceId,
+      centerScreen: worldToScreen(centroid),
+      tipScreen: worldToScreen([
+        centroid[0] + handle.axisDir[0],
+        centroid[1] + handle.axisDir[1],
+        centroid[2] + handle.axisDir[2],
+      ]),
+      distance: 0,
+      angleRad: 0,
+    }
+    const target = captureTarget || globalFallback
+    if (target) {
+      target.addEventListener('pointermove', onMove)
+      target.addEventListener('pointerup', onUp)
+      target.addEventListener('pointercancel', onUp)
+    }
+  }
+
+  function onMove(ev) {
+    const drag = dragRef.current
+    if (!drag) return
+    if (activePointerId != null && ev.pointerId !== activePointerId) return
+    const dxp = ev.clientX - drag.startX
+    const dyp = ev.clientY - drag.startY
+    if (drag.handle.kind === 'translate') {
+      const distance = projectScreenDeltaToAxis(dxp, dyp, drag.centerScreen, drag.tipScreen)
+      drag.distance = distance
+      showOverlay(`${distance.toFixed(2)} mm`, [ev.clientX, ev.clientY])
+    } else {
+      const sx0 = drag.startX - drag.centerScreen[0]
+      const sy0 = drag.startY - drag.centerScreen[1]
+      const sx = ev.clientX - drag.centerScreen[0]
+      const sy = ev.clientY - drag.centerScreen[1]
+      const angleRad = angleBetweenScreenDeltas(sx0, sy0, sx, sy)
+      drag.angleRad = angleRad
+      const deg = angleRad * 180 / Math.PI
+      showOverlay(`${deg.toFixed(1)}°`, [ev.clientX, ev.clientY])
+    }
+  }
+
+  function detachDragListeners() {
+    const target = captureTarget || globalFallback
+    if (!target) return
+    target.removeEventListener('pointermove', onMove)
+    target.removeEventListener('pointerup', onUp)
+    target.removeEventListener('pointercancel', onUp)
+  }
+
+  function onUp(ev) {
+    const drag = dragRef.current
+    if (ev && activePointerId != null && ev.pointerId !== activePointerId) return
+    detachDragListeners()
+    if (captureTarget && activePointerId != null) {
+      try { captureTarget.releasePointerCapture(activePointerId) } catch (_e) { /* ignore */ }
+    }
+    captureTarget = null
+    activePointerId = null
+    controls.enabled = true
+    hideOverlay()
+    dragRef.current = null
+    if (!drag) return
+    if (drag.handle.kind === 'translate') {
+      if (Math.abs(drag.distance) < 0.05) return
+      const part2 = perPart.get(partId)
+      const meta = part2?.faceMeta?.find?.((m) => m && m.id === faceId)
+      const n = meta?.normal || [0, 0, 1]
+      const axisDir = drag.handle.axisDir
+      const axisDot = axisDir[0] * n[0] + axisDir[1] * n[1] + axisDir[2] * n[2]
+      const distAlongNormal = drag.distance * axisDot
+      if (Math.abs(distAlongNormal) < 0.05) return
+      const nodeId = newFeatureIdFn('push_pull')
+      const node = { id: nodeId, op: 'push_pull', face_id: faceId, distance: distAlongNormal }
+      updateFeature((cur) => ({
+        ...cur,
+        features: [...(cur?.features || []), node],
+      }))
+    } else {
+      const angleDeg = drag.angleRad * 180 / Math.PI
+      if (Math.abs(angleDeg) < 0.5) return
+      const nodeId = newFeatureIdFn('rotate_face')
+      const node = {
+        id: nodeId,
+        op: 'rotate_face',
+        face_id: faceId,
+        angle_deg: angleDeg,
+        axis_local: 'normal',
+      }
+      if (drag.handle.axisId === 'x') node.axis_local = 'u'
+      else if (drag.handle.axisId === 'y') node.axis_local = 'v'
+      updateFeature((cur) => ({
+        ...cur,
+        features: [...(cur?.features || []), node],
+      }))
+    }
+  }
+
+  return { onDown, onMove, onUp, detachDragListeners }
+}
+
+// ---------------------------------------------------------------------------
 // Component.
 
 const AXES = [
@@ -325,253 +552,35 @@ export default function Gumball({ getThreeContext, meshes }) {
     domElement.parentNode?.appendChild(overlay)
     overlayRef.current = overlay
 
-    // Pointer interactions — register on the domElement so OrbitControls
-    // can still receive its events when we don't claim the gesture.
-    //
-    // T-C3: Pointer Events with setPointerCapture for reliable finger drags.
-    // When the finger leaves a small handle hitbox mid-drag, pointer capture
-    // ensures we keep receiving pointermove on the captured element so the
-    // gesture survives. Mouse pointers (pointerType === 'mouse') use the
-    // same code path with a tight hit threshold; touch pointers use a wider
-    // hit threshold (~18px, ~1.75× the mouse pickbox) so finger-sized targets
-    // can grab the small spheres / thin rings reliably.
-    const raycaster = new THREE.Raycaster()
-    raycaster.params.Line = { threshold: 0.5 }
-    const pointer = new THREE.Vector2()
-
-    // Hit thresholds in screen pixels.
-    //   * MOUSE: 0px — single raycast at the exact pointer; preserves the
-    //     legacy mouse hit behaviour exactly.
-    //   * TOUCH: 18px — fan of raycasts at the center + 4 cardinal offsets,
-    //     so finger-size taps grab the small spheres / rings. 18px ≈ 1.75×
-    //     the visible-handle pixel size at a typical viewing distance, and
-    //     aligns with platform "minimum touch target" guidance.
-    const MOUSE_HIT_THRESHOLD_PX = 0
-    const TOUCH_HIT_THRESHOLD_PX = 18
-
-    function pointerFromEvent(ev) {
-      const rect = domElement.getBoundingClientRect()
-      pointer.x = ((ev.clientX - rect.left) / rect.width) * 2 - 1
-      pointer.y = -((ev.clientY - rect.top) / rect.height) * 2 + 1
-    }
-
-    function intersectHandlesAtNdc(ndcX, ndcY) {
-      pointer.x = ndcX; pointer.y = ndcY
-      raycaster.setFromCamera(pointer, camera)
-      const targets = handles.map((h) => h.object)
-      return raycaster.intersectObjects(targets, false)
-    }
-
-    // Pick a handle under the cursor. For touch pointers, fan out a small
-    // ring of raycasts so a finger landing near (but not exactly on) a
-    // tiny handle still acquires it. For mouse pointers, single raycast
-    // at the exact pixel — identical to legacy behaviour.
-    function pickHandle(pointerType) {
-      const rect = domElement.getBoundingClientRect()
-      // Center raycast (used by both mouse and touch).
-      raycaster.setFromCamera(pointer, camera)
-      const targets = handles.map((h) => h.object)
-      let hits = raycaster.intersectObjects(targets, false)
-      const threshold = pointerType === 'touch'
-        ? TOUCH_HIT_THRESHOLD_PX
-        : MOUSE_HIT_THRESHOLD_PX
-      if (hits.length === 0 && threshold > 0 && rect.width > 0 && rect.height > 0) {
-        // Fan-out: 4 cardinal offsets at the threshold radius. Stop at the
-        // first non-empty hit list so closer handles win.
-        const offsets = [
-          [threshold, 0], [-threshold, 0],
-          [0, threshold], [0, -threshold],
-        ]
-        const cx = pointer.x
-        const cy = pointer.y
-        for (const [ox, oy] of offsets) {
-          const ndcDx = (ox / rect.width) * 2
-          const ndcDy = -(oy / rect.height) * 2
-          const fanHits = intersectHandlesAtNdc(cx + ndcDx, cy + ndcDy)
-          if (fanHits.length > 0) { hits = fanHits; break }
-        }
-      }
-      if (hits.length === 0) return null
-      const h = hits[0].object.userData
-      return handles.find((x) => x.kind === h.kind && x.axisId === h.axisId) || null
-    }
-
-    function worldToScreen(world) {
-      const v = new THREE.Vector3(world[0], world[1], world[2]).project(camera)
-      const rect = domElement.getBoundingClientRect()
-      return [
-        (v.x * 0.5 + 0.5) * rect.width,
-        (-v.y * 0.5 + 0.5) * rect.height,
-      ]
-    }
-
-    function showOverlay(text, screenXY) {
-      if (!overlay) return
-      overlay.textContent = text
-      overlay.style.display = 'block'
-      overlay.style.left = `${screenXY[0] + 12}px`
-      overlay.style.top = `${screenXY[1] + 12}px`
-    }
-    function hideOverlay() {
-      if (overlay) overlay.style.display = 'none'
-    }
-
-    // Saved touch-action so we can restore it on unmount. We force
-    // `touch-action: none` while the gumball is mounted so the browser
-    // doesn't steal touch gestures (scroll/zoom) before we see them, and
-    // doesn't fire synthetic mouse events after touch sequences (which
-    // would otherwise double-fire any mouse-side OrbitControls handlers).
+    // Pointer interactions — delegate to the exported handler factory so
+    // the drag logic is shared with unit tests (T-C3 touch coverage).
     const prevTouchAction = domElement.style.touchAction
     domElement.style.touchAction = 'none'
 
-    // Track the captured pointerId so pointermove from unrelated pointers
-    // (e.g. a second finger landing during a drag) doesn't disturb us.
-    let activePointerId = null
-    let captureTarget = null
-
-    function onDown(ev) {
-      // Only primary button for mouse; touch/pen always count.
-      if (ev.pointerType === 'mouse' && ev.button !== 0) return
-      pointerFromEvent(ev)
-      const handle = pickHandle(ev.pointerType)
-      if (!handle) return
-      ev.preventDefault()
-      ev.stopPropagation()
-      // Capture the pointer so we keep getting pointermove even when the
-      // finger leaves the small handle hitbox — the key fix that makes
-      // finger drag of a gumball handle reliable on touch.
-      try {
-        ev.target.setPointerCapture(ev.pointerId)
-        captureTarget = ev.target
-      } catch (_e) {
-        captureTarget = null
-      }
-      activePointerId = ev.pointerId
-      // Suppress orbit during drag.
-      controls.enabled = false
-      dragRef.current = {
-        handle,
-        startX: ev.clientX,
-        startY: ev.clientY,
-        centroid: centroid.slice(),
-        partId,
-        faceId,
-        // For rotate, capture the centroid screen pos and initial offset.
-        centerScreen: worldToScreen(centroid),
-        // Snapshot end-tip (for translate) — origin + axisDir.
-        tipScreen: worldToScreen([
-          centroid[0] + handle.axisDir[0],
-          centroid[1] + handle.axisDir[1],
-          centroid[2] + handle.axisDir[2],
-        ]),
-        distance: 0,
-        angleRad: 0,
-      }
-      // Listen on the captured target so we get events even when the
-      // pointer leaves the gumball handle hitbox. Fall back to window for
-      // legacy/jsdom environments that don't implement pointer capture.
-      const target = captureTarget || window
-      target.addEventListener('pointermove', onMove)
-      target.addEventListener('pointerup', onUp)
-      target.addEventListener('pointercancel', onUp)
-    }
-
-    function onMove(ev) {
-      const drag = dragRef.current
-      if (!drag) return
-      if (activePointerId != null && ev.pointerId !== activePointerId) return
-      const dxp = ev.clientX - drag.startX
-      const dyp = ev.clientY - drag.startY
-      if (drag.handle.kind === 'translate') {
-        const distance = projectScreenDeltaToAxis(dxp, dyp, drag.centerScreen, drag.tipScreen)
-        drag.distance = distance
-        showOverlay(`${distance.toFixed(2)} mm`, [ev.clientX, ev.clientY])
-      } else {
-        // Rotate — angle around centerScreen.
-        const sx0 = drag.startX - drag.centerScreen[0]
-        const sy0 = drag.startY - drag.centerScreen[1]
-        const sx = ev.clientX - drag.centerScreen[0]
-        const sy = ev.clientY - drag.centerScreen[1]
-        const angleRad = angleBetweenScreenDeltas(sx0, sy0, sx, sy)
-        drag.angleRad = angleRad
-        const deg = angleRad * 180 / Math.PI
-        showOverlay(`${deg.toFixed(1)}°`, [ev.clientX, ev.clientY])
-      }
-    }
-
-    function detachDragListeners() {
-      const target = captureTarget || window
-      target.removeEventListener('pointermove', onMove)
-      target.removeEventListener('pointerup', onUp)
-      target.removeEventListener('pointercancel', onUp)
-    }
-
-    function onUp(ev) {
-      const drag = dragRef.current
-      if (ev && activePointerId != null && ev.pointerId !== activePointerId) return
-      detachDragListeners()
-      if (captureTarget && activePointerId != null) {
-        try { captureTarget.releasePointerCapture(activePointerId) } catch (_e) { /* ignore */ }
-      }
-      captureTarget = null
-      activePointerId = null
-      controls.enabled = true
-      hideOverlay()
-      dragRef.current = null
-      if (!drag) return
-      if (drag.handle.kind === 'translate') {
-        if (Math.abs(drag.distance) < 0.05) return
-        // For translate, the gumball axes are world XYZ — but push_pull is
-        // defined as motion along the FACE NORMAL, not a world axis. We
-        // approximate by projecting the requested distance onto the face
-        // normal: distance_along_normal = world_delta · normal. This makes
-        // the X/Y/Z arrows behave intuitively when the face is axis-aligned
-        // (which is the common case after a Pad), and degrades gracefully
-        // for tilted faces (the dragged distance "scales down" by the cosine
-        // of the angle between the world axis and the face normal).
-        const part2 = perPart.get(partId)
-        const meta = part2?.faceMeta?.find?.((m) => m && m.id === faceId)
-        const n = meta?.normal || [0, 0, 1]
-        const axisDir = drag.handle.axisDir
-        const axisDot = axisDir[0] * n[0] + axisDir[1] * n[1] + axisDir[2] * n[2]
-        const distAlongNormal = drag.distance * axisDot
-        if (Math.abs(distAlongNormal) < 0.05) return
-        const nodeId = newFeatureId('push_pull')
-        const node = { id: nodeId, op: 'push_pull', face_id: faceId, distance: distAlongNormal }
-        updateFeature((cur) => ({
-          ...cur,
-          features: [...(cur?.features || []), node],
-        }))
-      } else {
-        const angleDeg = drag.angleRad * 180 / Math.PI
-        if (Math.abs(angleDeg) < 0.5) return
-        const nodeId = newFeatureId('rotate_face')
-        const node = {
-          id: nodeId,
-          op: 'rotate_face',
-          face_id: faceId,
-          angle_deg: angleDeg,
-          axis_local: 'normal',  // Worker treats this as the face normal axis.
-        }
-        // Honor the dragged axis when the user dragged a non-Z ring: map the
-        // world-axis to a local axis hint. v1 keeps things simple: 'z' maps
-        // to 'normal', 'x' → 'u', 'y' → 'v'. The OCCT op walks the face
-        // frame to resolve.
-        if (drag.handle.axisId === 'x') node.axis_local = 'u'
-        else if (drag.handle.axisId === 'y') node.axis_local = 'v'
-        updateFeature((cur) => ({
-          ...cur,
-          features: [...(cur?.features || []), node],
-        }))
-      }
-    }
+    const { onDown, onMove: _onMove, onUp: _onUp, detachDragListeners } = buildFaceModeHandlers({
+      handles,
+      dragRef,
+      controls,
+      camera,
+      domElement,
+      centroid,
+      partId,
+      faceId,
+      perPart,
+      overlay,
+      updateFeature,
+    })
 
     // Swallow the synthetic mouse events some browsers still emit after a
-    // touch sequence even with `touch-action: none`. We only consume them
-    // while we're holding a touch-originated drag; for normal mouse use,
-    // these listeners short-circuit immediately (no active pointer).
+    // touch sequence even with `touch-action: none`. activePointerId is
+    // only set while a touch-originated drag is active; mouse handlers
+    // short-circuit immediately otherwise.
+    //
+    // Note: we close over a local `activePointerId` mirror here. The factory
+    // owns the canonical one; the suppressor only needs to know *whether*
+    // a drag is active, which dragRef.current serves equally well.
     function suppressSyntheticMouse(ev) {
-      if (activePointerId == null) return
+      if (!dragRef.current) return
       ev.preventDefault()
       ev.stopPropagation()
     }
