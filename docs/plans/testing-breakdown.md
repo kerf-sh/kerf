@@ -330,7 +330,7 @@ noted.
   File: `packages/kerf-api/tests/test_feature_library_submissions.py`
   Success: 25 submissions across roles; state-machine guards; admin override path.
 
-- [ ] T-62 File revisions (OSS fine-grained undo)
+- [x] T-62 File revisions (OSS fine-grained undo)
   Scope: `file_revisions` source∈{user,llm,tool,restore} + compaction (mig 048) + content-ref (049) + sha256 (018).
   File: `packages/kerf-api/tests/test_feature_file_revisions.py`
   Success: 25 edit sequences; restore semantics; compaction preserves sha256 chain; content-ref dedup.
