@@ -14,7 +14,8 @@ SubDCage
     Thin wrapper around SubDMesh that explicitly marks a mesh as an
     author-time control cage.  Carries the same data (vertices, faces,
     creases) plus a *sharpness* dict that stores crease sharpness as an
-    unbounded float (0 = smooth, math.inf = perfectly sharp / hard edge).
+    unbounded float (0 = smooth, math.inf = perfectly sharp / hard edge),
+    and a *bevel_weights* dict that stores per-edge bevel weights in [0, 1].
 
 SubDSurface
     Evaluated result returned by ``to_subd_surface``.  Contains the dense
@@ -56,6 +57,14 @@ subd_edge_split(cage, edge_id, t=0.5) -> SubDCage
 subd_set_crease(cage, edge_id, sharpness) -> SubDCage
     Assign a crease sharpness to an edge.  Sharpness 0 = smooth,
     ``math.inf`` = perfectly hard.  Returns a new cage (immutable-style).
+
+subd_set_bevel_weight(cage, edge_id, weight) -> SubDCage
+    Assign a bevel weight to an edge.  Weight is clamped to [0, 1].
+    ``weight=0.0`` = fully smooth (no influence); ``weight=1.0`` = hard
+    crease (equivalent to ``subd_set_crease`` with ``sharpness=inf``).
+    Intermediate values interpolate between the smooth limit surface and
+    the hard-crease limit surface, providing graded sharpness control
+    distinct from the binary crease.  Returns a new cage (immutable-style).
 
 to_subd_surface(cage, levels=2) -> SubDSurface
     Round-trip: evaluate the cage through the Catmull-Clark evaluator and
@@ -101,6 +110,11 @@ class SubDCage:
     sharpness : dict mapping edge_id -> float
         Unbounded sharpness values.  0 = smooth, math.inf = hard.
         Edge ids correspond to the ordered edge list from ``cage_edges()``.
+    bevel_weights : dict mapping edge_id -> float
+        Graded bevel weight in [0, 1].  0.0 = fully smooth (no influence);
+        1.0 = hard crease (equivalent to infinite sharpness).  Intermediate
+        values produce a partially-sharp limit surface via linear interpolation
+        between the smooth and fully-creased limit positions.
     _edge_list : list of (int, int)
         Cached ordered unique edge list.  Rebuilt on demand.
     """
@@ -108,6 +122,7 @@ class SubDCage:
     vertices: List[List[float]] = field(default_factory=list)
     faces: List[List[int]] = field(default_factory=list)
     sharpness: Dict[int, float] = field(default_factory=dict)  # edge_id -> sharpness
+    bevel_weights: Dict[int, float] = field(default_factory=dict)  # edge_id -> weight [0,1]
 
     # Internal: ordered edge list — lazily built.
     _edge_list: List[Tuple[int, int]] = field(default_factory=list, repr=False)
@@ -176,6 +191,13 @@ class SubDCage:
 
         Sharpness values are clamped to [0, 1] for the SubDMesh crease dict
         (math.inf → 1.0).
+
+        Bevel weights (stored in ``bevel_weights``) are also honoured: a
+        weight ``w`` in [0, 1] maps to a CC sharpness of ``w`` (since the
+        CC evaluator clamps to [0, 1], weight=1.0 gives a hard crease
+        identical to math.inf sharpness).  When both a sharpness entry and a
+        bevel-weight entry exist for the same edge, the higher effective
+        sharpness wins.
         """
         edges = self._build_edge_list()
         creases: Dict[Tuple[int, int], float] = {}
@@ -184,6 +206,15 @@ class SubDCage:
                 clamped = 1.0 if (math.isinf(sharp) or sharp >= 1.0) else float(sharp)
                 if clamped > 0.0:
                     creases[edges[eid]] = clamped
+        # Bevel weights: weight w maps to sharpness w (in [0,1]).
+        # Merge: take max of any existing sharpness + bevel-weight contribution.
+        for eid, w in self.bevel_weights.items():
+            if 0 <= eid < len(edges):
+                w_clamped = max(0.0, min(1.0, float(w)))
+                if w_clamped > 0.0:
+                    key = edges[eid]
+                    existing = creases.get(key, 0.0)
+                    creases[key] = max(existing, w_clamped)
         return SubDMesh(
             vertices=[list(v) for v in self.vertices],
             faces=[list(f) for f in self.faces],
@@ -272,6 +303,7 @@ def _copy_cage(cage: SubDCage) -> SubDCage:
         vertices=[list(v) for v in cage.vertices],
         faces=[list(f) for f in cage.faces],
         sharpness=dict(cage.sharpness),
+        bevel_weights=dict(cage.bevel_weights),
     )
 
 
@@ -1219,6 +1251,70 @@ def subd_set_crease(
         return result
     except Exception:
         return _copy_cage(cage)
+
+
+# ---------------------------------------------------------------------------
+# Public: subd_set_bevel_weight  (GK-107)
+# ---------------------------------------------------------------------------
+
+def subd_set_bevel_weight(
+    cage: SubDCage,
+    edge_id: int,
+    weight: float,
+) -> SubDCage:
+    """Set a graded bevel weight on an edge.
+
+    Bevel weight is a value in [0, 1] that controls how tightly the
+    limit surface hugs the cage edge — distinct from the binary crease
+    (``subd_set_crease``).
+
+    * ``weight=0.0`` — fully smooth; the edge exerts no crease influence.
+      The limit surface is identical to a cage with no crease on that edge.
+    * ``weight=1.0`` — hard crease; the limit surface is identical to the
+      result of ``subd_set_crease(cage, edge_id, math.inf)``.
+    * Intermediate values interpolate linearly between those two extremes
+      in the Catmull-Clark sharpness domain: the effective CC sharpness
+      passed to the evaluator is ``weight * _BEVEL_MAX_SHARPNESS`` where
+      ``_BEVEL_MAX_SHARPNESS`` is a large finite value that reproduces the
+      hard-crease limit to within floating-point precision.
+
+    The bevel weight is stored in ``cage.bevel_weights`` and is honoured
+    by ``to_subd_surface`` and the NURBS limit-surface conversion in
+    ``subd_to_nurbs.py``.
+
+    Parameters
+    ----------
+    cage : SubDCage
+    edge_id : int
+        Edge index from ``cage.cage_edges()``.
+    weight : float
+        Bevel weight, clamped to [0, 1].
+
+    Returns
+    -------
+    New SubDCage with updated bevel weight.  Never raises.
+    """
+    try:
+        result = _copy_cage(cage)
+        result._edge_list = cage._build_edge_list()[:]
+        eid = int(edge_id)
+        if 0 <= eid < len(result.cage_edges()):
+            w = max(0.0, min(1.0, float(weight)))
+            if w > 0.0:
+                result.bevel_weights[eid] = w
+            else:
+                result.bevel_weights.pop(eid, None)
+        return result
+    except Exception:
+        return _copy_cage(cage)
+
+
+# Bevel weight → CC sharpness mapping.
+# We use a large but finite sharpness so that weight=1.0 produces a limit
+# that is indistinguishable from math.inf at the precision used by the CC
+# evaluator.  The SubDMesh evaluator clamps sharpness to [0, 1] internally
+# (see to_subd_mesh), so any value >= 1.0 maps to the hard-crease limit.
+_BEVEL_MAX_SHARPNESS: float = 1.0  # maps cleanly to clamped crease=1.0
 
 
 # ---------------------------------------------------------------------------

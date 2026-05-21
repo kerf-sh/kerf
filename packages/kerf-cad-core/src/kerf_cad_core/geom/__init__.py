@@ -324,6 +324,8 @@ from kerf_cad_core.geom.subd_authoring import subd_loop_slide, subd_edge_slide
 from kerf_cad_core.geom.subd_authoring import subd_vertex_slide
 # GK-106: edge split at parameter (SubD)
 from kerf_cad_core.geom.subd_authoring import subd_edge_split
+# GK-107: bevel weight per edge (graded crease 0..1)
+from kerf_cad_core.geom.subd_authoring import subd_set_bevel_weight
 # GK-87: pattern (linear / circular / path)
 from kerf_cad_core.geom.pattern import (
     linear_pattern,
@@ -611,6 +613,8 @@ __all__ = [
     "subd_vertex_slide",
     # GK-106
     "subd_edge_split",
+    # GK-107
+    "subd_set_bevel_weight",
     # GK-93
     "detect_symmetry",
     # GK-85

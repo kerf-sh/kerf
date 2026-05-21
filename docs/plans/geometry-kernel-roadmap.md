@@ -928,7 +928,7 @@ effort.
   splitting incident faces). — `geom/subd_authoring.py` — oracle: split
   a quad edge at t=0.5 → 2 new faces, V+1/E+? consistent with Euler. —
   dep: GK-52 — parallel: Y — sonnet.
-- [ ] **GK-107** Bevel weight per edge (graded crease 0..1 driving the
+- [x] **GK-107** Bevel weight per edge (graded crease 0..1 driving the
   limit surface tightness, distinct from binary crease). —
   `geom/subd_authoring.py`, `geom/subd_to_nurbs.py` — oracle: weight 1.0
   reproduces a hard crease; 0.0 reproduces the smooth limit. — dep:

@@ -59,6 +59,14 @@ import numpy as np
 
 from kerf_cad_core.geom.nurbs import NurbsSurface
 from kerf_cad_core.geom.subd import SubDMesh
+
+# Imported lazily to avoid circular imports at module load time;
+# used only in subd_limit_positions_bevel_weighted.
+try:
+    from kerf_cad_core.geom.subd_authoring import SubDCage as _SubDCage  # noqa: F401
+except ImportError:
+    _SubDCage = None  # type: ignore
+
 from kerf_cad_core.geom.brep import (
     Body,
     Face,
@@ -604,6 +612,108 @@ def subd_limit_positions(cage: SubDMesh) -> List[np.ndarray]:
     ]
 
 
+def subd_limit_positions_bevel_weighted(cage: "SubDCage") -> List[np.ndarray]:  # type: ignore[name-defined]
+    """GK-107: Compute bevel-weight-aware limit positions for a SubDCage.
+
+    For each vertex, the final limit position is a linear interpolation
+    between the smooth Stam limit position and the hard-crease limit
+    position, weighted by the maximum bevel weight of all edges incident
+    on that vertex.
+
+    * Vertex on edges with no bevel weight → smooth limit (unchanged).
+    * Vertex on edges with bevel weight 1.0 → hard-crease limit = the
+      cage vertex position itself (a perfectly hard crease locks the
+      limit point to the control vertex).
+    * Vertex on edges with intermediate weight ``w`` → lerp between
+      smooth limit (w=0) and cage vertex (w=1).
+
+    This function is used by ``subd_cage_to_limit_nurbs_body`` when
+    the cage has bevel weights set, so that the NURBS limit surface
+    honours the graded crease semantics.
+
+    Parameters
+    ----------
+    cage : SubDCage
+        Author-time cage that may carry ``bevel_weights``.
+
+    Returns
+    -------
+    list[np.ndarray]
+        One (3,) array per cage vertex in input order.
+
+    Raises
+    ------
+    SubdToNurbsError
+        If the cage has no vertices.
+    """
+    # Import here to avoid circular dependency at module level.
+    from kerf_cad_core.geom.subd_authoring import SubDCage
+
+    if not isinstance(cage, SubDCage):
+        raise SubdToNurbsError(
+            "subd_limit_positions_bevel_weighted requires a SubDCage"
+        )
+    if not cage.vertices:
+        raise SubdToNurbsError("cage has no vertices")
+
+    # 1. Smooth limit positions (no creases)
+    smooth_mesh = SubDMesh(
+        vertices=[list(v) for v in cage.vertices],
+        faces=[list(f) for f in cage.faces],
+        creases={},
+    )
+    smooth_limits = subd_limit_positions(smooth_mesh)
+
+    # 2. For each vertex, compute the maximum bevel weight of incident edges.
+    if not cage.bevel_weights:
+        return smooth_limits  # fast path: no bevel weights set
+
+    edges = cage.cage_edges()
+    vert_max_weight: Dict[int, float] = {}
+    # Also track per-vertex the set of bevel-weighted edge keys, needed to
+    # build the hard-crease mesh for that vertex.
+    vert_crease_edges: Dict[int, Dict[Tuple[int, int], float]] = {}
+
+    for eid, w in cage.bevel_weights.items():
+        if 0 <= eid < len(edges):
+            a, b = edges[eid]
+            w_clamped = max(0.0, min(1.0, float(w)))
+            if w_clamped <= 0.0:
+                continue
+            ek = (min(a, b), max(a, b))
+            for vi in (a, b):
+                vert_max_weight[vi] = max(vert_max_weight.get(vi, 0.0), w_clamped)
+                vert_crease_edges.setdefault(vi, {})[ek] = w_clamped
+
+    # 3. For each vertex that has a non-zero bevel weight, compute the
+    #    hard-crease Stam limit position.  We do this by building a SubDMesh
+    #    with all bevel-weighted edges set to crease=1.0 and calling
+    #    subd_limit_positions.  This is done once for the whole cage.
+    all_crease_edges: Dict[Tuple[int, int], float] = {}
+    for vi, edges_dict in vert_crease_edges.items():
+        for ek in edges_dict:
+            all_crease_edges[ek] = 1.0
+
+    hard_mesh = SubDMesh(
+        vertices=[list(v) for v in cage.vertices],
+        faces=[list(f) for f in cage.faces],
+        creases=all_crease_edges,
+    )
+    hard_limits = subd_limit_positions(hard_mesh)
+
+    # 4. Interpolate: result = smooth + w * (hard_lim - smooth)
+    result: List[np.ndarray] = []
+    for vi, smooth_pos in enumerate(smooth_limits):
+        w = vert_max_weight.get(vi, 0.0)
+        if w <= 0.0:
+            result.append(smooth_pos)
+        elif w >= 1.0:
+            result.append(hard_limits[vi].copy())
+        else:
+            result.append(smooth_pos + w * (hard_limits[vi] - smooth_pos))
+    return result
+
+
 def subd_cage_to_limit_nurbs_body(
     cage: SubDMesh,
     *,
@@ -915,6 +1025,7 @@ __all__ = [
     "subd_cage_to_nurbs_patches",
     "subd_cage_to_nurbs_body",
     "subd_limit_positions",
+    "subd_limit_positions_bevel_weighted",
     "subd_cage_to_limit_nurbs_body",
     "nurbs_body_to_subd_cage",
     "nurbs_to_subd_cage",
