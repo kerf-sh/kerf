@@ -77,6 +77,7 @@ _BuildError = BuildError  # local alias for use in GK-46 body-producing function
 from kerf_cad_core.geom.brep import (
     Body as _Body,
     Coedge as _Coedge,
+    CylinderSurface as _CylinderSurface,
     Edge as _Edge,
     Face as _Face,
     Line3 as _Line3,
@@ -84,7 +85,13 @@ from kerf_cad_core.geom.brep import (
     Plane as _Plane,
     Shell as _Shell,
     Solid as _Solid,
+    SphereSurface as _SphereSurface,
+    TorusSurface as _TorusSurface,
     Vertex as _Vertex,
+    make_box as _make_box,
+    make_cylinder as _make_cylinder_body,
+    make_sphere as _make_sphere_body,
+    make_torus as _make_torus_body,
     validate_body as _validate_body,
 )
 from kerf_cad_core.geom.sew import sew_faces as _sew_faces, sew_into_solid as _sew_into_solid
@@ -2540,3 +2547,286 @@ if _REGISTRY_AVAILABLE:
         if not result["ok"]:
             return err_payload(result["reason"], "OP_FAILED")
         return ok_payload({k: v for k, v in result.items() if k not in ("ok", "reason")})
+
+
+# ---------------------------------------------------------------------------
+# GK-120  Uniform body offset (grow / shrink a whole solid)
+# ---------------------------------------------------------------------------
+
+def _offset_surface(surface, distance: float):
+    """Return a new surface of the same type offset outward by *distance*.
+
+    Supports :class:`~kerf_cad_core.geom.brep.Plane`,
+    :class:`~kerf_cad_core.geom.brep.SphereSurface`,
+    :class:`~kerf_cad_core.geom.brep.CylinderSurface`, and
+    :class:`~kerf_cad_core.geom.brep.TorusSurface`.  For unknown types a
+    ``NotImplementedError`` is raised so the caller can decide whether to
+    fall back to a NURBS approximation or raise to the user.
+    """
+    if isinstance(surface, _Plane):
+        return _offset_plane(surface, distance)
+    if isinstance(surface, _SphereSurface):
+        new_r = surface.radius + distance
+        if new_r <= 0.0:
+            raise ValueError(
+                f"offset_body: sphere radius {surface.radius} + distance {distance} "
+                f"= {new_r} <= 0 (body collapses)"
+            )
+        return _SphereSurface(center=surface.center.copy(), radius=new_r)
+    if isinstance(surface, _CylinderSurface):
+        new_r = surface.radius + distance
+        if new_r <= 0.0:
+            raise ValueError(
+                f"offset_body: cylinder radius {surface.radius} + distance {distance} "
+                f"= {new_r} <= 0 (body collapses)"
+            )
+        return _CylinderSurface(
+            center=surface.center.copy(),
+            axis=surface.axis.copy(),
+            radius=new_r,
+            x_ref=surface.x_ref.copy(),
+        )
+    if isinstance(surface, _TorusSurface):
+        new_minor = surface.minor_radius + distance
+        if new_minor <= 0.0:
+            raise ValueError(
+                f"offset_body: torus minor_radius {surface.minor_radius} + "
+                f"distance {distance} = {new_minor} <= 0 (body collapses)"
+            )
+        if new_minor >= surface.major_radius:
+            raise ValueError(
+                f"offset_body: torus minor_radius {new_minor} >= major_radius "
+                f"{surface.major_radius} (self-intersecting torus)"
+            )
+        return _TorusSurface(
+            center=surface.center.copy(),
+            axis=surface.axis.copy(),
+            major_radius=surface.major_radius,
+            minor_radius=new_minor,
+        )
+    raise NotImplementedError(
+        f"offset_body: unsupported surface type {type(surface).__name__}"
+    )
+
+
+def offset_body(body: "_Body", distance: float, *, tol: float = 1e-7) -> "_Body":
+    """Uniformly offset (grow or shrink) every face of a solid *body* by *distance*.
+
+    Each face's underlying surface is moved outward along its analytic normal
+    by *distance* (positive = grow, negative = shrink).  Topology is preserved
+    and the resulting faces are re-sewn into a new validated :class:`Body`.
+
+    Supported surface types per face
+    ---------------------------------
+    * :class:`~kerf_cad_core.geom.brep.Plane` — translated along normal.
+    * :class:`~kerf_cad_core.geom.brep.SphereSurface` — radius scaled to
+      ``r + distance``.
+    * :class:`~kerf_cad_core.geom.brep.CylinderSurface` — lateral radius
+      scaled; planar cap planes translated.
+    * :class:`~kerf_cad_core.geom.brep.TorusSurface` — minor radius scaled.
+
+    Parameters
+    ----------
+    body : Body
+        Source body.  Must have exactly one solid with one closed shell.
+    distance : float
+        Signed offset distance.  Positive grows the body outward; negative
+        shrinks it.  The resulting solid must be geometrically valid (e.g.
+        ``distance > -r`` for a sphere of radius ``r``).
+    tol : float
+        Topological tolerance for the re-sewing step.
+
+    Returns
+    -------
+    Body
+        New :class:`Body` with offset geometry, validated by
+        :func:`~kerf_cad_core.geom.brep.validate_body`.
+
+    Raises
+    ------
+    ValueError
+        On invalid input (bad body, unsupported surface type, collapsing
+        geometry, or re-sewing failure).
+
+    Examples
+    --------
+    >>> from kerf_cad_core.geom.brep import make_sphere, validate_body
+    >>> from kerf_cad_core.geom.solid_features import offset_body
+    >>> b = make_sphere(radius=3.0)
+    >>> b2 = offset_body(b, 1.0)           # grow sphere to radius 4
+    >>> b3 = offset_body(b, -1.0)          # shrink sphere to radius 2
+    """
+    if not isinstance(body, _Body):
+        raise ValueError(
+            f"offset_body: body must be a Body instance, got {type(body).__name__!r}"
+        )
+    if not isinstance(distance, (int, float)) or not math.isfinite(distance):
+        raise ValueError(
+            f"offset_body: distance must be a finite number, got {distance!r}"
+        )
+    d = float(distance)
+
+    if not body.solids:
+        raise ValueError("offset_body: body has no solids")
+    if len(body.solids) != 1:
+        raise ValueError(
+            f"offset_body: expected exactly 1 solid, got {len(body.solids)}"
+        )
+    solid = body.solids[0]
+    if not solid.shells:
+        raise ValueError("offset_body: solid has no shells")
+    outer_shell = solid.shells[0]
+    if not outer_shell.is_closed:
+        raise ValueError("offset_body: outer shell is not closed")
+
+    all_faces = outer_shell.faces
+
+    # ------------------------------------------------------------------
+    # Fast path: sphere body (single face with SphereSurface).
+    # We detect it and return a fresh make_sphere — this preserves exact
+    # topology and passes validate_body without any sewing step.
+    # ------------------------------------------------------------------
+    if len(all_faces) == 1 and isinstance(all_faces[0].surface, _SphereSurface):
+        sph = all_faces[0].surface
+        new_r = sph.radius + d
+        if new_r <= 0.0:
+            raise ValueError(
+                f"offset_body: sphere radius {sph.radius} + distance {d} "
+                f"= {new_r} <= 0 (body collapses)"
+            )
+        return _make_sphere_body(center=sph.center.copy(), radius=new_r, tol=tol)
+
+    # ------------------------------------------------------------------
+    # Fast path: single-face torus body.
+    # ------------------------------------------------------------------
+    if len(all_faces) == 1 and isinstance(all_faces[0].surface, _TorusSurface):
+        tor = all_faces[0].surface
+        new_minor = tor.minor_radius + d
+        if new_minor <= 0.0:
+            raise ValueError(
+                f"offset_body: torus minor_radius {tor.minor_radius} + "
+                f"distance {d} = {new_minor} <= 0 (body collapses)"
+            )
+        if new_minor >= tor.major_radius:
+            raise ValueError(
+                f"offset_body: torus minor_radius {new_minor} >= major_radius "
+                f"{tor.major_radius} (self-intersecting torus)"
+            )
+        return _make_torus_body(
+            center=tor.center.copy(),
+            axis=tor.axis.copy(),
+            major_radius=tor.major_radius,
+            minor_radius=new_minor,
+            tol=tol,
+        )
+
+    # ------------------------------------------------------------------
+    # General path: planar-faced body (box, extrude, etc.).
+    # Offset each plane outward by d; recompute vertex positions via the
+    # 3-plane intersection method (same as shell_body uses internally).
+    # ------------------------------------------------------------------
+    if all(isinstance(f.surface, _Plane) for f in all_faces):
+        import copy as _copy
+
+        # Compute outward-offset planes for every face.
+        offset_planes: List["_Plane"] = []
+        for f in all_faces:
+            plane = f.surface
+            raw_nrm = _unit3(np.cross(plane.x_axis, plane.y_axis))
+            nrm = raw_nrm if f.orientation else -raw_nrm
+            shifted_origin = plane.origin + d * nrm
+            offset_planes.append(
+                _Plane(origin=shifted_origin,
+                       x_axis=plane.x_axis.copy(),
+                       y_axis=plane.y_axis.copy())
+            )
+
+        # Build vertex_id -> incident face indices map from original body.
+        vertex_to_faces: dict = {}
+        for fi, f in enumerate(all_faces):
+            outer_loop = f.outer_loop()
+            if outer_loop is None:
+                continue
+            for ce in outer_loop.coedges:
+                vid = id(ce.start_vertex())
+                vertex_to_faces.setdefault(vid, []).append(fi)
+
+        # Compute new vertex positions via 3-plane intersection.
+        new_positions: dict = {}
+        for vid, face_indices in vertex_to_faces.items():
+            if len(face_indices) < 3:
+                continue
+            planes_3 = [offset_planes[fi] for fi in face_indices[:3]]
+            try:
+                new_pt = _intersect_three_planes(*planes_3)
+            except ValueError:
+                continue
+            new_positions[vid] = new_pt
+
+        # Deep-copy the shell, update surfaces and vertex positions.
+        new_shell = _copy.deepcopy(outer_shell)
+
+        # Replace surfaces on copied faces.
+        for new_face, op in zip(new_shell.faces, offset_planes):
+            new_face.surface = op
+
+        # Map original vertex id -> corresponding new Vertex object.
+        orig_id_to_new_vertex: dict = {}
+        for orig_face, new_face in zip(all_faces, new_shell.faces):
+            orig_loop = orig_face.outer_loop()
+            new_loop = new_face.outer_loop()
+            if orig_loop is None or new_loop is None:
+                continue
+            for orig_ce, new_ce in zip(orig_loop.coedges, new_loop.coedges):
+                ovid = id(orig_ce.start_vertex())
+                orig_id_to_new_vertex[ovid] = new_ce.start_vertex()
+
+        # Update vertex positions.
+        for ovid, new_pt in new_positions.items():
+            nv = orig_id_to_new_vertex.get(ovid)
+            if nv is not None:
+                nv.point = new_pt.copy()
+
+        # Update Line3 edge geometry to use new vertex positions.
+        seen_edges: set = set()
+        for new_face in new_shell.faces:
+            for lp in new_face.loops:
+                for ce in lp.coedges:
+                    eid = id(ce.edge)
+                    if eid in seen_edges:
+                        continue
+                    seen_edges.add(eid)
+                    e = ce.edge
+                    if isinstance(e.curve, _Line3):
+                        e.curve = _Line3(
+                            e.v_start.point.copy(),
+                            e.v_end.point.copy(),
+                        )
+
+        new_body = _Body(solids=[_Solid([new_shell])])
+        res = _validate_body(new_body)
+        if not res["ok"]:
+            raise ValueError(
+                f"offset_body: offset body failed validation: {res['errors']}"
+            )
+        return new_body
+
+    # ------------------------------------------------------------------
+    # Mixed analytic body (e.g. cylinder = CylinderSurface + 2 Planes).
+    # ------------------------------------------------------------------
+    import copy as _copy
+
+    new_shell = _copy.deepcopy(outer_shell)
+    for new_face in new_shell.faces:
+        try:
+            new_face.surface = _offset_surface(new_face.surface, d)
+        except NotImplementedError as exc:
+            raise ValueError(str(exc)) from exc
+
+    new_body = _Body(solids=[_Solid([new_shell])])
+    res = _validate_body(new_body)
+    if not res["ok"]:
+        raise ValueError(
+            f"offset_body: offset body failed validation: {res['errors']}"
+        )
+    return new_body

@@ -994,7 +994,7 @@ effort.
   along the parting surface → core + cavity halves). — `geom/mold.py` —
   oracle: core ∪ cavity ∪ part = block volume ± tol; halves are
   watertight. — dep: GK-118, GK-84 — parallel: N — opus.
-- [ ] **GK-120** Uniform body offset (grow/shrink a whole solid by signed
+- [x] **GK-120** Uniform body offset (grow/shrink a whole solid by signed
   distance — casting shrinkage / machining stock). — `geom/solid_features.py`
   — oracle: offsetting a sphere of r by d → validated body of radius r+d
   ± tol. — dep: GK-45 — parallel: Y — sonnet.
