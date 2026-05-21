@@ -245,7 +245,7 @@ noted.
   File: `packages/kerf-cad-core/tests/test_feature_nurbs_phase4_ops.py`
   Success: 25 cases mixed across the four ops; G2 continuity for match_srf; developable detection for unroll_srf.
 
-- [ ] T-45 NURBS: trim-by-curve + surface boolean robust
+- [x] T-45 NURBS: trim-by-curve + surface boolean robust
   Scope: `geom/trim_curve.py` + `surface_boolean_robust.py`.
   File: `packages/kerf-cad-core/tests/test_feature_nurbs_trim_boolean.py`
   Success: 25 trim/boolean cases incl. near-tangent and degenerate; robust fallback paths exercised.
