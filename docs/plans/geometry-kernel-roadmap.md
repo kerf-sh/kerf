@@ -953,7 +953,7 @@ effort.
   `geom/mesh_repair.py` — oracle: Taubin smoothing of a noisy sphere
   reduces normal variance without shrinking the bounding radius > tol. —
   dep: GK-55 — parallel: Y — sonnet.
-- [ ] **GK-112** Signed distance field (SDF) from a Body (sampled grid +
+- [x] **GK-112** Signed distance field (SDF) from a Body (sampled grid +
   trilinear sampler). — `geom/sdf.py` — oracle: SDF of a unit sphere at
   distance d from centre returns d−1 ± grid tol; sign flips inside. —
   dep: GK-21 — parallel: Y — sonnet.
