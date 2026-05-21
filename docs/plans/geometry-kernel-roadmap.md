@@ -1030,7 +1030,7 @@ effort.
   cloud; ASCII + binary). — `geom/io/ply.py` — oracle: write→read
   round-trip preserves V, F, per-vertex colour. — dep: GK-21 —
   parallel: Y — sonnet.
-- [ ] **GK-127** 3DM (Rhino OpenNURBS) read (curves, surfaces, meshes,
+- [x] **GK-127** 3DM (Rhino OpenNURBS) read (curves, surfaces, meshes,
   layers — read-only). — `geom/io/rhino3dm.py` — oracle: read a known
   3dm with one NURBS sphere → recovers a surface within ε of the
   original. — dep: GK-47 — parallel: N — opus.
