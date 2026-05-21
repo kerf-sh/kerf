@@ -968,7 +968,7 @@ effort.
 
 ### Group D — Generative / lattice (jewelry + lightweighting)
 
-- [ ] **GK-115** Lattice unit-cell library: gyroid, Schwarz-P, octet
+- [x] **GK-115** Lattice unit-cell library: gyroid, Schwarz-P, octet
   truss, Kelvin cell as parametric implicit / strut generators. —
   `geom/lattice.py` — oracle: a gyroid cell evaluated at its implicit
   zero-level is periodic; octet strut count per cell = 36. — dep:
