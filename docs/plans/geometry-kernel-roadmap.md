@@ -1077,7 +1077,7 @@ is a deliberate non-goal (§6), not an oversight.
   history-free local edit). — `geom/direct_edit.py` — oracle: push a box
   top-face up by d → volume increases by face_area·d ± tol; topology
   unchanged. — dep: GK-86 — parallel: N — opus.
-- [ ] **GK-135** Degree reduction (curve + surface; the inverse of
+- [x] **GK-135** Degree reduction (curve + surface; the inverse of
   degree elevation, within tol). — `geom/nurbs.py` — oracle: elevate
   then reduce recovers the original degree + CP set ± tol. — dep:
   GK-01 — parallel: Y — sonnet.

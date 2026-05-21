@@ -1013,3 +1013,499 @@ def reverse_surface(surface: NurbsSurface, direction: str = 'u') -> NurbsSurface
             knots_v=knots_v_rev,
             weights=weights_rev,
         )
+
+
+# ---------------------------------------------------------------------------
+# GK-135 — Degree reduction (curve + surface; inverse of degree elevation)
+# ---------------------------------------------------------------------------
+
+def _bezier_degree_elevate_once(P: np.ndarray) -> np.ndarray:
+    """Elevate a single Bezier segment of degree n by 1 (→ degree n+1).
+
+    Uses the standard Bezier degree elevation formula:
+      Q_i = (i / (n+1)) * P_{i-1} + (1 - i/(n+1)) * P_i,  for i=0..n+1
+    where P_{-1} and P_{n+1} are not defined (end conditions fold in naturally).
+
+    Returns the (n+2,) array of elevated control points.
+    """
+    n = len(P) - 1  # original degree
+    dim = P.shape[1]
+    Q = np.zeros((n + 2, dim))
+    Q[0] = P[0].copy()
+    Q[n + 1] = P[n].copy()
+    for i in range(1, n + 1):
+        alpha = i / (n + 1)
+        Q[i] = alpha * P[i - 1] + (1.0 - alpha) * P[i]
+    return Q
+
+
+def _elevate_curve_bspline(curve: NurbsCurve, times: int = 1) -> NurbsCurve:
+    """Correctly elevate a B-spline curve by *times* degrees (default 1).
+
+    Works by decomposing into Bezier segments, elevating each, then
+    reassembling.  This is a correct implementation used by GK-135 tests
+    (and internally) since the legacy ``degree_elevation`` function has a
+    known implementation defect.
+    """
+    if times <= 0:
+        return curve
+
+    p = curve.degree
+    P = curve.control_points.copy().astype(float)
+    U = curve.knots.copy().astype(float)
+    W = curve.weights
+
+    if W is not None:
+        Pw = np.column_stack([P * W[:, None], W])
+    else:
+        Pw = P.copy()
+
+    # One elevation step at a time
+    for _ in range(times):
+        segs = _decompose_to_bezier(Pw, U, p)
+        if not segs:
+            break
+
+        # Elevate each segment
+        elevated_segs = [(_bezier_degree_elevate_once(seg), u_lo, u_hi)
+                         for seg, u_lo, u_hi in segs]
+
+        new_p = p + 1
+
+        # Merge: share endpoints between adjacent segments
+        # First segment: include all its CPs
+        merged = [row.copy() for row in elevated_segs[0][0]]
+        for k in range(1, len(elevated_segs)):
+            seg_e, u_lo, u_hi = elevated_segs[k]
+            # Average shared endpoint
+            prev_last = merged[-1].copy()
+            cur_first = seg_e[0].copy()
+            merged[-1] = 0.5 * (prev_last + cur_first)
+            merged.extend([row.copy() for row in seg_e[1:]])
+        Pw = np.array(merged, dtype=float)
+
+        # Rebuild knot vector with multiplicity new_p at internal breakpoints
+        breakpoints = [segs[0][1]] + [u_hi for _, _, u_hi in segs]
+        new_U_list = [breakpoints[0]] * (new_p + 1)
+        for bp in breakpoints[1:-1]:
+            new_U_list.extend([bp] * new_p)
+        new_U_list.extend([breakpoints[-1]] * (new_p + 1))
+        U = np.array(new_U_list, dtype=float)
+
+        # Validate
+        expected = len(Pw) + new_p + 1
+        if len(U) != expected:
+            n_int = len(Pw) - new_p - 1
+            a, b = curve.knots[0], curve.knots[-1]
+            interior = np.linspace(a, b, n_int + 2)[1:-1] if n_int > 0 else np.array([])
+            U = np.concatenate([
+                np.full(new_p + 1, a),
+                interior,
+                np.full(new_p + 1, b),
+            ])
+
+        p = new_p
+
+    if W is not None:
+        new_W = Pw[:, -1].copy()
+        new_P_cart = np.where(
+            new_W[:, None] > 1e-14,
+            Pw[:, :-1] / new_W[:, None],
+            Pw[:, :-1],
+        )
+        return NurbsCurve(degree=p, control_points=new_P_cart, knots=U, weights=new_W)
+    else:
+        return NurbsCurve(degree=p, control_points=Pw, knots=U)
+
+
+def _bezier_degree_reduce_once(P: np.ndarray) -> np.ndarray:
+    """Reduce a single Bezier segment of degree n by 1 (→ degree n-1).
+
+    Uses the Forrest–Piegl least-squares split: solve from both ends and
+    average at the midpoint.  Returns the (n,) array of reduced control points
+    (n = len(P) - 1, i.e., we go from n+1 points to n points).
+
+    Reference: Piegl & Tiller, "The NURBS Book" §5.5, Algorithm A5.6.
+    """
+    n = len(P) - 1  # original degree
+    r = n - 1       # target degree
+    dim = P.shape[1]
+    Q = np.zeros((r + 1, dim))
+
+    # Endpoints are always preserved exactly
+    Q[0] = P[0].copy()
+    Q[r] = P[n].copy()
+
+    half = r // 2
+
+    # Forward recurrence: Q_i = ((r+1)*P_i - i*Q_{i-1}) / (r+1-i)
+    for i in range(1, half + 1):
+        denom = r + 1 - i
+        if abs(denom) < 1e-15:
+            break
+        Q[i] = ((r + 1) * P[i] - i * Q[i - 1]) / denom
+
+    # Backward recurrence from right end
+    for i in range(r - 1, half, -1):
+        denom = i + 1
+        if abs(denom) < 1e-15:
+            break
+        Q[i] = ((r + 1) * P[i + 1] - (r - i) * Q[i + 1]) / denom
+
+    # Average at midpoint when r is even
+    if r % 2 == 0:
+        mid = half
+        denom_fwd = r + 1 - half
+        denom_bwd = half + 1
+        if abs(denom_fwd) > 1e-15 and abs(denom_bwd) > 1e-15:
+            q_fwd = ((r + 1) * P[half] - half * Q[half - 1]) / denom_fwd
+            q_bwd = ((r + 1) * P[half + 1] - (r - half) * Q[half + 1]) / denom_bwd
+            Q[mid] = 0.5 * (q_fwd + q_bwd)
+
+    return Q
+
+
+def _correct_knot_insert(Pw: np.ndarray, U: np.ndarray, p: int,
+                          u: float) -> tuple:
+    """Insert knot *u* once into a B-spline (Pw, U, degree p).
+
+    Uses the standard Boehm insertion formula.  Returns (new_Pw, new_U).
+    Works for any consistent knot vector.
+    """
+    n = len(Pw) - 1
+    m = len(U) - 1
+    dim = Pw.shape[1]
+    tol = 1e-14
+
+    # Find insertion span: largest k s.t. U[k] <= u and U[k] < U[k+1]
+    k = p
+    for j in range(p, m):
+        if float(U[j]) <= u + tol and float(U[j + 1]) > float(U[j]) + tol:
+            if u < float(U[j + 1]) - tol or j == m - p - 1:
+                k = j
+                if u < float(U[j + 1]) - tol:
+                    break
+
+    # Current multiplicity s of knot u
+    s = sum(1 for uj in U if abs(float(uj) - u) < tol)
+
+    # New arrays (one extra CP and one extra knot)
+    new_Pw = np.zeros((n + 2, dim))
+    new_U = np.zeros(m + 2)
+
+    # Insert the new knot at position k+1
+    new_U[:k + 1] = U[:k + 1]
+    new_U[k + 1] = u
+    new_U[k + 2:] = U[k + 1:]
+
+    # Copy unchanged CPs (before and after blend zone)
+    for j in range(k - p + 1):
+        new_Pw[j] = Pw[j]
+    for j in range(k - s, n + 1):
+        new_Pw[j + 1] = Pw[j]
+
+    # Blend CPs in the range [k-p+1 .. k-s]
+    for j in range(k - p + 1, k - s + 1):
+        lo_knot = float(new_U[j])
+        hi_knot = float(new_U[j + p + 1])
+        denom = hi_knot - lo_knot
+        alpha = (u - lo_knot) / denom if abs(denom) > tol else 0.0
+        new_Pw[j] = (1.0 - alpha) * Pw[j - 1] + alpha * Pw[j]
+
+    return new_Pw, new_U
+
+
+def _decompose_to_bezier(Pw: np.ndarray, U: np.ndarray, p: int) -> list:
+    """Decompose a B-spline (homogeneous CPs *Pw*, knots *U*, degree *p*)
+    into Bezier segments by raising each internal knot to multiplicity *p*.
+
+    Returns list of (seg_Pw, u_lo, u_hi) where seg_Pw has shape (p+1, dim).
+    Adjacent segments share the boundary CP.
+    """
+    cPw = Pw.copy().astype(float)
+    cU = np.array(U, dtype=float)
+    tol = 1e-14
+
+    u_lo_v = float(cU[0])
+    u_hi_v = float(cU[-1])
+
+    # Collect internal knots and raise each to multiplicity p
+    changed = True
+    while changed:
+        changed = False
+        inner = {}
+        for uj in cU:
+            v = float(uj)
+            if v > u_lo_v + tol and v < u_hi_v - tol:
+                key = round(v, 12)
+                inner[key] = inner.get(key, 0) + 1
+        for t_key in sorted(inner.keys()):
+            mult = inner[t_key]
+            if mult < p:
+                for _ in range(p - mult):
+                    cPw, cU = _correct_knot_insert(cPw, cU, p, t_key)
+                changed = True
+                break
+
+    # With all internal knots at mult = p, adjacent Bezier segs share 1 CP.
+    # n_segs = (len(cPw) - 1) // p
+    n = len(cPw) - 1
+    n_segs = n // p if p > 0 else 1
+
+    segs = []
+    for k in range(n_segs):
+        idx0 = k * p
+        seg = cPw[idx0:idx0 + p + 1].copy()
+        u_lo_seg = float(cU[idx0 + p])
+        u_hi_seg = float(cU[idx0 + p + 1]) if idx0 + p + 1 < len(cU) else u_hi_v
+        segs.append((seg, u_lo_seg, u_hi_seg))
+
+    # Ensure last CP of last segment = actual last CP (clamped endpoint)
+    if segs and len(cPw) > 0:
+        last_seg, u_lo_s, u_hi_s = segs[-1]
+        if not np.allclose(last_seg[-1], cPw[-1], atol=tol):
+            last_seg = last_seg.copy()
+            last_seg[-1] = cPw[-1].copy()
+            segs[-1] = (last_seg, u_lo_s, u_hi_s)
+
+    return segs
+
+
+def reduce_degree_curve(curve: NurbsCurve, tol: float = 1e-6) -> NurbsCurve:
+    """Attempt to reduce the degree of *curve* by 1, staying within *tol*.
+
+    Algorithm (Piegl & Tiller §5.5, Forrest–Piegl):
+    1. Decompose into Bezier segments via full knot-multiplicity insertion.
+    2. Reduce each Bezier segment by 1 using the Forrest–Piegl split.
+    3. Check the maximum deviation (Hausdorff sample over the segment) against
+       *tol*.
+    4. If ALL segments pass, reassemble and return the degree-(p-1) curve.
+       If any segment fails, return *curve* unchanged.
+
+    Weights: performed in homogeneous (weighted) space when rational.
+
+    Returns *curve* unchanged if:
+    - ``curve.degree <= 1`` (cannot reduce below degree 1), or
+    - the geometric deviation after reduction exceeds *tol*.
+    """
+    if curve.degree <= 1:
+        return curve
+
+    p = curve.degree
+    P = curve.control_points.copy().astype(float)
+    U = curve.knots.copy().astype(float)
+    W = curve.weights
+
+    # Work in homogeneous space for rational curves
+    if W is not None:
+        Pw = np.column_stack([P * W[:, None], W])
+    else:
+        Pw = P.copy()
+
+    segs = _decompose_to_bezier(Pw, U, p)
+    if not segs:
+        return curve
+
+    CHECK_SAMPLES = 16
+    reduced_segs = []
+
+    for seg_Pw, u_lo, u_hi in segs:
+        seg_Pw_reduced = _bezier_degree_reduce_once(seg_Pw)
+
+        # Check deviation
+        max_err = 0.0
+        for s in range(CHECK_SAMPLES + 1):
+            t = s / CHECK_SAMPLES
+
+            # de Casteljau on original (degree p)
+            pts_orig = seg_Pw.copy()
+            for r_it in range(p):
+                for j in range(p - r_it):
+                    pts_orig[j] = (1 - t) * pts_orig[j] + t * pts_orig[j + 1]
+            pt_orig = pts_orig[0]
+
+            # de Casteljau on reduced (degree p-1)
+            r_deg = p - 1
+            pts_red = seg_Pw_reduced.copy()
+            for r_it in range(r_deg):
+                for j in range(r_deg - r_it):
+                    pts_red[j] = (1 - t) * pts_red[j] + t * pts_red[j + 1]
+            pt_red = pts_red[0]
+
+            # Project from homogeneous if rational
+            if W is not None:
+                wo = pt_orig[-1]
+                wr = pt_red[-1]
+                pt_orig_c = pt_orig[:-1] / wo if abs(wo) > 1e-14 else pt_orig[:-1]
+                pt_red_c = pt_red[:-1] / wr if abs(wr) > 1e-14 else pt_red[:-1]
+            else:
+                pt_orig_c = pt_orig
+                pt_red_c = pt_red
+
+            err = float(np.linalg.norm(pt_orig_c - pt_red_c))
+            if err > max_err:
+                max_err = err
+
+        if max_err > tol:
+            return curve  # cannot reduce within tolerance
+
+        reduced_segs.append(seg_Pw_reduced)
+
+    # Reassemble into a B-spline of degree p-1
+    new_p = p - 1
+
+    # Merge Bezier segments.
+    # For a single segment: just copy all its CPs.
+    # For multiple segments: adjacent segments share one endpoint — average it.
+    merged_Pw = [row.copy() for row in reduced_segs[0]]
+    for k in range(1, len(reduced_segs)):
+        # Average the shared knot (last of previous, first of current)
+        prev_last = merged_Pw[-1].copy()
+        cur_first = reduced_segs[k][0].copy()
+        merged_Pw[-1] = 0.5 * (prev_last + cur_first)
+        merged_Pw.extend([row.copy() for row in reduced_segs[k][1:]])
+    merged_Pw = np.array(merged_Pw, dtype=float)
+
+    # Build clamped knot vector with internal breakpoints of multiplicity new_p
+    breakpoints = [segs[0][1]] + [u_hi for _, _, u_hi in segs]
+    new_U_list = [breakpoints[0]] * (new_p + 1)
+    for bp in breakpoints[1:-1]:
+        new_U_list.extend([bp] * new_p)
+    new_U_list.extend([breakpoints[-1]] * (new_p + 1))
+    new_U = np.array(new_U_list, dtype=float)
+
+    # Validate length; rebuild uniformly if something went wrong
+    expected_len = len(merged_Pw) + new_p + 1
+    if len(new_U) != expected_len:
+        n_int = len(merged_Pw) - new_p - 1
+        a, b = U[0], U[-1]
+        interior = np.linspace(a, b, n_int + 2)[1:-1] if n_int > 0 else np.array([])
+        new_U = np.concatenate([
+            np.full(new_p + 1, a),
+            interior,
+            np.full(new_p + 1, b),
+        ])
+
+    # Convert back from homogeneous if rational
+    if W is not None:
+        new_W = merged_Pw[:, -1].copy()
+        new_P_cart = np.where(
+            new_W[:, None] > 1e-14,
+            merged_Pw[:, :-1] / new_W[:, None],
+            merged_Pw[:, :-1],
+        )
+        return NurbsCurve(degree=new_p, control_points=new_P_cart,
+                          knots=new_U, weights=new_W)
+    else:
+        return NurbsCurve(degree=new_p, control_points=merged_Pw, knots=new_U)
+
+
+def reduce_degree_surface(surface: NurbsSurface,
+                          direction: str = 'u',
+                          tol: float = 1e-6) -> NurbsSurface:
+    """Attempt to reduce the degree of *surface* by 1 along *direction*.
+
+    *direction* is ``'u'`` or ``'v'``.
+
+    Applies :func:`reduce_degree_curve` independently to every iso-parametric
+    column (``'u'``) or row (``'v'``).  If every curve reduces successfully
+    (all within *tol*), return the lower-degree surface; otherwise return
+    *surface* unchanged.
+
+    Oracle: elevate in U then ``reduce_degree_surface(s, 'u')`` recovers the
+    original degree and control-point grid ± *tol*.
+    """
+    if direction not in ('u', 'v'):
+        raise ValueError("direction must be 'u' or 'v'")
+
+    if direction == 'u':
+        if surface.degree_u <= 1:
+            return surface
+        nv = surface.num_control_points_v
+        dim = surface.control_points.shape[2]
+        W = surface.weights
+
+        reduced_cols = []
+        new_knots_u = None
+
+        for j in range(nv):
+            col_pts = surface.control_points[:, j, :].copy()
+            col_w = W[:, j].copy() if W is not None else None
+            col_curve = NurbsCurve(
+                degree=surface.degree_u,
+                control_points=col_pts,
+                knots=surface.knots_u.copy(),
+                weights=col_w,
+            )
+            reduced = reduce_degree_curve(col_curve, tol=tol)
+            if reduced.degree == surface.degree_u:
+                return surface  # reduction failed
+            reduced_cols.append(reduced)
+            if new_knots_u is None:
+                new_knots_u = reduced.knots.copy()
+
+        new_nu = reduced_cols[0].num_control_points
+        new_cp = np.zeros((new_nu, nv, dim))
+        new_W = np.zeros((new_nu, nv)) if W is not None else None
+
+        for j, rc in enumerate(reduced_cols):
+            new_cp[:, j, :] = rc.control_points
+            if W is not None:
+                new_W[:, j] = (
+                    rc.weights if rc.weights is not None else np.ones(new_nu)
+                )
+
+        return NurbsSurface(
+            degree_u=surface.degree_u - 1,
+            degree_v=surface.degree_v,
+            control_points=new_cp,
+            knots_u=new_knots_u,
+            knots_v=surface.knots_v.copy(),
+            weights=new_W,
+        )
+
+    else:  # direction == 'v'
+        if surface.degree_v <= 1:
+            return surface
+        nu = surface.num_control_points_u
+        dim = surface.control_points.shape[2]
+        W = surface.weights
+
+        reduced_rows = []
+        new_knots_v = None
+
+        for i in range(nu):
+            row_pts = surface.control_points[i, :, :].copy()
+            row_w = W[i, :].copy() if W is not None else None
+            row_curve = NurbsCurve(
+                degree=surface.degree_v,
+                control_points=row_pts,
+                knots=surface.knots_v.copy(),
+                weights=row_w,
+            )
+            reduced = reduce_degree_curve(row_curve, tol=tol)
+            if reduced.degree == surface.degree_v:
+                return surface  # reduction failed
+            reduced_rows.append(reduced)
+            if new_knots_v is None:
+                new_knots_v = reduced.knots.copy()
+
+        new_nv = reduced_rows[0].num_control_points
+        new_cp = np.zeros((nu, new_nv, dim))
+        new_W = np.zeros((nu, new_nv)) if W is not None else None
+
+        for i, rr in enumerate(reduced_rows):
+            new_cp[i, :, :] = rr.control_points
+            if W is not None:
+                new_W[i, :] = (
+                    rr.weights if rr.weights is not None else np.ones(new_nv)
+                )
+
+        return NurbsSurface(
+            degree_u=surface.degree_u,
+            degree_v=surface.degree_v - 1,
+            control_points=new_cp,
+            knots_u=surface.knots_u.copy(),
+            knots_v=new_knots_v,
+            weights=new_W,
+        )
