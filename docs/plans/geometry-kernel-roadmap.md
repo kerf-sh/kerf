@@ -1072,7 +1072,7 @@ These six close the *last* gaps found in the exhaustive audit (see §7).
 After GK-139 the kernel scope is **closed** — anything not in the §7 matrix
 is a deliberate non-goal (§6), not an oversight.
 
-- [ ] **GK-134** Direct modelling — move-face / push-pull (translate or
+- [x] **GK-134** Direct modelling — move-face / push-pull (translate or
   offset a face along its normal, re-heal adjacent faces; the
   history-free local edit). — `geom/direct_edit.py` — oracle: push a box
   top-face up by d → volume increases by face_area·d ± tol; topology

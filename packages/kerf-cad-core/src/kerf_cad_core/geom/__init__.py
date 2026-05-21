@@ -652,6 +652,9 @@ __all__ = [
     "tetrahedralize",
     # GK-133
     "recognize_features",
+    # GK-134
+    "push_pull_face",
+    "move_face",
 ]
 
 # GK-122: interference / collision detection
@@ -680,3 +683,5 @@ from kerf_cad_core.geom.io.rhino3dm import (
     read_3dm,
     Rhino3dmReadError,
 )
+# GK-134: direct modelling — push-pull / move-face
+from kerf_cad_core.geom.direct_edit import push_pull_face, move_face
