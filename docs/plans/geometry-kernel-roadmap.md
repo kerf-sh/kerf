@@ -1037,7 +1037,7 @@ effort.
 
 ### Group H — Mechanical primitives + B-rep depth
 
-- [ ] **GK-128** Gear tooth profile generator (involute + cycloid; spur
+- [x] **GK-128** Gear tooth profile generator (involute + cycloid; spur
   gear given module/teeth/pressure-angle → 2-D tooth + full wheel
   curve). — `geom/gears.py` — oracle: involute base-circle radius =
   pitch·cos(α); generated wheel has the requested tooth count. — dep:
