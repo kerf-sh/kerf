@@ -342,7 +342,7 @@ from kerf_cad_core.geom.threads import (
 )
 
 # GK-118: parting line generation
-from kerf_cad_core.geom.mold import parting_line
+from kerf_cad_core.geom.mold import parting_line, undercut_faces
 
 # GK-125: DXF read+write
 from kerf_cad_core.geom.io.dxf import read_dxf, write_dxf, DxfReadError, DxfWriteError
@@ -352,7 +352,7 @@ from kerf_cad_core.geom.gears import involute_gear, cycloid_gear
 
 __all__ = [
     "read_dxf","write_dxf","DxfReadError","DxfWriteError",
-    "parting_line",
+    "parting_line","undercut_faces",
     "NurbsCurve",
     "NurbsSurface",
     "de_boor",
@@ -585,6 +585,8 @@ __all__ = [
     "sdf_sample",
     # GK-128
     "involute_gear","cycloid_gear",
+    # GK-115
+    "gyroid","schwarz_p","octet_truss","kelvin_cell",
 ]
 
 # GK-122: interference / collision detection
@@ -592,3 +594,6 @@ from kerf_cad_core.geom.assembly import interference  # noqa: E402
 
 # GK-112: signed distance field from a B-rep Body + trilinear sampler.
 from kerf_cad_core.geom.sdf import body_sdf, sdf_sample
+
+# GK-115: lattice unit-cell library (gyroid, Schwarz-P, octet truss, Kelvin cell)
+from kerf_cad_core.geom.lattice import gyroid, schwarz_p, octet_truss, kelvin_cell
