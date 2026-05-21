@@ -577,14 +577,13 @@ __all__ = [
     # GK-129
     "iso_metric_thread",
     "acme_thread",
-]
-
-# GK-122: interference / collision detection
-from kerf_cad_core.geom.assembly import interference  # noqa: E402
     # GK-112
     "body_sdf",
     "sdf_sample",
 ]
+
+# GK-122: interference / collision detection
+from kerf_cad_core.geom.assembly import interference  # noqa: E402
 
 # GK-112: signed distance field from a B-rep Body + trilinear sampler.
 from kerf_cad_core.geom.sdf import body_sdf, sdf_sample
