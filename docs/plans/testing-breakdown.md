@@ -449,7 +449,7 @@ escalation}).
   File: `packages/kerf-core/tests/test_rls_files.py`
   Success: 12 cases — reparent to other workspace refused; storage_key leak via select refused.
 
-- [ ] T-82 RLS: file_revisions (OSS undo)
+- [x] T-82 RLS: file_revisions (OSS undo)
   Scope: cross-tenant on `file_revisions` (mig 001 + 002 + 049).
   File: `packages/kerf-core/tests/test_rls_file_revisions.py`
   Success: 12 cases — revision content of B's file not visible; restore-from-B refused.
