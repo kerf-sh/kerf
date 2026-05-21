@@ -439,7 +439,7 @@ authenticated session role. One task per protected table; ≥10 negative
 cases each (SELECT/INSERT/UPDATE/DELETE × {direct row, via join, via foreign-key
 escalation}).
 
-- [ ] T-80 RLS: projects
+- [x] T-80 RLS: projects
   Scope: cross-tenant SELECT/UPDATE/DELETE on `projects`.
   File: `packages/kerf-core/tests/test_rls_projects.py`
   Success: 12 cases — user A sees only own workspace projects; cannot set `workspace_id` to B's.

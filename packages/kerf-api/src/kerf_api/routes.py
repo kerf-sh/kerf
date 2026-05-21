@@ -1126,7 +1126,6 @@ class UpdateProjectRequest(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
     visibility: Optional[str] = None
-    workspace_id: Optional[str] = None
     tags: Optional[list[str]] = None
 
 
