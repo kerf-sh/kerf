@@ -479,7 +479,7 @@ escalation}).
   File: `packages/kerf-core/tests/test_rls_jobs.py`
   Success: 12 cases — cannot enqueue against B's project; cannot read B's job outputs; status leak via id-guess refused.
 
-- [ ] T-88 RLS: distributor_credentials + user_provider_keys
+- [x] T-88 RLS: distributor_credentials + user_provider_keys
   Scope: BYO secrets must never leak across tenant.
   File: `packages/kerf-core/tests/test_rls_secrets.py`
   Success: 12 cases — encrypted blob not retrievable; cannot mutate B's record; admin role explicitly required for ops paths.
