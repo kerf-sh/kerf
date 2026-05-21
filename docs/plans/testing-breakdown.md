@@ -345,7 +345,7 @@ noted.
   File: `packages/kerf-billing/tests/test_feature_billing_buckets.py`
   Success: 25 usage scenarios across all three buckets; spend tally correct; cheap-models-only enforcement on kerf_free; BYO bypasses meter.
 
-- [ ] T-65 Email providers + templates
+- [x] T-65 Email providers + templates
   Scope: `kerf-cloud/email/` provider switch + template render.
   File: `packages/kerf-cloud/tests/test_feature_email.py`
   Success: 25 transactional sends across providers (mocked SMTP); subject + body render; bounce / suppression list.
