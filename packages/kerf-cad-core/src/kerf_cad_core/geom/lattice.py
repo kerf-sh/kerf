@@ -355,3 +355,136 @@ def _permutations_signed_012() -> set:
                     v = (sx * perm[0], sy * perm[1], sz * perm[2])
                     seen.add(v)
     return seen
+
+
+# ---------------------------------------------------------------------------
+# GK-116 - Lattice fill of a Body to a target relative density
+# ---------------------------------------------------------------------------
+
+
+def lattice_fill(
+    body,
+    cell_type="gyroid",
+    relative_density=0.3,
+    cell_size=None,
+):
+    """Fill body with a periodic lattice trimmed to the body walls (GK-116).
+
+    Parameters
+    ----------
+    body : kerf_cad_core.geom.brep.Body
+    cell_type : str
+        One of "gyroid", "schwarz_p", "octet_truss", "kelvin_cell".
+    relative_density : float
+        Target volume fraction in (0, 1).
+    cell_size : float or None
+        Unit cell edge length; auto-chosen as min(extents)/3 if None.
+
+    Returns
+    -------
+    dict
+        mesh             - {"verts": ndarray (V,3), "faces": ndarray (F,3)}
+        body             - None (reserved for B-rep output)
+        achieved_density - float
+    """
+    import math as _math
+
+    import numpy as _np
+
+    from kerf_cad_core.geom.sdf import body_sdf as _body_sdf
+    from kerf_cad_core.geom.sdf import marching_cubes as _marching_cubes
+
+    _VALID = {"gyroid", "schwarz_p", "octet_truss", "kelvin_cell"}
+    if cell_type not in _VALID:
+        raise ValueError(
+            "cell_type must be one of %s, got %r" % (sorted(_VALID), cell_type)
+        )
+    if not (0.0 < relative_density < 1.0):
+        raise ValueError(
+            "relative_density must be in (0, 1), got %s" % relative_density
+        )
+
+    sdf_data = _body_sdf(body, resolution=48, padding=0.05)
+    grid_body = sdf_data["grid"]
+    origin = sdf_data["origin"]
+    spacing = sdf_data["spacing"]
+    nx, ny, nz = grid_body.shape
+
+    extents = spacing * _np.array([nx - 1, ny - 1, nz - 1], dtype=float)
+    if cell_size is None:
+        cs = float(min(extents)) / 3.0
+        if cs < 1e-12:
+            cs = 1.0
+    else:
+        cs = float(cell_size)
+
+    gx = origin[0] + _np.arange(nx, dtype=_np.float64) * spacing[0]
+    gy = origin[1] + _np.arange(ny, dtype=_np.float64) * spacing[1]
+    gz = origin[2] + _np.arange(nz, dtype=_np.float64) * spacing[2]
+    GX, GY, GZ = _np.meshgrid(gx, gy, gz, indexing="ij")
+
+    if cell_type in ("gyroid", "schwarz_p"):
+        _ISO_SCALE = {"gyroid": _math.pi, "schwarz_p": 0.9 * _math.pi}
+        iso_t = relative_density * _ISO_SCALE[cell_type]
+        k = 2.0 * _math.pi / cs
+        if cell_type == "gyroid":
+            F = (
+                _np.sin(k * GX) * _np.cos(k * GY)
+                + _np.sin(k * GY) * _np.cos(k * GZ)
+                + _np.sin(k * GZ) * _np.cos(k * GX)
+            )
+        else:
+            F = _np.cos(k * GX) + _np.cos(k * GY) + _np.cos(k * GZ)
+        phi_lattice = _np.abs(F) - iso_t
+    else:
+        n_struts = 36
+        _STRUT_LEN_FRAC = {
+            "octet_truss": 1.0 / _math.sqrt(2),
+            "kelvin_cell": _math.sqrt(2) / 4.0,
+        }
+        slf = _STRUT_LEN_FRAC[cell_type]
+        strut_r = _math.sqrt(relative_density * cs * cs / (n_struts * _math.pi * slf))
+
+        if cell_type == "octet_truss":
+            cell_desc = octet_truss(cs, strut_r)
+        else:
+            cell_desc = kelvin_cell(cs, strut_r)
+
+        struts_unit = cell_desc["struts"]
+
+        Xf = GX.ravel()
+        Yf = GY.ravel()
+        Zf = GZ.ravel()
+        N_pts = len(Xf)
+        Xc = _np.mod(Xf - origin[0], cs)
+        Yc = _np.mod(Yf - origin[1], cs)
+        Zc = _np.mod(Zf - origin[2], cs)
+        pts_cell = _np.stack([Xc, Yc, Zc], axis=1)
+
+        min_dist_sq = _np.full(N_pts, 1e30, dtype=_np.float64)
+        for (ax, ay, az), (bx, by, bz) in struts_unit:
+            ab = _np.array([bx - ax, by - ay, bz - az], dtype=_np.float64)
+            ab_len_sq = float(ab @ ab)
+            if ab_len_sq < 1e-24:
+                continue
+            ap = pts_cell - _np.array([ax, ay, az])
+            t = _np.clip((ap @ ab) / ab_len_sq, 0.0, 1.0)
+            closest = _np.array([ax, ay, az]) + t[:, None] * ab
+            d_sq = _np.sum((pts_cell - closest) ** 2, axis=1)
+            _np.minimum(min_dist_sq, d_sq, out=min_dist_sq)
+
+        phi_lattice = (_np.sqrt(min_dist_sq) - strut_r).reshape(nx, ny, nz)
+
+    phi_combined = _np.maximum(phi_lattice, grid_body)
+
+    mc_input = {"grid": phi_combined, "origin": origin, "spacing": spacing}
+    mesh = _marching_cubes(mc_input, iso=0.0)
+
+    n_body_interior = int(_np.sum(grid_body < 0))
+    n_lattice_fill = int(_np.sum(phi_combined < 0))
+    if n_body_interior > 0:
+        achieved_density = float(n_lattice_fill) / float(n_body_interior)
+    else:
+        achieved_density = 0.0
+
+    return {"mesh": mesh, "body": None, "achieved_density": achieved_density}
