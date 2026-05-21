@@ -464,7 +464,7 @@ escalation}).
   File: `packages/kerf-core/tests/test_rls_workspaces.py`
   Success: 15 cases — list/join/invite-leak refused; member elevation refused.
 
-- [ ] T-85 RLS: api_tokens + refresh_tokens
+- [x] T-85 RLS: api_tokens + refresh_tokens
   Scope: cross-tenant on auth tokens.
   File: `packages/kerf-core/tests/test_rls_auth_tokens.py`
   Success: 12 cases — token rows of B not visible; cannot insert refresh_token for B.
