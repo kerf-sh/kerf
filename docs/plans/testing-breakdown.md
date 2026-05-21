@@ -300,7 +300,7 @@ noted.
   File: `packages/kerf-parts/tests/test_feature_parts_ingest_gen.py`
   Success: 25 part families (fasteners + connectors); manifest hash deterministic; auto-attribution present.
 
-- [ ] T-56 Distributors integration
+- [x] T-56 Distributors integration
   Scope: `kerf-cloud/distributors/` API surface (mocked HTTP) + `kerf-billing` price lookup.
   File: `packages/kerf-cloud/tests/test_feature_distributors.py`
   Success: 25 part lookups across mocked DigiKey/Mouser/LCSC/Octopart; FX conversion; cache TTL behaviour.
