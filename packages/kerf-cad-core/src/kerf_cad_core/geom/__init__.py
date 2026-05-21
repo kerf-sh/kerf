@@ -547,4 +547,9 @@ __all__ = [
     "counterbore",
     "countersink",
     "tapped_hole",
+    # GK-122
+    "interference",
 ]
+
+# GK-122: interference / collision detection
+from kerf_cad_core.geom.assembly import interference  # noqa: E402

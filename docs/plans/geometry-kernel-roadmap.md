@@ -1005,7 +1005,7 @@ effort.
 
 ### Group F — Assembly / interaction
 
-- [ ] **GK-122** Interference / collision detection between two Bodies
+- [x] **GK-122** Interference / collision detection between two Bodies
   (boolean-intersection volume > tol + contact report). —
   `geom/assembly.py` — oracle: two overlapping boxes report interference
   volume = overlap; disjoint boxes report none. — dep: GK-18 —
