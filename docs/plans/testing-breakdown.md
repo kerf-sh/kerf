@@ -504,7 +504,7 @@ escalation}).
   File: `packages/kerf-core/tests/test_rls_derived_artifacts.py`
   Success: 10 cases — artifact of B not readable; lineage column cannot be forged.
 
-- [ ] T-93 RLS: model_prices admin-only
+- [x] T-93 RLS: model_prices admin-only
   Scope: `model_prices` (mig 050) writable only by admin role.
   File: `packages/kerf-core/tests/test_rls_model_prices.py`
   Success: 10 cases — non-admin INSERT/UPDATE refused; SELECT public; admin elevation enforced via account_role.
