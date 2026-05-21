@@ -2238,6 +2238,7 @@ export default function Editor() {
           />
           <div
             ref={treeDrawerRef}
+            id="editor-tree-drawer"
             role="dialog"
             aria-modal="true"
             aria-label="File tree and objects"

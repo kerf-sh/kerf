@@ -259,7 +259,7 @@ Each task ≈1–3h sonnet unless `[HARD]`. Always isolate in a worktree.
 
 ### Group L — Shell
 
-- [ ] **T-L1 [HARD] Responsive Editor layout**
+- [x] **T-L1 [HARD] Responsive Editor layout**
   Scope: replace the hard-coded `gridTemplateColumns: '240px 1fr 380px'` with a breakpoint-aware layout: < `md` collapse file-tree and chat into toggleable off-canvas drawers (reuse the chat-collapse + a new tree-collapse), 1fr canvas as the default mobile view; ≥ `lg` keep the current three-pane. Make the split drag handles pointer-event based so they work on touch.
   Files: `src/routes/Editor.jsx`.
   Success: the editor is usable on tablet/phone (drawers, single canvas), unchanged on desktop ≥1024px; resize handles draggable by touch.
