@@ -310,7 +310,7 @@ noted.
   File: `packages/kerf-cad-core/tests/test_feature_bom_consolidation.py`
   Success: 25 mixed assemblies; deduped quantities; cost roll-up; alternates resolution.
 
-- [ ] T-58 Chat: tool dispatch + tool round-trip
+- [x] T-58 Chat: tool dispatch + tool round-trip
   Scope: `kerf-chat/` plugin → `kerf-cad-core` tool call → file_revision created.
   File: `packages/kerf-chat/tests/test_feature_chat_tool_roundtrip.py`
   Success: 25 chat turns invoking diverse tools; revisions append; assistant message references tool result.
