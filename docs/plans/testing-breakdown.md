@@ -355,7 +355,7 @@ noted.
   File: `packages/kerf-api/tests/test_feature_step_tess_jobs.py`
   Success: 25 job submissions; queued → running → done state machine; idempotent re-tess; tessellated artifact attaches.
 
-- [ ] T-67 Derived artifacts cache
+- [x] T-67 Derived artifacts cache
   Scope: `derived_artifacts` (mig 024) cache hits across exports.
   File: `packages/kerf-api/tests/test_feature_derived_artifacts.py`
   Success: 25 hit/miss/invalidate scenarios; correct lineage on source bump.
