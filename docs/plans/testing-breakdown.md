@@ -250,7 +250,7 @@ noted.
   File: `packages/kerf-cad-core/tests/test_feature_nurbs_trim_boolean.py`
   Success: 25 trim/boolean cases incl. near-tangent and degenerate; robust fallback paths exercised.
 
-- [ ] T-46 Mesh: SubD + quad remesh + mesh-repair + mesh-to-NURBS
+- [x] T-46 Mesh: SubD + quad remesh + mesh-repair + mesh-to-NURBS
   Scope: `geom/subd.py` + `quad_remesh.py` + `mesh_repair.py` + `mesh_to_nurbs.py`.
   File: `packages/kerf-cad-core/tests/test_feature_mesh_pipeline.py`
   Success: 25 input meshes (broken / non-manifold included); repaired manifold; quad-dominant remesh; auto-surface fits.
