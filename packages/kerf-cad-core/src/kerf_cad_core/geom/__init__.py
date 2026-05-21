@@ -155,12 +155,15 @@ from kerf_cad_core.geom.trim_curve import (
 # GK-35: energy-minimising, knot-preserving curve fairing
 # GK-65: curvature comb / porcupine numeric export
 # GK-98: arc-length parameterization + curve length
+# GK-100: composite curve (poly-NURBS chain + continuity tags)
 from kerf_cad_core.geom.curve_toolkit import (
     fair_curve,
     curvature_variance,
     curvature_comb,
     curve_length,
     arc_length_param,
+    composite_curve,
+    split_composite,
 )
 # GK-11: curve-curve intersection hardening
 from kerf_cad_core.geom.intersection import (
@@ -437,6 +440,9 @@ __all__ = [
     # GK-98
     "curve_length",
     "arc_length_param",
+    # GK-100
+    "composite_curve",
+    "split_composite",
     # GK-11
     "curve_curve_intersect",
     "curve_surface_intersect",

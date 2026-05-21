@@ -893,7 +893,7 @@ effort.
   `geom/curve_toolkit.py`, `geom/patch_srf.py` — oracle: mid-curve of two
   parallel lines is centred; mid-surface of two parallel planes lies
   halfway. — dep: GK-34 — parallel: Y — sonnet.
-- [ ] **GK-100** Composite curve (poly-NURBS chain with explicit
+- [x] **GK-100** Composite curve (poly-NURBS chain with explicit
   G0/G1/G2 continuity tags + join/split). — `geom/curve_toolkit.py` —
   oracle: join two collinear segments → single G1 composite of correct
   total length; split returns the originals. — dep: GK-01 — parallel: Y

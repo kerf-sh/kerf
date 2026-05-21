@@ -1786,3 +1786,169 @@ if _REGISTRY_AVAILABLE:
             "knots": curve.knots.tolist(),
             "degree": curve.degree,
         })
+
+
+# ---------------------------------------------------------------------------
+# composite_curve / split_composite  (GK-100)
+# ---------------------------------------------------------------------------
+
+_CONTINUITY_TAGS = ("G0", "G1", "G2")
+
+
+def _detect_continuity(
+    crv_a: NurbsCurve,
+    crv_b: NurbsCurve,
+    pos_tol: float = 1e-6,
+    tan_tol: float = 1e-4,
+    curv_tol: float = 1e-3,
+) -> str:
+    """Return the highest continuity class between the end of crv_a and start of crv_b.
+
+    Checks G0 (positional), G1 (tangent direction), G2 (curvature).
+
+    Parameters
+    ----------
+    crv_a : NurbsCurve  — the preceding segment (end is tested)
+    crv_b : NurbsCurve  — the following segment (start is tested)
+    pos_tol : float     — positional gap tolerance (default 1e-6)
+    tan_tol : float     — angular tolerance in radians for tangent direction (default 1e-4)
+    curv_tol: float     — relative curvature difference tolerance (default 1e-3)
+
+    Returns
+    -------
+    str : one of "G0", "G1", "G2"
+    """
+    from kerf_cad_core.geom.nurbs import curve_derivative
+
+    # Parameter domain bounds
+    u_a_end = float(crv_a.knots[-(crv_a.degree + 1)])
+    u_b_start = float(crv_b.knots[crv_b.degree])
+
+    # G0: positional gap
+    p_a = crv_a.evaluate(u_a_end)
+    p_b = crv_b.evaluate(u_b_start)
+    if float(np.linalg.norm(p_b - p_a)) > pos_tol:
+        return "G0"
+
+    # G1: tangent direction (unit vectors)
+    d1_a = curve_derivative(crv_a, u_a_end, order=1)
+    d1_b = curve_derivative(crv_b, u_b_start, order=1)
+    norm_a = float(np.linalg.norm(d1_a))
+    norm_b = float(np.linalg.norm(d1_b))
+    if norm_a < 1e-14 or norm_b < 1e-14:
+        return "G0"  # degenerate — can't determine higher continuity
+    t_a = d1_a / norm_a
+    t_b = d1_b / norm_b
+    # Cross-product magnitude ≈ |sin(angle)|; use dot product to check collinearity
+    cross_mag = float(np.linalg.norm(np.cross(t_a, t_b)))
+    if cross_mag > tan_tol:
+        return "G0"
+
+    # Check same direction (not anti-parallel)
+    if float(np.dot(t_a, t_b)) < 0.0:
+        return "G0"
+
+    # G2: curvature magnitude match
+    # Curvature κ = |C' × C''| / |C'|³  (for planar/space curves)
+    d2_a = curve_derivative(crv_a, u_a_end, order=2)
+    d2_b = curve_derivative(crv_b, u_b_start, order=2)
+    cross_a = float(np.linalg.norm(np.cross(d1_a, d2_a)))
+    cross_b = float(np.linalg.norm(np.cross(d1_b, d2_b)))
+    kappa_a = cross_a / (norm_a ** 3)
+    kappa_b = cross_b / (norm_b ** 3)
+    ref = max(abs(kappa_a), abs(kappa_b), 1e-14)
+    if abs(kappa_a - kappa_b) / ref > curv_tol:
+        return "G1"
+
+    return "G2"
+
+
+def composite_curve(
+    segments: List[NurbsCurve],
+    pos_tol: float = 1e-6,
+    tan_tol: float = 1e-4,
+    curv_tol: float = 1e-3,
+) -> dict:
+    """Build a composite (poly-NURBS) curve from an ordered list of segments.
+
+    Each consecutive pair of segments is analysed for G0/G1/G2 geometric
+    continuity at their shared junction.  The total arc length is computed
+    by summing individual segment lengths.
+
+    Parameters
+    ----------
+    segments  : list[NurbsCurve]  — ordered segments; must be at least 1
+    pos_tol   : positional gap tolerance for G0 detection (default 1e-6)
+    tan_tol   : angular tolerance (radians) for G1 detection (default 1e-4)
+    curv_tol  : relative curvature-difference tolerance for G2 (default 1e-3)
+
+    Returns
+    -------
+    dict with keys:
+        segments          : list[NurbsCurve]  — same order as input
+        continuity_tags   : list[str]         — length = len(segments)-1;
+                             each entry is "G0", "G1", or "G2"
+        total_length      : float             — sum of segment arc lengths
+    """
+    if not segments:
+        raise ValueError("composite_curve: segments must be a non-empty list")
+    segs = list(segments)
+    tags: List[str] = []
+    for i in range(len(segs) - 1):
+        tag = _detect_continuity(
+            segs[i], segs[i + 1],
+            pos_tol=pos_tol, tan_tol=tan_tol, curv_tol=curv_tol,
+        )
+        tags.append(tag)
+    total = sum(curve_length(s) for s in segs)
+    return {
+        "segments": segs,
+        "continuity_tags": tags,
+        "total_length": total,
+    }
+
+
+def split_composite(
+    composite: dict,
+    index: int,
+) -> List[dict]:
+    """Split a composite curve at a junction index, returning two sub-composites.
+
+    Parameters
+    ----------
+    composite : dict    — as returned by ``composite_curve``
+    index     : int     — junction index at which to split; must be in
+                          range 1 .. len(segments)-1 (inclusive).
+                          The segment *before* ``index`` becomes the last
+                          segment of the first sub-composite.
+
+    Returns
+    -------
+    list of two dicts, each with the same shape as ``composite_curve`` output.
+    Raises ValueError if ``index`` is out of range.
+    """
+    segs = composite["segments"]
+    tags = composite["continuity_tags"]
+    n = len(segs)
+    if index < 1 or index >= n:
+        raise ValueError(
+            f"split_composite: index {index} out of range [1, {n - 1}]"
+        )
+    left_segs = segs[:index]
+    right_segs = segs[index:]
+    left_tags = tags[:index - 1]
+    right_tags = tags[index:]
+    left_length = sum(curve_length(s) for s in left_segs)
+    right_length = sum(curve_length(s) for s in right_segs)
+    return [
+        {
+            "segments": left_segs,
+            "continuity_tags": left_tags,
+            "total_length": left_length,
+        },
+        {
+            "segments": right_segs,
+            "continuity_tags": right_tags,
+            "total_length": right_length,
+        },
+    ]
