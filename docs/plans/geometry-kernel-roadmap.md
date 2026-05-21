@@ -961,7 +961,7 @@ effort.
   `geom/sdf.py` — oracle: marching-cubes of a sphere SDF → closed
   manifold whose volume = 4/3πr³ ± grid tol. — dep: GK-112 —
   parallel: N — opus.
-- [ ] **GK-114** Voxel boolean / CSG (union/intersect/difference on SDF
+- [x] **GK-114** Voxel boolean / CSG (union/intersect/difference on SDF
   grids; robust booleans for messy meshes). — `geom/sdf.py` — oracle:
   voxel-union of two overlapping spheres has volume = V1+V2−Voverlap ±
   grid tol. — dep: GK-112 — parallel: N — opus.

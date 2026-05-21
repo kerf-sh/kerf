@@ -638,6 +638,10 @@ __all__ = [
     "sdf_sample",
     # GK-113
     "marching_cubes",
+    # GK-114
+    "voxel_union",
+    "voxel_intersection",
+    "voxel_difference",
     # GK-128
     "involute_gear","cycloid_gear",
     # GK-115
@@ -662,7 +666,8 @@ from kerf_cad_core.geom.assembly import interference  # noqa: E402
 
 # GK-112: signed distance field from a B-rep Body + trilinear sampler.
 # GK-113: marching cubes (SDF / scalar grid → watertight mesh).
-from kerf_cad_core.geom.sdf import body_sdf, sdf_sample, marching_cubes
+# GK-114: voxel boolean / CSG (union / intersection / difference on SDF grids).
+from kerf_cad_core.geom.sdf import body_sdf, sdf_sample, marching_cubes, voxel_union, voxel_intersection, voxel_difference
 
 # GK-115: lattice unit-cell library (gyroid, Schwarz-P, octet truss, Kelvin cell)
 from kerf_cad_core.geom.lattice import gyroid, schwarz_p, octet_truss, kelvin_cell

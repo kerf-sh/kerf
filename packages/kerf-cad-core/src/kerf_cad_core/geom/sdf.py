@@ -945,3 +945,164 @@ def marching_cubes(
         faces = np.array(faces_list, dtype=np.int32)
 
     return {"verts": verts, "faces": faces}
+
+
+# ---------------------------------------------------------------------------
+# GK-114 — Voxel boolean / CSG on SDF grids
+# ---------------------------------------------------------------------------
+
+def _resample_to_common(sdf_a: dict, sdf_b: dict) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Resample *sdf_b* onto the grid of *sdf_a* via trilinear interpolation.
+
+    Returns (grid_a, grid_b_resampled, origin, spacing) where both grids
+    share the *sdf_a* coordinate frame.
+    """
+    grid_a: np.ndarray = np.asarray(sdf_a["grid"], dtype=np.float64)
+    origin_a: np.ndarray = np.asarray(sdf_a["origin"], dtype=np.float64)
+    spacing_a: np.ndarray = np.asarray(sdf_a["spacing"], dtype=np.float64)
+    nx, ny, nz = grid_a.shape
+
+    grid_b: np.ndarray = np.asarray(sdf_b["grid"], dtype=np.float64)
+    origin_b: np.ndarray = np.asarray(sdf_b["origin"], dtype=np.float64)
+    spacing_b: np.ndarray = np.asarray(sdf_b["spacing"], dtype=np.float64)
+
+    # Build world-space coordinates for each node in grid_a.
+    ix = origin_a[0] + np.arange(nx, dtype=np.float64) * spacing_a[0]
+    iy = origin_a[1] + np.arange(ny, dtype=np.float64) * spacing_a[1]
+    iz = origin_a[2] + np.arange(nz, dtype=np.float64) * spacing_a[2]
+
+    # Map those world coords into fractional indices of grid_b.
+    nbx, nby, nbz = grid_b.shape
+    fi = (ix - origin_b[0]) / spacing_b[0]   # (nx,)
+    fj = (iy - origin_b[1]) / spacing_b[1]   # (ny,)
+    fk = (iz - origin_b[2]) / spacing_b[2]   # (nz,)
+
+    fi = np.clip(fi, 0.0, nbx - 1)
+    fj = np.clip(fj, 0.0, nby - 1)
+    fk = np.clip(fk, 0.0, nbz - 1)
+
+    i0 = np.floor(fi).astype(np.int32)
+    j0 = np.floor(fj).astype(np.int32)
+    k0 = np.floor(fk).astype(np.int32)
+    i1 = np.minimum(i0 + 1, nbx - 1)
+    j1 = np.minimum(j0 + 1, nby - 1)
+    k1 = np.minimum(k0 + 1, nbz - 1)
+
+    tx = (fi - i0).astype(np.float64)  # (nx,)
+    ty = (fj - j0).astype(np.float64)  # (ny,)
+    tz = (fk - k0).astype(np.float64)  # (nz,)
+
+    # Trilinear interpolation via broadcasting over all three axes.
+    # grid_b has shape (nbx, nby, nbz); we index along each axis.
+    # c000[i,j,k] = grid_b[i0[i], j0[j], k0[k]] etc.
+    c000 = grid_b[i0[:, np.newaxis, np.newaxis], j0[np.newaxis, :, np.newaxis], k0[np.newaxis, np.newaxis, :]]
+    c001 = grid_b[i0[:, np.newaxis, np.newaxis], j0[np.newaxis, :, np.newaxis], k1[np.newaxis, np.newaxis, :]]
+    c010 = grid_b[i0[:, np.newaxis, np.newaxis], j1[np.newaxis, :, np.newaxis], k0[np.newaxis, np.newaxis, :]]
+    c011 = grid_b[i0[:, np.newaxis, np.newaxis], j1[np.newaxis, :, np.newaxis], k1[np.newaxis, np.newaxis, :]]
+    c100 = grid_b[i1[:, np.newaxis, np.newaxis], j0[np.newaxis, :, np.newaxis], k0[np.newaxis, np.newaxis, :]]
+    c101 = grid_b[i1[:, np.newaxis, np.newaxis], j0[np.newaxis, :, np.newaxis], k1[np.newaxis, np.newaxis, :]]
+    c110 = grid_b[i1[:, np.newaxis, np.newaxis], j1[np.newaxis, :, np.newaxis], k0[np.newaxis, np.newaxis, :]]
+    c111 = grid_b[i1[:, np.newaxis, np.newaxis], j1[np.newaxis, :, np.newaxis], k1[np.newaxis, np.newaxis, :]]
+
+    tx3 = tx[:, np.newaxis, np.newaxis]
+    ty3 = ty[np.newaxis, :, np.newaxis]
+    tz3 = tz[np.newaxis, np.newaxis, :]
+
+    c00 = c000 * (1 - tz3) + c001 * tz3
+    c01 = c010 * (1 - tz3) + c011 * tz3
+    c10 = c100 * (1 - tz3) + c101 * tz3
+    c11 = c110 * (1 - tz3) + c111 * tz3
+
+    c0 = c00 * (1 - ty3) + c01 * ty3
+    c1 = c10 * (1 - ty3) + c11 * ty3
+
+    grid_b_resampled: np.ndarray = c0 * (1 - tx3) + c1 * tx3
+
+    return grid_a, grid_b_resampled, origin_a, spacing_a
+
+
+def voxel_union(sdf_a: dict, sdf_b: dict) -> dict:
+    """GK-114 — Voxel CSG union of two SDF grids.
+
+    The result SDF grid represents the union of the two bodies:
+    ``union(d_a, d_b) = min(d_a, d_b)``  (R-function / F-rep standard).
+
+    The output grid uses *sdf_a*'s coordinate frame; *sdf_b* is resampled
+    onto that frame via trilinear interpolation before the min is applied.
+
+    Parameters
+    ----------
+    sdf_a, sdf_b
+        SDF grid dicts as returned by :func:`body_sdf` (keys: ``grid``,
+        ``origin``, ``spacing``, ``dims``).
+
+    Returns
+    -------
+    dict
+        Same structure as :func:`body_sdf` output, on *sdf_a*'s grid.
+    """
+    grid_a, grid_b, origin, spacing = _resample_to_common(sdf_a, sdf_b)
+    result_grid = np.minimum(grid_a, grid_b)
+    nx, ny, nz = result_grid.shape
+    return {
+        "grid": result_grid,
+        "origin": origin,
+        "spacing": spacing,
+        "dims": (nx, ny, nz),
+    }
+
+
+def voxel_intersection(sdf_a: dict, sdf_b: dict) -> dict:
+    """GK-114 — Voxel CSG intersection of two SDF grids.
+
+    The result SDF grid represents the intersection of the two bodies:
+    ``intersection(d_a, d_b) = max(d_a, d_b)``
+
+    Parameters
+    ----------
+    sdf_a, sdf_b
+        SDF grid dicts as returned by :func:`body_sdf`.
+
+    Returns
+    -------
+    dict
+        Same structure as :func:`body_sdf` output, on *sdf_a*'s grid.
+    """
+    grid_a, grid_b, origin, spacing = _resample_to_common(sdf_a, sdf_b)
+    result_grid = np.maximum(grid_a, grid_b)
+    nx, ny, nz = result_grid.shape
+    return {
+        "grid": result_grid,
+        "origin": origin,
+        "spacing": spacing,
+        "dims": (nx, ny, nz),
+    }
+
+
+def voxel_difference(sdf_a: dict, sdf_b: dict) -> dict:
+    """GK-114 — Voxel CSG difference of two SDF grids (A minus B).
+
+    The result SDF grid represents the subtraction of body B from body A:
+    ``difference(d_a, d_b) = max(d_a, -d_b)``
+
+    Parameters
+    ----------
+    sdf_a
+        The body to subtract from (minuend).
+    sdf_b
+        The body to subtract (subtrahend).
+
+    Returns
+    -------
+    dict
+        Same structure as :func:`body_sdf` output, on *sdf_a*'s grid.
+    """
+    grid_a, grid_b, origin, spacing = _resample_to_common(sdf_a, sdf_b)
+    result_grid = np.maximum(grid_a, -grid_b)
+    nx, ny, nz = result_grid.shape
+    return {
+        "grid": result_grid,
+        "origin": origin,
+        "spacing": spacing,
+        "dims": (nx, ny, nz),
+    }
