@@ -749,7 +749,7 @@ in `geom/__init__.py`.
   closest-vertex; handle twist correction. — `geom/bridge_loops.py` —
   oracle: bridge two coaxial circles of N segments → N quads, watertight
   manifold, Euler V−E+F=0. — dep: GK-18 — parallel: Y — sonnet.
-- [ ] **GK-75** Hole feature wrapper (drill / counterbore / countersink
+- [x] **GK-75** Hole feature wrapper (drill / counterbore / countersink
   / tapped): place a parametric hole on a face by (point, normal, type,
   diameters, depth) → boolean-difference with auto-fillet on lip. —
   `geom/hole_feature.py` — oracle: through-hole on box reduces volume

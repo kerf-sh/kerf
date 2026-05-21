@@ -246,6 +246,13 @@ from kerf_cad_core.geom.subd_to_nurbs import (
     nurbs_body_to_subd_cage,
     nurbs_to_subd_cage,
 )
+# GK-75: hole feature wrapper (drill / counterbore / countersink / tapped)
+from kerf_cad_core.geom.hole_feature import (
+    drill_hole,
+    counterbore,
+    countersink,
+    tapped_hole,
+)
 
 # GK-74: bridge two open boundary edge loops with a quad strip.
 from kerf_cad_core.geom.bridge_loops import (
@@ -520,4 +527,9 @@ __all__ = [
     "bend_allowance",
     "bend_sheet",
     "unfold_sheet",
+    # GK-75
+    "drill_hole",
+    "counterbore",
+    "countersink",
+    "tapped_hole",
 ]

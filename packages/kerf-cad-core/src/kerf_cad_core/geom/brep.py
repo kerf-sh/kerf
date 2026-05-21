@@ -282,10 +282,10 @@ class Edge:
         return np.asarray(self.curve.evaluate(t), dtype=float)
 
     def start_point(self) -> np.ndarray:
-        return self.point(self.t0)
+        return np.asarray(self.v_start.point, dtype=float)
 
     def end_point(self) -> np.ndarray:
-        return self.point(self.t1)
+        return np.asarray(self.v_end.point, dtype=float)
 
     def length(self, samples: int = 24) -> float:
         ts = np.linspace(self.t0, self.t1, samples)
