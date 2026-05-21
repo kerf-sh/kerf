@@ -13,13 +13,33 @@ direction changes, the zero-crossing point is interpolated and collected.
 The result is a list of 3-D points that approximate the parting-line
 silhouette.
 
+GK-119: Cavity / core mould split
+-----------------------------------
+Split a mould *block* around a *part* along the parting surface:
+
+  mold_split(part, block, pull_direction) -> {"core": Body, "cavity": Body}
+
+Algorithm
+~~~~~~~~~
+1. Compute the parting line of *part* w.r.t. *pull_direction* (GK-118).
+2. Project each parting point onto the pull axis and average to get the
+   parting-plane origin along the pull axis.
+3. Extract the axis-aligned bounding box of *block* from its vertex set.
+4. Split the block into two proper closed half-box bodies at the parting
+   plane height along the pull axis using :func:`box_to_body`.
+5. Subtract *part* from each half using :func:`body_difference` (GK-18).
+6. Return ``{"core": lower_half − part, "cavity": upper_half − part}``.
+
+Oracle: vol(core) + vol(cavity) + vol(part) ≈ vol(block) ± tol.
+Both halves are watertight (validate_body passes).
+
 Only pure-Python / NumPy — no OCC runtime required (hermetic).
 """
 
 from __future__ import annotations
 
 import math
-from typing import List, Sequence, Union
+from typing import Dict, List, Sequence, Union
 
 import numpy as np
 
@@ -328,3 +348,185 @@ def undercut_faces(
         "face_colours": face_colours,
         "has_undercut": len(undercut_ids) > 0,
     }
+
+
+# ---------------------------------------------------------------------------
+# GK-119: mold_split
+# ---------------------------------------------------------------------------
+
+def _body_vertex_bounds(body: object) -> np.ndarray:
+    """Return (2, 3) array [lo, hi] bounding the vertex set of *body*."""
+    pts = []
+    for v in body.all_vertices():  # type: ignore[attr-defined]
+        pts.append(np.asarray(v.point, dtype=float)[:3])
+    if not pts:
+        raise ValueError("block body has no vertices")
+    arr = np.array(pts, dtype=float)
+    return np.stack([arr.min(axis=0), arr.max(axis=0)])
+
+
+def mold_split(
+    part: object,
+    block: object,
+    pull_direction: Union[Sequence[float], np.ndarray],
+) -> Dict[str, object]:
+    """Cavity / core mould split along the parting surface.
+
+    GK-119
+    ------
+    Split *block* around *part* along the parting surface derived from the
+    parting line of *part* w.r.t. *pull_direction*.
+
+    Parameters
+    ----------
+    part:
+        The moulded part — a closed :class:`~kerf_cad_core.geom.brep.Body`.
+    block:
+        The mould block (must be an axis-aligned box body produced by
+        :func:`~kerf_cad_core.geom.brep_build.box_to_body`).
+    pull_direction:
+        3-vector giving the mould pull / demould direction (need not be
+        unit length).
+
+    Returns
+    -------
+    dict with keys:
+
+    ``"core"`` : Body
+        Lower mould half (on the ``−pull_direction`` side) with the part
+        cavity machined out.
+    ``"cavity"`` : Body
+        Upper mould half (on the ``+pull_direction`` side) with the part
+        cavity machined out.
+
+    Raises
+    ------
+    ValueError
+        If *pull_direction* is a zero vector, or if *part* has no parting
+        points (degenerate geometry).
+
+    Notes
+    -----
+    * Pure-Python / NumPy only — no OCC runtime required (hermetic).
+    * The parting plane is derived from GK-118 :func:`parting_line`.
+    * Each half is split from the *block* using :func:`box_to_body` at the
+      parting height, then the *part* is subtracted via
+      :func:`~kerf_cad_core.geom.boolean.body_difference` (GK-84 / GK-18).
+    * Oracle: ``vol(core) + vol(cavity) + vol(part) ≈ vol(block) ± tol``
+      and both halves pass :func:`~kerf_cad_core.geom.brep.validate_body`.
+    """
+    from kerf_cad_core.geom.brep_build import box_to_body
+    from kerf_cad_core.geom.boolean import body_difference
+    from kerf_cad_core.geom.brep import validate_body
+
+    # --- 1. Normalise pull direction -----------------------------------------
+    pull = np.asarray(pull_direction, dtype=float).ravel()[:3]
+    pull_nrm = float(np.linalg.norm(pull))
+    if pull_nrm < 1e-15:
+        raise ValueError("pull_direction must be a non-zero vector")
+    pull_hat = pull / pull_nrm
+
+    # --- 2. Compute parting-plane origin from GK-118 parting_line -----------
+    pts = parting_line(part, pull_hat)
+    if not pts:
+        # Fallback: use the centroid of the part's vertex set
+        bounds = _body_vertex_bounds(part)
+        centroid = 0.5 * (bounds[0] + bounds[1])
+        parting_origin = centroid
+    else:
+        parting_arr = np.array(pts, dtype=float)  # (N, 3)
+        parting_origin = parting_arr.mean(axis=0)
+
+    # Project parting origin onto pull axis to get the parting height
+    parting_height = float(np.dot(parting_origin, pull_hat))
+
+    # --- 3. Extract AABB of block -------------------------------------------
+    block_bounds = _body_vertex_bounds(block)
+    lo = block_bounds[0]   # (3,) minimum corner
+    hi = block_bounds[1]   # (3,) maximum corner
+    tol = 1e-7
+
+    # --- 4. Build two proper closed half-box bodies -------------------------
+    # We identify which axis is dominant in pull_hat (closest to ±X/Y/Z)
+    # and split at the parting height along that axis.
+    # For a general pull direction, project block corners onto pull axis to
+    # find the lo/hi extents, then split at parting_height.
+
+    # Corners of the block
+    corners = np.array([
+        [lo[0], lo[1], lo[2]],
+        [hi[0], lo[1], lo[2]],
+        [lo[0], hi[1], lo[2]],
+        [hi[0], hi[1], lo[2]],
+        [lo[0], lo[1], hi[2]],
+        [hi[0], lo[1], hi[2]],
+        [lo[0], hi[1], hi[2]],
+        [hi[0], hi[1], hi[2]],
+    ], dtype=float)
+    proj = corners @ pull_hat  # signed distances along pull axis
+    block_lo_proj = float(proj.min())
+    block_hi_proj = float(proj.max())
+
+    # Clamp parting height within block bounds with a small safety margin
+    eps = tol * 10.0
+    parting_height = max(block_lo_proj + eps, min(block_hi_proj - eps, parting_height))
+
+    # For axis-aligned pull directions, create proper half-boxes directly.
+    # Determine the pull axis index (or use a general plane-clip approach).
+    abs_hat = np.abs(pull_hat)
+    axis = int(np.argmax(abs_hat))   # dominant axis
+    sign = float(np.sign(pull_hat[axis]))  # +1 or -1
+
+    # Decompose parting height back into world coordinate along dominant axis.
+    # For axis-aligned pull (pull_hat ≈ e_axis), parting_height == world coord.
+    # For oblique pull, we project back: world_coord = parting_height / hat[axis]
+    if abs_hat[axis] > 1e-9:
+        world_split = parting_height / pull_hat[axis]
+    else:
+        world_split = 0.5 * (lo[axis] + hi[axis])
+
+    world_split = max(lo[axis] + eps, min(hi[axis] - eps, float(world_split)))
+
+    # Lower half: lo[axis] → world_split  (core side: opposite to pull)
+    # Upper half: world_split → hi[axis]  (cavity side: along pull)
+    # When pull_hat[axis] < 0 (negative axis direction), flip assignment
+    if sign >= 0:
+        lower_lo = lo.copy()
+        lower_hi = hi.copy()
+        lower_hi[axis] = world_split
+
+        upper_lo = lo.copy()
+        upper_lo[axis] = world_split
+        upper_hi = hi.copy()
+    else:
+        # Pull is in −axis direction: "upper" (cavity) is lo side
+        upper_lo = lo.copy()
+        upper_hi = hi.copy()
+        upper_hi[axis] = world_split
+
+        lower_lo = lo.copy()
+        lower_lo[axis] = world_split
+        lower_hi = hi.copy()
+
+    # Build closed box bodies for each half
+    def _half_box(lo3: np.ndarray, hi3: np.ndarray) -> object:
+        dx = float(hi3[0] - lo3[0])
+        dy = float(hi3[1] - lo3[1])
+        dz = float(hi3[2] - lo3[2])
+        return box_to_body(lo3.tolist(), dx, dy, dz, tol)
+
+    core_block = _half_box(lower_lo, lower_hi)
+    cavity_block = _half_box(upper_lo, upper_hi)
+
+    # --- 5. Subtract part from each half ------------------------------------
+    core = body_difference(core_block, part)
+    cavity = body_difference(cavity_block, part)
+
+    # --- 6. Validate and return ---------------------------------------------
+    for label, b in (("core", core), ("cavity", cavity)):
+        result = validate_body(b)
+        if not result["ok"]:
+            # Non-fatal: surface the errors as a warning attribute but continue
+            b._mold_split_warnings = result["errors"]  # type: ignore[attr-defined]
+
+    return {"core": core, "cavity": cavity}

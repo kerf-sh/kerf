@@ -367,7 +367,8 @@ from kerf_cad_core.geom.threads import (
 )
 
 # GK-118: parting line generation
-from kerf_cad_core.geom.mold import parting_line, undercut_faces
+# GK-119: cavity / core mould split
+from kerf_cad_core.geom.mold import parting_line, undercut_faces, mold_split
 
 # GK-125: DXF read+write
 from kerf_cad_core.geom.io.dxf import read_dxf, write_dxf, DxfReadError, DxfWriteError
@@ -377,7 +378,7 @@ from kerf_cad_core.geom.gears import involute_gear, cycloid_gear
 
 __all__ = [
     "read_dxf","write_dxf","DxfReadError","DxfWriteError",
-    "parting_line","undercut_faces",
+    "parting_line","undercut_faces","mold_split",
     "NurbsCurve",
     "NurbsSurface",
     "de_boor",

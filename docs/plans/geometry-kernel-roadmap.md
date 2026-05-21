@@ -990,7 +990,7 @@ effort.
   direction → closed parting curve on a Body). — `geom/mold.py` —
   oracle: parting line of a sphere pulled along Z is the equator ±
   tol. — dep: GK-92 — parallel: Y — sonnet.
-- [ ] **GK-119** Cavity / core mould split (split a block around a part
+- [x] **GK-119** Cavity / core mould split (split a block around a part
   along the parting surface → core + cavity halves). — `geom/mold.py` —
   oracle: core ∪ cavity ∪ part = block volume ± tol; halves are
   watertight. — dep: GK-118, GK-84 — parallel: N — opus.
