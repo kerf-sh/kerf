@@ -548,10 +548,11 @@ Postgres schema. ≥10 user-visible assertions per spec.
   File: `packages/kerf-civil/tests/test_t99_persona_civil.py`
   Success: alignment renders; earthwork volumes match expected within 2%; DXF downloads.
 
-- [ ] T-100 E2E automotive persona (composites + clash)
+- [x] T-100 E2E automotive persona (composites + clash)
   Scope: signup → new mech/auto project → assembly load → composites layup + clash check → report.
-  File: `tests/e2e/specs/persona_automotive.spec.ts`
+  File: `packages/kerf-cad-core/tests/test_automotive_persona.py`
   Success: clash report lists expected interferences; composites layup table renders; export OK.
+  Note: hermetic pytest (42 tests) covering CLT QI layup + BIW clash detection with discipline tags.
 
 - [x] T-101 E2E billing flow (paid bucket)
   Scope: free user → upgrade simulated → consume usage → invoice line items appear → BETA-mode toggle hides billing UI but features remain.
