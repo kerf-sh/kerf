@@ -308,6 +308,8 @@ from kerf_cad_core.geom.io.ply import (
 )
 # GK-88: loop slide (SubD)
 from kerf_cad_core.geom.subd_authoring import subd_loop_slide, subd_edge_slide
+# GK-106: edge split at parameter (SubD)
+from kerf_cad_core.geom.subd_authoring import subd_edge_split
 # GK-87: pattern (linear / circular / path)
 from kerf_cad_core.geom.pattern import (
     linear_pattern,
@@ -572,6 +574,8 @@ __all__ = [
     # GK-88
     "subd_loop_slide",
     "subd_edge_slide",
+    # GK-106
+    "subd_edge_split",
     # GK-93
     "detect_symmetry",
     # GK-85

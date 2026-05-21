@@ -924,7 +924,7 @@ effort.
   edges, t∈[0,1]). — `geom/subd_authoring.py` — oracle: t=1 lands the
   vertex on the neighbour; topology unchanged. — dep: GK-52 — parallel:
   Y — sonnet.
-- [ ] **GK-106** Edge split at parameter (insert a vertex on an edge,
+- [x] **GK-106** Edge split at parameter (insert a vertex on an edge,
   splitting incident faces). — `geom/subd_authoring.py` — oracle: split
   a quad edge at t=0.5 → 2 new faces, V+1/E+? consistent with Euler. —
   dep: GK-52 — parallel: Y — sonnet.
