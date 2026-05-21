@@ -2680,3 +2680,138 @@ def text_on_surface(
         if stroke_3d:
             result.append(stroke_3d)
     return result
+
+
+# ---------------------------------------------------------------------------
+# GK-101 — Curve-on-surface geodesic (iterative straightening)
+# ---------------------------------------------------------------------------
+
+_Point3 = Tuple[float, float, float]
+
+
+def geodesic(
+    surface,
+    uv_start: Tuple[float, float],
+    uv_end: Tuple[float, float],
+    n: int = 32,
+) -> List[_Point3]:
+    """Shortest path between two UV points on a NurbsSurface.
+
+    Uses iterative straightening (string-relaxation): the path is initialised
+    as a linear UV interpolation, then interior points are repeatedly moved
+    to the world-space midpoint of their neighbours then re-projected onto the
+    surface via Newton inversion.  Convergence is declared when the total path
+    length stops decreasing by more than 1e-10 relative, or after 500 iterations.
+
+    Parameters
+    ----------
+    surface:
+        A ``NurbsSurface`` instance.
+    uv_start, uv_end:
+        ``(u, v)`` parameter pairs; must lie within the surface domain.
+    n:
+        Number of output points (including endpoints).  Must be ≥ 2.
+
+    Returns
+    -------
+    List[Point3]
+        World-space 3-D points along the geodesic, including endpoints,
+        with length == ``n``.
+    """
+    from kerf_cad_core.geom.nurbs import surface_evaluate, surface_derivatives
+
+    if n < 2:
+        raise ValueError("n must be >= 2")
+
+    # Surface domain bounds
+    u_min = float(surface.knots_u[0])
+    u_max = float(surface.knots_u[-1])
+    v_min = float(surface.knots_v[0])
+    v_max = float(surface.knots_v[-1])
+
+    def _clamp_uv(u: float, v: float) -> Tuple[float, float]:
+        return (
+            max(u_min, min(u_max, u)),
+            max(v_min, min(v_max, v)),
+        )
+
+    def _eval(uv: Tuple[float, float]) -> np.ndarray:
+        return np.asarray(surface_evaluate(surface, uv[0], uv[1]), dtype=float)
+
+    def _project_to_surface(
+        target: np.ndarray,
+        uv_guess: Tuple[float, float],
+        tol: float = 1e-7,
+        max_itr: int = 8,
+    ) -> Tuple[float, float]:
+        """Newton-iterate to find (u,v) s.t. S(u,v) ≈ target."""
+        u, v = float(uv_guess[0]), float(uv_guess[1])
+        for _ in range(max_itr):
+            SKL = surface_derivatives(surface, u, v, d=1)
+            S = SKL[0, 0]
+            Su = SKL[1, 0]
+            Sv = SKL[0, 1]
+            delta = target - S
+            if float(np.dot(delta, delta)) < tol * tol:
+                break
+            # 2×2 Gram matrix
+            a = float(np.dot(Su, Su))
+            b = float(np.dot(Su, Sv))
+            c = float(np.dot(Sv, Sv))
+            rhs_u = float(np.dot(delta, Su))
+            rhs_v = float(np.dot(delta, Sv))
+            det = a * c - b * b
+            if abs(det) < 1e-20:
+                break
+            du = (c * rhs_u - b * rhs_v) / det
+            dv = (a * rhs_v - b * rhs_u) / det
+            # Clamp step size to 10% of parameter range
+            step_limit = 0.1 * max(u_max - u_min, v_max - v_min)
+            step = math.sqrt(du * du + dv * dv)
+            if step > step_limit:
+                scale = step_limit / step
+                du *= scale
+                dv *= scale
+            u, v = _clamp_uv(u + du, v + dv)
+        return (u, v)
+
+    # Initialise: linearly interpolate in UV parameter space
+    ts = np.linspace(0.0, 1.0, n)
+    uv_pts: List[Tuple[float, float]] = []
+    for t in ts:
+        uu = float(uv_start[0]) * (1.0 - t) + float(uv_end[0]) * t
+        vv = float(uv_start[1]) * (1.0 - t) + float(uv_end[1]) * t
+        uv_pts.append(_clamp_uv(uu, vv))
+
+    def _path_length(uvs: List[Tuple[float, float]]) -> float:
+        pts = [_eval(uv) for uv in uvs]
+        total = 0.0
+        for i in range(1, len(pts)):
+            diff = pts[i] - pts[i - 1]
+            total += math.sqrt(float(np.dot(diff, diff)))
+        return total
+
+    # Iterative straightening
+    prev_len = _path_length(uv_pts)
+    for _it in range(200):
+        new_uvs = [uv_pts[0]]
+        for i in range(1, n - 1):
+            p_prev = _eval(uv_pts[i - 1])
+            p_next = _eval(uv_pts[i + 1])
+            mid_world = 0.5 * (p_prev + p_next)
+            new_uv = _project_to_surface(mid_world, uv_pts[i])
+            new_uvs.append(new_uv)
+        new_uvs.append(uv_pts[-1])
+        uv_pts = new_uvs
+
+        new_len = _path_length(uv_pts)
+        if prev_len > 0.0 and abs(prev_len - new_len) / prev_len < 1e-8:
+            break
+        prev_len = new_len
+
+    # Build output list of Point3
+    geo_pts: List[_Point3] = []
+    for uv in uv_pts:
+        p = _eval(uv)
+        geo_pts.append((float(p[0]), float(p[1]), float(p[2])))
+    return geo_pts

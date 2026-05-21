@@ -898,7 +898,7 @@ effort.
   oracle: join two collinear segments → single G1 composite of correct
   total length; split returns the originals. — dep: GK-01 — parallel: Y
   — sonnet.
-- [ ] **GK-101** Curve-on-surface geodesic (shortest path between two
+- [x] **GK-101** Curve-on-surface geodesic (shortest path between two
   uv points on a NurbsSurface; iterative straightening). —
   `geom/curve_toolkit.py` — oracle: geodesic on a plane is a straight
   line; on a cylinder it is a helix segment of correct pitch. — dep:
