@@ -289,7 +289,7 @@ Each task ≈1–3h sonnet unless `[HARD]`. Always isolate in a worktree.
   Files: `src/index.css`.
   Success: with reduced-motion on, animations are suppressed app-wide without breaking loading affordances.
 
-- [ ] **T-L7 Header crowding < 360px**
+- [x] **T-L7 Header crowding < 360px**
   Scope: ensure `Layout.jsx` header (logo + `/` + WorkspaceSwitcher + user menu) degrades gracefully on very narrow screens (truncate/hide switcher label, keep tap targets ≥44px).
   Files: `src/components/Layout.jsx`, `src/components/WorkspaceSwitcher.jsx`.
   Success: no horizontal overflow at 320px; controls remain tappable.

@@ -59,6 +59,8 @@ function UserMenu({ user, onLogout, currentWorkspaceSlug, cloudEnabled }) {
         onClick={() => setOpen((v) => !v)}
         className={clsx(
           'flex items-center gap-2 rounded-lg pr-2 pl-1.5 h-9',
+          // Ensure tap target ≥44 px on narrow screens
+          'max-[360px]:min-h-[44px]',
           'hover:bg-ink-800/80 transition-colors',
           'focus:outline-none focus-visible:ring-2 focus-visible:ring-kerf-300/50',
         )}
@@ -260,7 +262,8 @@ export default function Layout({ children, wide = false, padded = true }) {
       <header className="sticky top-0 z-30 backdrop-blur-md bg-ink-950/70 border-b border-ink-900">
         <div
           className={clsx(
-            'mx-auto px-6 h-16 flex items-center justify-between',
+            // At <360 px reduce horizontal padding to reclaim space for controls
+            'mx-auto px-6 max-[360px]:px-3 h-16 flex items-center justify-between min-w-0',
             wide ? 'max-w-none' : 'max-w-7xl',
           )}
         >

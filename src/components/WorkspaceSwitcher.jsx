@@ -80,16 +80,20 @@ export default function WorkspaceSwitcher() {
           onClick={() => setOpen((v) => !v)}
           className={clsx(
             'flex items-center gap-2 h-9 pl-1.5 pr-2 rounded-lg',
+            // Ensure tap target meets 44 px minimum on narrow screens
+            'min-h-[44px] max-[360px]:min-w-[44px] max-[360px]:justify-center',
             'hover:bg-ink-800/80 transition-colors',
             'focus:outline-none focus-visible:ring-2 focus-visible:ring-kerf-300/40',
           )}
           aria-haspopup="menu"
           aria-expanded={open}
+          aria-label={current ? current.name : (loading ? 'Loading workspace' : 'No workspace')}
         >
           {current ? (
             <>
               <Avatar workspace={current} size={24} />
-              <span className="text-sm font-medium text-ink-100 max-w-[160px] truncate">
+              {/* Hide label text at <360 px to prevent header overflow */}
+              <span className="text-sm font-medium text-ink-100 max-w-[160px] truncate max-[360px]:hidden">
                 {current.name}
               </span>
             </>
@@ -98,12 +102,13 @@ export default function WorkspaceSwitcher() {
               <span className="grid place-items-center w-6 h-6 rounded-md bg-ink-800 text-ink-400">
                 <Building2 size={13} />
               </span>
-              <span className="text-sm text-ink-400">
+              {/* Hide label text at <360 px */}
+              <span className="text-sm text-ink-400 max-[360px]:hidden">
                 {loading ? 'Loading…' : 'No workspace'}
               </span>
             </>
           )}
-          <ChevronDown size={13} className="text-ink-400" />
+          <ChevronDown size={13} className="text-ink-400 max-[360px]:hidden" />
         </button>
 
         {open && (
