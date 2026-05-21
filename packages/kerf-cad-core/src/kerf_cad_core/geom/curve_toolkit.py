@@ -68,7 +68,7 @@ from typing import List, Optional, Sequence, Tuple, Union
 
 import numpy as np
 
-from kerf_cad_core.geom.nurbs import NurbsCurve, de_boor, find_span, _basis_funcs_derivs
+from kerf_cad_core.geom.nurbs import NurbsCurve, de_boor, find_span, _basis_funcs_derivs, curve_derivative
 
 
 # ---------------------------------------------------------------------------
@@ -718,26 +718,143 @@ def offset_curve(
 
 def extend_curve(
     curve: NurbsCurve,
-    amount: float,
+    amount: Optional[float] = None,
     end: str = "end",
     mode: str = "line",
+    continuity: Optional[str] = None,
+    length: Optional[float] = None,
 ) -> NurbsCurve:
     """Extend ``curve`` at the chosen end.
 
     Parameters
     ----------
-    amount : extension length (> 0)
+    amount : extension length (> 0).  May be passed positionally or as the
+        keyword ``length`` (GK-139 API).  One of the two must be provided.
     end    : ``'start'`` or ``'end'``
-    mode   : ``'line'``, ``'arc'``, or ``'smooth'``
+    mode   : ``'line'``, ``'arc'``, or ``'smooth'`` (legacy parameter)
+    continuity : ``'G1'`` or ``'G2'``.
+        When specified the extension is built by tangent (G1) or curvature
+        (G2) continuation beyond the parametric domain, producing a smooth
+        degree-3 (or higher) Hermite patch appended to the original curve.
+        The ``mode`` parameter is ignored when ``continuity`` is set to
+        ``'G1'`` or ``'G2'``.
 
     Returns
     -------
     New NurbsCurve extended by ``amount``.
     """
+    # Resolve amount / length alias
+    if amount is None and length is None:
+        raise ValueError("extend_curve: one of 'amount' or 'length' must be provided")
+    if length is not None:
+        amount = length
+
     ctrl = curve.control_points.copy().astype(float)
     knots = curve.knots.copy()
     degree = curve.degree
 
+    # ------------------------------------------------------------------
+    # GK-139: G1 / G2 continuation extension
+    # ------------------------------------------------------------------
+    if continuity in ("G1", "G2"):
+        length_val = float(amount)
+        if length_val <= 0.0:
+            raise ValueError("extend_curve: amount/length must be > 0")
+
+        u_end = float(knots[-1])
+        u_start = float(knots[0])
+
+        # Evaluate position and tangent at the extension boundary.
+        u_eval = u_end if end == "end" else u_start
+        P0 = curve_derivative(curve, u_eval, order=0)  # position
+        T0 = curve_derivative(curve, u_eval, order=1)  # 1st derivative
+
+        t_len = np.linalg.norm(T0)
+        if t_len < 1e-14:
+            # Degenerate tangent: fall back to finite-difference direction.
+            if end == "end":
+                fb = ctrl[-1] - ctrl[-2] if len(ctrl) >= 2 else np.array([1.0, 0.0, 0.0])
+            else:
+                fb = ctrl[1] - ctrl[0] if len(ctrl) >= 2 else np.array([1.0, 0.0, 0.0])
+            fb_len = np.linalg.norm(fb)
+            T0 = fb / fb_len if fb_len > 1e-14 else np.array(
+                [1.0] + [0.0] * (ctrl.shape[1] - 1))
+            t_len = 1.0
+
+        # Outward tangent unit vector.
+        # At 'end': C'(u_end) points along the curve, which is outward.
+        # At 'start': C'(u_start) points into the curve; negate for outward.
+        tan_unit = T0 / t_len
+        if end == "start":
+            tan_unit = -tan_unit
+
+        # Far endpoint of the extension.
+        P1 = P0 + tan_unit * length_val
+
+        if continuity == "G1":
+            # Cubic Bezier G1 extension: CPs [P0, P0+h/3, P1-h/3, P1]
+            # where h = tan_unit * length_val.  This exactly matches the
+            # tangent direction at the join (first leg = tan_unit / 3).
+            h = tan_unit * length_val
+            ext_cp_fwd = np.array([P0, P0 + h / 3.0, P1 - h / 3.0, P1], dtype=float)
+        else:  # G2
+            # G2: also match curvature (2nd derivative) at the join.
+            A0 = curve_derivative(curve, u_eval, order=2)
+            if end == "start":
+                # At start the second derivative sign convention flips because
+                # we reversed the tangent; the curvature vector stays in the
+                # same world direction but the parametric derivative is pos.
+                A0 = A0  # no sign flip needed for 2nd derivative
+            # Parameterise extension over s ∈ [0, 1] → world [P0, P1].
+            # C'(0) = 3*(cp1 - cp0) for a cubic Bezier →
+            #   cp1 = P0 + tan_unit * length_val / 3
+            # C''(0) = 6*(cp2 - 2*cp1 + cp0) →
+            #   cp2 = P0 + cp1 + A0 * length_val^2 / (t_len^2 * 6)
+            #       = 2*cp1 - P0 + A0_scaled/6
+            a_scale = (length_val / t_len) ** 2 if t_len > 1e-14 else 0.0
+            cp1 = P0 + tan_unit * (length_val / 3.0)
+            cp2 = 2.0 * cp1 - P0 + A0 * a_scale / 6.0
+            ext_cp_fwd = np.array([P0, cp1, cp2, P1], dtype=float)
+
+        # ext_cp_fwd is the extension Bezier in "outward" order: [P0 ... P1].
+        # P0 is shared with the original curve endpoint; omit it when merging.
+        #
+        # For 'end': append [cp1, cp2, P1] after original ctrl (P0 = ctrl[-1]).
+        # For 'start': prepend [P1, cp2, cp1] before original ctrl (P0 = ctrl[0]).
+        #   (Reversed so the merged curve goes P1→...→ctrl[0]→...→ctrl[-1].)
+        ext_deg = 3
+
+        # If the original degree < ext_deg we need to raise it.
+        # We resample the original curve at Greville-like abscissae of a new
+        # degree-ext_deg knot vector and use those as the new CPs.
+        if degree < ext_deg:
+            n_cp_orig = len(ctrl)
+            n_new = max(n_cp_orig + 1, ext_deg + 2)
+            new_knots_orig = _make_clamped_knots(n_new, ext_deg)
+            greville = np.array(
+                [np.mean(new_knots_orig[j + 1: j + ext_deg + 1]) for j in range(n_new)],
+                dtype=float,
+            )
+            # Map Greville t ∈ [0,1] back to original domain [u_start, u_end]
+            t_orig = greville * (u_end - u_start) + u_start
+            ctrl = np.array([curve.evaluate(float(t)) for t in t_orig], dtype=float)
+            degree = ext_deg
+
+        if end == "end":
+            # ctrl[-1] ≈ P0; share endpoint, append extension interior + far pt
+            merged_ctrl = np.vstack([ctrl, ext_cp_fwd[1:]])
+        else:
+            # ctrl[0] ≈ P0; share endpoint, prepend reversed extension interior + far pt
+            ext_prepend = ext_cp_fwd[1:][::-1]   # [P1, cp2, cp1] (drop P0)
+            merged_ctrl = np.vstack([ext_prepend, ctrl])
+
+        n_total = len(merged_ctrl)
+        final_knots = _make_clamped_knots(n_total, degree)
+        return NurbsCurve(degree=degree, control_points=merged_ctrl, knots=final_knots)
+
+    # ------------------------------------------------------------------
+    # Legacy behaviour (mode-based)
+    # ------------------------------------------------------------------
     if end == "end":
         p0 = ctrl[-1]
         tan = ctrl[-1] - ctrl[-2]

@@ -171,6 +171,7 @@ from kerf_cad_core.geom.curve_toolkit import (
     split_composite,
     text_on_curve,
     text_on_surface,
+    extend_curve,
 )
 # GK-11: curve-curve intersection hardening
 from kerf_cad_core.geom.intersection import (
@@ -180,7 +181,7 @@ from kerf_cad_core.geom.intersection import (
 )
 # GK-34: surface fit-to-tolerance (lofted/grid least-squares + knot placement)
 # GK-99: mid-surface (average of two NURBS surfaces)
-from kerf_cad_core.geom.patch_srf import fit_surface, mid_surface
+from kerf_cad_core.geom.patch_srf import fit_surface, mid_surface, extend_surface
 # GK-12: curve self-intersection
 from kerf_cad_core.geom.intersection import curve_self_intersect
 # GK-49: IGES 144 trimmed-surface reader/writer

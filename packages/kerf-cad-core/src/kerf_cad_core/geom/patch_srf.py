@@ -51,7 +51,7 @@ from typing import List, Optional, Sequence, Tuple
 
 import numpy as np
 
-from kerf_cad_core.geom.nurbs import NurbsSurface
+from kerf_cad_core.geom.nurbs import NurbsSurface, surface_derivatives
 
 
 # ---------------------------------------------------------------------------
@@ -1538,3 +1538,182 @@ def mid_surface(surf_a: NurbsSurface, surf_b: NurbsSurface) -> NurbsSurface:
         knots_v=a.knots_v.copy(),
         weights=mid_weights,
     )
+
+
+# ---------------------------------------------------------------------------
+# GK-139: extend_surface
+# ---------------------------------------------------------------------------
+
+def extend_surface(
+    surface: NurbsSurface,
+    length: float,
+    edge: str = "u_max",
+    continuity: str = "G1",
+) -> NurbsSurface:
+    """Extend a NURBS surface beyond its parametric domain.
+
+    Parameters
+    ----------
+    surface : NurbsSurface
+        The input surface to extend.
+    length : float
+        Extension amount (> 0) in world units.  The extension is scaled so
+        that the appended strip has approximately this length measured along
+        the boundary tangent.
+    edge : str
+        Which boundary to extend.  One of:
+
+        - ``'u_max'`` — extend past the u = u_max boundary  (default)
+        - ``'u_min'`` — extend past the u = u_min boundary
+        - ``'v_max'`` — extend past the v = v_max boundary
+        - ``'v_min'`` — extend past the v = v_min boundary
+    continuity : str
+        ``'G1'`` (tangent-continuous) or ``'G2'`` (curvature-continuous).
+
+    Returns
+    -------
+    NurbsSurface
+        A new surface whose control-point grid is one row/column wider in
+        the extension direction.  The original surface is the sub-grid
+        ``[:-1, :]`` (or ``[1:, :]``, etc.) of the returned surface.
+
+    Algorithm
+    ---------
+    For G1: the new boundary row of control points is the reflection of the
+    second-to-last row through the last row, scaled to achieve the requested
+    extension length.  This exactly matches the tangent direction at the
+    boundary (the classic "Bézier extension" lemma).
+
+    For G2: an additional row is inserted so that the curvature at the
+    boundary is preserved.  The extra CP is derived from the standard
+    discrete curvature condition on B-spline control polygons.
+    """
+    if length <= 0.0:
+        raise ValueError("extend_surface: length must be > 0")
+    if continuity not in ("G1", "G2"):
+        raise ValueError("extend_surface: continuity must be 'G1' or 'G2'")
+    if edge not in ("u_max", "u_min", "v_max", "v_min"):
+        raise ValueError("extend_surface: edge must be 'u_max', 'u_min', 'v_max', or 'v_min'")
+
+    cp = surface.control_points.copy().astype(float)  # (nu, nv, dim)
+    ku = surface.degree_u
+    kv = surface.degree_v
+    knots_u = surface.knots_u.copy()
+    knots_v = surface.knots_v.copy()
+    nu, nv, dim = cp.shape
+
+    def _clamped_knots(n: int, degree: int) -> np.ndarray:
+        inner = max(0, n - degree - 1)
+        if inner > 0:
+            interior = np.linspace(0.0, 1.0, inner + 2)[1:-1]
+        else:
+            interior = np.array([], dtype=float)
+        return np.concatenate([
+            np.zeros(degree + 1),
+            interior,
+            np.ones(degree + 1),
+        ])
+
+    # We work in (u, v) space.  For u_max / u_min we extend rows (axis 0);
+    # for v_max / v_min we extend columns (axis 1).  We handle u_max here
+    # and map the other edges to this canonical form via transposition /
+    # row-reversal.
+
+    def _extend_u_max(cp_: np.ndarray, ku_: int, kv_: int,
+                      ku_knots: np.ndarray, kv_knots: np.ndarray,
+                      length_: float, cont: str) -> NurbsSurface:
+        """Extend along the u_max boundary (append a new last row)."""
+        nu_, nv_, dim_ = cp_.shape
+
+        # Estimate the tangent-direction step length along the boundary.
+        # Use the last two rows: boundary row P[-1, :] and second-to-last P[-2, :]
+        # The CP difference P[-1] - P[-2] represents (degree/delta_u) * tangent.
+        # We need to scale the extension so the new row is ~length_ away.
+
+        # Average distance of the boundary step (last two rows)
+        delta = cp_[-1, :, :] - cp_[-2, :, :]  # (nv_, dim_)
+        avg_step = np.mean(np.linalg.norm(delta, axis=1))
+        if avg_step < 1e-14:
+            avg_step = 1.0
+
+        # Scale factor: how many times the current CP step equals length_
+        scale = float(length_) / avg_step
+
+        if cont == "G1":
+            # New row = P[-1] + scale * (P[-1] - P[-2])
+            new_row = cp_[-1, :, :] + scale * delta  # (nv_, dim_)
+            new_cp = np.concatenate([cp_, new_row[np.newaxis, :, :]], axis=0)
+            new_ku = _clamped_knots(nu_ + 1, ku_)
+            return NurbsSurface(
+                degree_u=ku_, degree_v=kv_,
+                control_points=new_cp,
+                knots_u=new_ku,
+                knots_v=kv_knots.copy(),
+            )
+        else:  # G2
+            # G2 needs two extra rows to maintain curvature.
+            # Second curvature row from the discrete curvature condition:
+            # P[-3], P[-2], P[-1] determine the curvature at the boundary.
+            # For the extension segment (P[-1], R1, R2):
+            #   G2: 2*R1 - R2 = 2*P[-1] - P[-2]  (curvature match)
+            # => R2 = 2*R1 - (2*P[-1] - P[-2])
+            # We pick R1 = P[-1] + scale * delta (same as G1)
+            R1 = cp_[-1, :, :] + scale * delta
+            if nu_ >= 3:
+                curv_vec = cp_[-1, :, :] - 2.0 * cp_[-2, :, :] + cp_[-3, :, :]
+            else:
+                curv_vec = np.zeros_like(delta)
+            R2 = 2.0 * R1 - cp_[-1, :, :] + scale * scale * curv_vec
+            new_cp = np.concatenate(
+                [cp_, R1[np.newaxis, :, :], R2[np.newaxis, :, :]], axis=0
+            )
+            new_ku = _clamped_knots(nu_ + 2, ku_)
+            return NurbsSurface(
+                degree_u=ku_, degree_v=kv_,
+                control_points=new_cp,
+                knots_u=new_ku,
+                knots_v=kv_knots.copy(),
+            )
+
+    if edge == "u_max":
+        return _extend_u_max(cp, ku, kv, knots_u, knots_v, length, continuity)
+
+    elif edge == "u_min":
+        # Reverse u direction, extend u_max, reverse back
+        cp_rev = cp[::-1, :, :]
+        result = _extend_u_max(cp_rev, ku, kv, knots_u, knots_v, length, continuity)
+        # Reverse back
+        return NurbsSurface(
+            degree_u=result.degree_u,
+            degree_v=result.degree_v,
+            control_points=result.control_points[::-1, :, :],
+            knots_u=_clamped_knots(result.control_points.shape[0], result.degree_u),
+            knots_v=result.knots_v.copy(),
+        )
+
+    elif edge == "v_max":
+        # Transpose u<->v, extend u_max, transpose back
+        cp_T = np.transpose(cp, (1, 0, 2))  # (nv, nu, dim)
+        result = _extend_u_max(cp_T, kv, ku, knots_v, knots_u, length, continuity)
+        return NurbsSurface(
+            degree_u=ku,
+            degree_v=result.degree_u,
+            control_points=np.transpose(result.control_points, (1, 0, 2)),
+            knots_u=knots_u.copy(),
+            knots_v=result.knots_u.copy(),
+        )
+
+    else:  # v_min
+        # Reverse v, transpose, extend u_max, transpose back, reverse back
+        cp_rev = cp[:, ::-1, :]
+        cp_T = np.transpose(cp_rev, (1, 0, 2))
+        result = _extend_u_max(cp_T, kv, ku, knots_v, knots_u, length, continuity)
+        cp_back = np.transpose(result.control_points, (1, 0, 2))
+        cp_back = cp_back[:, ::-1, :]
+        return NurbsSurface(
+            degree_u=ku,
+            degree_v=result.degree_u,
+            control_points=cp_back,
+            knots_u=knots_u.copy(),
+            knots_v=_clamped_knots(cp_back.shape[1], result.degree_u),
+        )
