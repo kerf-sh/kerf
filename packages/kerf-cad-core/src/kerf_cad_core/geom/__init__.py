@@ -636,6 +636,8 @@ __all__ = [
     "clearance",
     # GK-131
     "tangent_edge_chain",
+    # GK-136
+    "tetrahedralize",
 ]
 
 # GK-122: interference / collision detection
@@ -651,3 +653,5 @@ from kerf_cad_core.geom.assembly import clearance  # noqa: E402
 
 # GK-131: tangent-chain edge auto-select
 from kerf_cad_core.geom.fillet_solid import tangent_edge_chain
+# GK-136: Delaunay volume mesh (tetrahedralization) for FEM hand-off
+from kerf_cad_core.geom.tetmesh import tetrahedralize

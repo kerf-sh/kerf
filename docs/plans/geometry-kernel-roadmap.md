@@ -1081,7 +1081,7 @@ is a deliberate non-goal (§6), not an oversight.
   degree elevation, within tol). — `geom/nurbs.py` — oracle: elevate
   then reduce recovers the original degree + CP set ± tol. — dep:
   GK-01 — parallel: Y — sonnet.
-- [ ] **GK-136** Tetrahedralize (Delaunay volume mesh of a closed Body
+- [x] **GK-136** Tetrahedralize (Delaunay volume mesh of a closed Body
   for FEM hand-off). — `geom/tetmesh.py` — oracle: tet-mesh a unit cube →
   Σ tet volumes = 1 ± tol; all tets positive-oriented. — dep: GK-21 —
   parallel: N — opus.
