@@ -880,7 +880,7 @@ effort.
   parameterization + normals, preserve geometry). — `geom/nurbs.py` —
   oracle: reverse twice == identity; evaluate(reversed,t) ==
   evaluate(orig,1−t). — dep: GK-01 — parallel: Y — sonnet.
-- [ ] **GK-97** Reparametrize curve/surface: normalize knot vectors to
+- [x] **GK-97** Reparametrize curve/surface: normalize knot vectors to
   [0,1], optional arc-length reparam, domain rescale. — `geom/nurbs.py` —
   oracle: normalized curve has knots in [0,1] and identical point set. —
   dep: GK-01 — parallel: Y — sonnet.

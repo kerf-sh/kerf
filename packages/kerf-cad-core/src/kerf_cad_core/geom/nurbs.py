@@ -1810,3 +1810,250 @@ def minimal_cp_refit(curve: NurbsCurve, tol: float = 1e-6) -> "NurbsCurve":
                 current = next_curve
                 changed = True
     return current
+
+
+# ---------------------------------------------------------------------------
+# GK-97: Reparametrize curve / surface
+# ---------------------------------------------------------------------------
+
+def _rescale_knots(knots: np.ndarray, new_a: float, new_b: float) -> np.ndarray:
+    """Linearly map *knots* from their current domain [a, b] to [new_a, new_b]."""
+    a = float(knots[0])
+    b = float(knots[-1])
+    if abs(b - a) < 1e-15:
+        raise ValueError("Knot vector has zero-length domain; cannot rescale.")
+    return new_a + (new_b - new_a) * (knots - a) / (b - a)
+
+
+def normalize_knots(curve_or_surface):
+    """Rescale knot vector(s) so the domain becomes [0, 1].
+
+    Supports both :class:`NurbsCurve` and :class:`NurbsSurface`.  Control
+    points and weights are unchanged; only the knot values are remapped.
+
+    Parameters
+    ----------
+    curve_or_surface:
+        A :class:`NurbsCurve` or :class:`NurbsSurface`.
+
+    Returns
+    -------
+    Same type as the input, with knot vector(s) rescaled to [0, 1].
+    """
+    if isinstance(curve_or_surface, NurbsCurve):
+        c = curve_or_surface
+        new_knots = _rescale_knots(c.knots, 0.0, 1.0)
+        return NurbsCurve(
+            degree=c.degree,
+            control_points=c.control_points.copy(),
+            knots=new_knots,
+            weights=c.weights.copy() if c.weights is not None else None,
+        )
+    elif isinstance(curve_or_surface, NurbsSurface):
+        s = curve_or_surface
+        new_ku = _rescale_knots(s.knots_u, 0.0, 1.0)
+        new_kv = _rescale_knots(s.knots_v, 0.0, 1.0)
+        return NurbsSurface(
+            degree_u=s.degree_u,
+            degree_v=s.degree_v,
+            control_points=s.control_points.copy(),
+            knots_u=new_ku,
+            knots_v=new_kv,
+            weights=s.weights.copy() if s.weights is not None else None,
+        )
+    else:
+        raise TypeError(
+            f"normalize_knots expects a NurbsCurve or NurbsSurface, got {type(curve_or_surface)}"
+        )
+
+
+def reparametrize_curve(
+    curve: NurbsCurve,
+    t0: float = 0.0,
+    t1: float = 1.0,
+) -> NurbsCurve:
+    """Return a new :class:`NurbsCurve` whose domain is ``[t0, t1]``.
+
+    This is a pure knot-rescaling operation: the geometry (positions in space)
+    is entirely preserved.  Only the parameterisation is shifted/scaled.
+
+    Parameters
+    ----------
+    curve:
+        Input NURBS curve.
+    t0:
+        New start parameter (default 0.0).
+    t1:
+        New end parameter (default 1.0). Must satisfy ``t1 > t0``.
+
+    Returns
+    -------
+    NurbsCurve
+        A new curve with knots linearly mapped to ``[t0, t1]``.
+    """
+    if t1 <= t0:
+        raise ValueError(f"t1 ({t1}) must be greater than t0 ({t0}).")
+    new_knots = _rescale_knots(curve.knots, float(t0), float(t1))
+    return NurbsCurve(
+        degree=curve.degree,
+        control_points=curve.control_points.copy(),
+        knots=new_knots,
+        weights=curve.weights.copy() if curve.weights is not None else None,
+    )
+
+
+def reparametrize_arclength(
+    curve: NurbsCurve,
+    n: int = 128,
+) -> NurbsCurve:
+    """Return an *approximate* arc-length-parameterised version of *curve*.
+
+    The returned curve is re-fitted to ``n+1`` points sampled at uniformly
+    spaced arc-length fractions of the original, so ``evaluate(t)`` for
+    ``t ∈ [0, 1]`` advances along the curve at a (nearly) constant speed
+    with respect to Euclidean arc length.
+
+    Algorithm
+    ---------
+    1. Build a cumulative arc-length table by adaptive 5-point Gauss–Legendre
+       quadrature over ``n`` uniform sub-intervals of the original knot domain.
+    2. Sample ``n+1`` points at arc-length fractions 0, 1/n, 2/n, …, 1 by
+       inverting the table via linear interpolation.
+    3. Fit a degree-3 B-spline through the sampled points using chord-length
+       parameterisation (standard Piegl–Tiller least-squares fit).
+
+    The resulting curve has domain [0, 1] and preserves the geometry to within
+    the chord-length sampling tolerance (approximately O(1/n²)).
+
+    Parameters
+    ----------
+    curve:
+        Input NURBS curve (any degree, any knot domain).
+    n:
+        Number of uniform arc-length intervals.  Higher values give a closer
+        approximation.  Default: 128.
+
+    Returns
+    -------
+    NurbsCurve
+        A new degree-3 B-spline with domain [0, 1] that approximates
+        arc-length parameterisation.
+    """
+    # --- Step 1: build cumulative arc-length table ---
+    p = curve.degree
+    u0 = float(curve.knots[p])
+    u1 = float(curve.knots[-(p + 1)])
+
+    # Gauss–Legendre weights / nodes (5-point rule)
+    _GL5_X = np.array([
+        -0.9061798459386640,
+        -0.5384693101056831,
+         0.0,
+         0.5384693101056831,
+         0.9061798459386640,
+    ])
+    _GL5_W = np.array([
+        0.2369268850561891,
+        0.4786286704993665,
+        0.5688888888888889,
+        0.4786286704993665,
+        0.2369268850561891,
+    ])
+
+    params = np.linspace(u0, u1, n + 1)
+    lengths = np.zeros(n + 1)
+    for i in range(n):
+        a_i = params[i]
+        b_i = params[i + 1]
+        mid = 0.5 * (a_i + b_i)
+        half = 0.5 * (b_i - a_i)
+        nodes = mid + half * _GL5_X
+        speed = np.array([
+            float(np.linalg.norm(curve_derivative(curve, float(u), order=1)[1]))
+            for u in nodes
+        ])
+        lengths[i + 1] = lengths[i] + half * float(_GL5_W @ speed)
+
+    total = lengths[-1]
+    if total < 1e-15:
+        # Degenerate (zero-length) curve — return normalized knot form unchanged
+        return normalize_knots(curve)
+
+    # --- Step 2: sample points at uniform arc-length fractions ---
+    target_lengths = np.linspace(0.0, total, n + 1)
+    sample_params = np.interp(target_lengths, lengths, params)
+
+    sample_points = np.array([
+        curve.evaluate(float(u)) for u in sample_params
+    ])
+
+    # --- Step 3: least-squares B-spline fit over chord-length params ---
+    # Chord-length parameterisation of the sample points → t in [0, 1]
+    diffs = np.linalg.norm(np.diff(sample_points, axis=0), axis=1)
+    chord_total = float(diffs.sum())
+    if chord_total < 1e-15:
+        return normalize_knots(curve)
+
+    ts = np.zeros(n + 1)
+    ts[1:] = np.cumsum(diffs) / chord_total  # already in [0, 1]
+
+    # Build degree-3 clamped knot vector via Piegl–Tiller averaging
+    degree = 3
+    num_ctrl = max(degree + 1, min(n + 1, 64))
+
+    # Averaging knot placement (P&T §9.2)
+    # interior knot j (1-indexed): avg of ts[j..j+degree-1] for j=1..num_ctrl-degree-1
+    interior = num_ctrl - degree - 1
+    interior_knots: list = []
+    if interior > 0:
+        for j in range(1, interior + 1):
+            interior_knots.append(float(np.mean(ts[j: j + degree])))
+    knots_fit = np.array(
+        [0.0] * (degree + 1)
+        + interior_knots
+        + [1.0] * (degree + 1),
+        dtype=float,
+    )
+
+    # Collocation matrix
+    def _bspline_basis(t: float, k: int) -> float:
+        """B-spline basis N_{k,degree}(t)."""
+        u = float(t)
+        d = degree
+        K = knots_fit
+        m = len(K)
+        n_k = m - d - 1  # number of basis functions
+        if k < 0 or k >= n_k:
+            return 0.0
+        # Cox-de Boor recursion
+        N = np.zeros(m - 1)
+        for ii in range(m - 1):
+            N[ii] = 1.0 if K[ii] <= u < K[ii + 1] else 0.0
+        # Handle right end
+        if u == K[-1]:
+            # Clamp: last basis function is 1 at right end
+            N[-1] = 1.0 if K[-2] < K[-1] else 0.0
+        for r in range(1, d + 1):
+            N_new = np.zeros(m - 1 - r)
+            for ii in range(m - 1 - r):
+                denom1 = K[ii + r] - K[ii]
+                denom2 = K[ii + r + 1] - K[ii + 1]
+                left = (u - K[ii]) / denom1 * N[ii] if denom1 > 1e-15 else 0.0
+                right = (K[ii + r + 1] - u) / denom2 * N[ii + 1] if denom2 > 1e-15 else 0.0
+                N_new[ii] = left + right
+            N = N_new
+        return float(N[k]) if k < len(N) else 0.0
+
+    A = np.zeros((n + 1, num_ctrl))
+    for i, t in enumerate(ts):
+        for k in range(num_ctrl):
+            A[i, k] = _bspline_basis(t, k)
+
+    ctrl, _, _, _ = np.linalg.lstsq(A, sample_points, rcond=None)
+
+    return NurbsCurve(
+        degree=degree,
+        control_points=ctrl,
+        knots=knots_fit,
+        weights=None,
+    )

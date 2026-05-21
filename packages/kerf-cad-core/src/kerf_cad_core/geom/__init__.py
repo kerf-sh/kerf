@@ -342,6 +342,8 @@ from kerf_cad_core.geom.pattern import (
 from kerf_cad_core.geom.surface_offset import surface_offset
 # GK-96: reverse curve/surface direction
 from kerf_cad_core.geom.nurbs import reverse_curve, reverse_surface
+# GK-97: reparametrize curve/surface (normalize knots, domain rescale, arc-length)
+from kerf_cad_core.geom.nurbs import normalize_knots, reparametrize_curve, reparametrize_arclength
 # GK-135: degree reduction (curve + surface)
 from kerf_cad_core.geom.nurbs import reduce_degree_curve, reduce_degree_surface
 # GK-102: knot removal / minimal-CP refit
@@ -603,6 +605,8 @@ __all__ = [
     "PlyWriteError",
     # GK-96
     "reverse_curve","reverse_surface",
+    # GK-97
+    "normalize_knots","reparametrize_curve","reparametrize_arclength",
     # GK-135
     "reduce_degree_curve","reduce_degree_surface",
     # GK-102
