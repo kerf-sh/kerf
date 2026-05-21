@@ -484,7 +484,7 @@ escalation}).
   File: `packages/kerf-core/tests/test_rls_secrets.py`
   Success: 12 cases — encrypted blob not retrievable; cannot mutate B's record; admin role explicitly required for ops paths.
 
-- [ ] T-89 RLS: upload_sessions
+- [x] T-89 RLS: upload_sessions
   Scope: cross-tenant on `upload_sessions` (mig 008).
   File: `packages/kerf-core/tests/test_rls_upload_sessions.py`
   Success: 10 cases — session of B not readable; storage_key collision refused; cannot finalize B's session.
