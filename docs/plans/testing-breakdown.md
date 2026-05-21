@@ -523,7 +523,7 @@ Persona-scoped flows the chat agent must never break. Build on existing
 spec runs against a seeded dev server with mocked Anthropic and a clean
 Postgres schema. ≥10 user-visible assertions per spec.
 
-- [ ] T-95 E2E jewelry persona
+- [x] T-95 E2E jewelry persona
   Scope: signup → new jewelry project → chat "design a 6-prong solitaire 1ct round D-VVS1 platinum size 6" → render → STL export.
   File: `tests/e2e/specs/persona_jewelry.spec.ts`
   Success: SKU built; PBR materials applied; cost panel populated; STL downloads & is manifold.
