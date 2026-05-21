@@ -350,7 +350,7 @@ noted.
   File: `packages/kerf-cloud/tests/test_feature_email.py`
   Success: 25 transactional sends across providers (mocked SMTP); subject + body render; bounce / suppression list.
 
-- [ ] T-66 STEP tessellation jobs
+- [x] T-66 STEP tessellation jobs
   Scope: `step_tessellation_jobs` lifecycle + `step_ref_kind` + `step_tess_input_spec`.
   File: `packages/kerf-api/tests/test_feature_step_tess_jobs.py`
   Success: 25 job submissions; queued → running → done state machine; idempotent re-tess; tessellated artifact attaches.
