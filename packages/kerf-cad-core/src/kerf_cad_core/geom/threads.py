@@ -58,11 +58,12 @@ acme_thread(nominal_d, pitch) -> dict
 from __future__ import annotations
 
 import math
-from typing import Dict, List, Tuple
+from typing import Dict, List, Literal, Tuple
 
 __all__ = [
     "iso_metric_thread",
     "acme_thread",
+    "coil_spring",
 ]
 
 # ---------------------------------------------------------------------------
@@ -257,3 +258,119 @@ def acme_thread(nominal_d: float, pitch: float) -> Dict:
         "crest_d": nominal_d,
         "root_d":  root_r * 2.0,
     }
+
+
+# ---------------------------------------------------------------------------
+# GK-130  Spring / coil generator
+# ---------------------------------------------------------------------------
+
+#: End-allowance per *closed* end: one wire diameter adds one coil of dead
+#: (flattened) space.  The total allowance is 1 × wire_d (one per end, but
+#: industry practice is to use 1 × wire_d total for the standard 2-closed-end
+#: configuration because the two halves of the ground coils each contribute
+#: half a wire diameter).
+_CLOSED_END_ALLOWANCE_FACTOR: float = 1.0   # × wire_d
+
+
+def coil_spring(
+    wire_d: float,
+    mean_d: float,
+    pitch: float,
+    turns: float,
+    *,
+    ends: str = "open",
+) -> "object":
+    """Generate a helical coil-spring tube surface as a Body.
+
+    Sweeps a circular wire cross-section along a helical centreline using
+    :func:`sweep1_helical` (GK-77) and returns the result wrapped in an
+    open Shell :class:`Body`.
+
+    Parameters
+    ----------
+    wire_d : float
+        Wire (cross-section) diameter in mm.  Must be > 0.
+    mean_d : float
+        Mean coil diameter (centre-line to centre-line) in mm.  Must be
+        > wire_d (otherwise coils would self-intersect).
+    pitch : float
+        Axial advance per full revolution in mm.  Must be > 0.  Typical
+        compression springs have pitch > wire_d.
+    turns : float
+        Number of active coil turns.  Must be > 0.
+    ends : ``'open'`` or ``'closed'``
+        End-condition for free-length calculation:
+
+        ``'open'``
+            Raw helical sweep with no end-coil modification.  Free length
+            equals the purely axial travel: ``turns × pitch``.
+
+        ``'closed'``
+            The end coils are assumed to be ground/dead (industry standard
+            for compression springs).  One wire diameter is added to account
+            for the two dead half-coils at each end::
+
+                free_length ≈ turns × pitch + 1 × wire_d
+
+    Returns
+    -------
+    Body
+        An open Shell Body containing the tube surface of the spring.
+        The spring axis is the global Z axis; the first coil starts at
+        (mean_d/2, 0, 0).
+
+    Raises
+    ------
+    ValueError
+        If any dimensional argument is out of range.
+
+    Notes
+    -----
+    Free-length oracle (as used by the hermetic test)::
+
+        end_allowance = 0          if ends == 'open'
+        end_allowance = wire_d     if ends == 'closed'
+        free_length ≈ turns * pitch + end_allowance   (± 1e-3 mm)
+
+    The tube surface is purely lateral (no end caps).  To obtain a solid
+    wire spring, post-process with ``sew_into_solid`` or
+    ``closed_shell_to_solid`` after adding end-cap faces.
+    """
+    if wire_d <= 0:
+        raise ValueError(f"wire_d must be positive, got {wire_d}")
+    if mean_d <= wire_d:
+        raise ValueError(
+            f"mean_d ({mean_d}) must be greater than wire_d ({wire_d}) "
+            "to avoid self-intersection"
+        )
+    if pitch <= 0:
+        raise ValueError(f"pitch must be positive, got {pitch}")
+    if turns <= 0:
+        raise ValueError(f"turns must be positive, got {turns}")
+    if ends not in ("open", "closed"):
+        raise ValueError(f"ends must be 'open' or 'closed', got {ends!r}")
+
+    from kerf_cad_core.geom.nurbs import make_circle_nurbs
+    from kerf_cad_core.geom.sweep1 import sweep1_helical
+    from kerf_cad_core.geom.brep_build import _open_shell_body
+
+    # Circular wire cross-section in the local (profile) frame.
+    # The profile centre is at the origin; the helix radius offsets it to
+    # sit on the spring centreline.
+    wire_profile = make_circle_nurbs(
+        center=[0.0, 0.0, 0.0],
+        radius=wire_d / 2.0,
+    )
+
+    # Sweep along the helical spine.
+    tube_surface = sweep1_helical(
+        profile=wire_profile,
+        axis=[0.0, 0.0, 1.0],
+        radius=mean_d / 2.0,
+        pitch=pitch,
+        turns=turns,
+    )
+
+    # Wrap in an open Shell Body (no end caps — lateral tube surface only).
+    body = _open_shell_body(tube_surface)
+    return body

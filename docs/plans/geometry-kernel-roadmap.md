@@ -1046,7 +1046,7 @@ effort.
   profile swept helically into a screw). — `geom/threads.py` — oracle:
   M6×1 thread → pitch 1 mm, crest-to-root depth = 0.6134·pitch ± tol. —
   dep: GK-77 — parallel: Y — sonnet.
-- [ ] **GK-130** Spring / coil generator (helical sweep wrapper: open /
+- [x] **GK-130** Spring / coil generator (helical sweep wrapper: open /
   closed ends, pitch + wire diameter + turns). — `geom/threads.py` —
   oracle: a coil of N turns, pitch p has free length ≈ N·p + end
   allowance ± tol. — dep: GK-77 — parallel: Y — sonnet.

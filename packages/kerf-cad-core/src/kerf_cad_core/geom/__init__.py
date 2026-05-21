@@ -343,9 +343,11 @@ from kerf_cad_core.geom.sheet_metal import (
     unfold_sheet,
 )
 # GK-129: helical thread profiles (ISO metric + Acme)
+# GK-130: spring / coil generator
 from kerf_cad_core.geom.threads import (
     iso_metric_thread,
     acme_thread,
+    coil_spring,
 )
 
 # GK-118: parting line generation
@@ -594,6 +596,8 @@ __all__ = [
     # GK-129
     "iso_metric_thread",
     "acme_thread",
+    # GK-130
+    "coil_spring",
     # GK-112
     "body_sdf",
     "sdf_sample",
