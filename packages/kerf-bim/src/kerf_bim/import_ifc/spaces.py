@@ -170,16 +170,24 @@ def translate_space(
 ) -> dict[str, Any]:
     """
     Translate one IfcSpace entity into a .bim space dict.
+
+    The returned dict carries ``global_id`` so that export_ifc can write the
+    *original* IFC GlobalId back into the STEP file — enabling round-trips
+    that preserve space identity across import → edit → re-export.
     """
     name_attr = getattr(ifc_space, "Name", None) or ""
     long_name = getattr(ifc_space, "LongName", None) or ""
     display_name = long_name or name_attr or "Space"
 
+    global_id = str(getattr(ifc_space, "GlobalId", "") or "")
     level_name = _storey_name_for(ifc_space, level_guid_to_name)
     boundary = _extract_boundary(ifc_space, warnings)
 
-    return {
+    result: dict[str, Any] = {
         "level": level_name,
         "boundary": boundary,
         "name": str(display_name),
     }
+    if global_id:
+        result["global_id"] = global_id
+    return result

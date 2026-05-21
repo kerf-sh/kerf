@@ -715,6 +715,92 @@ def export_ifc(
     for idx, opening in enumerate(model.get("openings") or []):
         _emit_opening(opening, idx)
 
+    # ── Emit spaces (IfcSpace) ──────────────────────────────────────────────
+    def _emit_space(sp: dict[str, Any], idx: int) -> int | None:
+        """
+        Emit IFC entities for one space node.
+
+        The .bim space schema:
+            { "name": str, "level": str,
+              "boundary": [[x,y], ...],   # mm plan polygon
+              "global_id": str (optional, for round-trip) }
+
+        Emits:
+          - IfcArbitraryClosedProfileDef + IfcExtrudedAreaSolid (body rep)
+          - IfcProductDefinitionShape
+          - IfcLocalPlacement relative to the storey
+          - IfcSpace (IFC4) or IfcSpace (IFC2X3 — same entity name)
+
+        Returns the IfcSpace entity id, or None if the space is invalid.
+        """
+        try:
+            name      = str(sp.get("name") or f"Space_{idx + 1}")
+            level_nm  = str(sp.get("level") or "")
+            boundary  = sp.get("boundary") or []
+            # Honour preserved GlobalId from import; otherwise derive from idx
+            raw_gid   = (sp.get("global_id") or "").strip()
+            space_gid = raw_gid if raw_gid else _ifc_guid(f"space_{idx}")
+            # Default ceiling height: 2.7 m (2700 mm) — purely for geometry
+            height    = float(sp.get("height") or 2700.0) * _MM_TO_M
+
+            if len(boundary) < 3:
+                boundary = [[0, 0], [4000, 0], [4000, 3000], [0, 3000]]
+                warnings.append(f"space {idx}: boundary < 3 points; using default 4×3 m")
+
+            storey_id, _ = _resolve_level(level_nm)
+
+            # Build IfcPolyline for the profile outer curve (closed)
+            pt_ids: list[int] = []
+            for pt in boundary:
+                px = float(pt[0]) * _MM_TO_M
+                py = float(pt[1]) * _MM_TO_M
+                id_pt = ids.next()
+                entity(id_pt, f"IFCCARTESIANPOINT(({_f(px)},{_f(py)}))")
+                pt_ids.append(id_pt)
+            # IFC polyline must close (last == first)
+            pt_ids.append(pt_ids[0])
+            pts_ref = ",".join(f"#{p}" for p in pt_ids)
+            id_polyline   = ids.next()
+            entity(id_polyline, f"IFCPOLYLINE(({pts_ref}))")
+
+            id_profile    = ids.next()
+            id_ext_zdir   = ids.next()
+            id_ext_origin = ids.next()
+            id_ext_ax     = ids.next()
+            id_extrusion  = ids.next()
+            id_shape_rep  = ids.next()
+            id_prod_shape = ids.next()
+            id_elem_orig  = ids.next()
+            id_elem_ax    = ids.next()
+            id_elem_place = ids.next()
+            id_space      = ids.next()
+
+            entity(id_profile,    f"IFCARBITRARYCLOSEDPROFILEDEF(.AREA.,$,#{id_polyline})")
+            entity(id_ext_zdir,   "IFCDIRECTION((0.,0.,1.))")
+            entity(id_ext_origin, "IFCCARTESIANPOINT((0.,0.,0.))")
+            entity(id_ext_ax,     f"IFCAXIS2PLACEMENT3D(#{id_ext_origin},#{id_ext_zdir},$)")
+            entity(id_extrusion,  f"IFCEXTRUDEDAREASOLID(#{id_profile},#{id_ext_ax},#{id_ext_zdir},{_f(height)})")
+            entity(id_shape_rep,  f"IFCSHAPEREPRESENTATION(#{id_rep_ctx},'Body','SweptSolid',(#{id_extrusion}))")
+            entity(id_prod_shape, f"IFCPRODUCTDEFINITIONSHAPE($,$,(#{id_shape_rep}))")
+            entity(id_elem_orig,  "IFCCARTESIANPOINT((0.,0.,0.))")
+            entity(id_elem_ax,    f"IFCAXIS2PLACEMENT3D(#{id_elem_orig},$,$)")
+            entity(id_elem_place, f"IFCLOCALPLACEMENT(#{id_storey_place(storey_id)},#{id_elem_ax})")
+            entity(id_space, (
+                f"IFCSPACE({_s(space_gid)},"
+                f"#{id_owner_hist},{_s(name)},$,$,"
+                f"#{id_elem_place},#{id_prod_shape},$,"
+                f".ELEMENT.,{_f(height)})"
+            ))
+
+            storey_elements[storey_id].append(id_space)
+            return id_space
+        except Exception as exc:
+            warnings.append(f"space {idx}: export failed ({exc}); skipped")
+            return None
+
+    for idx, space in enumerate(model.get("spaces") or []):
+        _emit_space(space, idx)
+
     # ── IfcRelContainedInSpatialStructure for each storey ───────────────────
     for storey_id, elem_ids in storey_elements.items():
         if not elem_ids:

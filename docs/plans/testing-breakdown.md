@@ -538,7 +538,7 @@ Postgres schema. ≥10 user-visible assertions per spec.
   File: `tests/e2e/specs/persona_ecad.spec.ts`
   Success: DRC report shown; Gerber zip downloads; BOM table renders; cost roll-up against mocked distributors.
 
-- [ ] T-98 E2E architect persona
+- [x] T-98 E2E architect persona
   Scope: signup → new arch project → space program from chat → IFC export → import back.
   File: `tests/e2e/specs/persona_architect.spec.ts`
   Success: spaces visible in 3D; IFC export valid; round-trip preserves spaces & GlobalIds.
