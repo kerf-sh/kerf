@@ -634,6 +634,8 @@ __all__ = [
     # GK-112
     "body_sdf",
     "sdf_sample",
+    # GK-113
+    "marching_cubes",
     # GK-128
     "involute_gear","cycloid_gear",
     # GK-115
@@ -650,7 +652,8 @@ __all__ = [
 from kerf_cad_core.geom.assembly import interference  # noqa: E402
 
 # GK-112: signed distance field from a B-rep Body + trilinear sampler.
-from kerf_cad_core.geom.sdf import body_sdf, sdf_sample
+# GK-113: marching cubes (SDF / scalar grid → watertight mesh).
+from kerf_cad_core.geom.sdf import body_sdf, sdf_sample, marching_cubes
 
 # GK-115: lattice unit-cell library (gyroid, Schwarz-P, octet truss, Kelvin cell)
 from kerf_cad_core.geom.lattice import gyroid, schwarz_p, octet_truss, kelvin_cell

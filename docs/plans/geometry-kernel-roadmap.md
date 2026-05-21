@@ -957,7 +957,7 @@ effort.
   trilinear sampler). — `geom/sdf.py` — oracle: SDF of a unit sphere at
   distance d from centre returns d−1 ± grid tol; sign flips inside. —
   dep: GK-21 — parallel: Y — sonnet.
-- [ ] **GK-113** Marching cubes (SDF / scalar grid → watertight mesh). —
+- [x] **GK-113** Marching cubes (SDF / scalar grid → watertight mesh). —
   `geom/sdf.py` — oracle: marching-cubes of a sphere SDF → closed
   manifold whose volume = 4/3πr³ ± grid tol. — dep: GK-112 —
   parallel: N — opus.
