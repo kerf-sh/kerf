@@ -83,3 +83,4 @@ tests/e2e/playwright-report/
 
 # Internal sizing / pricing scratchpad (commercial — never commit)
 billingmodel/
+.claire/
