@@ -325,7 +325,7 @@ noted.
   File: `packages/kerf-api/tests/test_feature_workshop.py`
   Success: 25 publish/like/edit cycles; primary-image selection; README markdown safe-render.
 
-- [ ] T-61 Library: submissions + moderation
+- [x] T-61 Library: submissions + moderation
   Scope: `library_part_submissions` lifecycle (draft → submitted → approved/rejected).
   File: `packages/kerf-api/tests/test_feature_library_submissions.py`
   Success: 25 submissions across roles; state-machine guards; admin override path.
