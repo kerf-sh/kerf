@@ -876,7 +876,7 @@ effort.
   C0/C1 break lines. — `geom/surface_analysis.py` — oracle: a G1-but-not-
   G2 join shows a kinked highlight line; a single smooth patch shows
   straight lines. — dep: GK-38 — parallel: Y — sonnet.
-- [ ] **GK-96** Reverse curve / reverse surface direction (flip
+- [x] **GK-96** Reverse curve / reverse surface direction (flip
   parameterization + normals, preserve geometry). — `geom/nurbs.py` —
   oracle: reverse twice == identity; evaluate(reversed,t) ==
   evaluate(orig,1−t). — dep: GK-01 — parallel: Y — sonnet.
