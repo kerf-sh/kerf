@@ -866,7 +866,7 @@ effort.
 
 ### Group A — Class-A analysis + curve/surface utilities
 
-- [ ] **GK-94** Gaussian + mean curvature heatmap: per-(u,v) Gaussian K
+- [x] **GK-94** Gaussian + mean curvature heatmap: per-(u,v) Gaussian K
   and mean H curvature grids on a NurbsSurface, heatmap-ready arrays +
   min/max. — `geom/surface_analysis.py` — oracle: sphere of radius r →
   K = 1/r² everywhere, H = 1/r; plane → K = H = 0. — dep: GK-37 —
