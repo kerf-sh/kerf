@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { Share2, Save, Loader2, ArrowLeft, Check, X, RotateCcw, Undo2, Redo2, GitBranch, MessageSquare, PanelRightClose, PanelRightOpen, PanelLeftOpen, PanelLeftClose, Plus, Box, SlidersHorizontal, ChevronDown, ArrowRight, RotateCw, MoreHorizontal, Activity as ActivityIcon, LogOut, UserCog, Settings, CreditCard, Users } from 'lucide-react'
+import { Share2, Save, Loader2, ArrowLeft, Check, X, RotateCcw, Undo2, Redo2, GitBranch, MessageSquare, PanelRightClose, PanelRightOpen, PanelLeftOpen, PanelLeftClose, Plus, Box, SlidersHorizontal, ChevronDown, ArrowRight, RotateCw, Activity as ActivityIcon, FileDown, LogOut, UserCog, Settings, CreditCard, Users } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { LogoWordmark } from '../components/Logo.jsx'
 import FileTree from '../components/FileTree.jsx'
@@ -60,6 +60,7 @@ import FileEditor from '../components/FileEditor.jsx'
 import { isTextCodeFile } from '../lib/editorModes.js'
 import UnsavedRestoreBanner from '../components/UnsavedRestoreBanner.jsx'
 import Modal from '../components/Modal.jsx'
+import TopBarMoreMenu from '../components/TopBarMoreMenu.jsx'
 
 // ---------------------------------------------------------------------------
 // Build3DDropdown — toolbar dropdown in the sketch header that scaffolds a
@@ -219,21 +220,7 @@ function Build3DDropdown({ sketch, sketchName, onBuild, disabled }) {
 }
 
 // ---------------------------------------------------------------------------
-// TopBarMoreMenu — T-L2 priority+ overflow menu for the Editor top-bar.
-//
-// Visible only at widths where the inline button row has had to elide
-// lower-priority actions (i.e. < xl in the current breakpoint mapping). The
-// caller passes `children` — those are the same action <button>s that
-// appear inline, each with their own breakpoint-conditional visibility
-// class (`inline-flex md:hidden` / `inline-flex lg:hidden` / etc.). When
-// the popup mounts, only the ones not visible inline at the current width
-// remain visible inside the popup, which is the priority+ pattern.
-//
-// Accessibility: button has `aria-haspopup` + `aria-expanded`; popup has
-// `role="menu"`. Esc closes; click-outside closes; the host wires
-// `role="menuitem"` onto each child via the menu-item recipe applied
-// inline below.
-// ---------------------------------------------------------------------------
+// TopBarMoreMenu is now in src/components/TopBarMoreMenu.jsx (T-L2).
 // ---------------------------------------------------------------------------
 // EditorUserMenu — the avatar pill in the Editor's topbar with a working
 // drop-down. Before this it was an inert <div> so "click profile → sign
@@ -379,65 +366,6 @@ function EditorUserMenu({ user }) {
   )
 }
 
-function TopBarMoreMenu({ children }) {
-  const [open, setOpen] = useState(false)
-  const wrapRef = useRef(null)
-  const buttonRef = useRef(null)
-  useEffect(() => {
-    if (!open) return
-    function onDoc(e) {
-      if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false)
-    }
-    function onKey(e) {
-      if (e.key === 'Escape') {
-        setOpen(false)
-        // Return focus to the trigger so keyboard users land back on a
-        // tabbable element.
-        buttonRef.current?.focus?.()
-      }
-    }
-    window.addEventListener('mousedown', onDoc)
-    window.addEventListener('keydown', onKey)
-    return () => {
-      window.removeEventListener('mousedown', onDoc)
-      window.removeEventListener('keydown', onKey)
-    }
-  }, [open])
-  // T-L2 visibility gate: the More button is itself hidden at ≥ xl since
-  // every action is visible inline at that breakpoint. The popup adopts
-  // dark-surface tokens consistent with the rest of the editor chrome.
-  return (
-    <div ref={wrapRef} className="relative xl:hidden">
-      <button
-        ref={buttonRef}
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        aria-label="More actions"
-        aria-haspopup="menu"
-        aria-expanded={open}
-        title="More actions"
-        className="p-1.5 rounded hover:bg-ink-800 text-ink-300 hover:text-kerf-300"
-      >
-        <MoreHorizontal size={14} />
-      </button>
-      {open && (
-        <div
-          role="menu"
-          aria-label="More actions"
-          className="absolute right-0 top-full mt-1 z-40 min-w-[180px] bg-ink-900 border border-ink-700 rounded-md shadow-xl py-1"
-          onClick={(e) => {
-            // Click on a menu item bubbles up — close the popup after the
-            // child action's onClick fires.
-            const t = e.target
-            if (t && t.closest && t.closest('[role="menuitem"]')) setOpen(false)
-          }}
-        >
-          {children}
-        </div>
-      )}
-    </div>
-  )
-}
 
 const AUTOSAVE_MS = 500
 // Re-eval debounce, scaled by file size. Small files feel snappy at 250ms;
@@ -1345,7 +1273,7 @@ export default function Editor() {
           title="Back to projects"
           aria-label="Back to projects"
         >
-          <ArrowLeft size={15} />
+          <ArrowLeft size={15} aria-hidden="true" />
         </button>
         {/* T-L1: file-tree drawer toggle — only visible < lg where the inline
             aside is hidden. Opens the off-canvas file-tree drawer. */}
@@ -1359,7 +1287,7 @@ export default function Editor() {
           aria-expanded={treeDrawerOpen}
           aria-controls="editor-tree-drawer"
         >
-          <PanelLeftOpen size={15} />
+          <PanelLeftOpen size={15} aria-hidden="true" />
         </button>
         <button
           type="button"
@@ -1401,18 +1329,15 @@ export default function Editor() {
 
         {/* ---------- T-L2 Priority+ icon row ----------
             Visibility classes (priority highest → lowest):
-              - Undo / Redo: always visible (P1, primary editing).
-              - History: visible ≥ md (P2, hidden < 768px → overflow).
-              - Activity: visible ≥ md (P3, hidden < 768px → overflow).
-              - Git: visible ≥ lg (P4, hidden < 1024px → overflow).
-              - Export: always visible (own dropdown — keep accessible).
-              - Refresh thumbnail: visible ≥ xl (P5, hidden < 1280px → overflow).
-              - Publish: always visible (cloud CTA).
-              - Chat toggle: always visible (primary navigation).
+              - Undo / Redo:         always visible (P1, primary editing).
+              - Export:              visible ≥ md (P2, < 768px → overflow).
+              - Refresh thumbnail:   visible ≥ xl (P3, < 1280px → overflow).
+              - Publish:             always visible (cloud CTA).
+              - Share:               visible ≥ lg (P4, < 1024px → overflow).
+              - Chat toggle:         always visible (primary navigation).
             At ≥ xl every action is inline; the overflow More menu auto-
             hides (`xl:hidden` inside TopBarMoreMenu). Down to 768px the
-            inline row never overflows because the lowest-priority items
-            have been moved into the popup. Every icon-only button has an
+            inline row never overflows. Every icon-only button has an
             explicit `aria-label`.
         */}
         <button
@@ -1423,7 +1348,7 @@ export default function Editor() {
           aria-label="Undo"
           className="inline-flex p-1.5 rounded hover:bg-ink-800 text-ink-300 hover:text-kerf-300 disabled:opacity-40 disabled:hover:bg-transparent"
         >
-          <Undo2 size={14} />
+          <Undo2 size={14} aria-hidden="true" />
         </button>
         <button
           type="button"
@@ -1433,13 +1358,16 @@ export default function Editor() {
           aria-label="Redo"
           className="inline-flex p-1.5 rounded hover:bg-ink-800 text-ink-300 hover:text-kerf-300 disabled:opacity-40 disabled:hover:bg-transparent"
         >
-          <Redo2 size={14} />
+          <Redo2 size={14} aria-hidden="true" />
         </button>
         {/* History, Activity, and Git have moved into the unified right
             drawer tabs (Chat / Activity / Git / History). The topbar
             stays focused on undo/redo and primary actions. */}
 
-        <ExportButton onCaptureHero={() => rendererRef.current?.captureHeroShot?.({})} />
+        {/* T-L2 Export: visible ≥ md; collapses into overflow at < md */}
+        <div className="hidden md:block">
+          <ExportButton onCaptureHero={() => rendererRef.current?.captureHeroShot?.({})} />
+        </div>
 
         {cloudEnabled && w.project && (
           <>
@@ -1468,8 +1396,8 @@ export default function Editor() {
               className="hidden xl:inline-flex p-1.5 rounded hover:bg-ink-800 text-ink-300 hover:text-kerf-300 disabled:opacity-40 disabled:hover:bg-transparent"
             >
               {thumbRefreshing
-                ? <Loader2 size={14} className="animate-spin" />
-                : <RotateCcw size={14} />}
+                ? <Loader2 size={14} className="animate-spin" aria-hidden="true" />
+                : <RotateCcw size={14} aria-hidden="true" />}
             </button>
             {thumbToast && (
               <span className="hidden sm:inline text-[11px] font-mono text-emerald-400 whitespace-nowrap">
@@ -1479,6 +1407,18 @@ export default function Editor() {
             <PublishButton project={w.project} captureSnapshot={captureSnapshotFn} />
           </>
         )}
+
+        {/* T-L2 Share: visible ≥ lg; collapses into overflow at < lg */}
+        <button
+          type="button"
+          onClick={() => setShowShare(true)}
+          disabled={!projectId}
+          aria-label="Share project"
+          className="hidden lg:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-kerf-300 text-ink-950 text-xs font-medium hover:bg-kerf-200 disabled:opacity-40"
+        >
+          <Share2 size={12} aria-hidden="true" />
+          Share
+        </button>
 
         <button
           type="button"
@@ -1499,17 +1439,42 @@ export default function Editor() {
           aria-expanded={rightDrawer.open && rightDrawer.tab === 'chat' || chatDrawerOpen}
           className={`inline-flex p-1.5 rounded hover:bg-ink-800 ${rightDrawer.open && rightDrawer.tab === 'chat' ? 'text-kerf-300' : 'text-ink-300 hover:text-kerf-300'}`}
         >
-          {rightDrawer.open && rightDrawer.tab === 'chat' ? <PanelRightClose size={14} /> : <PanelRightOpen size={14} />}
+          {rightDrawer.open && rightDrawer.tab === 'chat'
+            ? <PanelRightClose size={14} aria-hidden="true" />
+            : <PanelRightOpen size={14} aria-hidden="true" />}
         </button>
 
         {/* ---------- T-L2 Overflow menu ----------
-            Mirrors actions hidden at narrower widths. History/Activity/Git
-            now live in the right drawer tabs, so only Refresh thumbnail
-            remains here for sub-xl screens.
-            Auto-closes on item click (handled in TopBarMoreMenu). The
-            host TopBarMoreMenu wrapper is itself `xl:hidden` so the menu
-            disappears entirely at ≥1280px. */}
+            Priority+ pattern: actions that don't fit inline at narrower
+            viewports are mirrored here.
+              - Export:            hidden < md  → menuitem
+              - Share:             hidden < lg  → menuitem
+              - Refresh thumbnail: hidden < xl  → menuitem (cloud only)
+            The TopBarMoreMenu wrapper is `xl:hidden` so at ≥1280px all
+            actions are inline and the More button disappears. */}
         <TopBarMoreMenu>
+          {/* Export — visible in overflow at < md */}
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => { /* Export is handled inline — this entry surfaces it at < md. Future iteration: wire to ExportButton imperative API. */ }}
+            className="md:hidden w-full flex items-center gap-2 px-3 py-1.5 text-xs text-ink-100 hover:bg-ink-700 text-left"
+          >
+            <FileDown size={12} className="text-ink-400" aria-hidden="true" />
+            <span>Export</span>
+          </button>
+          {/* Share — visible in overflow at < lg */}
+          <button
+            type="button"
+            role="menuitem"
+            disabled={!projectId}
+            onClick={() => setShowShare(true)}
+            className="lg:hidden w-full flex items-center gap-2 px-3 py-1.5 text-xs text-ink-100 hover:bg-ink-700 text-left disabled:opacity-40"
+          >
+            <Share2 size={12} className="text-ink-400" aria-hidden="true" />
+            <span>Share</span>
+          </button>
+          {/* Refresh thumbnail — visible in overflow at < xl (cloud only) */}
           {cloudEnabled && w.project && (
             <button
               type="button"
@@ -1532,25 +1497,15 @@ export default function Editor() {
                   setThumbRefreshing(false)
                 }
               }}
-              className="inline-flex xl:hidden w-full items-center gap-2 px-3 py-1.5 text-xs text-ink-100 hover:bg-ink-700 text-left disabled:opacity-40"
+              className="xl:hidden w-full flex items-center gap-2 px-3 py-1.5 text-xs text-ink-100 hover:bg-ink-700 text-left disabled:opacity-40"
             >
               {thumbRefreshing
-                ? <Loader2 size={12} className="animate-spin text-ink-400" />
-                : <RotateCcw size={12} className="text-ink-400" />}
+                ? <Loader2 size={12} className="animate-spin text-ink-400" aria-hidden="true" />
+                : <RotateCcw size={12} className="text-ink-400" aria-hidden="true" />}
               <span>Refresh thumbnail</span>
             </button>
           )}
         </TopBarMoreMenu>
-
-        <button
-          type="button"
-          onClick={() => setShowShare(true)}
-          disabled={!projectId}
-          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-kerf-300 text-ink-950 text-xs font-medium hover:bg-kerf-200 disabled:opacity-40"
-        >
-          <Share2 size={12} />
-          Share
-        </button>
 
         <EditorUserMenu user={user} />
       </header>

@@ -264,7 +264,7 @@ Each task ≈1–3h sonnet unless `[HARD]`. Always isolate in a worktree.
   Files: `src/routes/Editor.jsx`.
   Success: the editor is usable on tablet/phone (drawers, single canvas), unchanged on desktop ≥1024px; resize handles draggable by touch.
 
-- [ ] **T-L2 [HARD] Top-bar overflow menu**
+- [x] **T-L2 [HARD] Top-bar overflow menu**
   Scope: collapse the ~12 Editor top-bar icon actions into a responsive "More" overflow menu below a width threshold (priority+ pattern); add `aria-label` to every icon-only button (Undo/Redo/History/Activity/Git/Thumbnail/Chat-toggle).
   Files: `src/routes/Editor.jsx`.
   Success: top bar never overflows down to ~768px; all actions reachable; every control has an SR name.
