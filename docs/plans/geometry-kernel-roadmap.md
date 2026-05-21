@@ -916,7 +916,7 @@ effort.
 
 ### Group B — SubD depth (Blender / OpenSubdiv parity)
 
-- [ ] **GK-104** Edge slide (single edge along adjacent faces; the
+- [x] **GK-104** Edge slide (single edge along adjacent faces; the
   one-edge sibling of GK-88 loop slide). — `geom/subd_authoring.py` —
   oracle: slide by t moves the edge endpoints t·len in the face-tangent
   dir; topology unchanged. — dep: GK-88 — parallel: Y — sonnet.
