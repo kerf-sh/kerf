@@ -335,7 +335,7 @@ noted.
   File: `packages/kerf-api/tests/test_feature_file_revisions.py`
   Success: 25 edit sequences; restore semantics; compaction preserves sha256 chain; content-ref dedup.
 
-- [ ] T-63 Cloud git refs + GitHub App
+- [x] T-63 Cloud git refs + GitHub App
   Scope: `kerf-cloud/github_app.py` + `cloud_github_tokens` round-trip (mocked GH HTTP).
   File: `packages/kerf-cloud/tests/test_feature_cloud_git.py`
   Success: 25 git operations (fetch / push / install / uninstall); installation token rotation; PEM keys not leaked.
