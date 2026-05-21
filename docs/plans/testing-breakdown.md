@@ -489,7 +489,7 @@ escalation}).
   File: `packages/kerf-core/tests/test_rls_upload_sessions.py`
   Success: 10 cases — session of B not readable; storage_key collision refused; cannot finalize B's session.
 
-- [ ] T-90 RLS: cloud_github_tokens
+- [x] T-90 RLS: cloud_github_tokens
   Scope: `cloud_github_tokens` + repair (mig 064) cross-tenant.
   File: `packages/kerf-core/tests/test_rls_cloud_github_tokens.py`
   Success: 10 cases — installation token of B's not visible; cannot bind B's installation to A's project.
