@@ -553,7 +553,7 @@ Postgres schema. ≥10 user-visible assertions per spec.
   File: `tests/e2e/specs/persona_automotive.spec.ts`
   Success: clash report lists expected interferences; composites layup table renders; export OK.
 
-- [ ] T-101 E2E billing flow (paid bucket)
+- [x] T-101 E2E billing flow (paid bucket)
   Scope: free user → upgrade simulated → consume usage → invoice line items appear → BETA-mode toggle hides billing UI but features remain.
   File: `tests/e2e/specs/persona_billing.spec.ts`
   Success: usage tally matches API; BETA flag hides Pricing route; features still available.
