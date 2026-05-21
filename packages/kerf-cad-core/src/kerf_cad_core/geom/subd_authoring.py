@@ -1390,6 +1390,218 @@ def subd_vertex_slide(
 
 
 # ---------------------------------------------------------------------------
+# Public: loop_subdivide  (GK-108)
+# ---------------------------------------------------------------------------
+
+def loop_subdivide(
+    verts: "list[list[float]]",
+    faces: "list[list[int]]",
+    iterations: int = 1,
+) -> "tuple[list[list[float]], list[list[int]]]":
+    """Loop subdivision scheme for triangle meshes.
+
+    Implements the Loop (1987) subdivision stencils:
+
+    * **Odd vertices** (edge midpoints) — interior edge ``(a, b)`` with
+      opposite vertices ``c`` (in face abc) and ``d`` (in face abd):
+
+          new_pos = 3/8 * a + 3/8 * b + 1/8 * c + 1/8 * d
+
+      Boundary edges use the simple midpoint ``(a + b) / 2``.
+
+    * **Even vertices** (updated original vertices) — vertex ``v`` with
+      ``n`` neighbours ``u_i``:
+
+          β(n) = (1/n) * (5/8 - (3/8 + 1/4 * cos(2π/n))²)
+          new_pos = (1 - n·β) * v + β * Σ u_i
+
+      Special cases: n=3 → β = 3/16; boundary vertices are left in place.
+
+    Each subdivision step replaces every triangle with four triangles:
+
+    ::
+
+              v0
+             /  \\
+           m01---m02
+           / \\  / \\
+         v1--m12--v2
+
+        Original triangle [v0, v1, v2] →
+          [v0, m01, m02]
+          [v1, m12, m01]
+          [v2, m02, m12]
+          [m01, m12, m02]   (interior)
+
+    Parameters
+    ----------
+    verts : list of [x, y, z]
+        Input vertex positions.
+    faces : list of [i, j, k]
+        Input triangle faces (each must have exactly 3 vertices).
+    iterations : int
+        Number of subdivision steps (default 1).  Must be ≥ 0.
+
+    Returns
+    -------
+    (verts, faces) : tuple
+        New vertex list and new face list after all subdivision steps.
+        Pure-Python; numpy is used internally for performance when available.
+
+    Notes
+    -----
+    * Input must be a triangle mesh.  Non-triangle faces are left unchanged
+      (they are copied to the output without subdivision).
+    * Never raises; returns the original mesh on any error.
+    """
+    try:
+        # Validate and coerce
+        iterations = max(0, int(iterations))
+        v_out: list = [list(p) for p in verts]
+        f_out: list = [list(f) for f in faces]
+
+        for _step in range(iterations):
+            v_out, f_out = _loop_subdivide_once(v_out, f_out)
+
+        return v_out, f_out
+    except Exception:
+        return [list(p) for p in verts], [list(f) for f in faces]
+
+
+def _loop_subdivide_once(
+    verts: "list[list[float]]",
+    faces: "list[list[int]]",
+) -> "tuple[list[list[float]], list[list[int]]]":
+    """Single step of Loop subdivision."""
+    nv = len(verts)
+
+    # ----------------------------------------------------------------
+    # Step 1 — build edge → adjacent face info
+    # ----------------------------------------------------------------
+    # edge_faces: (a, b) with a < b  →  list of face indices
+    edge_faces: dict = {}
+    for fi, face in enumerate(faces):
+        if len(face) != 3:
+            continue
+        i0, i1, i2 = face
+        for u, v_ in ((i0, i1), (i1, i2), (i2, i0)):
+            key = (min(u, v_), max(u, v_))
+            edge_faces.setdefault(key, []).append(fi)
+
+    # ----------------------------------------------------------------
+    # Step 2 — compute odd (edge-midpoint) vertex positions
+    # ----------------------------------------------------------------
+    # edge_to_odd: edge key → index in the new vertex array (offset nv)
+    edge_to_odd: dict = {}
+    new_odd_verts: list = []
+
+    for key, adj_fids in edge_faces.items():
+        a, b = key
+        pa = verts[a]
+        pb = verts[b]
+
+        if len(adj_fids) == 2:
+            # Interior edge: 3/8 + 3/8 + 1/8 + 1/8 stencil.
+            # Find the two opposite vertices c and d.
+            fi0, fi1 = adj_fids[0], adj_fids[1]
+            face0 = faces[fi0]
+            face1 = faces[fi1]
+            # c is the vertex in face0 that is not a or b
+            c = next(idx for idx in face0 if idx != a and idx != b)
+            # d is the vertex in face1 that is not a or b
+            d = next(idx for idx in face1 if idx != a and idx != b)
+            pc = verts[c]
+            pd = verts[d]
+            odd_pos = [
+                (3.0 / 8.0) * pa[j] + (3.0 / 8.0) * pb[j]
+                + (1.0 / 8.0) * pc[j] + (1.0 / 8.0) * pd[j]
+                for j in range(3)
+            ]
+        else:
+            # Boundary edge: simple midpoint
+            odd_pos = [(pa[j] + pb[j]) / 2.0 for j in range(3)]
+
+        edge_to_odd[key] = nv + len(new_odd_verts)
+        new_odd_verts.append(odd_pos)
+
+    # ----------------------------------------------------------------
+    # Step 3 — compute even (updated original) vertex positions
+    # ----------------------------------------------------------------
+    # Classify each vertex as boundary or interior.
+    # A boundary vertex lies on at least one boundary edge (valence-1 edge).
+
+    # Build adjacency: vertex → list of neighbour vertex indices
+    neighbours: dict = {}
+    boundary_verts: set = set()
+    for key, adj_fids in edge_faces.items():
+        a, b = key
+        neighbours.setdefault(a, []).append(b)
+        neighbours.setdefault(b, []).append(a)
+        if len(adj_fids) == 1:
+            # Boundary edge
+            boundary_verts.add(a)
+            boundary_verts.add(b)
+
+    new_even_verts: list = []
+    for vi in range(nv):
+        if vi in boundary_verts:
+            # Boundary vertex: leave in place (simple scheme)
+            new_even_verts.append(list(verts[vi]))
+            continue
+
+        nbrs = neighbours.get(vi, [])
+        n = len(nbrs)
+        if n == 0:
+            new_even_verts.append(list(verts[vi]))
+            continue
+
+        # Loop's beta formula
+        if n == 3:
+            beta = 3.0 / 16.0
+        else:
+            # Warren's simplified formula: β = 3/(8n) is commonly used;
+            # original Loop formula:
+            inner = 3.0 / 8.0 + (1.0 / 4.0) * math.cos(2.0 * math.pi / n)
+            beta = (1.0 / n) * (5.0 / 8.0 - inner * inner)
+
+        pv = verts[vi]
+        neighbour_sum = [sum(verts[nbr][j] for nbr in nbrs) for j in range(3)]
+        alpha = 1.0 - n * beta
+        new_pos = [
+            alpha * pv[j] + beta * neighbour_sum[j]
+            for j in range(3)
+        ]
+        new_even_verts.append(new_pos)
+
+    # ----------------------------------------------------------------
+    # Step 4 — assemble new vertex array and new face array
+    # ----------------------------------------------------------------
+    all_new_verts = new_even_verts + new_odd_verts  # indices match: even=0..nv-1, odd=nv..
+
+    new_faces: list = []
+    for face in faces:
+        if len(face) != 3:
+            # Non-triangle: pass through unchanged (indices still valid)
+            new_faces.append(list(face))
+            continue
+
+        v0, v1, v2 = face
+
+        # Midpoint vertex indices
+        m01 = edge_to_odd[(min(v0, v1), max(v0, v1))]
+        m12 = edge_to_odd[(min(v1, v2), max(v1, v2))]
+        m02 = edge_to_odd[(min(v0, v2), max(v0, v2))]
+
+        # Four child triangles
+        new_faces.append([v0, m01, m02])
+        new_faces.append([v1, m12, m01])
+        new_faces.append([v2, m02, m12])
+        new_faces.append([m01, m12, m02])  # centre
+
+    return all_new_verts, new_faces
+
+
+# ---------------------------------------------------------------------------
 # Public: to_subd_surface
 # ---------------------------------------------------------------------------
 

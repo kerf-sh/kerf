@@ -703,3 +703,151 @@ def test_vertex_slide_exported_from_geom_init():
     """subd_vertex_slide must be importable from kerf_cad_core.geom."""
     from kerf_cad_core.geom import subd_vertex_slide as _fn  # noqa: F401
     assert callable(_fn)
+
+
+# ---------------------------------------------------------------------------
+# Group 12: loop_subdivide (GK-108)
+# ---------------------------------------------------------------------------
+
+from kerf_cad_core.geom.subd_authoring import loop_subdivide
+
+
+def _make_tetra() -> tuple:
+    """Regular tetrahedron with 4 vertices, 4 triangular faces."""
+    # Vertices of a regular tetrahedron
+    verts = [
+        [1.0,  1.0,  1.0],  # 0
+        [1.0, -1.0, -1.0],  # 1
+        [-1.0,  1.0, -1.0],  # 2
+        [-1.0, -1.0,  1.0],  # 3
+    ]
+    faces = [
+        [0, 1, 2],
+        [0, 2, 3],
+        [0, 3, 1],
+        [1, 3, 2],
+    ]
+    return verts, faces
+
+
+def test_loop_subdivide_tetra_face_count():
+    """One Loop step on a tetrahedron (4 faces) → 16 faces (4x)."""
+    verts, faces = _make_tetra()
+    v2, f2 = loop_subdivide(verts, faces, iterations=1)
+    assert len(f2) == 16
+
+
+def test_loop_subdivide_tetra_vertex_count():
+    """One Loop step on a tetrahedron (4V) → 4 + 6 = 10 vertices (one per edge)."""
+    verts, faces = _make_tetra()
+    v2, f2 = loop_subdivide(verts, faces, iterations=1)
+    # 4 original + 6 edges in a tetrahedron
+    assert len(v2) == 10
+
+
+def test_loop_subdivide_two_steps_face_count():
+    """Two Loop steps on a tetrahedron → 4 * 4^2 = 64 faces."""
+    verts, faces = _make_tetra()
+    v2, f2 = loop_subdivide(verts, faces, iterations=2)
+    assert len(f2) == 64
+
+
+def test_loop_subdivide_all_triangles():
+    """All output faces must remain triangles."""
+    verts, faces = _make_tetra()
+    v2, f2 = loop_subdivide(verts, faces, iterations=1)
+    assert all(len(f) == 3 for f in f2)
+
+
+def test_loop_subdivide_valid_vertex_indices():
+    """All face vertex indices must be in range [0, len(verts))."""
+    verts, faces = _make_tetra()
+    v2, f2 = loop_subdivide(verts, faces, iterations=1)
+    nv = len(v2)
+    assert all(0 <= idx < nv for face in f2 for idx in face)
+
+
+def test_loop_subdivide_zero_iterations_identity():
+    """Zero iterations → original mesh returned unchanged."""
+    verts, faces = _make_tetra()
+    v2, f2 = loop_subdivide(verts, faces, iterations=0)
+    assert len(v2) == len(verts)
+    assert len(f2) == len(faces)
+
+
+def test_loop_subdivide_even_vertex_stencil():
+    """Even-vertex update: interior vertex of a regular triangle grid uses the
+    Loop β stencil.  For a planar equilateral triangle fan with n=6 neighbours,
+    the updated position stays at the original position (symmetric average)."""
+    # Build a central vertex surrounded by 6 neighbours in a regular hexagonal fan.
+    import math as _math
+    cx, cy = 0.0, 0.0
+    r = 1.0
+    centre = [cx, cy, 0.0]
+    n = 6
+    nbr_verts = [
+        [cx + r * _math.cos(2 * _math.pi * i / n),
+         cy + r * _math.sin(2 * _math.pi * i / n),
+         0.0]
+        for i in range(n)
+    ]
+    verts = [centre] + nbr_verts  # vertex 0 = centre
+    # 6 triangles sharing the centre
+    faces = [[0, i + 1, (i + 1) % n + 1] for i in range(n)]
+
+    v2, _ = loop_subdivide(verts, faces, iterations=1)
+
+    # For n=6: β = (1/6)*(5/8 - (3/8 + 1/4*cos(2π/6))^2)
+    # cos(2π/6) = 0.5  →  inner = 3/8 + 1/8 = 1/2  →  inner² = 1/4
+    # β = (1/6)*(5/8 - 1/4) = (1/6)*(3/8) = 1/16
+    # alpha = 1 - 6*(1/16) = 1 - 3/8 = 5/8
+    # new_centre = 5/8 * (0,0,0) + (1/16)*Σ nbrs
+    # Since nbrs are symmetric around origin, Σ nbrs = (0, 0, 0)
+    # → new_centre stays at (0, 0, 0)
+    new_centre = v2[0]
+    assert abs(new_centre[0]) < 1e-9
+    assert abs(new_centre[1]) < 1e-9
+    assert abs(new_centre[2]) < 1e-9
+
+
+def test_loop_subdivide_planar_grid_stays_planar():
+    """Subdividing a flat triangle grid produces no out-of-plane displacement."""
+    # 2x2 quad split into 2 triangles (all z=0)
+    verts = [
+        [0.0, 0.0, 0.0],
+        [1.0, 0.0, 0.0],
+        [1.0, 1.0, 0.0],
+        [0.0, 1.0, 0.0],
+        [0.5, 0.5, 0.0],  # centre
+    ]
+    # Fan of 4 triangles from the centre
+    faces = [
+        [0, 1, 4],
+        [1, 2, 4],
+        [2, 3, 4],
+        [3, 0, 4],
+    ]
+    v2, f2 = loop_subdivide(verts, faces, iterations=2)
+    # All z must remain 0
+    for v in v2:
+        assert abs(v[2]) < 1e-9, f"z={v[2]} is out of plane"
+
+
+def test_loop_subdivide_no_raise_empty():
+    """Empty mesh → returns empty mesh without raising."""
+    v2, f2 = loop_subdivide([], [], iterations=1)
+    assert v2 == []
+    assert f2 == []
+
+
+def test_loop_subdivide_no_raise_bad_iterations():
+    """Negative iterations clamped to 0."""
+    verts, faces = _make_tetra()
+    v2, f2 = loop_subdivide(verts, faces, iterations=-5)
+    assert len(f2) == len(faces)
+
+
+def test_loop_subdivide_exported_from_geom_init():
+    """loop_subdivide must be importable from kerf_cad_core.geom."""
+    from kerf_cad_core.geom import loop_subdivide as _fn  # noqa: F401
+    assert callable(_fn)

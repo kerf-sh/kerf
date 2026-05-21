@@ -933,7 +933,7 @@ effort.
   `geom/subd_authoring.py`, `geom/subd_to_nurbs.py` — oracle: weight 1.0
   reproduces a hard crease; 0.0 reproduces the smooth limit. — dep:
   GK-52 — parallel: Y — sonnet.
-- [ ] **GK-108** Loop subdivision scheme (triangle-mesh subdivision,
+- [x] **GK-108** Loop subdivision scheme (triangle-mesh subdivision,
   alternative to Catmull-Clark for tri-dominant cages). —
   `geom/subd_authoring.py` — oracle: one Loop step on a tetra quadruples
   faces; limit point matches the Loop stencil. — dep: GK-52 —
