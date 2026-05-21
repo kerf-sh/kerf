@@ -285,7 +285,7 @@ noted.
   File: `packages/kerf-cad-core/tests/test_feature_scan_fit.py`
   Success: 25 synthetic clouds with noise; primitive recovery within ε; outlier rejection.
 
-- [ ] T-53 PLC structured text (.plc.st)
+- [x] T-53 PLC structured text (.plc.st)
   Scope: `kerf-plc/matiec_lint.py` + parse + transpile fixtures.
   File: `packages/kerf-plc/tests/test_feature_plc_st.py`
   Success: 25 ST programs; lint clean / dirty mix; IEC 61131-3 conformance subset.
