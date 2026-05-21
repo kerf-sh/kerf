@@ -418,7 +418,7 @@ variants, timing).
   File: `packages/kerf-auth/tests/test_pen_api_tokens.py`
   Success: 19 cases — out-of-scope call denied; revoked token denied within 1s; sha256 timing confirmed; cross-user isolation; SQL WHERE revoked_at IS NULL verified.
 
-- [ ] T-78 Share-link abuse
+- [x] T-78 Share-link abuse
   Scope: `share_links` max_uses / expires_at / revoked_at; cannot escalate beyond role.
   File: `packages/kerf-auth/tests/test_pen_share_links.py`
   Success: 10 cases — expired/exhausted/revoked refused; viewer cannot mutate; share-link cannot escape project boundary.
