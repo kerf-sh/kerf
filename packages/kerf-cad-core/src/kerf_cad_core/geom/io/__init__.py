@@ -65,7 +65,10 @@ from kerf_cad_core.geom.io.ply import (
 # GK-125: DXF read+write
 from kerf_cad_core.geom.io.dxf import read_dxf, write_dxf, DxfReadError, DxfWriteError
 
+from kerf_cad_core.geom.io.rhino3dm import read_3dm, Rhino3dmReadError
+
 __all__ = [
+    "read_3dm","Rhino3dmReadError",
     "read_dxf","write_dxf","DxfReadError","DxfWriteError",
     "IgesReadError",
     "IgesWriteError",
