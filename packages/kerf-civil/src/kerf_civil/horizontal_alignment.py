@@ -413,3 +413,87 @@ class HorizontalAlignment:
         if stations[-1] < L:
             stations.append(L)
         return stations
+
+    def coords_at_station(self, station: float) -> tuple[float, float]:
+        """Return (x, y) Cartesian coordinates at the given station chainage.
+
+        Walks the element chain, accumulating start positions and bearings,
+        until the element that contains *station* is found.
+
+        Parameters
+        ----------
+        station:
+            Chainage along the alignment (metres, 0 ≤ station ≤ total_length).
+
+        Returns
+        -------
+        (x, y)  easting/northing in metres.
+        """
+        L = self.total_length()
+        if station < 0 or station > L + 1e-9:
+            raise ValueError(
+                f"station {station:.3f} outside alignment [0, {L:.3f}]"
+            )
+        station = min(station, L)
+
+        current_xy = (0.0, 0.0)
+        current_bearing = 0.0
+        accumulated = 0.0
+
+        for elem in self.elements:
+            elem_len = elem.arc_length() if hasattr(elem, "arc_length") else elem.length
+            # Update the element's bearing to the current chain bearing
+            # (elements store their own bearing, but we use the chained value)
+            if accumulated + elem_len >= station - 1e-9:
+                s_local = station - accumulated
+                s_local = max(0.0, min(s_local, elem_len))
+                # Re-create a temporary copy with correct bearing so coords_at works
+                # For TangentSegment
+                if isinstance(elem, TangentSegment):
+                    tmp = TangentSegment(length=elem_len, bearing_rad=current_bearing)
+                    return tmp.coords_at(s_local, current_xy)
+                elif isinstance(elem, CircularArc):
+                    tmp = CircularArc(
+                        radius=elem.radius,
+                        delta_rad=elem.delta_rad,
+                        bearing_rad=current_bearing,
+                    )
+                    return tmp.coords_at(s_local, current_xy)
+                elif isinstance(elem, ClothoidSpiral):
+                    tmp = ClothoidSpiral(
+                        length=elem.length,
+                        radius_end=elem.radius_end,
+                        bearing_rad=current_bearing,
+                        turn_right=elem.turn_right,
+                    )
+                    return tmp.coords_at(s_local, current_xy)
+                else:
+                    raise TypeError(f"Unknown element type: {type(elem)}")
+
+            # Advance to the end of this element
+            if isinstance(elem, TangentSegment):
+                tmp = TangentSegment(length=elem_len, bearing_rad=current_bearing)
+                current_xy = tmp.coords_at(elem_len, current_xy)
+                current_bearing = tmp.end_bearing()
+            elif isinstance(elem, CircularArc):
+                tmp = CircularArc(
+                    radius=elem.radius,
+                    delta_rad=elem.delta_rad,
+                    bearing_rad=current_bearing,
+                )
+                current_xy = tmp.coords_at(elem_len, current_xy)
+                current_bearing = tmp.end_bearing()
+            elif isinstance(elem, ClothoidSpiral):
+                tmp = ClothoidSpiral(
+                    length=elem.length,
+                    radius_end=elem.radius_end,
+                    bearing_rad=current_bearing,
+                    turn_right=elem.turn_right,
+                )
+                current_xy = tmp.coords_at(elem_len, current_xy)
+                current_bearing = tmp.end_bearing()
+
+            accumulated += elem_len
+
+        # At end of alignment
+        return current_xy

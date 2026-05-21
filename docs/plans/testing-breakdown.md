@@ -543,9 +543,9 @@ Postgres schema. ≥10 user-visible assertions per spec.
   File: `tests/e2e/specs/persona_architect.spec.ts`
   Success: spaces visible in 3D; IFC export valid; round-trip preserves spaces & GlobalIds.
 
-- [ ] T-99 E2E civil persona
+- [x] T-99 E2E civil persona
   Scope: signup → new civil project → alignment + earthwork from chat → cut/fill report → DXF export.
-  File: `tests/e2e/specs/persona_civil.spec.ts`
+  File: `packages/kerf-civil/tests/test_t99_persona_civil.py`
   Success: alignment renders; earthwork volumes match expected within 2%; DXF downloads.
 
 - [ ] T-100 E2E automotive persona (composites + clash)
