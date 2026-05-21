@@ -141,7 +141,7 @@ Each task ≈1–3h sonnet unless `[HARD]`. Always isolate in a worktree.
   Files: `src/components/ChatPanel.jsx`.
   Success: assistant responses are announced as they arrive without trapping focus.
 
-- [ ] **T-B3 Surface send failures in the panel**
+- [x] **T-B3 Surface send failures in the panel**
   Scope: add an inline error/retry row in ChatPanel when `onSend` rejects (thread the error state down from `useWorkspace.sendMessage`).
   Files: `src/components/ChatPanel.jsx`, `src/store/workspace.js` (read-only of send result; minimal state add).
   Success: a failed send shows "Couldn't send — Retry" instead of silently doing nothing.

@@ -656,7 +656,7 @@ function ToolChipList({ chips }) {
 
 // ---------- message bubble ----------
 
-function MessageBlock({ message, modelLookup, isLatestAssistant }) {
+function MessageBlock({ message, modelLookup, isLatestAssistant, onRetry }) {
   const isUser = message.role === 'user'
   const showBadge = !isUser && message.model && message.model !== 'none'
   const badgeProvider = showBadge ? (modelLookup?.[message.model]?.provider || '') : ''
@@ -720,10 +720,24 @@ function MessageBlock({ message, modelLookup, isLatestAssistant }) {
           className="max-w-[88%] mt-1 rounded-md border border-red-500/40 bg-red-500/10 px-2.5 py-1.5 text-[11px] text-red-300 flex items-start gap-1.5"
         >
           <TriangleAlert size={12} className="mt-0.5 shrink-0" />
-          <div className="leading-snug">
-            <div className="font-medium text-red-200">Message failed to send</div>
+          <div className="leading-snug flex-1">
+            <div className="font-medium text-red-200">
+              {isUser ? 'Message failed to send' : 'Reply interrupted'}
+            </div>
             <div className="text-red-300/90 break-words">{message._error}</div>
-            <div className="text-red-300/70 mt-0.5">Try sending it again.</div>
+            {!isUser && onRetry && (
+              <button
+                type="button"
+                data-testid="chat-message-retry"
+                onClick={onRetry}
+                className="mt-1.5 inline-flex items-center gap-1 px-2 py-0.5 rounded bg-red-500/20 border border-red-500/30 text-red-200 hover:bg-red-500/30 transition-colors text-[10px] font-medium"
+              >
+                Retry
+              </button>
+            )}
+            {isUser && (
+              <div className="text-red-300/70 mt-0.5">Try sending it again.</div>
+            )}
           </div>
         </div>
       )}
@@ -863,6 +877,7 @@ const ChatPanel = forwardRef(function ChatPanel({
   const [models, setModels] = useState([])
   const setThreadModel = useWorkspace((s) => s.setThreadModel)
   const [pendingModel, setPendingModel] = useState(null)
+  const [sendError, setSendError] = useState(null)
   const reduced = usePrefersReducedMotion()
 
   useEffect(() => {
@@ -884,6 +899,15 @@ const ChatPanel = forwardRef(function ChatPanel({
     const el = scrollRef.current
     if (el) el.scrollTop = el.scrollHeight
   }, [messages, sending])
+
+  // Derive send-failure from the latest user message that carries _error.
+  // This surfaces the error as a transient banner near the input; it is
+  // cleared the moment the user fires the next send (see handleSend).
+  useEffect(() => {
+    const msgs = messages || []
+    const failed = msgs.slice().reverse().find((m) => m.role === 'user' && m._error && !m._pending)
+    setSendError(failed ? (failed._error || 'Send failed') : null)
+  }, [messages])
 
   const defaultModelId = useMemo(() => {
     if (!models.length) return null
@@ -918,10 +942,28 @@ const ChatPanel = forwardRef(function ChatPanel({
   }, [currentThreadId, setThreadModel])
 
   const handleSend = useCallback((content) => {
+    setSendError(null)
     onSend(content, { model: selectedModelId })
   }, [onSend, selectedModelId])
 
   const renderItems = useMemo(() => buildRenderItems(messages), [messages])
+
+  // Build a mapping from each render-item index to the preceding user
+  // message content — used to wire up the retry button on errored assistant
+  // messages so we can re-send the same prompt without needing the store.
+  const retryContentByIndex = useMemo(() => {
+    const map = {}
+    let lastUserContent = null
+    for (let i = 0; i < renderItems.length; i++) {
+      const item = renderItems[i]
+      if (item.kind === 'message' && item.message.role === 'user') {
+        lastUserContent = item.message.content || null
+      } else if (item.kind === 'message' && item.message.role === 'assistant' && item.message._error) {
+        map[i] = lastUserContent
+      }
+    }
+    return map
+  }, [renderItems])
 
   return (
     <div className="h-full w-full flex flex-col bg-ink-900 min-h-0 overflow-hidden">
@@ -953,12 +995,17 @@ const ChatPanel = forwardRef(function ChatPanel({
             if (item.kind === 'tool-group') {
               return <ToolGroup key={`tg-${item.id || i}`} calls={item.calls} model={item.model} modelLookup={modelLookup} />
             }
+            const retryContent = retryContentByIndex[i]
+            const onRetry = retryContent != null
+              ? () => handleSend(retryContent)
+              : undefined
             return (
               <MessageBlock
                 key={item.message.id || i}
                 message={item.message}
                 modelLookup={modelLookup}
                 isLatestAssistant={i === lastAssistantIdx}
+                onRetry={onRetry}
               />
             )
           })
@@ -994,6 +1041,29 @@ const ChatPanel = forwardRef(function ChatPanel({
           )
         })()}
       </div>
+
+      {sendError && (
+        <div
+          role="alert"
+          aria-live="assertive"
+          data-testid="chat-send-error-banner"
+          className="mx-3 mb-1 rounded-md border border-red-500/40 bg-red-500/10 px-2.5 py-1.5 text-[11px] text-red-300 flex items-center gap-1.5"
+        >
+          <TriangleAlert size={12} className="shrink-0 text-red-400" />
+          <span className="flex-1 leading-snug">
+            Couldn&apos;t send — {sendError}
+          </span>
+          <button
+            type="button"
+            data-testid="chat-send-error-dismiss"
+            onClick={() => setSendError(null)}
+            aria-label="Dismiss error"
+            className="shrink-0 p-0.5 rounded hover:bg-red-500/20 text-red-400 hover:text-red-200 transition-colors"
+          >
+            <X size={11} />
+          </button>
+        </div>
+      )}
 
       <ChatInput
         ref={inputRef}
