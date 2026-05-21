@@ -73,6 +73,12 @@ log = logging.getLogger("kerf.auth.email")
 VERIFY_TOKEN_TTL = timedelta(hours=48)
 RESET_TOKEN_TTL = timedelta(minutes=30)
 
+# Constant-time guard: bcrypt hash of a throwaway value used to dummy-check
+# when the email address is not registered.  This keeps the /login response
+# time indistinguishable regardless of whether the account exists, preventing
+# user-enumeration via timing.
+_DUMMY_HASH: str = bcrypt.hashpw(b"kerf-dummy-guard", bcrypt.gensalt()).decode("utf-8")
+
 
 def _app_url() -> str:
     return (settings.cors_origin or "https://app.kerf.sh").rstrip("/")
@@ -305,6 +311,10 @@ async def login(
         email = req.email.strip().lower()
         user = await users_queries.get_user_by_email(conn, email)
         if not user:
+            # Dummy bcrypt check so the response time is indistinguishable
+            # from the wrong-password path, preventing user-enumeration via
+            # timing.  Always raises 401 afterwards.
+            check_password(_DUMMY_HASH, req.password)
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid credentials")
 
         if not user["password_hash"] or not check_password(user["password_hash"], req.password):

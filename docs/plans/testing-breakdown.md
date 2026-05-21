@@ -408,10 +408,11 @@ variants, timing).
   File: `packages/kerf-auth/tests/test_pen_csrf.py`
   Success: 10 cases — same-origin allowed, cross-origin / null-origin / sub-domain refused, SameSite enforcement.
 
-- [ ] T-76 Account enumeration timing leaks
+- [x] T-76 Account enumeration timing leaks
   Scope: login + reset endpoints constant-time on user-exists vs not.
   File: `packages/kerf-auth/tests/test_pen_enumeration_timing.py`
   Success: 10 cases — response time delta < threshold; identical error text; identical email-sent UX.
+  Bug fixed: login endpoint lacked dummy bcrypt check for unknown email; added _DUMMY_HASH + check_password(_DUMMY_HASH, ...) guard in routes.py.
 
 - [x] T-77 API token scope + revocation
   Scope: `api_tokens` table — scope enforcement, revoke is immediate, token prefix lookup not vulnerable to side-channel.
