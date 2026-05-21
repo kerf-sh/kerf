@@ -459,10 +459,10 @@ escalation}).
   File: `packages/kerf-core/tests/test_rls_chat.py`
   Success: 12 cases — thread of B not listable / readable; cannot post into B's thread; tool_call_id forging refused.
 
-- [ ] T-84 RLS: workspaces + workspace_members + workspace_invites
+- [x] T-84 RLS: workspaces + workspace_members + workspace_invites
   Scope: cross-tenant on `workspaces` family.
   File: `packages/kerf-core/tests/test_rls_workspaces.py`
-  Success: 12 cases — list/join/invite-leak refused; member elevation refused.
+  Success: 15 cases — list/join/invite-leak refused; member elevation refused.
 
 - [ ] T-85 RLS: api_tokens + refresh_tokens
   Scope: cross-tenant on auth tokens.
