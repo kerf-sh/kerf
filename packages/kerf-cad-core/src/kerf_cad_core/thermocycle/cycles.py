@@ -24,6 +24,8 @@ import math
 import warnings
 from typing import Optional
 
+from kerf_cad_core.fluids.steam import steam_properties as _steam_props
+
 
 # ---------------------------------------------------------------------------
 # Air-standard constant properties
@@ -901,48 +903,35 @@ def rankine_cycle_ideal(
     if n_feedwater_heaters < 0:
         return _err("n_feedwater_heaters must be >= 0")
 
-    # ── Saturation temperature approximation ────────────────────────────────
-    # Antoine-form fit calibrated to IAPWS-IF97 at (100 kPa / 372.76 K) and
-    # (1 MPa / 453.03 K): T_sat ≈ A / (B - ln(p/Pa))
-    # Accurate to ~3 K over 10 kPa–10 MPa.
-    # Calibration: A = ln(10) / (1/372.76 - 1/453.03), B = A/372.76 + ln(100000)
-    A_sat = 4844.16
-    B_sat = 24.508
+    # ── Saturation properties via canonical fluids.steam module ─────────────
+    props_high = _steam_props(P_Pa=p_high)
+    props_low  = _steam_props(P_Pa=p_low)
 
-    def _T_sat(p: float) -> float:
-        return A_sat / (B_sat - math.log(p))
+    if "error" in props_high:
+        return _err(f"steam_properties at p_high failed: {props_high['error']}")
+    if "error" in props_low:
+        return _err(f"steam_properties at p_low failed: {props_low['error']}")
 
-    T_sat_high = _T_sat(p_high)
-    T_sat_low  = _T_sat(p_low)
+    T_sat_high = props_high["T_sat_C"] + 273.15   # K
+    T_sat_low  = props_low["T_sat_C"] + 273.15    # K
 
-    # ── h_f (saturated liquid) and h_fg (latent heat) approximation ─────────
-    # h_f  ≈ cp_water × (T_sat - 273.15) × 1000   [J/kg]
-    # h_fg ≈ 2501000 - 2430 × (T_sat - 273.15)    [J/kg]  (linear fit)
-    CP_WATER  = 4180.0  # J/kg·K  (liquid)
-    H_FG_0    = 2_501_000.0  # J/kg  at 0 °C
-    H_FG_GRAD = 2430.0       # J/kg per °C
-
-    def _h_f(T_sat_K: float) -> float:
-        return CP_WATER * (T_sat_K - 273.15)  # J/kg
-
-    def _h_fg(T_sat_K: float) -> float:
-        t_c = T_sat_K - 273.15
-        return max(0.0, H_FG_0 - H_FG_GRAD * t_c)  # J/kg
-
-    def _h_g(T_sat_K: float) -> float:
-        return _h_f(T_sat_K) + _h_fg(T_sat_K)
+    # Enthalpies in J/kg (canonical module returns kJ/kg → multiply by 1000)
+    hf_high = props_high["hf_kJkg"] * 1000.0   # J/kg
+    hg_high = props_high["hg_kJkg"] * 1000.0   # J/kg
+    hf_low  = props_low["hf_kJkg"]  * 1000.0   # J/kg
+    vf_low  = props_low["vf_m3kg"]              # m³/kg (from canonical)
 
     # ── State points (all enthalpies in J/kg, converted to kJ/kg at return) ─
     # State 1: Saturated liquid at condenser (p_low)
-    h1 = _h_f(T_sat_low)
+    h1 = hf_low
 
-    # State 2: Compressed liquid after pump (isentropic ideal, use v_f ≈ 0.001 m³/kg)
-    v_f = 0.001  # m³/kg (liquid specific volume ≈ constant)
-    w_pump_ideal = v_f * (p_high - p_low)          # J/kg
+    # State 2: Compressed liquid after pump (isentropic ideal, use v_f from sat. props)
+    w_pump_ideal = vf_low * (p_high - p_low)       # J/kg
     w_pump_actual = w_pump_ideal / eta_pump
     h2 = h1 + w_pump_actual                        # J/kg
 
     # State 3: Turbine inlet
+    CP_STEAM = 2000.0   # J/kg·K (approximate for superheated steam)
     if T_superheat is not None:
         if T_superheat < T_sat_high:
             return _err(
@@ -950,19 +939,14 @@ def rankine_cycle_ideal(
                 f"= {T_sat_high:.2f} K"
             )
         T_turb_in = T_superheat
-        # Superheated steam enthalpy: h_g at p_high + cp_steam × (T_sup - T_sat_high)
-        CP_STEAM  = 2000.0  # J/kg·K (approximate for steam)
-        h3 = _h_g(T_sat_high) + CP_STEAM * (T_superheat - T_sat_high)
+        # Superheated steam enthalpy: hg at p_high + cp_steam × (T_sup - T_sat_high)
+        h3 = hg_high + CP_STEAM * (T_superheat - T_sat_high)
     else:
         T_turb_in = T_sat_high
-        h3 = _h_g(T_sat_high)   # saturated vapour
+        h3 = hg_high   # saturated vapour
 
-    # State 4: Turbine exit (isentropic ideal → wet vapour or superheated)
-    # Simplified: h4s ≈ h_g(p_low); if h3 - h4s < 0, flag error
-    # For superheat, we use the enthalpy drop proportional to entropy change.
-    # Very rough — entropy tracking not available without steam tables.
-    # We approximate h4s using constant-cp steam from T3 through isentropic expansion:
-    # T4s = T_turb_in * (p_low/p_high)^((k_steam-1)/k_steam), k_steam ≈ 1.13
+    # State 4: Turbine exit (isentropic approximation via constant-cp steam)
+    # T4s = T_turb_in * (p_low/p_high)^((k-1)/k), k_steam ≈ 1.13
     k_steam = 1.13
     T4s = T_turb_in * (p_low / p_high) ** ((k_steam - 1.0) / k_steam)
     CP_STEAM_EXP = 2000.0
