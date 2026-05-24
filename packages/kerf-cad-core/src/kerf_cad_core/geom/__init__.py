@@ -144,6 +144,7 @@ from kerf_cad_core.geom.match_srf import (
     match_surface_edge,
     verify_seam_g1_analytic,
     verify_seam_g2_analytic,
+    verify_seam_g3_analytic,
 )
 
 # GK-39: untrim / shrink trimmed surface.
@@ -554,6 +555,7 @@ __all__ = [
     "hatch_region","HatchResult","HatchLine","material_hatch_pattern",
     # GK-44
     "MatchResult","match_surface_edge","verify_seam_g1_analytic","verify_seam_g2_analytic",
+    "verify_seam_g3_analytic",
     # GK-45
     "shell_body",
     # GK-120

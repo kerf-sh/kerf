@@ -170,9 +170,11 @@ class TestInputValidation:
         assert "source_edge" in r.reason
 
     def test_bad_continuity(self):
+        # GK-P10 promoted "G3" to a supported continuity, so the invalid
+        # sentinel must be a value that is genuinely not in _VALID_CONTINUITY.
         tgt = make_flat_surface()
         src = make_flat_surface()
-        r = match_surface_edge(tgt, "u0", src, "u1", "G3")
+        r = match_surface_edge(tgt, "u0", src, "u1", "G4")
         assert not r.ok
         assert "continuity" in r.reason
 

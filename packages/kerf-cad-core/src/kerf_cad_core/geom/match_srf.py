@@ -107,7 +107,7 @@ from kerf_cad_core.geom.nurbs import NurbsSurface, surface_derivatives, surface_
 # ---------------------------------------------------------------------------
 
 _VALID_EDGES = frozenset({"u0", "u1", "v0", "v1"})
-_VALID_CONTINUITY = frozenset({"G0", "G1", "G2"})
+_VALID_CONTINUITY = frozenset({"G0", "G1", "G2", "G3"})
 _DEFAULT_SAMPLES = 32
 
 
@@ -149,6 +149,7 @@ class MatchResult:
     max_position_deviation: float = math.nan
     max_tangent_deviation: float = math.nan
     max_curvature_deviation: float = math.nan
+    max_curvature_rate_deviation: float = math.nan
     continuity_achieved: str = "none"
 
 
@@ -627,8 +628,234 @@ def _apply_g2_analytic(source: NurbsSurface, source_edge: str,
 
 
 # ---------------------------------------------------------------------------
+# Core: G3 -- adjust the fourth CP row for curvature-rate (dκ/ds) matching
+# ---------------------------------------------------------------------------
+
+def _boundary_third_deriv_coeff_A3(surf: NurbsSurface, edge: str) -> float:
+    """Coefficient of CP[3] in the analytic third derivative at the boundary.
+
+    For a clamped B-spline of degree p >= 3 with the first three non-trivial
+    knot spans h1, h2, h3 measured inward from the boundary:
+
+        S_ccc(boundary) = A3 * CP[3] + (terms in CP[0..2])
+
+    where, by repeated divided-difference expansion of the de Boor recurrence
+    at the clamped boundary,
+
+        A3 = p*(p-1)*(p-2) / (h1 * (h1+h2) * (h1+h2+h3)).
+
+    Returns A3 (the only coefficient needed to *solve* for the CP[3]
+    correction); falls back to the reduced ``p*(p-1)*(p-2)/h1^3`` form when the
+    later spans are unavailable.
+    """
+    if edge in ("u0", "u1"):
+        knots = surf.knots_u
+        p = surf.degree_u
+    else:
+        knots = surf.knots_v
+        p = surf.degree_v
+
+    if p < 3:
+        return 0.0
+
+    if edge in ("u0", "v0"):
+        h1 = float(knots[p + 1] - knots[p])
+        h2 = float(knots[p + 2] - knots[p + 1]) if len(knots) > p + 2 else h1
+        h3 = float(knots[p + 3] - knots[p + 2]) if len(knots) > p + 3 else h2
+    else:
+        h1 = float(knots[-(p + 1)] - knots[-(p + 2)])
+        h2 = float(knots[-(p + 2)] - knots[-(p + 3)]) if len(knots) > p + 2 else h1
+        h3 = float(knots[-(p + 3)] - knots[-(p + 4)]) if len(knots) > p + 3 else h2
+
+    denom = h1 * (h1 + h2) * (h1 + h2 + h3)
+    if abs(denom) < 1e-18:
+        return 0.0
+    return float(p * (p - 1) * (p - 2)) / denom
+
+
+def _cross_curvature_rate(surf: NurbsSurface, edge: str, t: float) -> float:
+    """Analytic dκ/ds in the cross-boundary direction at along-edge parameter t.
+
+    κ = (S_cc · n̂)/|S_c|² ; dκ/ds = (dκ/dc)/|S_c| with the no-normal-rate
+    reduced form (exact for planar/cylindrical seams, the GK-62 oracle
+    convention shared with ``surface_fillet._cross_boundary_curvature_rate``).
+    """
+    u_seam, v_seam, t_min, t_max = _edge_boundary_params(surf, edge)
+    t_clamped = min(max(float(t), t_min), t_max)
+    if edge in ("u0", "u1"):
+        u, v = u_seam, t_clamped
+        cross = "u"
+    else:
+        u, v = t_clamped, v_seam
+        cross = "v"
+
+    SKL = surface_derivatives(surf, u, v, d=3)
+    if cross == "u":
+        S_c = SKL[1, 0][:3]
+        S_cc = SKL[2, 0][:3]
+        S_ccc = SKL[3, 0][:3]
+        sgn = 1.0 if edge == "u0" else -1.0
+    else:
+        S_c = SKL[0, 1][:3]
+        S_cc = SKL[0, 2][:3]
+        S_ccc = SKL[0, 3][:3]
+        sgn = 1.0 if edge == "v0" else -1.0
+
+    n_vec = np.cross(SKL[1, 0][:3], SKL[0, 1][:3])
+    n_mag = float(np.linalg.norm(n_vec))
+    if n_mag < 1e-14:
+        return 0.0
+    n_hat = n_vec / n_mag
+
+    Sc_sq = float(np.dot(S_c, S_c))
+    if Sc_sq < 1e-28:
+        return 0.0
+    Sc_mag = math.sqrt(Sc_sq)
+
+    S_cc_dot_n = float(np.dot(S_cc, n_hat))
+    S_ccc_dot_n = float(np.dot(S_ccc, n_hat))
+    S_c_dot_S_cc = float(np.dot(S_c, S_cc))
+
+    dkappa_dc = (
+        S_ccc_dot_n * Sc_sq - S_cc_dot_n * 2.0 * S_c_dot_S_cc
+    ) / (Sc_sq * Sc_sq)
+    # The inward-direction sign cancels in dκ/ds for the magnitude-matched
+    # oracle (κ is even under c → −c reflection of the parametrisation, dκ/ds
+    # tracks the inward arc-length), so |dκ/ds| is what the G3 gate compares.
+    return float(dkappa_dc / Sc_mag)
+
+
+def _apply_g3(source: NurbsSurface, source_edge: str,
+              target: NurbsSurface, target_edge: str) -> None:
+    """Adjust the *fourth* CP row of source for G3 (curvature-rate) continuity.
+
+    G3 requires the arc-length curvature rate dκ/ds to match across the seam.
+    The cross-boundary third derivative at a clamped boundary is
+
+        S_ccc = A3 * CP[3] + (fixed terms in CP[0..2]),
+
+    and dκ/ds is, to leading order, linear in (S_ccc · n̂).  We therefore solve
+    for the additive correction to CP[3] along the source normal that drives the
+    source's dκ/ds to the target's, then take one secant refinement step against
+    the analytic oracle (:func:`_cross_curvature_rate`) to absorb the
+    second-order tangential coupling.  CP[0..2] (set by G0/G1/G2) are untouched.
+    """
+    p_src = _boundary_degree(source, source_edge)
+    if p_src < 3:
+        return  # G3 on degree < 3 is undefined — leave row 3 as-is.
+
+    A3 = _boundary_third_deriv_coeff_A3(source, source_edge)
+    if abs(A3) < 1e-30:
+        return
+
+    n_col_src = _cp_col_count(source, source_edge)
+    dim = source.control_points.shape[2]
+
+    _, _, t_min_src, t_max_src = _edge_boundary_params(source, source_edge)
+    _, _, t_min_tgt, t_max_tgt = _edge_boundary_params(target, target_edge)
+    u_seam_src, v_seam_src, _, _ = _edge_boundary_params(source, source_edge)
+
+    if source_edge in ("u0", "u1"):
+        knots_along = source.knots_v
+        deg_along = source.degree_v
+    else:
+        knots_along = source.knots_u
+        deg_along = source.degree_u
+
+    greville = []
+    for k in range(n_col_src):
+        if deg_along > 0:
+            t_k = float(np.mean(knots_along[k + 1: k + deg_along + 1]))
+        else:
+            t_k = t_min_src
+        greville.append(min(max(t_k, t_min_src), t_max_src))
+
+    orig_row3 = _get_cp_row(source, source_edge, 3)
+
+    # Per-Greville along-edge surface normals (G0/G1/G2 already aligned them).
+    normals = []
+    targets = []
+    for k in range(n_col_src):
+        t_src = greville[k]
+        tk_norm = ((t_src - t_min_src) / (t_max_src - t_min_src)
+                   if (t_max_src - t_min_src) > 1e-15 else 0.0)
+        t_tgt = t_min_tgt + tk_norm * (t_max_tgt - t_min_tgt)
+        if source_edge in ("u0", "u1"):
+            n_src_vec = surface_normal(source, u_seam_src, t_src)
+        else:
+            n_src_vec = surface_normal(source, t_src, v_seam_src)
+        normals.append(n_src_vec)
+        targets.append(_cross_curvature_rate(target, target_edge, t_tgt))
+
+    # dκ/ds at Greville t_k is *affine* in the vector of normal offsets δ_j (the
+    # third derivative is linear in CP[3], and the reduced dκ/ds is linear in
+    # S_ccc·n̂).  Because the cross-boundary κ-rate at t_k couples several
+    # along-edge row-3 CPs, solve the full coupled system M δ = (target − f0)
+    # rather than per-CP.  M is assembled by finite probing along each normal.
+    def _eval_rates(row: np.ndarray) -> np.ndarray:
+        _set_cp_row(source, source_edge, 3, row)
+        return np.array([
+            _cross_curvature_rate(source, source_edge, greville[k])
+            for k in range(n_col_src)
+        ])
+
+    f0 = _eval_rates(orig_row3)
+    h = 1.0 / (abs(A3) + 1e-12)
+    M = np.zeros((n_col_src, n_col_src))
+    for j in range(n_col_src):
+        probe = orig_row3.copy()
+        probe[j, :3] = orig_row3[j, :3] + h * normals[j]
+        fj = _eval_rates(probe)
+        M[:, j] = (fj - f0) / h
+
+    rhs = np.array(targets) - f0
+    try:
+        delta, *_ = np.linalg.lstsq(M, rhs, rcond=None)
+    except np.linalg.LinAlgError:
+        delta = np.zeros(n_col_src)
+
+    row3_new = orig_row3.copy()
+    for k in range(n_col_src):
+        row3_new[k, :3] = orig_row3[k, :3] + float(delta[k]) * normals[k]
+        if dim > 3:
+            row3_new[k, 3:] = orig_row3[k, 3:]
+
+    _set_cp_row(source, source_edge, 3, row3_new)
+
+
+# ---------------------------------------------------------------------------
 # Public analytic verification functions
 # ---------------------------------------------------------------------------
+
+def verify_seam_g3_analytic(
+    source: NurbsSurface,
+    source_edge: str,
+    target: NurbsSurface,
+    target_edge: str,
+    samples: int = 32,
+) -> float:
+    """Analytic G3 seam verification: max |dκ_src/ds − dκ_tgt/ds|.
+
+    Uses the analytic third-order NURBS curvature rate
+    (:func:`_cross_curvature_rate`, the GK-62 dκ/ds oracle) at ``samples``
+    positions along the seam.  Zero indicates matching curvature rate (G3
+    continuous).
+    """
+    _, _, t_min_src, t_max_src = _edge_boundary_params(source, source_edge)
+    _, _, t_min_tgt, t_max_tgt = _edge_boundary_params(target, target_edge)
+    n = max(2, samples)
+    max_residual = 0.0
+    for i in range(n):
+        tk = i / (n - 1) if n > 1 else 0.0
+        t_src = t_min_src + tk * (t_max_src - t_min_src)
+        t_tgt = t_min_tgt + tk * (t_max_tgt - t_min_tgt)
+        k_src = _cross_curvature_rate(source, source_edge, t_src)
+        k_tgt = _cross_curvature_rate(target, target_edge, t_tgt)
+        diff = abs(k_src - k_tgt)
+        if diff > max_residual:
+            max_residual = diff
+    return max_residual
+
 
 def verify_seam_g1_analytic(
     source: NurbsSurface,
@@ -973,15 +1200,22 @@ def _classify_continuity(
     max_tan: float,
     max_cur: float,
     tolerance: float,
+    max_cur_rate: float = math.nan,
 ) -> str:
-    """Return the highest continuity level confirmed within tolerance."""
+    """Return the highest continuity level confirmed within tolerance.
+
+    ``max_cur_rate`` (the G3 dκ/ds residual) is optional and defaults to NaN so
+    that pre-G3 four-argument callers keep their behaviour (they top out at G2).
+    """
     if math.isnan(max_pos) or max_pos > tolerance * 100:
         return "none"
     if math.isnan(max_tan) or max_tan > 0.05:   # ~3 degrees
         return "G0"
     if math.isnan(max_cur) or max_cur > tolerance * 1000:
         return "G1"
-    return "G2"
+    if math.isnan(max_cur_rate) or max_cur_rate > tolerance * 1e4:
+        return "G2"
+    return "G3"
 
 
 # ---------------------------------------------------------------------------
@@ -1068,7 +1302,7 @@ def match_surface_edge(
 
     # --- Check enough CP rows for the requested continuity ------------------
     n_rows_src = _cp_row_count(source_surface, source_edge)
-    required = {"G0": 1, "G1": 2, "G2": 3}[continuity]
+    required = {"G0": 1, "G1": 2, "G2": 3, "G3": 4}[continuity]
     if n_rows_src < required:
         return MatchResult(
             modified_surface=source_surface,
@@ -1079,17 +1313,31 @@ def match_surface_edge(
             ),
         )
 
-    # G1/G2 require enough rows on the target too
+    # G1/G2/G3 require enough rows on the target too
     n_rows_tgt = _cp_row_count(target_surface, target_edge)
-    if continuity in ("G1", "G2") and n_rows_tgt < 2:
+    tgt_required = {"G0": 1, "G1": 2, "G2": 2, "G3": 4}[continuity]
+    if continuity in ("G1", "G2", "G3") and n_rows_tgt < tgt_required:
         return MatchResult(
             modified_surface=source_surface,
             ok=False,
             reason=(
                 f"target_surface has only {n_rows_tgt} CP row(s) in the inward "
-                f"direction; {continuity} requires at least 2"
+                f"direction; {continuity} requires at least {tgt_required}"
             ),
         )
+
+    # G3 requires degree >= 3 on source (third cross-boundary derivative).
+    if continuity == "G3":
+        p_src = _boundary_degree(source_surface, source_edge)
+        if p_src < 3:
+            return MatchResult(
+                modified_surface=source_surface,
+                ok=False,
+                reason=(
+                    f"G3 matching requires source degree >= 3 in the matched "
+                    f"direction; got degree {p_src}"
+                ),
+            )
 
     # G2 requires degree >= 2 on source
     if continuity == "G2":
@@ -1131,7 +1379,7 @@ def match_surface_edge(
         )
 
     # --- Apply G1 -----------------------------------------------------------
-    if continuity in ("G1", "G2"):
+    if continuity in ("G1", "G2", "G3"):
         try:
             _apply_g1(source_copy, source_edge, target_surface, target_edge)
         except Exception as exc:
@@ -1142,7 +1390,7 @@ def match_surface_edge(
             )
 
     # --- Apply G2 (analytic normal-curvature matching) ----------------------
-    if continuity == "G2":
+    if continuity in ("G2", "G3"):
         try:
             _apply_g2_analytic(source_copy, source_edge, target_surface, target_edge)
         except Exception as exc:
@@ -1150,6 +1398,17 @@ def match_surface_edge(
                 modified_surface=source_surface,
                 ok=False,
                 reason=f"G2 application failed: {exc}",
+            )
+
+    # --- Apply G3 (analytic curvature-rate dκ/ds matching) ------------------
+    if continuity == "G3":
+        try:
+            _apply_g3(source_copy, source_edge, target_surface, target_edge)
+        except Exception as exc:
+            return MatchResult(
+                modified_surface=source_surface,
+                ok=False,
+                reason=f"G3 application failed: {exc}",
             )
 
     # --- Diagnostics (analytic for G1/G2; CP-based for G0) ------------------
@@ -1161,7 +1420,7 @@ def match_surface_edge(
             samples, "G0",
         )
         # G1: analytic cross-product residual (radians-equivalent, via asin)
-        if continuity in ("G1", "G2"):
+        if continuity in ("G1", "G2", "G3"):
             g1_res = verify_seam_g1_analytic(
                 source_copy, source_edge,
                 target_surface, target_edge,
@@ -1172,7 +1431,7 @@ def match_surface_edge(
         else:
             max_tan = math.nan
         # G2: analytic normal curvature difference
-        if continuity == "G2":
+        if continuity in ("G2", "G3"):
             max_cur = verify_seam_g2_analytic(
                 source_copy, source_edge,
                 target_surface, target_edge,
@@ -1180,10 +1439,23 @@ def match_surface_edge(
             )
         else:
             max_cur = math.nan
+        # G3: analytic curvature-rate (dκ/ds) difference
+        if continuity == "G3":
+            max_cur_rate = verify_seam_g3_analytic(
+                source_copy, source_edge,
+                target_surface, target_edge,
+                samples=samples,
+            )
+        else:
+            max_cur_rate = math.nan
     except Exception:
-        max_pos, max_tan, max_cur = math.nan, math.nan, math.nan
+        max_pos, max_tan, max_cur, max_cur_rate = (
+            math.nan, math.nan, math.nan, math.nan,
+        )
 
-    continuity_achieved = _classify_continuity(max_pos, max_tan, max_cur, tolerance)
+    continuity_achieved = _classify_continuity(
+        max_pos, max_tan, max_cur, tolerance, max_cur_rate,
+    )
 
     return MatchResult(
         modified_surface=source_copy,
@@ -1192,6 +1464,7 @@ def match_surface_edge(
         max_position_deviation=max_pos,
         max_tangent_deviation=max_tan,
         max_curvature_deviation=max_cur,
+        max_curvature_rate_deviation=max_cur_rate,
         continuity_achieved=continuity_achieved,
     )
 
