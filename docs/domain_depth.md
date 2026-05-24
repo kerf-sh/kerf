@@ -85,15 +85,15 @@ Solid per-code calculators + real FEM via solver bridges. Almost no UI.
 | ACI 318-19 concrete | [x] (backend) | flexure/shear/PM/dev-length; no punching shear, no torsion |
 | NDS 2018 timber | [x] (backend) | full adjustment factors |
 | ASCE 7-22 wind (MWFRS+C&C) | [x] (backend) | |
-| ASCE 7-22 seismic | [~] (backend) | ELF only; no response-spectrum / time-history |
+| ASCE 7-22 seismic | [x] (backend) | ELF + RSA (SRSS+CQC) + Newmark time-history (seismic/rsa.py); SDOF 0.07% error |
 | ASME VIII pressure vessel | [x] (backend) | |
 | API 650 tank | [x] (backend) | incl. seismic annex E |
 | Fatigue (S-N, ε-N, rainflow) | [x] (backend) | |
 | FE — 1D beam / 2D truss (native) | [x] (backend) | Hermite beam validated vs Roark |
-| FE — plate / shell (native) | [ ] | only via CalculiX bridge |
+| FE — plate / shell (native) | [x] (backend) | MITC4 (Bathe-Dvorkin) + modal; 1.29% error vs Timoshenko at 16×16 (kerf-fem/plate.py) |
 | FE — solid (tet/hex) | [x] (backend) | CalculiX/Mystran/Z88 bridge (needs binary) |
 | Modal / buckling / nonlinear | [x] (backend) | consistent-mass modal, Riks, J2 plasticity |
-| Frame stiffness assembly (2D/3D) | [ ] | `struct/` is a geometry catalog, not a solver |
+| Frame stiffness assembly (2D/3D) | [x] (backend) | 2D+3D beam-column + ASCE 7 LRFD/ASD combos + story drift (struct/frame.py); machine-precision validated |
 | P-delta / 2nd-order | [ ] | θ checked, not amplified |
 | Section database | [~] (backend) | only ~12 sections vs 300+ |
 | Eurocode design (EC2/3/5/8) | [ ] | AISC/ACI/NDS only |
@@ -308,7 +308,7 @@ PLC + firmware + wiring genuinely usable; power/solar backend-only.
 | RFQ quoting (geometry-driven) | [x] (backend) | |
 | Process simulation (moldflow/weld/AM/forming) | [x] (backend) | deep |
 | Material selection (Ashby) | [~] (backend) | ~40 hand-authored materials |
-| LCA (cradle-to-gate CO₂) | [~] (backend) | 54 materials; no ISO 14040 phases 2–4 |
+| LCA (full ISO 14040/44 4 phases) | [x] (backend) | use+transport+EoL + multi-impact (acid/eutroph/CTUh/water/PM2.5) + uncertainty (kerf-lca/phases.py) |
 | Ergonomics (RULA/REBA) | [x] (backend) | |
 | Any cost/materials UI | [ ] | agent tools only |
 
