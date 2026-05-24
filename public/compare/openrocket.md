@@ -5,6 +5,178 @@ category: cad-sim
 left: kerf
 right: openrocket
 hero_tagline: "OpenRocket simulates the flight — Kerf designs the airframe and electronics that make it fly."
+reviewed_at: 2026-05-24
+features:
+  - domain: D5
+    feature: "6-DOF flight dynamics + stability derivs"
+    competitor:
+      status: yes
+      note: "Core OpenRocket 6-DOF sim with wind gusts and launch-rod departure"
+      source: "https://openrocket.info/documentation.html"
+    kerf:
+      status: yes
+      note: "kerf_cad_core/dynamics/six_dof.py — backend LLM tool"
+      evidence: "packages/kerf-cad-core/src/kerf_cad_core/dynamics/six_dof.py"
+  - domain: D5
+    feature: "Barrowman aerodynamics / CP-CG stability margin"
+    competitor:
+      status: yes
+      note: "Primary stability method; extended Barrowman for fins and nose cones"
+      source: "https://openrocket.info/documentation.html"
+    kerf:
+      status: yes
+      note: "Barrowman CP + VLM in kerf-aero; wired aero tools"
+      evidence: "packages/kerf-aero/src/kerf_aero/vlm_viscous.py"
+  - domain: D5
+    feature: "Standard atmosphere (USSA76)"
+    competitor:
+      status: yes
+      note: "Altitude-dependent density, pressure, temperature used in all sims"
+      source: "https://github.com/openrocket/openrocket/blob/master/core/src/main/java/info/openrocket/core/models/atmosphere/ExtendedISAModel.java"
+    kerf:
+      status: yes
+      note: "Wired aero tool — USSA-76 exact"
+      evidence: "packages/kerf-aero/src/kerf_aero/atmosphere.py"
+  - domain: D5
+    feature: "Drag estimation (form + base + friction + wave)"
+    competitor:
+      status: yes
+      note: "Component drag build-up: nose, body, fins, launch lug, base bleed"
+      source: "https://openrocket.info/documentation.html"
+    kerf:
+      status: yes
+      note: "Squire-Young viscous Cd + Korn-Lock wave-drag in vlm_viscous.py"
+      evidence: "packages/kerf-aero/src/kerf_aero/vlm_viscous.py"
+  - domain: D5
+    feature: "Fin flutter analysis"
+    competitor:
+      status: yes
+      note: "Shear modulus + flutter speed per Barrowman/NACA TN 4197"
+      source: "https://github.com/openrocket/openrocket/blob/master/core/src/main/java/info/openrocket/core/aerodynamics/FinSetCalc.java"
+    kerf:
+      status: yes
+      note: "Fin flutter speed backend tool (kerf-aero)"
+      evidence: "packages/kerf-aero/src/kerf_aero/fin_flutter.py"
+  - domain: D5
+    feature: "Motor database integration (Thrustcurve / RASP .eng)"
+    competitor:
+      status: yes
+      note: "Embedded Thrustcurve database + RASP .eng / RockSim .rse import"
+      source: "https://openrocket.info/documentation.html"
+    kerf:
+      status: partial
+      note: "Wraps OpenRocket motor database via integration; no independent replication"
+      evidence: ""
+  - domain: D5
+    feature: "Monte-Carlo dispersion / landing scatter"
+    competitor:
+      status: yes
+      note: "Configurable Monte-Carlo over wind, Cd, CL, ignition delay, etc."
+      source: "https://github.com/openrocket/openrocket/wiki/Monte-Carlo-Simulation"
+    kerf:
+      status: yes
+      note: "Monte-Carlo trajectory dispersion — backend aero tool"
+      evidence: "packages/kerf-aero/src/kerf_aero/monte_carlo.py"
+  - domain: D5
+    feature: "Recovery event simulation (parachute / streamer deployment)"
+    competitor:
+      status: yes
+      note: "Dual-deploy, apogee detect, drogue + main chute simulation with drift"
+      source: "https://openrocket.info/documentation.html"
+    kerf:
+      status: partial
+      note: "Parachute drag descent calc in aero tools; no full event sequencer"
+      evidence: "packages/kerf-aero/src/kerf_aero/recovery.py"
+  - domain: D5
+    feature: "Propulsion (Tsiolkovsky / staging / specific impulse)"
+    competitor:
+      status: partial
+      note: "Uses measured thrust curves; no first-principles CEA propulsion engine"
+      source: "https://openrocket.info/documentation.html"
+    kerf:
+      status: yes
+      note: "Tsiolkovsky + staging + CEA-lite — wired propulsion tool"
+      evidence: "packages/kerf-aero/src/kerf_aero/propulsion.py"
+  - domain: D5
+    feature: "Trajectory export (CSV / KML)"
+    competitor:
+      status: yes
+      note: "CSV flight data + KML for Google Earth trajectory visualisation"
+      source: "https://openrocket.info/documentation.html"
+    kerf:
+      status: yes
+      note: "OpenRocket integration produces same CSV/KML output via chat interface"
+      evidence: ""
+  - domain: D5
+    feature: "Orbital mechanics (Kepler, J2/J3, Hohmann)"
+    competitor:
+      status: no
+      note: "Model-rocket scope only; no orbital propagation"
+      source: "https://openrocket.info/documentation.html"
+    kerf:
+      status: yes
+      note: "Kepler + J2/J3 + Hohmann + Lambert solver — wired aero tools"
+      evidence: "packages/kerf-aero/src/kerf_aero/orbital.py"
+  - domain: D1
+    feature: "Airframe 3D B-rep CAD (nose cone, body tube, fins)"
+    competitor:
+      status: no
+      note: "Component-diagram-based geometry; no solid B-rep modelling"
+      source: "https://openrocket.info/documentation.html"
+    kerf:
+      status: yes
+      note: "Full OCCT B-rep with wall thickness, material, mass — wired UI"
+      evidence: "packages/kerf-cad-core/src/kerf_cad_core/occt_bridge.py"
+  - domain: D1
+    feature: "Assembly BOM (airframe + avionics)"
+    competitor:
+      status: no
+      note: "Parts list is component-level only; no structured BOM or distributor lookup"
+      source: "https://openrocket.info/documentation.html"
+    kerf:
+      status: yes
+      note: "Kerf BOM panel with distributor pricing — wired UI"
+      evidence: "src/components/BOMView.jsx"
+  - domain: D6
+    feature: "Avionics PCB design (altimeter, GPS, deployment)"
+    competitor:
+      status: no
+      note: "No electronics design capability"
+      source: "https://openrocket.info/documentation.html"
+    kerf:
+      status: yes
+      note: "Full PCB workspace with KiCad round-trip — wired UI"
+      evidence: "src/components/PCBView.jsx"
+  - domain: D6
+    feature: "SPICE / pre-compliance sim (ignition driver, RF, power)"
+    competitor:
+      status: no
+      note: "No circuit simulation"
+      source: "https://openrocket.info/documentation.html"
+    kerf:
+      status: yes
+      note: "ngspice bridge + EMC/PDN/link-budget backend tools — wired"
+      evidence: "packages/kerf-eda/src/kerf_eda/spice_bridge.py"
+  - domain: D10
+    feature: "Recovery / pyro deployment electronics (e-match driver, dual-deploy)"
+    competitor:
+      status: no
+      note: "Simulates deployment events but provides no electronic design tools"
+      source: "https://openrocket.info/documentation.html"
+    kerf:
+      status: yes
+      note: "Schematic + PCB workspace for e-match driver and dual-deploy circuits"
+      evidence: "src/components/SchematicView.jsx"
+  - domain: D14
+    feature: "Should-cost estimation (airframe materials + machining)"
+    competitor:
+      status: no
+      note: "No cost estimation capability"
+      source: "https://openrocket.info/documentation.html"
+    kerf:
+      status: yes
+      note: "Should-cost engine (Boothroyd-Dewhurst, 6 processes) — backend tool"
+      evidence: "packages/kerf-manufacturing/src/kerf_manufacturing/should_cost.py"
 ---
 
 # Kerf + OpenRocket
