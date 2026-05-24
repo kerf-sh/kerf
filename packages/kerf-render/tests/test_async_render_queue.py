@@ -106,7 +106,7 @@ class FakeRequest:
 # ---------------------------------------------------------------------------
 
 
-_FAKE_AUTH = {"sub": "test-user-id"}
+_FAKE_AUTH = {"sub": "11111111-1111-1111-1111-111111111111"}  # production JWT subs are UUIDs
 
 
 def test_run_render_enqueues_job():
