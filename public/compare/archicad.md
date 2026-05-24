@@ -1,10 +1,272 @@
 ---
 slug: archicad
 competitor: Graphisoft ArchiCAD
-category: cad-architecture
+category: bim
 left: kerf
 right: archicad
 hero_tagline: "ArchiCAD pioneered BIM — Kerf brings engineering-grade precision to teams building beyond the building."
+reviewed_at: 2026-05-24
+features:
+  - domain: D13
+    feature: "BIM walls / slabs / framing"
+    competitor:
+      status: yes
+      note: "Core Archicad wall, slab, beam, and column tools; full parametric intersections"
+      source: "https://help.graphisoft.com/AC/27/INT/_AC27_Help/content/020_elemtools/020_elemtools-1.htm"
+    kerf:
+      status: yes
+      note: "kerf-bim walls/slabs/framing wired; parametric engine + IFC viewer"
+      evidence: "packages/kerf-bim/src/bim.py"
+  - domain: D13
+    feature: "BIM stairs / ramps"
+    competitor:
+      status: yes
+      note: "Stair Maker and ramp tool; parametric risers, treads, landings"
+      source: "https://help.graphisoft.com/AC/27/INT/_AC27_Help/content/020_elemtools/020_elemtools-20.htm"
+    kerf:
+      status: yes
+      note: "Stairs and ramps in kerf-bim engine; viewer wired"
+      evidence: "packages/kerf-bim/src/bim.py"
+  - domain: D13
+    feature: "BIM doors / windows"
+    competitor:
+      status: yes
+      note: "Parametric door and window objects with frame, panel, and opening parameters"
+      source: "https://help.graphisoft.com/AC/27/INT/_AC27_Help/content/020_elemtools/020_elemtools-3.htm"
+    kerf:
+      status: yes
+      note: "Parametric doors/windows in kerf-bim; wired in viewer"
+      evidence: "packages/kerf-bim/src/bim.py"
+  - domain: D13
+    feature: "BIM roof generator"
+    competitor:
+      status: yes
+      note: "Complex roof geometry: hip, gable, shed, barrel, mono-pitch — all parametric"
+      source: "https://help.graphisoft.com/AC/27/INT/_AC27_Help/content/020_elemtools/020_elemtools-9.htm"
+    kerf:
+      status: partial
+      note: "Basic roof slab; no hip/gable/barrel roof generator"
+      evidence: "packages/kerf-bim/src/bim.py"
+  - domain: D13
+    feature: "IFC 4 authoring and export"
+    competitor:
+      status: yes
+      note: "Full IFC 2x3 and IFC 4 authoring with certified buildingSMART export; complete property sets"
+      source: "https://help.graphisoft.com/AC/27/INT/_AC27_Help/content/070_interoperability/070_interoperability-1.htm"
+    kerf:
+      status: partial
+      note: "IFC Tier 2 import; IFC export in progress, not yet certified"
+      evidence: "packages/kerf-bim/src/ifc_import.py"
+  - domain: D13
+    feature: "GDL parametric object library"
+    competitor:
+      status: yes
+      note: "Geometric Description Language objects — parametric families for every building product category"
+      source: "https://help.graphisoft.com/AC/27/INT/_AC27_Help/content/030_libraries/030_libraries-1.htm"
+    kerf:
+      status: partial
+      note: "Parametric .family.json (type/instance params, formulas); no GDL-equivalent object market"
+      evidence: "packages/kerf-bim/src/"
+  - domain: D13
+    feature: "MEP Modeler (HVAC / plumbing / electrical routing)"
+    competitor:
+      status: paid
+      note: "Paid add-on: Graphisoft MEP Modeler; not in base Archicad Solo"
+      source: "https://graphisoft.com/solutions/products/mep-modeler"
+    kerf:
+      status: partial
+      note: "Backend MEP routing calculator; no BIM MEP routing UI"
+      evidence: "packages/kerf-bim/src/mep.py"
+  - domain: D13
+    feature: "Teamwork BIMcloud multi-user worksharing"
+    competitor:
+      status: paid
+      note: "BIMcloud Basic included with Archicad; BIMcloud SaaS is a separate paid subscription"
+      source: "https://graphisoft.com/solutions/products/bimcloud"
+    kerf:
+      status: partial
+      note: "Cloud git workspace roles; not BIM element-level locking at AEC project scale"
+      evidence: "cloud/git/"
+  - domain: D13
+    feature: "Schedules and quantity take-off"
+    competitor:
+      status: yes
+      note: "Interactive schedules for doors, windows, materials, zones — live-linked to 3D model"
+      source: "https://help.graphisoft.com/AC/27/INT/_AC27_Help/content/060_documentation/060_documentation-5.htm"
+    kerf:
+      status: partial
+      note: "BOM panel in assemblies; no BIM-element schedule generator"
+      evidence: "src/components/BOMPanel.jsx"
+  - domain: D13
+    feature: "Curtain wall / curtain wall designer"
+    competitor:
+      status: yes
+      note: "Parametric curtain wall tool with panel, frame, and corner connection logic"
+      source: "https://help.graphisoft.com/AC/27/INT/_AC27_Help/content/020_elemtools/020_elemtools-16.htm"
+    kerf:
+      status: no
+      note: "No curtain wall tool"
+      evidence: ""
+  - domain: D13
+    feature: "Zone / room / space objects"
+    competitor:
+      status: yes
+      note: "Zone tool defines spaces with area, volume, and occupancy data for energy and code compliance"
+      source: "https://help.graphisoft.com/AC/27/INT/_AC27_Help/content/020_elemtools/020_elemtools-13.htm"
+    kerf:
+      status: no
+      note: "No room/space/zone BIM object"
+      evidence: ""
+  - domain: D13
+    feature: "Hotlinked modules (XRef / federated model)"
+    competitor:
+      status: yes
+      note: "Hotlink Manager links external Archicad files as live references into the host model"
+      source: "https://help.graphisoft.com/AC/27/INT/_AC27_Help/content/050_teamwork/050_teamwork-7.htm"
+    kerf:
+      status: no
+      note: "No federated BIM hotlink mechanism"
+      evidence: ""
+  - domain: D8
+    feature: "Site terrain / mesh modelling"
+    competitor:
+      status: yes
+      note: "Mesh tool + site modelling with cut-fill volume calculation"
+      source: "https://help.graphisoft.com/AC/27/INT/_AC27_Help/content/020_elemtools/020_elemtools-12.htm"
+    kerf:
+      status: partial
+      note: "Backend geotech + earthwork volumes; no interactive site mesh UI"
+      evidence: "packages/kerf-civil/geotech/"
+  - domain: D1
+    feature: "Parametric object model"
+    competitor:
+      status: yes
+      note: "Every element is parametric with instance and type properties; 3D + 2D representation linked"
+      source: "https://help.graphisoft.com/AC/27/INT/_AC27_Help/content/010_concepts/010_concepts-1.htm"
+    kerf:
+      status: yes
+      note: "Feature-tree parametric model; OCCT B-rep; sketch constraints via PlaneGCS"
+      evidence: "packages/kerf-core/src/"
+  - domain: D1
+    feature: "2D technical drawings / documentation"
+    competitor:
+      status: yes
+      note: "Layout book with floor plans, sections, elevations, annotations auto-generated from 3D model"
+      source: "https://help.graphisoft.com/AC/27/INT/_AC27_Help/content/060_documentation/060_documentation-1.htm"
+    kerf:
+      status: partial
+      note: "Engineering multi-sheet drawings (template-based, not live B-rep projection); no layout book"
+      evidence: "src/components/DrawingsView.jsx"
+  - domain: D1
+    feature: "3D solid B-rep modelling"
+    competitor:
+      status: yes
+      note: "Underlying geometry via Graphisoft's own kernel; supports morph tool for free-form solids"
+      source: "https://help.graphisoft.com/AC/27/INT/_AC27_Help/content/020_elemtools/020_elemtools-15.htm"
+    kerf:
+      status: yes
+      note: "Full OCCT B-rep; pad/pocket/revolve/sweep/loft/fillet/boolean wired"
+      evidence: "packages/kerf-core/src/occt/"
+  - domain: D1
+    feature: "Sheet metal flat-pattern"
+    competitor:
+      status: no
+      note: "Not applicable — Archicad is an architectural BIM tool, not a mechanical CAD tool"
+      source: "https://graphisoft.com/solutions/products/archicad"
+    kerf:
+      status: partial
+      note: "Single flange + unfold + flat DXF; no hem/relief/jog/multi-flange"
+      evidence: "packages/kerf-core/src/sheetmetal.py"
+  - domain: D1
+    feature: "GD&T / tolerancing"
+    competitor:
+      status: no
+      note: "Not applicable — architectural tool; no manufacturing tolerancing"
+      source: "https://graphisoft.com/solutions/products/archicad"
+    kerf:
+      status: partial
+      note: "GD&T data model (ASME Y14.5); no MBD/PMI on model view"
+      evidence: "packages/kerf-core/src/gdandt.py"
+  - domain: D4
+    feature: "Building energy analysis export"
+    competitor:
+      status: yes
+      note: "Direct export to EnergyPlus and IDA ICE for building energy simulation"
+      source: "https://help.graphisoft.com/AC/27/INT/_AC27_Help/content/070_interoperability/070_interoperability-6.htm"
+    kerf:
+      status: partial
+      note: "Backend building loads (CLTD/RTS, ASHRAE Ch.18, degree-day); no energy simulation export"
+      evidence: "packages/kerf-thermal/buildingenergy/transient.py"
+  - domain: D4
+    feature: "HVAC duct sizing"
+    competitor:
+      status: paid
+      note: "Via MEP Modeler paid add-on; duct routing and sizing in the BIM model"
+      source: "https://graphisoft.com/solutions/products/mep-modeler"
+    kerf:
+      status: yes
+      note: "SMACNA duct sizing + flat-pattern (backend)"
+      evidence: "packages/kerf-thermal/hvac/duct.py"
+  - domain: D6
+    feature: "PCB / electronics design"
+    competitor:
+      status: no
+      note: "Not applicable — Archicad does not address electronics or EDA"
+      source: "https://graphisoft.com/solutions/products/archicad"
+    kerf:
+      status: yes
+      note: "Schematic + PCB layout (KiCad round-trip), ngspice SPICE, DRC — wired in browser"
+      evidence: "src/components/SchematicView.jsx"
+  - domain: D11
+    feature: "Tolerance stackup / metrology"
+    competitor:
+      status: no
+      note: "Not applicable — architectural BIM tool"
+      source: "https://graphisoft.com/solutions/products/archicad"
+    kerf:
+      status: partial
+      note: "1D WC/RSS/MC stackup + 3D vector-loop; no MBD on model"
+      evidence: "packages/kerf-qa/tolstack/"
+  - domain: D14
+    feature: "Material cost / quantity schedules"
+    competitor:
+      status: yes
+      note: "Element schedules with area, volume, and material quantities; export to Excel/CSV"
+      source: "https://help.graphisoft.com/AC/27/INT/_AC27_Help/content/060_documentation/060_documentation-5.htm"
+    kerf:
+      status: partial
+      note: "Should-cost engine (backend) + BOM panel in assemblies; no BIM quantity take-off schedule"
+      evidence: "packages/kerf-costing/src/"
+  - domain: D14
+    feature: "LCA / environmental data"
+    competitor:
+      status: partial
+      note: "Limited via third-party Eco Designer extension; not in base Archicad"
+      source: "https://graphisoft.com/solutions/products/eco-designer-stella"
+    kerf:
+      status: yes
+      note: "Full ISO 14040/44 4-phase LCA; 6 impact categories + uncertainty (backend)"
+      evidence: "packages/kerf-lca/phases.py"
+  - domain: D13
+    feature: "Python / open scripting API"
+    competitor:
+      status: partial
+      note: "GDL (Geometric Description Language) — proprietary; JSON API (Archicad 25+) in beta"
+      source: "https://help.graphisoft.com/AC/27/INT/_AC27_Help/content/080_scripting/080_scripting-1.htm"
+    kerf:
+      status: yes
+      note: "kerf-sdk on PyPI; HTTP/JSON-RPC automation from any Python environment"
+      evidence: "packages/kerf-sdk/README.md"
+  - domain: D13
+    feature: "LLM / chat-native editing"
+    competitor:
+      status: no
+      note: "No LLM interface in Archicad as of May 2026"
+      source: "https://graphisoft.com/solutions/products/archicad"
+    kerf:
+      status: yes
+      note: "Chat-native: plain-language edits to feature tree and BIM model per turn"
+      evidence: "src/components/ChatPanel.jsx"
 ---
 
 # Kerf vs Graphisoft ArchiCAD
