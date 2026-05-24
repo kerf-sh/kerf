@@ -134,6 +134,26 @@ log target of choice via Koyeb's log drains.
 3. When green, swap DNS for `kerf.sh` to the Koyeb endpoint.
 4. Keep the Fly app warm for 7 days as rollback. Then `flyctl apps destroy kerf-prod kerf-workers`.
 
+## Required production env vars
+
+The following env vars **must** be set in the Koyeb service environment
+(in addition to the secrets in the Secrets table above) or key subsystems
+silently operate in a safe-but-non-functional mode:
+
+| Env var | Required value | Effect if missing |
+| --- | --- | --- |
+| `BLOB_GC_DRY_RUN` | `false` | Blob GC worker (`BlobGCWorker`) defaults to dry-run mode — no objects are physically deleted from Tigris and storage bytes are never reclaimed. Storage billing (R3) will continue to accrue without GC relief. See `packages/kerf-billing/src/kerf_billing/blob_gc.py:_dry_run_from_env`. |
+
+Set it via:
+
+```sh
+koyeb secrets create blob-gc-dry-run --value "false"
+# then reference BLOB_GC_DRY_RUN from the secret in koyeb.yaml
+```
+
+Or pass it directly as a plain env var in the service definition if you
+do not need it as a secret.
+
 ## Rolling back
 
 The Fly app and its secrets remain intact during the 7-day cutover

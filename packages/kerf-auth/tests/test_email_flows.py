@@ -18,6 +18,19 @@ from fastapi.testclient import TestClient
 import kerf_auth.routes as auth
 
 
+@pytest.fixture(autouse=True)
+def _stub_rate_limit(monkeypatch):
+    """Prevent rate_limit from hitting the DB pool in all tests here.
+
+    The /forgot-password route now has a rate_limit dependency (R17).
+    Stub enforce so tests remain hermetic.
+    """
+    import kerf_core.rate_limit as _rl_module
+    monkeypatch.setattr(_rl_module, "enforce", AsyncMock(return_value=None))
+    import kerf_core.db.connection as _conn_module
+    monkeypatch.setattr(_conn_module, "get_pool_required", AsyncMock(return_value=MagicMock()))
+
+
 def _app():
     app = FastAPI()
     app.include_router(auth.router, prefix="/auth")

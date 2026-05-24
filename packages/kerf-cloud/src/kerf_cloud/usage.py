@@ -66,14 +66,20 @@ async def record_storage_event(
         raise ValueError("usage: userID required")
 
     async with pool.acquire() as conn:
-        await conn.execute(
-            """
-            INSERT INTO usage_events
-                (user_id, project_id, kind, bytes_delta, usd_cost)
-            VALUES ($1, $2, 'storage', $3, $4)
-            """,
-            user_id, project_id, delta_bytes, cost_usd,
-        )
+        async with conn.transaction():
+            await conn.execute(
+                """
+                INSERT INTO usage_events
+                    (user_id, project_id, kind, bytes_delta, usd_cost)
+                VALUES ($1, $2, 'storage', $3, $4)
+                """,
+                user_id, project_id, delta_bytes, cost_usd,
+            )
+
+            await conn.execute(
+                "SELECT cloud_debit_balance($1, $2)",
+                user_id, cost_usd,
+            )
 
 
 async def balance_for(pool, user_id: str) -> float:

@@ -303,6 +303,12 @@ class BlobGCWorker:
 # ---------------------------------------------------------------------------
 
 def _dry_run_from_env() -> bool:
-    """Parse BLOB_GC_DRY_RUN.  Defaults True (safe)."""
+    """Parse BLOB_GC_DRY_RUN.  Defaults True (safe).
+
+    PRODUCTION NOTE: without BLOB_GC_DRY_RUN=false blobs are never physically
+    deleted from Tigris and storage bytes are never reclaimed — storage billing
+    (R3) will accrue but the GC won't clean up.  See 'Required production env
+    vars' in deployment/koyeb.md for the mandatory env var.
+    """
     val = os.getenv("BLOB_GC_DRY_RUN", "true").strip().lower()
     return val not in ("false", "0", "no")

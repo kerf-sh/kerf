@@ -394,7 +394,11 @@ async def request_verification(payload: dict = Depends(require_auth)):
 
 
 @router.post("/forgot-password")
-async def forgot_password(req: ForgotPasswordRequest):
+async def forgot_password(
+    req: ForgotPasswordRequest,
+    request: Request,
+    _rl: None = Depends(rate_limit(max_per_window=5, window_seconds=3600, key_prefix="auth:forgot_password")),
+):
     """Always 200 — never reveal whether an email is registered. Sends a
     reset link only when the email maps to a password account."""
     email = req.email.strip().lower()
