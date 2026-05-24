@@ -96,7 +96,7 @@ Solid per-code calculators + real FEM via solver bridges. Almost no UI.
 | Frame stiffness assembly (2D/3D) | [x] (backend) | 2D+3D beam-column + ASCE 7 LRFD/ASD combos + story drift (struct/frame.py); machine-precision validated |
 | P-delta / 2nd-order | [ ] | θ checked, not amplified |
 | Section database | [~] (backend) | only ~12 sections vs 300+ |
-| Eurocode design (EC2/3/5/8) | [~] (backend) | EC2 (concrete) + EC3 (steel Class 1-4 + Nb,Rd + LTB + H1) done; EC5 in progress; EC8 next |
+| Eurocode design (EC2/3/5/8) | [x] (backend) | full coverage: EC2 concrete + EC3 steel + EC5 timber + EC8 seismic |
 | Any structural UI panel | [~] | only `femDisplacement.js` displacement render |
 
 ## D3 — Machine elements  · engine ~75% · UI ~0%
@@ -148,7 +148,7 @@ Genuinely deep; mostly exposed as LLM tools, no graphical panels.
 | Airfoil geometry (NACA 4/5) | [x] | wired |
 | Airfoil inviscid CL (panel) | [x] | wired |
 | Airfoil viscous Cd (XFOIL-class) | [x] | wired (Squire-Young; NACA0012 Re=1e6 α=4° → Cd=0.0107) |
-| 3D wing VLM | [x] | wired |
+| 3D wing VLM (+ viscous + compressibility) | [x] | + strip viscous CD0 + PG/KT compressibility + Korn-Lock wave-drag (vlm_viscous.py); PG 1.401× exact |
 | Doublet-lattice / flutter | [x] (backend) | |
 | 6-DOF flight dynamics + stability derivs | [x] (backend) | |
 | Orbital (Kepler, J2/J3, Hohmann) | [x] | wired |
@@ -180,7 +180,7 @@ ECAD viewers + SPICE wired; analysis suites + silicon are backend-only.
 | Battery/BMS, motor/gate/LED driver | [x] (backend) | sizing calculators |
 | Silicon synth (Yosys) / STA / GDS / DRC / LVS / formal / CTS | [x] (backend) | deep; **zero UI** |
 | Silicon P&R (OpenLane) | [x] (backend) | needs install |
-| Analog PVT-corner sim | [ ] | hand-characterised cells only |
+| Analog PVT-corner sim | [x] (backend) | 60 corners (5P×3V×4T) + MC per corner; bandgap ±31mV, Pelgrom σ matched (silicon/analog/pvt.py) |
 
 ## D7 — Manufacturing / CAM  · engine ~65% · UI ~35%
 
@@ -195,8 +195,8 @@ Real toolpaths via opencamlib; CAMView wired for common ops.
 | 5-axis (kinematics + posts) | [~] (backend) | engine solid; no UI |
 | Turning cycles (G71/G70/threading) | [x] (backend) | |
 | G-code post (Fanuc/GRBL/LinuxCNC/Mach3) | [x] | no G41/42 cutter-comp |
-| Feeds & speeds | [x] (backend) | no Taylor tool-life |
-| Moldflow / fill sim | [~] (backend) | analytical; no FEM fill/weld-line |
+| Feeds & speeds + tool-life | [x] (backend) | + Taylor extended (vcT^n·f^a·dp^b=C) + Gilbert economic speed (cuttingtool/tool_life.py) |
+| Moldflow / fill sim | [x] (backend) | + Hele-Shaw front tracking + weld-line + air-trap detection (moldflow/flow_front.py) |
 | DFM checks | [~] (backend) | mesh-based |
 | Nesting | [~] (backend) | skyline bbox; no true-shape NFP |
 | Additive / DFAM | [x] (backend) | |
@@ -210,13 +210,13 @@ Strong engines; UI is marketing landing only.
 | Feature | Kerf | Notes |
 |---|---|---|
 | Horizontal+vertical alignment (clothoid, SSD) | [x] (backend) | |
-| Superelevation runoff transition | [ ] | fixed crown only |
+| Superelevation runoff transition | [x] (backend) | AASHTO Exhibit 3-20 + 2/3-1/3 distribution + corridor templates (kerf-civil/superelevation.py); 50mph 6% = 144ft validated |
 | 3D alignment coordinates (P(station)→xy) | [ ] | scalars only, no plan export |
-| Corridor / cross-section | [~] (backend) | symmetric 2-lane only |
+| Corridor / cross-section | [x] (backend) | divided highway + reverse-crown + urban curb-gutter templates |
 | Pavement design (AASHTO '93) | [x] (backend) | deep |
 | Survey / COGO | [x] (backend) | traverse adjust, resection |
 | Geodesy / projections (Vincenty, TM, UTM, LCC) | [x] (backend) | deep |
-| Geotech (bearing/settlement/slope/pile) | [x] (backend) | no liquefaction triggering |
+| Geotech (bearing/settlement/slope/pile/liquefaction) | [x] (backend) | + Seed-Idriss CSR + SPT/CPT CRR + Tokimatsu (geotech/liquefaction.py); Loma Prieta validated |
 | Hydrology (rational/SCS/TR-55) | [x] (backend) | no 2D/unsteady |
 | Spillway / dam / railway / earthworks | [x] (backend) | |
 | Any civil UI | [ ] | landing page only |
@@ -229,7 +229,7 @@ Classical foundations solid; modern/3D pieces missing.
 |---|---|---|
 | Planar MBD (Lagrange/DAE, Baumgarte) | [x] (backend) | |
 | 3D MBD with constraint enforcement | [~] (backend) | joints defined but integrator unconstrained |
-| Contact / collision dynamics | [ ] | none |
+| Contact / collision dynamics | [x] (backend) | sphere/plane/sphere/mesh + Hunt-Crossley + Coulomb + impulse-restitution (kerf-motion/contact.py); bounce 0.15% error |
 | Kinematics (four-bar/slider-crank/cam) | [x] (backend) | |
 | Robotics FK/IK (planar) | [x] (backend) | |
 | Robotics 6-DOF spatial IK | [x] (backend) | DLS Jacobian (robotics/arm.py), PUMA-class validated |
@@ -251,7 +251,7 @@ PLC + firmware + wiring genuinely usable; power/solar backend-only.
 | NEC power distribution + point-to-point SC | [x] (backend) | deep |
 | AC load-flow (Ybus / Newton-Raphson) | [x] (backend) | full polar-form NR (elecpower/loadflow.py); 3+5-bus validated |
 | Protection coordination (TCC) / arc-flash | [x] (backend) | IEEE C37.112 U1-U5 + IEEE 1584-2018 incident energy |
-| Solar PV system design | [x] (backend) | PVsyst-lite depth |
+| Solar PV (system + partial shading) | [x] (backend) | + single-diode + bypass-diode IV + global MPPT + mismatch loss (solarpv/shading.py); 60-cell P=255W validated |
 | Wiring/harness (WireViz + 3D router) | [x] | WiringView wired |
 | PLC IEC 61131-3 (ST/Ladder/FB/motion) | [x] | ST editor + **live Ladder power-flow sim** wired |
 | Firmware build/upload/monitor/debug | [x] | FirmwareActions + debug panel wired |
@@ -278,7 +278,7 @@ PLC + firmware + wiring genuinely usable; power/solar backend-only.
 | Paraxial ABCD ray transfer | [x] (backend) | |
 | Seidel aberrations | [x] (backend) | corrected S5 = p³(n+1)/(2n·f) (2026-05-24) |
 | Lensmaker / thick lens / Airy / Snell | [x] (backend) | |
-| Non-sequential ray tracing (stray light) | [ ] | Zemax-class gap |
+| Non-sequential ray tracing (stray light) | [x] (backend) | Fresnel-split traversal + ghost detection (kerf-optics/nonsequential.py); 0.01% ghost fraction validated |
 | Gaussian beam propagation (M², q-param) | [x] (backend) | complex-q + ABCD + M² + fibre coupling (kerf-optics/gaussian.py); HeNe zR=4.96m validated |
 | Wave optics / diffraction / polarisation | [ ] | |
 | Photonics (LED/photodiode/TIA/fibre) | [x] (backend) | |
