@@ -2113,3 +2113,200 @@ class MultiresStack:
         for lvl_str, disps in data.get("displacements", {}).items():
             stack._displacements[int(lvl_str)] = [list(map(float, d)) for d in disps]
         return stack
+
+
+# ---------------------------------------------------------------------------
+# Public: sculpt_brush — GK-P27
+# ---------------------------------------------------------------------------
+
+SCULPT_MODES: Tuple[str, ...] = ("grab", "smooth", "inflate")
+
+
+def sculpt_brush(
+    cage: SubDCage,
+    center: Sequence[float],
+    radius: float,
+    falloff: float,
+    strength: float,
+    mode: str,
+    direction: Optional[Sequence[float]] = None,
+) -> SubDCage:
+    """Apply a sculpt-brush stroke to a SubD cage.
+
+    Moves, smooths, or inflates cage vertices within *radius* of *center*,
+    weighted by a smooth-step falloff function.  Returns a new cage; the
+    input is never modified.
+
+    Parameters
+    ----------
+    cage : SubDCage
+        Input control cage.
+    center : sequence of float
+        3-D position of the brush centre.
+    radius : float
+        Brush influence radius (> 0).  Vertices beyond this distance are
+        unaffected.
+    falloff : float
+        Exponent of the smooth-step falloff: 1.0 = linear, 2.0 = squared,
+        higher = harder edge.  Clamped to [0.5, 8.0].
+    strength : float
+        Blend weight in [0, 1].  0 = no effect, 1 = full effect.
+    mode : str
+        Brush mode — one of ``"grab"``, ``"smooth"``, ``"inflate"``.
+    direction : sequence of float, optional
+        3-D displacement vector used by ``"grab"`` mode.  Ignored by other
+        modes.  Defaults to (0, 0, 0) (no grab effect).
+
+    Returns
+    -------
+    SubDCage
+        New cage with displaced vertices.
+
+    Notes
+    -----
+    * **Grab** — translates vertices by ``direction * weight * strength``.
+    * **Smooth** — moves each vertex toward the weighted average of its
+      1-ring neighbours, scaled by ``weight * strength``.
+    * **Inflate** — moves each vertex along its estimated normal by
+      ``weight * strength`` (normal estimated from incident face centroids).
+    * Falloff uses ``w = (1 - (d/r)^falloff)`` clamped to [0, 1], then
+      smoothstepped (``3w² - 2w³``) for smooth boundary at r.
+    * Never raises — errors return an unmodified copy.
+    """
+    try:
+        mode = mode.lower().strip()
+        if mode not in SCULPT_MODES:
+            raise ValueError(f"Unknown brush mode {mode!r}; expected one of {SCULPT_MODES}")
+
+        radius = float(radius)
+        if radius <= 0:
+            raise ValueError("radius must be positive")
+
+        falloff = max(0.5, min(8.0, float(falloff)))
+        strength = max(0.0, min(1.0, float(strength)))
+        cx, cy, cz = float(center[0]), float(center[1]), float(center[2])
+
+        dir3: List[float] = [0.0, 0.0, 0.0]
+        if direction is not None:
+            dir3 = [float(direction[0]), float(direction[1]), float(direction[2])]
+
+        n_verts = len(cage.vertices)
+        verts: List[List[float]] = [list(v) for v in cage.vertices]
+
+        # Compute per-vertex falloff weights
+        weights: List[float] = []
+        for v in verts:
+            dx, dy, dz = v[0] - cx, v[1] - cy, v[2] - cz
+            d = math.sqrt(dx * dx + dy * dy + dz * dz)
+            if d >= radius:
+                weights.append(0.0)
+            else:
+                t = 1.0 - (d / radius) ** falloff
+                t = max(0.0, min(1.0, t))
+                # smooth-step
+                w = t * t * (3.0 - 2.0 * t)
+                weights.append(w)
+
+        if mode == "grab":
+            new_verts = _brush_grab(verts, weights, dir3, strength)
+        elif mode == "smooth":
+            new_verts = _brush_smooth(verts, cage.faces, weights, strength)
+        else:  # inflate
+            new_verts = _brush_inflate(verts, cage.faces, weights, strength)
+
+        result = _copy_cage(cage)
+        result.vertices = new_verts
+        return result
+    except Exception:
+        return _copy_cage(cage)
+
+
+def _brush_grab(
+    verts: List[List[float]],
+    weights: List[float],
+    direction: List[float],
+    strength: float,
+) -> List[List[float]]:
+    new_verts = [list(v) for v in verts]
+    dx, dy, dz = direction[0], direction[1], direction[2]
+    for i, w in enumerate(weights):
+        if w <= 0.0:
+            continue
+        blend = w * strength
+        new_verts[i][0] += dx * blend
+        new_verts[i][1] += dy * blend
+        new_verts[i][2] += dz * blend
+    return new_verts
+
+
+def _brush_smooth(
+    verts: List[List[float]],
+    faces: List[List[int]],
+    weights: List[float],
+    strength: float,
+) -> List[List[float]]:
+    """Laplacian smooth: move each vertex toward 1-ring average."""
+    # Build adjacency
+    adj: Dict[int, List[int]] = {i: [] for i in range(len(verts))}
+    for f in faces:
+        n = len(f)
+        for k in range(n):
+            a, b = f[k], f[(k + 1) % n]
+            adj[a].append(b)
+            adj[b].append(a)
+
+    new_verts = [list(v) for v in verts]
+    for i, w in enumerate(weights):
+        if w <= 0.0:
+            continue
+        nbrs = adj.get(i, [])
+        if not nbrs:
+            continue
+        cx = sum(verts[nb][0] for nb in nbrs) / len(nbrs)
+        cy = sum(verts[nb][1] for nb in nbrs) / len(nbrs)
+        cz = sum(verts[nb][2] for nb in nbrs) / len(nbrs)
+        blend = w * strength
+        new_verts[i][0] = verts[i][0] + blend * (cx - verts[i][0])
+        new_verts[i][1] = verts[i][1] + blend * (cy - verts[i][1])
+        new_verts[i][2] = verts[i][2] + blend * (cz - verts[i][2])
+    return new_verts
+
+
+def _brush_inflate(
+    verts: List[List[float]],
+    faces: List[List[int]],
+    weights: List[float],
+    strength: float,
+) -> List[List[float]]:
+    """Move each vertex along its estimated normal (face-area weighted)."""
+    normals: List[List[float]] = [[0.0, 0.0, 0.0] for _ in verts]
+    for f in faces:
+        n = len(f)
+        if n < 3:
+            continue
+        # Compute face normal via Newell's method
+        nx = ny = nz = 0.0
+        for k in range(n):
+            a, b = verts[f[k]], verts[f[(k + 1) % n]]
+            nx += (a[1] - b[1]) * (a[2] + b[2])
+            ny += (a[2] - b[2]) * (a[0] + b[0])
+            nz += (a[0] - b[0]) * (a[1] + b[1])
+        for vi in f:
+            normals[vi][0] += nx
+            normals[vi][1] += ny
+            normals[vi][2] += nz
+
+    new_verts = [list(v) for v in verts]
+    for i, w in enumerate(weights):
+        if w <= 0.0:
+            continue
+        nx, ny, nz = normals[i]
+        nlen = math.sqrt(nx * nx + ny * ny + nz * nz)
+        if nlen < 1e-12:
+            continue
+        nx /= nlen; ny /= nlen; nz /= nlen
+        blend = w * strength
+        new_verts[i][0] += nx * blend
+        new_verts[i][1] += ny * blend
+        new_verts[i][2] += nz * blend
+    return new_verts
