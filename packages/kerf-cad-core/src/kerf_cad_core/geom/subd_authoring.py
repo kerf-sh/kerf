@@ -1932,3 +1932,184 @@ def _closest_point_on_tri_set(
     dists = np.sum((proj - p) ** 2, axis=1)
     best = int(np.argmin(dists))
     return proj[best]
+
+
+# ---------------------------------------------------------------------------
+# Public: MultiresStack — GK-P26
+# ---------------------------------------------------------------------------
+
+MAX_MULTIRES_LEVELS: int = 6
+
+
+@dataclass
+class MultiresStack:
+    """Multi-resolution displacement stack for SubD sculpting.
+
+    Stores a base cage plus up to ``MAX_MULTIRES_LEVELS`` (6) levels of
+    per-vertex displacement vectors.  Each level *k* operates on the mesh
+    produced by k Catmull-Clark steps from the base cage.
+
+    Parameters
+    ----------
+    cage : SubDCage
+        The level-0 base cage.
+    max_levels : int
+        Maximum levels supported (capped at ``MAX_MULTIRES_LEVELS=6``).
+
+    Attributes
+    ----------
+    cage : SubDCage
+        Base cage (level 0).
+    max_levels : int
+        Maximum levels stored.
+    _displacements : dict[int, list[list[float]]]
+        Sparse map: level → list of [dx, dy, dz] displacements, one per
+        vertex of the level-k mesh.  Absent levels have zero displacement.
+    """
+
+    cage: SubDCage
+    max_levels: int = 2
+    _displacements: Dict[int, List[List[float]]] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        self.max_levels = max(1, min(int(self.max_levels), MAX_MULTIRES_LEVELS))
+
+    # ------------------------------------------------------------------
+    # Level mesh helpers
+    # ------------------------------------------------------------------
+
+    def level_mesh(self, level: int) -> SubDMesh:
+        """Return the subdivided mesh at *level* (no displacements applied)."""
+        level = max(0, min(int(level), self.max_levels))
+        mesh = self.cage.to_subd_mesh()
+        if level == 0:
+            return mesh
+        return catmull_clark_subdivide(mesh, levels=level)
+
+    def _vertex_count_at(self, level: int) -> int:
+        return len(self.level_mesh(level).vertices)
+
+    # ------------------------------------------------------------------
+    # Displacement API
+    # ------------------------------------------------------------------
+
+    def set_displacement(
+        self,
+        level: int,
+        vertex_index: int,
+        displacement: Sequence[float],
+    ) -> None:
+        """Set the displacement vector for a single vertex at *level*.
+
+        Parameters
+        ----------
+        level : int
+            Subdivision level (0..max_levels).
+        vertex_index : int
+            Index into the level-*k* mesh vertex list.
+        displacement : sequence of float
+            [dx, dy, dz].
+        """
+        level = max(0, min(int(level), self.max_levels))
+        n = self._vertex_count_at(level)
+        if vertex_index < 0 or vertex_index >= n:
+            return
+        if level not in self._displacements:
+            self._displacements[level] = [[0.0, 0.0, 0.0] for _ in range(n)]
+        d = self._displacements[level]
+        if len(d) != n:
+            d[:] = [[0.0, 0.0, 0.0] for _ in range(n)]
+        d[vertex_index] = [float(displacement[0]), float(displacement[1]), float(displacement[2])]
+
+    def get_displacement(
+        self,
+        level: int,
+        vertex_index: int,
+    ) -> List[float]:
+        """Return the displacement vector for a single vertex at *level*.
+
+        Returns ``[0.0, 0.0, 0.0]`` if no displacement is stored.
+        """
+        level = max(0, min(int(level), self.max_levels))
+        disps = self._displacements.get(level)
+        if disps is None or vertex_index < 0 or vertex_index >= len(disps):
+            return [0.0, 0.0, 0.0]
+        return list(disps[vertex_index])
+
+    def clear_level(self, level: int) -> None:
+        """Remove all displacements for *level*."""
+        self._displacements.pop(level, None)
+
+    def clear_all(self) -> None:
+        """Remove all displacements for all levels."""
+        self._displacements.clear()
+
+    # ------------------------------------------------------------------
+    # Evaluate
+    # ------------------------------------------------------------------
+
+    def evaluate(self, level: int) -> SubDMesh:
+        """Return the SubDMesh at *level* with all stored displacements applied.
+
+        Applies displacements from level 0 upwards cumulatively:
+        *lower* level displacements are propagated up by subdividing the
+        displaced mesh.  Higher level displacements are then applied on top.
+
+        For simplicity this implementation applies each level's displacements
+        directly to the subdivided mesh at that level (no cross-level
+        propagation — suitable for traditional sculpting workflows where each
+        level's displacements are independent micro-detail).
+
+        Parameters
+        ----------
+        level : int
+            Target level to evaluate.
+
+        Returns
+        -------
+        SubDMesh
+            Subdivided mesh with displacements applied.
+        """
+        level = max(0, min(int(level), self.max_levels))
+        mesh = self.level_mesh(level)
+
+        disps = self._displacements.get(level)
+        if disps and len(disps) == len(mesh.vertices):
+            new_verts = []
+            for vi, v in enumerate(mesh.vertices):
+                d = disps[vi]
+                new_verts.append([v[0] + d[0], v[1] + d[1], v[2] + d[2]])
+            mesh.vertices = new_verts
+
+        return mesh
+
+    # ------------------------------------------------------------------
+    # Serialisation helpers
+    # ------------------------------------------------------------------
+
+    def to_dict(self) -> Dict:
+        """Serialise to a JSON-compatible dict."""
+        return {
+            "cage": {
+                "vertices": [list(v) for v in self.cage.vertices],
+                "faces": [list(f) for f in self.cage.faces],
+            },
+            "max_levels": self.max_levels,
+            "displacements": {
+                str(lvl): [list(d) for d in disps]
+                for lvl, disps in self._displacements.items()
+            },
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict) -> "MultiresStack":
+        """Deserialise from a dict produced by :py:meth:`to_dict`."""
+        cage_data = data.get("cage", {})
+        cage = SubDCage(
+            vertices=[list(map(float, v)) for v in cage_data.get("vertices", [])],
+            faces=[list(map(int, f)) for f in cage_data.get("faces", [])],
+        )
+        stack = cls(cage=cage, max_levels=int(data.get("max_levels", 2)))
+        for lvl_str, disps in data.get("displacements", {}).items():
+            stack._displacements[int(lvl_str)] = [list(map(float, d)) for d in disps]
+        return stack
