@@ -182,6 +182,19 @@ async def run_cam(req: CAMRequest):
         if op_type == "3plus2":
             return _run_3plus2_route(op)
 
+    # Gate opencamlib — return pending sentinel when engine is absent, matching
+    # the pattern used by kerf-fem and kerf-topo (no fabricated output).
+    if not _ocl_available:
+        return {
+            "status": "pending",
+            "warnings": [
+                "Engine pending — opencamlib not installed. "
+                "Install: pip install opencamlib (or build from source: "
+                "https://github.com/aewallin/opencamlib)"
+            ],
+            "errors": [],
+        }
+
     warnings = []
     errors = []
     toolpath_length = 0.0
@@ -191,31 +204,25 @@ async def run_cam(req: CAMRequest):
         step_path = Path(tmpdir) / "input.step"
         step_path.write_bytes(step_bytes)
 
-        if not _ocl_available:
-            warnings.append("opencamlib not installed — returning mock scaffold toolpath. "
-                            "Install: pip install opencamlib (or build from source: "
-                            "https://github.com/aewallin/opencamlib)")
-            g_code, toolpath_length, estimated_time = _mock_toolpath(operations)
-        else:
-            try:
-                stl_path = None
-                occ_shape = None
-                if _occ_available:
-                    stl_path = str(Path(tmpdir) / "input.stl")
-                    occ_shape = convert_step_to_stl(str(step_path), stl_path)
-                else:
-                    warnings.append(
-                        "pythonOCC not installed — surface mesh unavailable; "
-                        "toolpath will be computed on an empty surface. "
-                        "Install: conda install -c conda-forge pythonocc-core"
-                    )
-                g_code, toolpath_length, estimated_time = generate_toolpaths(
-                    str(step_path), operations, req.post_processor,
-                    stl_path=stl_path, occ_shape=occ_shape,
+        try:
+            stl_path = None
+            occ_shape = None
+            if _occ_available:
+                stl_path = str(Path(tmpdir) / "input.stl")
+                occ_shape = convert_step_to_stl(str(step_path), stl_path)
+            else:
+                warnings.append(
+                    "pythonOCC not installed — surface mesh unavailable; "
+                    "toolpath will be computed on an empty surface. "
+                    "Install: conda install -c conda-forge pythonocc-core"
                 )
-            except Exception as e:
-                errors.append(str(e))
-                g_code = ""
+            g_code, toolpath_length, estimated_time = generate_toolpaths(
+                str(step_path), operations, req.post_processor,
+                stl_path=stl_path, occ_shape=occ_shape,
+            )
+        except Exception as e:
+            errors.append(str(e))
+            g_code = ""
 
         gcode_path = Path(tmpdir) / "toolpath.nc"
         gcode_path.write_text(g_code)
