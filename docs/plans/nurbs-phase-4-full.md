@@ -71,6 +71,18 @@ viewport toggle shipped (shader-side `ShaderMaterial` in `src/lib/zebraMaterial.
   binding presence is unconfirmed at runtime (C2-T1 probe not yet run on a live
   WASM build). The worker's `TrimByCurveUnsupportedError` fires if those classes
   are absent; escalate to C2-T12 (Section+prism fallback) if that occurs.
+  **General NURBS×NURBS best-effort (GK-P44) — shipped.**
+  `geom/trim_curve.py::trim_face_by_nurbs_ssi` extends trim-by-curve beyond the
+  plane/cyl/sphere carrier matrix: it computes the trim curve for **arbitrary
+  NURBS carriers** via the robust marching SSI
+  (`intersection.surface_surface_intersect`, hardened by GK-P15
+  branch-stitching), wraps the closed loop as a B-rep edge, splits + builds the
+  trimmed NURBS face, and asserts `validate_body(open=True)` is clean.
+  `trim_face_by_ssi` auto-falls-through to it when the analytic matrix declines.
+  DoD met for the common single-closed-interior-loop case
+  (`test_nurbs_trim_ssi_gkp44.py`). Degenerate / multi-branch / open-loop /
+  validate-failing cases are declined (`unsupported-input`) and stay on the
+  OCCT worker (`feature_trim_by_curve`) — the documented fallback.
 
 ### What this plan covers
 

@@ -1283,8 +1283,29 @@ def trim_face_by_ssi(
         return r
 
     if not ssi["ok"]:
+        # GK-P44: when the analytic carrier matrix does not cover this surface
+        # pair (e.g. general NURBS × NURBS), fall through to the robust marching
+        # SSI (intersection.surface_surface_intersect, hardened by GK-P15
+        # branch-stitching) before declaring the pair unsupported.  The OCCT
+        # worker (feature_trim_by_curve) stays the documented fallback for the
+        # degenerate / elliptic-loop / multi-branch cases this path declines.
+        reason = ssi.get("reason", "")
+        if "unsupported-input" in reason:
+            general = trim_face_by_nurbs_ssi(
+                surface_a, surface_b,
+                keep_side=keep_side, samples=samples, tol=tol,
+            )
+            # Only return the general result when it actually produced a face;
+            # otherwise preserve the original "unsupported-input" reason so
+            # callers know to escalate to the OCCT worker.
+            if general["ok"]:
+                return general
+            r = dict(_UNSUPPORTED)
+            r["reason"] = general["reason"] or reason
+            r["residual_max"] = general.get("residual_max", float("inf"))
+            return r
         r = dict(_UNSUPPORTED)
-        r["reason"] = ssi["reason"]
+        r["reason"] = reason
         r["residual_max"] = ssi.get("residual_max", float("inf"))
         return r
 
@@ -1518,6 +1539,274 @@ def _build_ssi_trimmed_face(
                 "elliptic loop not implemented in pure-Python path"
             ]},
         )
+
+
+# ===========================================================================
+# GK-P44 — best-effort general NURBS × NURBS pure-Python trim (via robust SSI)
+# ===========================================================================
+#
+# The carrier-matrix trim above (GK-40) covers Plane / CylinderSurface analytic
+# pairs.  GK-P44 extends trim-by-curve to ARBITRARY NURBS carriers by computing
+# the trim curve with the robust marching SSI
+# (intersection.surface_surface_intersect, hardened by GK-P15 branch-stitching)
+# instead of the closed-form carrier matrix, then splitting + validate_body'ing
+# the trimmed NURBS face.
+#
+# Scope / honesty boundary (matches docs/plans/occt-phase4.md §6):
+#   * Common non-degenerate cases: a single closed SSI loop interior to the
+#     trimmed face → a validate_body-clean trimmed face (disk kept, or
+#     face-with-hole).  This is the GK-P44 DoD.
+#   * Degenerate / elliptic-self-closing / multi-branch / boundary-grazing
+#     cases stay on the OCCT worker (feature_trim_by_curve) — the documented
+#     fallback.  We return ok=False with an "unsupported-input"-flavoured reason
+#     so callers escalate cleanly rather than building an invalid face.
+
+
+class _PolylineCurve3:
+    """A closed 3-D polyline trim curve parameterised on ``[0, 1]``.
+
+    Mirrors the minimal curve interface (``evaluate(t)``) that
+    ``brep.Edge`` / ``brep_build._explicit_loop`` consume.  Used to wrap the
+    sampled SSI intersection polyline as a single B-rep edge so the trimmed
+    NURBS face can be validated.  Arc-length-parameterised so ``t`` maps
+    monotonically along the loop.
+    """
+
+    def __init__(self, pts: np.ndarray):
+        pts = np.asarray(pts, dtype=float)
+        if pts.ndim != 2 or pts.shape[0] < 2:
+            raise ValueError("_PolylineCurve3 needs an (N>=2, 3) point array")
+        self.pts = pts
+        seg = np.linalg.norm(np.diff(pts, axis=0), axis=1)
+        cum = np.concatenate([[0.0], np.cumsum(seg)])
+        total = float(cum[-1])
+        self._s = cum / total if total > 1e-15 else np.linspace(0.0, 1.0, len(pts))
+        self.param_range = (0.0, 1.0)
+
+    def evaluate(self, t: float) -> np.ndarray:
+        t = float(min(max(t, 0.0), 1.0))
+        idx = int(np.searchsorted(self._s, t, side="right")) - 1
+        idx = max(0, min(idx, len(self.pts) - 2))
+        s0, s1 = self._s[idx], self._s[idx + 1]
+        a = (t - s0) / (s1 - s0) if (s1 - s0) > 1e-15 else 0.0
+        return (1.0 - a) * self.pts[idx] + a * self.pts[idx + 1]
+
+
+def _select_trim_branch(branches: list) -> "Optional[dict]":
+    """Pick the branch best suited to a single-loop interior trim.
+
+    Prefers a closed branch; among closed branches the longest one.  Returns
+    ``None`` when there is no usable branch (caller escalates to OCCT).
+    """
+    if not branches:
+        return None
+    closed = [b for b in branches if b.get("closed")]
+    pool = closed if closed else branches
+
+    def _branch_len(b: dict) -> float:
+        pts = np.asarray(b.get("points", []), dtype=float)
+        if pts.ndim != 2 or len(pts) < 2:
+            return 0.0
+        return float(np.sum(np.linalg.norm(np.diff(pts, axis=0), axis=1)))
+
+    return max(pool, key=_branch_len)
+
+
+def trim_face_by_nurbs_ssi(
+    surface_a: object,
+    surface_b: object,
+    *,
+    keep_side: str = "inside",
+    samples: int = 256,
+    tol: float = 1e-6,
+) -> dict:
+    """Trim ``surface_a`` (a NURBS carrier) by its SSI curve with ``surface_b``
+    (any NURBS carrier) — the GK-P44 best-effort general path.
+
+    Steps
+    -----
+    1. Compute the intersection branches via the robust marching SSI
+       (``intersection.surface_surface_intersect``).
+    2. Select a single closed loop interior to ``surface_a`` (the common
+       non-degenerate case).  Multi-branch / open / boundary-grazing results
+       are declined (OCCT worker fallback).
+    3. Wrap the loop's 3-D polyline as a ``_PolylineCurve3`` edge and build a
+       B-rep ``Face`` on ``surface_a``:
+         - ``keep_side='inside'``  → the loop is the face's outer boundary.
+         - ``keep_side='outside'`` → natural surface boundary outer + the loop
+           as an inner hole.
+    4. Wrap the face in an open ``Shell`` ``Body`` and assert
+       ``validate_body(open=True)`` is clean.
+
+    Returns the same dict contract as :func:`trim_face_by_ssi` (``ok``,
+    ``reason``, ``face``, ``loop`` (None here — no analytic metadata),
+    ``uv_boundary`` (UV on surface_a), ``residual_max``).  Never raises.
+    """
+    _FAIL = {
+        "ok": False,
+        "reason": "",
+        "face": None,
+        "loop": None,
+        "uv_boundary": [],
+        "residual_max": float("inf"),
+    }
+    if keep_side not in ("inside", "outside"):
+        r = dict(_FAIL)
+        r["reason"] = f"keep_side must be 'inside' or 'outside'; got {keep_side!r}"
+        return r
+
+    try:
+        from kerf_cad_core.geom.nurbs import NurbsSurface  # noqa: PLC0415
+        from kerf_cad_core.geom.intersection import (  # noqa: PLC0415
+            surface_surface_intersect,
+        )
+        from kerf_cad_core.geom.brep import (  # noqa: PLC0415
+            Body, Coedge, Edge, Face, Loop, Shell, Solid, Vertex, validate_body,
+        )
+        from kerf_cad_core.geom.brep_build import (  # noqa: PLC0415
+            _natural_boundary, _outer_loop_ccw,
+        )
+    except Exception as exc:  # noqa: BLE001
+        r = dict(_FAIL)
+        r["reason"] = f"unsupported-input: brep/intersection modules unavailable: {exc}"
+        return r
+
+    if not isinstance(surface_a, NurbsSurface) or not isinstance(surface_b, NurbsSurface):
+        r = dict(_FAIL)
+        r["reason"] = (
+            "unsupported-input: general SSI trim requires both carriers to be "
+            "NurbsSurface; use the analytic carrier matrix or the OCCT worker"
+        )
+        return r
+
+    # 1. Robust marching SSI ----------------------------------------------------
+    try:
+        ssi = surface_surface_intersect(surface_a, surface_b, tol=tol)
+    except Exception as exc:  # noqa: BLE001
+        r = dict(_FAIL)
+        r["reason"] = f"SSI failed: {exc}"
+        return r
+    if not ssi.get("ok"):
+        r = dict(_FAIL)
+        r["reason"] = f"unsupported-input: SSI did not converge: {ssi.get('reason', '')}"
+        return r
+
+    branches = ssi.get("branches", [])
+    branch = _select_trim_branch(branches)
+    if branch is None:
+        r = dict(_FAIL)
+        r["reason"] = "unsupported-input: SSI produced no usable intersection branch"
+        return r
+
+    # Degenerate / multi-branch / open cases → decline (OCCT worker fallback).
+    if len(branches) > 1:
+        r = dict(_FAIL)
+        r["reason"] = (
+            f"unsupported-input: SSI produced {len(branches)} branches; "
+            "multi-branch trim stays on the OCCT worker (feature_trim_by_curve)"
+        )
+        return r
+    if not branch.get("closed"):
+        r = dict(_FAIL)
+        r["reason"] = (
+            "unsupported-input: SSI loop is open (boundary-crossing trim); "
+            "stays on the OCCT worker (feature_trim_by_curve)"
+        )
+        return r
+
+    pts_3d = np.asarray(branch.get("points", []), dtype=float)
+    params_a = branch.get("params_a", [])
+    if pts_3d.ndim != 2 or len(pts_3d) < 4:
+        r = dict(_FAIL)
+        r["reason"] = "unsupported-input: SSI loop has too few samples for a face boundary"
+        return r
+
+    # Close the polyline exactly (first == last) so the edge is a true loop.
+    if float(np.linalg.norm(pts_3d[0] - pts_3d[-1])) > max(10.0 * tol, 1e-9):
+        pts_3d = np.vstack([pts_3d, pts_3d[0]])
+
+    # residual_max: max gap between the loop pts evaluated on A vs B (SSI fit).
+    try:
+        params_b = branch.get("params_b", [])
+        residual_max = 0.0
+        for (ua, va), (ub, vb) in zip(params_a, params_b):
+            pa = np.asarray(surface_a.evaluate(float(ua), float(va)), dtype=float)[:3]
+            pb = np.asarray(surface_b.evaluate(float(ub), float(vb)), dtype=float)[:3]
+            residual_max = max(residual_max, float(np.linalg.norm(pa - pb)))
+    except Exception:  # noqa: BLE001
+        residual_max = float(tol)
+
+    uv_boundary = [(float(u), float(v)) for (u, v) in params_a]
+
+    # 2-3. Build the trimmed NURBS face -----------------------------------------
+    try:
+        loop_pts = pts_3d.copy()
+        # Build a single closed edge from the polyline; seam vertex = pts[0].
+        curve = _PolylineCurve3(loop_pts)
+        v_seam = Vertex(loop_pts[0].copy(), tol)
+        e_loop = Edge(curve, 0.0, 1.0, v_seam, v_seam, tol)
+
+        if keep_side == "inside":
+            # The trimmed region is the patch interior bounded by the SSI loop.
+            # _outer_loop_ccw orients the single-coedge loop CCW wrt the
+            # surface normal at the centre.
+            coedges, _ = _outer_loop_ccw(surface_a, [(e_loop, True)])
+            outer = Loop(coedges, is_outer=True)
+            face = Face(surface_a, [outer], orientation=True, tol=tol)
+        else:
+            # keep_side == "outside": natural surface boundary outer + SSI hole.
+            _verts, edge_orients = _natural_boundary(surface_a, tol)
+            outer_coedges, _ = _outer_loop_ccw(surface_a, edge_orients)
+            outer = Loop(outer_coedges, is_outer=True)
+            # Inner loop must be CW wrt the surface normal: take the CCW loop
+            # and reverse it.
+            ccw_inner, _ = _outer_loop_ccw(surface_a, [(e_loop, True)])
+            inner_coedges = [Coedge(c.edge, not c.orientation) for c in reversed(ccw_inner)]
+            inner = Loop(inner_coedges, is_outer=False)
+            face = Face(surface_a, [outer, inner], orientation=True, tol=tol)
+    except Exception as exc:  # noqa: BLE001
+        r = dict(_FAIL)
+        r["reason"] = f"face build failed: {exc}"
+        r["uv_boundary"] = uv_boundary
+        r["residual_max"] = residual_max
+        return r
+
+    # 4. validate_body on an open single-face shell -----------------------------
+    try:
+        shell = Shell([face], is_closed=False)
+        body = Body(solids=[Solid([shell])])
+        vres = validate_body(body, open=True)
+    except Exception as exc:  # noqa: BLE001
+        r = dict(_FAIL)
+        r["reason"] = f"validate_body raised: {exc}"
+        r["uv_boundary"] = uv_boundary
+        r["residual_max"] = residual_max
+        return r
+
+    if not vres.get("ok"):
+        r = dict(_FAIL)
+        r["reason"] = (
+            "unsupported-input: trimmed NURBS face failed validate_body "
+            f"({vres.get('errors', [])}); stays on the OCCT worker"
+        )
+        r["uv_boundary"] = uv_boundary
+        r["residual_max"] = residual_max
+        return r
+
+    # Detach the transient shell so the caller can sew the face elsewhere.
+    try:
+        face.shell = None
+    except Exception:  # noqa: BLE001
+        pass
+
+    return {
+        "ok": True,
+        "reason": "",
+        "face": face,
+        "loop": None,
+        "uv_boundary": uv_boundary,
+        "residual_max": residual_max,
+    }
 
 
 # ---------------------------------------------------------------------------

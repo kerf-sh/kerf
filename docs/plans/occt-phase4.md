@@ -54,7 +54,7 @@ oracled, and sequenced foundations-first.
 | Area | Shipped state (post GK-P) |
 |---|---|
 | **Pure-Py G3 blend** | `blend_srf_g3` + `g3_blend_trim_sew` (GK-62) fully exported from `geom/__init__`; `curvature_rate_continuity_residual` oracle also exported. `feature_blend_srf_g3` ToolSpec in `surfacing.py` (GK-P01). |
-| **Trim-by-curve** | OCCT worker path (`feature_trim_by_curve`) + pure-Python carrier-matrix path (GK-40) shipped. C2-T12 Section+prism fallback is still JS/WASM worker code (out of pure-Python scope). |
+| **Trim-by-curve** | OCCT worker path (`feature_trim_by_curve`) + pure-Python carrier-matrix path (GK-40) + **general NURBS×NURBS best-effort path (GK-P44)**: `trim_face_by_nurbs_ssi` uses the robust SSI (GK-P15) for arbitrary NURBS carriers, validate_body-clean for single-closed-loop cases. C2-T12 Section+prism fallback is still JS/WASM worker code (out of pure-Python scope); degenerate/multi-branch cases stay on the OCCT worker. |
 | **Face imprint** | GK-19 analytic-matrix imprint shipped; general NURBS×NURBS stays OCCT worker (by design). |
 | **Curvature combs** | `feature_surface_curvature_combs` — OCCT viz path + `include_g3_residuals` flag for pure-Python NurbsSurface targets (GK-P07); uses `curvature_rate_continuity_residual` oracle (GK-62). |
 | **Zebra / reflection lines** | `zebra_stripe_continuity_analyser` (GK-38) + `reflection_lines` (GK-95) both exported from `geom/__init__`; `feature_zebra_analysis` ToolSpec in `surfacing.py` (GK-P02). |
@@ -67,8 +67,12 @@ oracled, and sequenced foundations-first.
 Pure-Python G3 blend, zebra analyser, class-A harness, global continuity audit,
 and G3 chain blend are all invokable via the `.feature` workflow.
 Curvature combs includes the G3 residual column for pure-Python surfaces.
-Only the OCCT-delegated items (general NURBS×NURBS trim, C2-T12 fallback)
-remain on the worker side by design.
+The two former Phase-4 non-goals now have best-effort pure-Python coverage:
+general NURBS×NURBS trim (GK-P44, `trim_face_by_nurbs_ssi`) and OCCT-path G3
+(GK-P43, analyzer + pole round-trip).  Only the genuinely-impossible /
+worker-owned remainders stay delegated: OCCT *native-enum* G3 (no `GeomAbs_G3`
+token) and the degenerate/multi-branch trim cases + C2-T12 Section+prism
+fallback (JS/WASM worker code).
 
 ---
 
@@ -189,11 +193,21 @@ attempt them best-effort; **GK-P43** and **GK-P44** (Group BE) delivered real
 coverage *around* the impossible parts. The narrow truly-impossible boundary is
 called out explicitly.
 
-- General **NURBS×NURBS** trim-by-curve — pure-Python best-effort path is
-  added in **GK-P44** (see the dedicated entry below, landed in the next
-  commit). T-104's original carrier-matrix trim stays as the analytic fast
-  path; the OCCT worker (`feature_trim_by_curve`) stays the documented
-  fallback for degenerate / elliptic-loop cases.
+- General **NURBS×NURBS** trim-by-curve — **best-effort SHIPPED (GK-P44).**
+  `geom/trim_curve.py` now extends beyond the plane/cyl/sphere carrier matrix:
+  `trim_face_by_ssi` falls through to `trim_face_by_nurbs_ssi`, which uses the
+  robust marching SSI (`intersection.surface_surface_intersect`, hardened by
+  GK-P15 branch-stitching) to compute the trim curve for **arbitrary NURBS
+  carriers**, wraps the closed SSI loop as a B-rep edge, splits + builds the
+  trimmed NURBS face (interior disk for `keep_side='inside'`, natural boundary
+  + SSI hole for `keep_side='outside'`), and asserts `validate_body(open=True)`
+  is clean. DoD met for common (non-degenerate) cases: single closed interior
+  loop → `validate_body`-clean trimmed face (`test_nurbs_trim_ssi_gkp44.py`,
+  residual < 1e-5). T-104's analytic carrier-matrix trim stays the exact fast
+  path. The OCCT worker (`feature_trim_by_curve`) **stays the documented
+  fallback** for degenerate / elliptic-loop / multi-branch / open-loop /
+  validate-failing cases — those are declined with an `unsupported-input`
+  reason rather than silently producing an invalid face.
 - The **C2-T12 Section+prism JS/WASM worker fallback** — worker code,
   owned elsewhere, would collide with concurrent agents (unchanged).
 - **OCCT *native-enum* G3** — STILL IMPOSSIBLE. `GeomAbs_G3` is absent from
