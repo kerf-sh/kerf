@@ -255,9 +255,9 @@ features:
       note: "Inherited from Rhino host (OpenNURBS kernel); not native to MatrixGold itself"
       source: "https://docs.mcneel.com/rhino/8/help/en-us/index.htm"
     kerf:
-      status: partial
-      note: "OCCT surfacing wired; math complete but OCCT bindings unconfirmed at build"
-      evidence: "packages/kerf-cad-core/nurbs/"
+      status: yes
+      note: "blend_srf, network_srf (Gordon), patch_srf_fit, match_srf, G3 blends wired"
+      evidence: "packages/kerf-cad-core/src/kerf_cad_core/geom/network_srf.py"
   - domain: D1
     feature: "NURBS boolean operations (general)"
     competitor:
@@ -265,9 +265,9 @@ features:
       note: "Via Rhino host OpenNURBS; MatrixGold adds no boolean engine of its own"
       source: "https://docs.mcneel.com/rhino/8/help/en-us/index.htm"
     kerf:
-      status: partial
-      note: "OCCT B-rep booleans functional; no graceful failure handling or fuzzy heal"
-      evidence: "packages/kerf-cad-core/"
+      status: yes
+      note: "OCCT general booleans + robust retry layer (bbox-tol) + geometry heal"
+      evidence: "packages/kerf-cad-core/src/kerf_cad_core/geom/surface_boolean_robust.py"
   - domain: D1
     feature: "Sweep (1 & 2 rail)"
     competitor:
@@ -276,8 +276,8 @@ features:
       source: "https://docs.mcneel.com/rhino/8/help/en-us/index.htm"
     kerf:
       status: yes
-      note: "BRepOffsetAPI_MakePipeShell; wired"
-      evidence: "packages/kerf-cad-core/"
+      note: "BRepOffsetAPI_MakePipeShell; sweep1 + sweep2 wired"
+      evidence: "packages/kerf-cad-core/src/kerf_cad_core/geom/sweep1.py"
   - domain: D1
     feature: "Loft"
     competitor:
@@ -285,9 +285,9 @@ features:
       note: "Via Rhino host loft command; MatrixGold does not extend lofting"
       source: "https://docs.mcneel.com/rhino/8/help/en-us/index.htm"
     kerf:
-      status: partial
-      note: "Loft wired; no guide-rail overload in binding"
-      evidence: "packages/kerf-cad-core/"
+      status: yes
+      note: "Loft + guide-rail overload (ThruSections.AddWire); ruled/closed/symmetric"
+      evidence: "packages/kerf-cad-core/src/kerf_cad_core/feature_loft.py"
   - domain: D1
     feature: "Direct mesh / solid editing"
     competitor:
@@ -295,9 +295,9 @@ features:
       note: "Via Rhino host mesh and solid editing tools; MatrixGold adds jewelry-specific deformers only"
       source: "https://docs.mcneel.com/rhino/8/help/en-us/index.htm"
     kerf:
-      status: partial
-      note: "Direct edit: planar push-pull only; no move/delete-face"
-      evidence: "packages/kerf-cad-core/"
+      status: yes
+      note: "push_pull (planar + curved), move_face, delete_face wired as ops"
+      evidence: "packages/kerf-cad-core/src/kerf_cad_core/geom/direct_edit.py"
 ---
 
 # Kerf vs MatrixGold
