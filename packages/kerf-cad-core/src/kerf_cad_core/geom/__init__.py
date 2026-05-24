@@ -774,8 +774,8 @@ from kerf_cad_core.geom.io.rhino3dm import (
     write_3dm,
     Rhino3dmReadError,
 )
-# GK-134: direct modelling — push-pull / move-face
-from kerf_cad_core.geom.direct_edit import push_pull_face, move_face
+# GK-134 / GK-P18: direct modelling — push-pull / move-face / delete-face
+from kerf_cad_core.geom.direct_edit import push_pull_face, move_face, delete_face
 # GK-137: point-cloud → mesh reconstruction (ball-pivoting / Poisson-lite)
 from kerf_cad_core.geom.recon import reconstruct_mesh  # noqa: E402
 # GK-64: Class-A leading quality pass (comb-peak + zebra-break + G3-dropout)
