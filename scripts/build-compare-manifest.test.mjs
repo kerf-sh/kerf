@@ -70,7 +70,7 @@ describe('build-compare-manifest', () => {
     const result = runScript(tmpDir)
     expect(result.status).toBe(0)
     const manifest = readManifest(tmpDir)
-    expect(manifest.version).toBe(1)
+    expect(manifest.version).toBe(2)
     expect(manifest.items).toEqual([])
     expect(typeof manifest.generatedAt).toBe('string')
   })
@@ -81,7 +81,7 @@ describe('build-compare-manifest', () => {
     expect(result.status).toBe(0)
 
     const manifest = readManifest(tmpDir)
-    expect(manifest.version).toBe(1)
+    expect(manifest.version).toBe(2)
     expect(Array.isArray(manifest.items)).toBe(true)
     expect(manifest.items).toHaveLength(1)
 

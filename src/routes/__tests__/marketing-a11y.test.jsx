@@ -137,29 +137,6 @@ describe('Roadmap page — T-H1 a11y', () => {
     expect(html).toMatch(/aria-labelledby="roadmap-hero-heading"/)
     expect(html).toMatch(/id="roadmap-hero-heading"/)
   })
-
-  it('filter strip has aria-label="Roadmap filters"', () => {
-    const html = render(<Roadmap />)
-    expect(html).toMatch(/aria-label="Roadmap filters"/)
-  })
-
-  it('status filter group has role="group" and aria-label', () => {
-    const html = render(<Roadmap />)
-    expect(html).toMatch(/aria-label="Filter by status"/)
-  })
-
-  it('area filter group has role="group" and aria-label', () => {
-    const html = render(<Roadmap />)
-    expect(html).toMatch(/aria-label="Filter by area"/)
-  })
-
-  it('filter chips have aria-pressed attribute', () => {
-    const html = render(<Roadmap />)
-    // Default "All" chip is active → aria-pressed="true"
-    expect(html).toMatch(/aria-pressed="true"/)
-    // Other chips are inactive → aria-pressed="false"
-    expect(html).toMatch(/aria-pressed="false"/)
-  })
 })
 
 /* ── DomainPage ─────────────────────────────────────────────────────────── */

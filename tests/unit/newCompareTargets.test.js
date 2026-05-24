@@ -51,11 +51,11 @@ function parseFrontMatter(content) {
   const result = {}
 
   for (const line of block.split('\n')) {
+    if (/^\s/.test(line)) continue
     const colon = line.indexOf(':')
     if (colon === -1) continue
     const key = line.slice(0, colon).trim()
     const raw = line.slice(colon + 1).trim()
-    // Strip surrounding double or single quotes
     result[key] = raw.replace(/^["']|["']$/g, '')
   }
 

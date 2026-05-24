@@ -231,7 +231,8 @@ export default function Roadmap() {
       })
       .then((md) => {
         if (cancelled) return
-        setState({ status: 'ready', md, error: null })
+        const stripped = md.replace(/^\s*#\s+.+?\n+/, '')
+        setState({ status: 'ready', md: stripped, error: null })
       })
       .catch((err) => {
         if (cancelled) return
@@ -251,10 +252,16 @@ export default function Roadmap() {
 
       <main className="mx-auto max-w-7xl px-6 pt-10 pb-20" aria-label="Kerf engineering roadmap">
         {/* Hero strip */}
-        <div className="mb-8 flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
+        <section
+          aria-labelledby="roadmap-hero-heading"
+          className="mb-8 flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4"
+        >
           <div>
             <p className="font-mono text-xs uppercase tracking-[0.2em] text-kerf-300">Roadmap</p>
-            <h1 className="mt-2 font-display text-3xl sm:text-4xl font-semibold tracking-[-0.02em]">
+            <h1
+              id="roadmap-hero-heading"
+              className="mt-2 font-display text-3xl sm:text-4xl font-semibold tracking-[-0.02em]"
+            >
               What ships, what&apos;s in flight, what&apos;s next.
             </h1>
             <p className="mt-3 text-sm sm:text-base text-ink-300 max-w-2xl leading-relaxed">
@@ -291,7 +298,7 @@ export default function Roadmap() {
               Docs <ArrowRight size={12} />
             </Link>
           </div>
-        </div>
+        </section>
 
         {/* TOC + body 2-col on lg, stacked on small */}
         <div className="lg:grid lg:grid-cols-[14rem_minmax(0,1fr)] lg:gap-10">

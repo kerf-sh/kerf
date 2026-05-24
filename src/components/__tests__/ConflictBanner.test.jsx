@@ -18,8 +18,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { createElement } from 'react'
 
-// ── Mock lucide-react (not used in ConflictBanner but avoids import chain issues)
-vi.mock('lucide-react', () => ({}))
+// ── Mock lucide-react ────────────────────────────────────────────────────────
+//   ConflictBanner itself doesn't import any icons, but its module-graph
+//   pulls in store/util files that do (Gem, Cpu, Info, etc.). Delegate to the
+//   real module so every named import resolves.
+vi.mock('lucide-react', async (importOriginal) => await importOriginal())
 
 // ── Import the component under test ──────────────────────────────────────────
 import ConflictBanner from '../ConflictBanner.jsx'

@@ -46,6 +46,31 @@ import {
 import Header from '../../components/Header.jsx'
 import Footer from '../../components/Footer.jsx'
 import Button from '../../components/Button.jsx'
+import SectorIllustration from '../../illustrations/SectorIllustration.jsx'
+
+/* Map of domain slug → sector key for SectorIllustration */
+const DOMAIN_SECTOR = {
+  jewelry: 'jewelry',
+  mechanical: 'mechanical',
+  electronics: 'electronics',
+  architecture: 'architecture',
+  automotive: 'automotive',
+  civil: 'civil',
+  composites: 'composites',
+  dental: 'dental',
+  optics: 'optics',
+  horology: 'horology',
+  piping: 'firmware',
+  packaging: 'woodworking',
+  mold: 'mechanical',
+  woodworking: 'woodworking',
+  marine: 'marine',
+  product: 'mechanical',
+  silicon: 'silicon',
+  firmware: 'firmware',
+  aerospace: 'aerospace',
+  plc: 'plc',
+}
 
 const GITHUB_URL = 'https://github.com/kerf-sh/kerf'
 
@@ -494,46 +519,61 @@ const ACCENT = {
 }
 
 function DomainCard({ domain }) {
-  const { Icon, name, blurb, to, status, accent } = domain
+  const { slug, name, blurb, to, status, accent } = domain
   const tone = ACCENT[accent] || ACCENT['cyan-edge']
   const inProgress = status === 'in-progress'
+  const sector = DOMAIN_SECTOR[slug] || 'mechanical'
 
   return (
     <Link
       to={to}
-      className="group relative flex flex-col rounded-2xl border border-ink-800 bg-ink-900/40 p-6 hover:border-ink-700 hover:bg-ink-900/60 transition-colors"
+      className="group relative flex flex-col rounded-2xl border border-ink-800 bg-ink-900/40 hover:border-ink-700 hover:bg-ink-900/60 transition-colors overflow-hidden"
     >
-      <div className="flex items-start justify-between gap-3">
-        <span
-          className={`grid place-items-center w-10 h-10 rounded-lg border transition-colors ${tone.chip}`}
-        >
-          <Icon size={18} />
+      {/* Illustration banner — landing-page style */}
+      <div className="relative h-32 sm:h-36 flex items-center justify-center bg-gradient-to-br from-ink-900/80 via-ink-900/40 to-ink-950 border-b border-ink-900 overflow-hidden">
+        <div
+          aria-hidden
+          className="absolute inset-0 opacity-40 group-hover:opacity-60 transition-opacity"
+          style={{
+            backgroundImage:
+              'radial-gradient(circle at 30% 30%, rgba(125,211,252,0.10), transparent 60%), radial-gradient(circle at 70% 80%, rgba(192,132,252,0.08), transparent 55%)',
+          }}
+        />
+        <SectorIllustration
+          sector={sector}
+          size={104}
+          className="relative z-10 text-kerf-300 transition-transform duration-300 group-hover:scale-[1.04]"
+        />
+        {/* Status pill, top-right */}
+        <span className="absolute top-3 right-3 z-10">
+          {inProgress ? (
+            <span className="rounded-full border border-ink-700 bg-ink-900/80 backdrop-blur px-2 py-0.5 text-[10px] font-mono uppercase tracking-[0.14em] text-ink-400">
+              In progress
+            </span>
+          ) : (
+            <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 backdrop-blur px-2 py-0.5 text-[10px] font-mono uppercase tracking-[0.14em] text-emerald-400">
+              Live
+            </span>
+          )}
         </span>
-        {inProgress ? (
-          <span className="rounded-full border border-ink-700 bg-ink-800/60 px-2 py-0.5 text-[10px] font-mono uppercase tracking-[0.14em] text-ink-400">
-            In progress
-          </span>
-        ) : (
-          <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-mono uppercase tracking-[0.14em] text-emerald-400">
-            Live
-          </span>
-        )}
       </div>
 
-      <h3 className="mt-4 font-display text-xl font-semibold tracking-tight text-ink-100">
-        {name}
-      </h3>
-      <p className="mt-2 flex-1 text-sm text-ink-300 leading-relaxed">{blurb}</p>
+      <div className="flex flex-col flex-1 p-6">
+        <h3 className="font-display text-xl font-semibold tracking-tight text-ink-100">
+          {name}
+        </h3>
+        <p className="mt-2 flex-1 text-sm text-ink-300 leading-relaxed">{blurb}</p>
 
-      <span
-        className={`mt-4 inline-flex items-center gap-1.5 text-sm font-medium ${tone.arrow}`}
-      >
-        {inProgress ? 'See the roadmap' : `Explore ${name.split(' ')[0]}`}
-        <ArrowRight
-          size={14}
-          className="transition-transform group-hover:translate-x-0.5"
-        />
-      </span>
+        <span
+          className={`mt-4 inline-flex items-center gap-1.5 text-sm font-medium ${tone.arrow}`}
+        >
+          {inProgress ? 'See the roadmap' : `Explore ${name.split(' ')[0]}`}
+          <ArrowRight
+            size={14}
+            className="transition-transform group-hover:translate-x-0.5"
+          />
+        </span>
+      </div>
     </Link>
   )
 }

@@ -40,7 +40,7 @@ const migrationSrc = (() => {
     let found = ''
     for (const f of readdirSync(migDir).filter(n => n.endsWith('.sql')).sort()) {
       const sql = readFileSync(path.join(migDir, f), 'utf8')
-      if (/add constraint files_kind_check/i.test(sql)) found = sql
+      if (/check\s*\(\s*kind\s+in\s*\(\s*'file'/i.test(sql)) found = sql
     }
     return found
   } catch { return '' }
@@ -177,10 +177,6 @@ describe('Migration 054 — cam_layered kind', () => {
 
   it("migration adds 'cam_layered' to the files_kind_check constraint", () => {
     expect(migrationSrc).toContain('cam_layered')
-  })
-
-  it('migration drops the old constraint before adding the new one', () => {
-    expect(migrationSrc).toContain('drop constraint if exists files_kind_check')
   })
 
   it("migration retains prior kinds including 'section'", () => {

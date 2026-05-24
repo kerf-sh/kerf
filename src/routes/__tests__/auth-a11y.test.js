@@ -35,8 +35,13 @@ describe('Login.jsx — error banner a11y', () => {
   })
 
   it('does NOT use aria-live="polite" for the error (would delay announcement)', () => {
-    // polite is insufficient for errors — assertive is required
-    expect(LOGIN_SRC).not.toContain('aria-live="polite"')
+    // polite is insufficient for errors — assertive is required.
+    // Scope the check to the role="alert" element only — polite is acceptable
+    // on other elements such as the role="status" session-expired banner.
+    const alertIdx = LOGIN_SRC.indexOf('role="alert"')
+    expect(alertIdx).toBeGreaterThan(-1)
+    const window = LOGIN_SRC.slice(Math.max(0, alertIdx - 200), alertIdx + 200)
+    expect(window).not.toContain('aria-live="polite"')
   })
 
   it('role="alert" and aria-live="assertive" appear on the same element', () => {

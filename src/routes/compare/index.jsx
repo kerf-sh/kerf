@@ -48,6 +48,72 @@ import Footer from '../../components/Footer.jsx'
 import { FairnessNote, GOOD, WEAK, GAP, NA } from './Freecad.jsx'
 import CategoryMatrix from './CategoryMatrix.jsx'
 import { fetchCompareManifest } from '../../lib/compareManifest.js'
+import SectorIllustration from '../../illustrations/SectorIllustration.jsx'
+
+const CATEGORY_ILLUSTRATIONS = {
+  'Mechanical':       'mechanical',
+  'Electronic':       'electronics',
+  'BIM':              'architecture',
+  'Jewelry & NURBS':  'jewelry',
+  'DCC':              'optics',
+  'Drafting':         'civil',
+  'Composites':       'composites',
+  'Dental':           'dental',
+  'Optics':           'optics',
+  'Horology':         'horology',
+  'Piping':           'firmware',
+  'Packaging':        'woodworking',
+  'Mold':             'mechanical',
+  'Woodworking':      'woodworking',
+  'Marine':           'marine',
+  'Civil':            'civil',
+}
+
+function slugifyCategoryKey(s) {
+  return String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+}
+
+function CategoryNav({ sections }) {
+  const onJump = (e, id) => {
+    e.preventDefault()
+    const el = document.getElementById(id)
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      if (history.replaceState) history.replaceState(null, '', `#${id}`)
+    }
+  }
+  return (
+    <nav
+      aria-label="Jump to category"
+      className="mb-14 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-4 gap-3 sm:gap-4"
+      data-testid="compare-category-nav"
+    >
+      {sections.map((section) => {
+        const id = slugifyCategoryKey(section.key)
+        const sector = CATEGORY_ILLUSTRATIONS[section.key] || 'mechanical'
+        return (
+          <a
+            key={section.key}
+            href={`#${id}`}
+            onClick={(e) => onJump(e, id)}
+            className="group flex flex-col items-center text-center rounded-2xl border border-ink-800 bg-ink-900/40 p-4 sm:p-5 hover:border-kerf-300/40 hover:bg-ink-900/70 transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-kerf-400/40"
+            aria-label={`Jump to ${section.key} comparisons`}
+          >
+            <div className="w-20 h-20 flex items-center justify-center text-kerf-300 opacity-90 group-hover:opacity-100 transition-opacity">
+              <SectorIllustration sector={sector} size={80} />
+            </div>
+            <span className="mt-3 font-display text-sm font-semibold tracking-tight text-ink-100 group-hover:text-kerf-200 transition-colors leading-tight">
+              {section.key}
+            </span>
+            <span className="mt-1 text-[10px] font-mono uppercase tracking-[0.14em] text-ink-500 group-hover:text-ink-400 transition-colors">
+              Jump ↓
+            </span>
+          </a>
+        )
+      })}
+    </nav>
+  )
+}
 
 /* -------------------------------------------------------------------------- */
 /* Cards — preserved from previous hub (visuals unchanged)                    */
@@ -1683,6 +1749,13 @@ export default function CompareHub() {
           </p>
         </div>
 
+        {/* Illustrated category quick-nav */}
+        <CategoryNav
+          sections={CATEGORY_SECTIONS.filter(
+            (s) => activeCards.some((c) => c.category === s.key),
+          )}
+        />
+
         {/* Per-category sections */}
         {CATEGORY_SECTIONS.map((section) => {
           const cards = activeCards.filter((c) => c.category === section.key)
@@ -1690,6 +1763,7 @@ export default function CompareHub() {
           return (
             <section
               key={section.key}
+              id={slugifyCategoryKey(section.key)}
               className="mb-14 last:mb-0 scroll-mt-20"
               aria-label={`${section.key} comparisons`}
             >
