@@ -5607,3 +5607,88 @@ deploy model. All tasks are P0; the order is the order they should ship.
 - **Definition of Done:** decision recorded in `decisions.md` (keep Neon
   OR move to Koyeb). If moved: dump/restore runbook in `deployment/koyeb.md`.
 
+
+---
+
+## Kernel parity vs every CAD — GK-P series (ROADMAP §8, 2026-05-24)
+
+Consolidated from a 4-agent survey of Kerf vs all ~18 kernel-relevant CADs.
+All tasks are P1 unless noted. **Build-loop ready**: each is sized for a
+single isolated-worktree Sonnet agent, one task per commit, integrate by
+SHA. Order within each group is value × tractability. **Group W (wiring)
+first** — it exposes already-verified math at near-zero risk.
+
+Status legend: 🔴 not started · 🟡 in progress · ✅ shipped.
+
+### Group W — Wiring (expose shipped class-A math; all Size S)
+
+These are the highest-ROI items: the kernel math is implemented and
+verified but not reachable. Each task = export from `geom/__init__.py`
+(if missing) + add a `surfacing.py` ToolSpec + a wiring test.
+
+- **GK-P01** 🔴 Wire `blend_srf_g3` + `g3_blend_trim_sew` as `feature_blend_srf_g3` ToolSpec in `surfacing.py`. Math at `geom/blend_srf.py:blend_srf_g3` (exported, unused by surfacing). DoD: feature invokable via `.feature` workflow; regression test vs `curvature_rate_continuity_residual` oracle.
+- **GK-P02** 🔴 Wire `feature_zebra_analysis` ToolSpec → `surface_analysis.zebra_stripe_continuity_analyser` + `reflection_lines` (both exported, unused). Read-only analysis node. DoD: returns stripe-break flags on a known-discontinuous fixture.
+- **GK-P03** 🔴 Export `class_a_acceptance_harness` (`surface_analysis.py:1726`, GK-64) + `run_leading_pass` (`leading.py:370`) from `geom/__init__.py`; add `feature_class_a_check` ToolSpec. DoD: harness runs on a reference A-surface fixture, flags hot-spots.
+- **GK-P04** 🔴 Export `global_continuity_audit` (`surface_analysis.py:3720`, GK-138) from `geom/__init__.py`; wire as read-only analysis in `surfacing.py`. DoD: walks all Body edges, returns per-edge G0/G1/G2/G3 report.
+- **GK-P05** 🔴 Add `feature_g3_chain_blend` ToolSpec consuming `blend_solid.g3_chain_blend` (GK-132, exported, unused by surfacing). DoD: multi-edge tangent-run G3 blend invokable.
+- **GK-P06** 🔴 Add `feature_fit_surface` ToolSpec wrapping `patch_srf.fit_surface` (GK-34) for point-cloud / mesh-vertex input (Rhino "Patch"). DoD: fits a surface to a seeded point set within tolerance.
+- **GK-P07** 🔴 Extend `feature_surface_curvature_combs` response to include G3 residuals from `curvature_rate_continuity_residual` when the input is a pure-Python `NurbsSurface` (bypass the OCCT path that can't enforce G3). DoD: G3 residual column present for pure-Py surfaces.
+- **GK-P08** 🔴 Audit + refresh `docs/plans/occt-phase4.md` and the geometry-kernel-roadmap §7 matrix: mark G3 / zebra / class-A / GK-138 as shipped (survey found them stale). Docs-only. DoD: no doc claims a shipped capability is "unbuilt".
+
+### Group F — Foundational kernel
+
+- **GK-P09** 🔴 **(Opus candidate)** General pure-Python solid boolean. `geom/boolean.py` only handles axis-aligned box/cyl/sphere; raises `BuildError("unsupported-input")` otherwise. Extend to arbitrary coplanar/near-coplanar trimmed-plane face pairs (covers wall-meets-wall, wall-meets-roof, general planar CSG) using existing SSI (`intersection.py`) + imprint (`imprint.py`). Size **L**. DoD: union/diff/intersect on two non-axis-aligned prismatic solids returns a `validate_body`-clean result; OCCT-worker parity test on a fixture set.
+- **GK-P10** 🔴 MatchSrf G3. `match_srf.py:110 _VALID_CONTINUITY` is frozen at G0/G1/G2. Add `continuity="G3"` via fourth-CP-row curvature-rate adjustment using the `curvature_rate_continuity_residual` oracle. Size M. DoD: matched edge passes the G3 residual gate.
+- **GK-P11** 🔴 Isophote / environment-map (EMap) analyser — the third class-A visual-inspection pillar (CATIA FreeStyle, Rhino EMap), genuinely absent. Implement `isophote_analysis(surf, uv_grid, sphere_map_res)` in `surface_analysis.py` with a stripe-continuity oracle analogous to GK-38. Size M. DoD: detects an isophote break across a G1 discontinuity.
+- **GK-P12** 🔴 Stam exact limit-tangents at extraordinary SubD vertices. `subd_to_nurbs.py:_quad_tangents` uses chord-based tangents; extraordinary-vertex (valence≠4) tangent frames unimplemented. Implement ∂P_lim/∂u, ∂P_lim/∂v for arbitrary valence → NURBS deviation < 1e-5 everywhere. Size M. DoD: deviation gate passes at extraordinary points, not just corners.
+- **GK-P13** 🔴 G1 continuity at extraordinary-vertex SubD→NURBS patches (currently C0 only — bilinear interior blend). Stam eigenvector tangent-blend along shared boundaries. Size L. DoD: G1 residual gate passes across extraordinary patches.
+- **GK-P14** 🔴 Semi-sharp fractional crease multi-level decay. `subd_authoring.py:206 to_subd_mesh()` clamps sharpness to [0,1], discarding fractional multi-level semantics. Remove clamp; propagate fractional sharpness through N CC levels (OpenSubdiv decay). Size S. DoD: fractional crease produces correct intermediate sharpness across levels.
+- **GK-P15** 🔴 Analytic surface derivatives + robust SSI. `surface_derivative` is finite-difference (`h=1e-5`); `surface_surface_intersect` is grid-seed + tangent-march. Add analytic first/second derivatives on `NurbsSurface` and a robustness pass (multi-seed + boundary handling) for SSI. Size M. DoD: analytic vs FD agreement < 1e-9; SSI passes a hardened fixture set.
+
+### Group V — Construction verbs
+
+- **GK-P16** 🔴 Loft with guide rails (flagged by FreeCAD, Fusion, Onshape, Inventor, CATIA, Creo, NX, Rhino, Vectorworks). Add `guide_curves` to `network_srf.loft_surface`; route through `BRepOffsetAPI_ThruSections.AddWire()` in the OCCT worker; `sweep_n.py` pure-Python fallback. Wire into `surfacing.py:feature_loft`. Size M. DoD: lofted surface honours guide curves.
+- **GK-P17** 🔴 Sheet-metal hem, jog, multi-flange. `geom/sheet_metal.py` has only `bend_sheet`/`unfold_sheet`. Add `hem_sheet`, `jog_sheet`, `multi_flange` using existing K-factor helpers. Size M. DoD: each emits a valid unfoldable body.
+- **GK-P18** 🔴 Direct edit: non-planar push-pull + delete-face. `direct_edit.py:push_pull_face`/`move_face` are planar-only. Extend to curved faces via `BRepOffsetAPI_MakeOffsetShape`; add `delete_face` via `BRepTools_ReShape`. Size M. DoD: push-pull a cylindrical face; delete a face and heal.
+- **GK-P19** 🔴 Weldment gussets + cope/notch end-treatments. `weldment.py` has cut-list + miter/butt; add `gusset_plate()` + cope/notch modes to `compute_members()`. Size M. DoD: gusset + coped member emit valid solids and appear in the cut-list.
+
+### Group S — SubD / mesh / sculpt
+
+- **GK-P20** 🔴 Poke face — `subd_poke(cage, face_id)` (centroid fan). Size S.
+- **GK-P21** 🔴 Extrude-along-curve for SubD cages — `subd_extrude_along(cage, face_id, curve_pts)`. Size M.
+- **GK-P22** 🔴 SDF CSG + marching-cubes — `geom/sdf_csg.py`: smooth-union/subtract/intersect on SDF fields + marching-cubes extraction (closes implicit-modeling loop; ZBrush DynaMesh, Blender geometry-nodes SDF). Size M.
+- **GK-P23** 🔴 In-process isotropic remesh fallback — `geom/isotropic_remesh.py` (edge-flip/split/collapse) so `quad_remesh` degrades to a valid result without the `instant-meshes` binary. Size M.
+- **GK-P24** 🔴 LSCM UV unwrap — `geom/uv_unwrap.py` conformal unwrap for mesh→SubD pipelines (Blender UV, 3ds Max Unwrap UVW). Size M.
+- **GK-P25** 🔴 Surface-snap retopo backend — `retopo_snap(source_body, retopo_mesh)` projects cage verts onto source surface. Size M.
+- **GK-P26** 🔴 Multi-resolution displacement stack — `MultiresStack` (base cage + per-level displacement, up to 6 levels). Size L.
+- **GK-P27** 🔴 Sculpt brush engine — `sculpt_brush(cage, center, radius, falloff, strength, mode)` (Grab/Smooth/Inflate) with soft-selection + resample to cage. Size L. Unblocks anatomic dental crown sculpting.
+
+### Group A — Architectural geometry
+
+- **GK-P28** 🔴 B-rep → 2D auto-tessellate. Bridge OCCT `BRepMesh_IncrementalMesh` → `make2d.Make2DInput` so any B-rep part auto-generates hidden-line views without caller-supplied mesh. Size M. DoD: a B-rep solid yields a hidden-line drawing with no `part["mesh"]`.
+- **GK-P29** 🔴 Roof geometry generator (hip/gable/shed/mono-pitch) in `kerf-bim` → B-rep + `IfcRoof`. Size M.
+- **GK-P30** 🔴 Curtain-wall geometry — extend `kerf_bim/tools/curtain_wall.py` (JSON-only today) to emit swept mullion B-rep + panel solids from the grid. Size M.
+- **GK-P31** 🔴 Wall compound-layer offset — call `offset_loop` from `make_wall_instance` for per-layer face geometry (IFC material-layer-set + section fills). Size S.
+- **GK-P32** 🔴 Hatch-fill — `hatch_region(loop, pattern, angle, scale)` in `region2d.py` (ANSI31/concrete/brick tiling inside a 2D loop). Size S.
+- **GK-P33** 🔴 Section material-fill — wire `section_by_plane` loops → `hatch_region` with material-keyed patterns for filled section graphics. Depends GK-P32. Size S.
+- **GK-P34** 🔴 Toposolid B-rep — confirm/complete `kerf_bim/site.py Toposolid.to_brep()` produces a valid closed Body from the TIN; wire `cut_fill_volume`. Size S.
+- **GK-P35** 🔴 Corridor swept solid — `kerf_civil/corridor.py surface_points()` is viz-only; call `sweep_n`/`network_srf` on cross-section stations → swept road-body B-rep + volume + `IfcAlignmentProduct`. Size L.
+
+### Group K — Sketcher (PlaneGCS WASM; flagged by every MCAD survey)
+
+- **GK-P36** 🔴 Collinear constraint in the PlaneGCS WASM binding + sketcher UI. Size S.
+- **GK-P37** 🔴 Ellipse entity (center + semi-axes + angle, 5 DOF) in the GCS solver. Size S.
+- **GK-P38** 🔴 G2 (curvature) continuity constraint between adjacent bspline/arc endpoints in GCS. Size S.
+
+### Group I — Interop
+
+- **GK-P39** 🔴 3DM write into the kernel — add `write_3dm(body, path)` to `geom/io/rhino3dm.py` (write currently lives in `kerf-imports/export_3dm.py`, outside the kernel) with a read→write→read Hausdorff round-trip oracle; export from `geom/__init__.py`. Size M.
+
+### Parked — UI investments (NOT kernel gaps; track separately)
+
+Real competitive gaps but they are interactive-viewport UI, not geometry
+kernel. The underlying kernel math is shipped. Promote to T-tasks when a
+UI push is scheduled.
+- Assembly motion study + interference panel (kernel: `kerf_motion`, `clash/detect.py` shipped).
+- GD&T 3D MBD / PMI placement on model + drawings (kernel: `kerf_gdnt` FCF data model shipped).
+- SubD cage editor / Fusion-style T-spline sculpt viewport (kernel: `subd_authoring.py` + `subd_to_nurbs.py` shipped).

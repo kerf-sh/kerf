@@ -1086,6 +1086,69 @@ user's filesystem; no Koyeb dependency leaks into the open-core path.
 
 ---
 
+## §8 — Kernel parity vs every CAD (P1, 2026-05-24)
+
+**Why.** The geometry kernel (`kerf_cad_core.geom`, ~60 modules) is the
+spine every persona stands on. GK-01..GK-139 are landed, but a
+four-agent survey of Kerf vs **all ~18 kernel-relevant CADs**
+(FreeCAD, Fusion, SOLIDWORKS, Onshape, Inventor, CATIA, Creo, NX, Rhino,
+MatrixGold, Blender, ZBrush, 3ds Max, SketchUp, ArchiCAD, Revit,
+Vectorworks, AutoCAD) found a concrete, finite gap list. This section
+commits to closing it. The benchmark bar is **Rhino 8 / OpenNURBS**
+(NURBS + class-A), **Blender + ZBrush** (SubD + mesh + sculpt), and the
+**Parasolid/ACIS-class** parametric MCAD tools (solids robustness).
+
+**Survey headline (2026-05-24).** Two structural findings reshaped the
+frontier:
+1. **Much of the class-A math is already shipped but unwired.** G3 blends
+   (`surface_blend_g3`, `blend_srf_g3`), the curvature-rate continuity
+   oracle, the zebra/reflection-line analyser, the class-A acceptance
+   harness (GK-64), and the global continuity audit (GK-138) all exist
+   and are verified — but are not exported from `geom/__init__.py` or
+   exposed via `surfacing.py`, so users cannot reach them. **`docs/plans/occt-phase4.md` is stale** where it calls G3 "unbuilt" — that
+   doc predates Phase-5 completion. The highest-ROI work is *wiring*,
+   not new math.
+2. **The pure-Python solid boolean only handles axis-aligned primitives**
+   (`geom/boolean.py` raises `BuildError("unsupported-input")` for
+   NURBS-faced or non-axis-aligned solids; general CSG delegates to the
+   OCCT worker). This is the one foundational kernel gap that blocks
+   architectural wall/roof joins and general pure-Python CSG.
+
+**Scope.** Tracked as the **`GK-P` (parity) series** in
+[`tasks.md`](./tasks.md), grouped:
+- **Wiring** (expose shipped class-A math — all small, do first).
+- **Foundational kernel** (general solid boolean, MatchSrf G3, isophote/
+  EMap, Stam limit-tangents + G1 at extraordinary SubD points, fractional
+  creases, analytic surface derivatives + robust SSI).
+- **Construction verbs** (loft guide-rails — flagged by 3 surveys —
+  sheet-metal hem/jog/multi-flange, direct-edit non-planar + delete-face,
+  weldment gussets/end-treatments, surface patch-from-points).
+- **SubD / mesh** (multires displacement stack, SDF CSG + marching-cubes,
+  sculpt brush engine, in-process isotropic remesh fallback, surface-snap
+  retopo, LSCM UV unwrap, poke, extrude-along-curve).
+- **Architectural geometry** (B-rep→2D auto-tessellate, roof / curtain-wall
+  / corridor generators, wall compound-layer offset, hatch-fill +
+  section-fill, toposolid B-rep).
+- **Sketcher** (collinear constraint, ellipse solver entity, G2 continuity
+  — all flagged by every MCAD survey).
+- **Interop** (3DM write into `geom/io` with a read→write→read Hausdorff
+  oracle).
+
+**Explicitly NOT in this push** (documented non-goals, not gaps): general
+NURBS×NURBS trim stays OCCT-worker-delegated (`occt-phase4.md §4`);
+OCCT-side G3 comb *enforcement* is structurally impossible (`GeomAbs_G3`
+absent from OCCT's enum) — pure-Python is the G3 path. Interactive
+viewport UIs (assembly motion study, GD&T PMI placement, SubD cage
+editor, Fusion-style T-spline sculpt) are real but are *UI* investments,
+not kernel gaps — parked separately.
+
+**Execution.** Agent build-loop: Sonnet agents pull `GK-P` items in
+isolated worktrees, one task per commit, integrate by SHA, until the
+series is drained — the same loop that cleared GK-01..GK-139. The single
+hardest item (general solid boolean) may warrant Opus.
+
+---
+
 ## How to contribute
 
 Pick a task from [`tasks.md`](./tasks.md) (sized for a single isolated agent
