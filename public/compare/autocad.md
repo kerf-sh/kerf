@@ -38,9 +38,9 @@ features:
       note: "PRESSPULL command; 3D solid direct editing; grips-based face manipulation"
       source: "https://help.autodesk.com/view/ACD/2025/ENU/?guid=GUID-PRESSPULL"
     kerf:
-      status: partial
-      note: "Planar push-pull only; no move/delete-face"
-      evidence: "packages/kerf-cad-core/src/kerf_cad_core"
+      status: yes
+      note: "push_pull (planar + curved), move_face, delete_face wired as ops"
+      evidence: "packages/kerf-cad-core/src/kerf_cad_core/geom/direct_edit.py"
 
   - domain: D1
     feature: "Fillet / chamfer (constant)"
@@ -93,9 +93,9 @@ features:
       note: "Available in AutoCAD Mechanical toolset add-on; not in base AutoCAD"
       source: "https://www.autodesk.com/products/autocad/included-toolsets/autocad-mechanical"
     kerf:
-      status: partial
-      note: "Single flange + unfold + flat DXF; no hem/relief/jog/multi-flange"
-      evidence: "packages/kerf-cad-core/src/kerf_cad_core"
+      status: yes
+      note: "Flange + hem + jog + multi-flange + unfold + flat DXF (K-factor); no auto corner-relief"
+      evidence: "packages/kerf-cad-core/src/kerf_cad_core/construction_verbs_tools.py"
 
   - domain: D1
     feature: "Assemblies — mates"
@@ -126,9 +126,9 @@ features:
       note: "Surface commands (SURFBLEND, SURFPATCH, etc.) present but not NURBS-class tools"
       source: "https://help.autodesk.com/view/ACD/2025/ENU/?guid=GUID-SURFACE-MODELING"
     kerf:
-      status: partial
-      note: "Math complete; OCCT bindings unconfirmed at build"
-      evidence: "packages/kerf-cad-core/src/kerf_cad_core"
+      status: yes
+      note: "blend_srf, network_srf (Gordon), patch_srf_fit, match_srf, G3 blends wired"
+      evidence: "packages/kerf-cad-core/src/kerf_cad_core/geom/network_srf.py"
 
   - domain: D1
     feature: "B-rep booleans (general NURBS)"
