@@ -24,9 +24,9 @@ features:
       note: "Industry's fastest parting and cavity design; undercut detection; split surface generation"
       source: "https://www.cimatron.com/en/cimatron-mold"
     kerf:
-      status: no
-      note: "No parting line or cavity/core split tooling; mold package is a stub"
-      evidence: ""
+      status: partial
+      note: "Parting line data model (closed 3-D loop); flat and ruled parting surface generation; draft-angle check; moldability validation; no interactive curve-extraction from NURBS solid"
+      evidence: "packages/kerf-mold/src/kerf_mold/mold.py"
   - domain: D7
     feature: "Mold base library"
     competitor:
@@ -35,7 +35,7 @@ features:
       source: "https://www.cimatron.com/en/cimatron-mold"
     kerf:
       status: no
-      note: "No mold base library"
+      note: "No mold base library. A parametric DME/HASCO plate-dimension table with 3D parametric solid generation requires OCCT CAD kernel integration (kerf-cad-core wave 2) — not tractable in kerf-mold alone."
       evidence: ""
   - domain: D7
     feature: "Cooling channel design"
@@ -44,9 +44,9 @@ features:
       note: "Standard and conformal cooling channel design; interference detection against cavities and ejectors"
       source: "https://www.cimatron.com/en/cimatron-mold"
     kerf:
-      status: no
-      note: "No cooling channel tooling"
-      evidence: ""
+      status: partial
+      note: "Cooling circuit thermal analysis: Re/Nu/HTC (Dittus-Boelter), pressure drop (Darcy-Weisbach), coolant temp rise, Janeschitz-Kriegl cooling time; series and parallel layouts; no 3D channel routing or conformal path tooling"
+      evidence: "packages/kerf-mold/src/kerf_mold/cooling.py"
   - domain: D7
     feature: "Electrode design (EDM)"
     competitor:
@@ -55,7 +55,7 @@ features:
       source: "https://www.cimatron.com/en/cimatron-mold"
     kerf:
       status: no
-      note: "No electrode design"
+      note: "No electrode design. EDM electrode solid modelling requires full parametric 3D CAD (OCCT kernel, kerf-cad-core wave 2). Spark-gap compensation can be handled as offset surface; electrode blanking needs full solid Boolean ops."
       evidence: ""
   - domain: D7
     feature: "5-axis CNC machining"
@@ -75,7 +75,7 @@ features:
       source: "https://www.cimatron.com/en/whats-new"
     kerf:
       status: no
-      note: "No wire EDM programming"
+      note: "No wire EDM programming. Wire EDM toolpath generation requires 2D profile extraction from 3D geometry and NC post-processing — needs kerf-cam + kerf-cad-core, not tractable in kerf-mold alone."
       evidence: ""
   - domain: D1
     feature: "Draft angle analysis"
@@ -84,9 +84,9 @@ features:
       note: "Draft angle and direction analysis; body integrity and wall thickness checks"
       source: "https://www.cimatron.com/en/cimatron-mold"
     kerf:
-      status: no
-      note: "No draft angle analysis tooling"
-      evidence: ""
+      status: yes
+      note: "Draft angle per face: signed draft_deg = asin(n·pull_hat); undercut detection; wall-thickness uniformity check; parting-surface planarity check vs pull direction — all in check_moldability"
+      evidence: "packages/kerf-mold/src/kerf_mold/mold.py"
   - domain: D1
     feature: "Assembly and collision detection"
     competitor:
@@ -136,16 +136,18 @@ Cimatron (owned by 3D Systems) is an integrated CAD/CAM solution purpose-built f
 
 - **MIT open-core.** Cimatron is proprietary, enterprise-priced (not publicly listed). Kerf is MIT-licensed — free locally.
 - **Moldflow simulation.** Kerf's Hele-Shaw fill front tracker detects weld lines and air traps natively. Cimatron only added basic injection simulation in 2026; the dedicated industry tool is Autodesk Moldflow, which Cimatron integrates with rather than replaces.
+- **Draft angle analysis.** Kerf computes per-face draft angles (asin(n · pull)), detects undercuts, checks wall-thickness uniformity, and validates parting-surface planarity — all included in `check_moldability`.
+- **Cooling channel thermal analysis.** Kerf's `kerf_mold.cooling` computes Re, Nu, HTC (Dittus-Boelter), pressure drop (Darcy-Weisbach), coolant temperature rise, and part cooling time (Janeschitz-Kriegl) for series and parallel circuits.
 - **Structural FEA around the mold.** Kerf can analyse the structural integrity of the mold platen, thermal stress in conformal cooling, and pressure vessel calculations for the barrel — Cimatron does not do FEA.
 - **Multi-domain engineering.** A mold designer can link Kerf's mold Moldflow results to material cost LCA, FEA on the insert, and electronics for a heated mold controller — in one project. Cimatron is toolmaking only.
 - **Chat-native.** Describe a fill problem in plain language; Kerf routes it to the Moldflow backend. Cimatron has no LLM interface.
 
 ## Honest gaps — where Kerf is behind today
 
-- **No parting/split tooling.** The core of mold CAD — detecting the parting line, splitting cavity and core, generating split surfaces — is absent in Kerf.
-- **No mold base library.** Without a library of standard mold base plates, Kerf cannot shortcut the mold structure design.
-- **No cooling channels.** No tooling for routing standard or conformal cooling channels.
-- **No electrode design or Wire EDM.** EDM is a primary material removal method for hard steels; Kerf has neither electrodes nor Wire EDM.
+- **No interactive parting-line extraction.** Kerf has the parting line data model and parting surface generation, but cannot automatically extract the parting line from a 3D solid — this requires OCCT kernel solid analysis (wave 2).
+- **No mold base library.** Without a library of standard mold base plates, Kerf cannot shortcut the mold structure design. Requires 3D parametric solid generation via kerf-cad-core.
+- **No 3D cooling channel routing.** Kerf analyses cooling circuits thermally but cannot route channel paths through a 3D mold solid or check interference with cavities.
+- **No electrode design or Wire EDM.** EDM is a primary material removal method for hard steels; Kerf has neither. Both require 3D solid ops (kerf-cad-core wave 2).
 - **5-axis CAM UI.** Cimatron's 5-axis machining with toolpath simulation is production-proven; Kerf's 5-axis engine is backend only.
 
 ## Side by side
@@ -154,9 +156,10 @@ Cimatron (owned by 3D Systems) is an integrated CAD/CAM solution purpose-built f
 |---|---|---|
 | License | MIT open-core | Proprietary (enterprise pricing) |
 | Primary focus | Multi-domain engineering CAD | Mold / die / tooling CAD/CAM |
-| Parting / cavity-core split | No | Yes |
+| Parting line data model + surface | Partial (no auto-extract from solid) | Yes |
+| Draft angle analysis | Yes (per-face, undercut detection) | Yes |
 | Mold base library | No | DME, HASCO, Futaba, etc. |
-| Cooling channel design | No | Yes (standard + conformal) |
+| Cooling channel thermal analysis | Partial (thermal calc; no 3D routing) | Yes (standard + conformal) |
 | Electrode design / EDM | No | Yes |
 | Moldflow / fill simulation | Yes (backend) | Yes (basic, native from 2026) |
 | 3-axis CAM | Browser UI | Yes |
