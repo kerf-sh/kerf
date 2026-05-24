@@ -98,6 +98,7 @@ from kerf_cad_core.geom.brep_build import (
     BuildError,
     box_to_body,
     cylinder_to_body,
+    extrude_to_body,
     sphere_to_body,
 )
 from kerf_cad_core.geom.sew import sew_faces
@@ -1056,6 +1057,237 @@ def _cyl_pierces_box(box: _AABB, cyl: _CylShape, tol: float) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# GK-P09 — general planar-faced (prismatic) solid boolean
+# ---------------------------------------------------------------------------
+#
+# The closed-form box / cyl / sphere handlers above cover only analytic
+# primitives.  GK-P09 extends the pure-Python boolean to *arbitrary*
+# planar-faced prismatic solids: any solid that is a closed planar polygon
+# (the profile) extruded along a single direction.  This covers the
+# architectural / mechanical staples flagged by the kernel-parity survey —
+# wall-meets-wall, wall-meets-roof, general non-axis-aligned prismatic CSG —
+# none of which the AABB path can express (rotated profiles are not
+# axis-aligned).
+#
+# Reduction to 2-D.  A prism is ``profile × [0, h]·axis``.  When two prisms
+# share an extrusion ``axis`` and their base caps are coplanar (or one base
+# plane contains the other within tol), the regularised 3-D boolean is *exactly*
+# the 2-D regularised boolean of the two profiles in the common base plane,
+# re-extruded over the overlapping axial span.  The 2-D boolean is computed
+# with a Greiner–Hormann polygon clip (robust to the convex + non-convex cases
+# the survey cares about).  The result is rebuilt with ``extrude_to_body`` so it
+# inherits the validate_body-clean topology guarantee of the extruder.
+
+
+@dataclass
+class _PrismShape:
+    """A planar polygon profile extruded along ``axis`` by ``height``.
+
+    ``profile`` is the ordered (n, 3) base-cap polygon (world coords) lying in
+    the base plane through ``base_origin`` with unit normal == ``axis``.
+    """
+
+    profile: np.ndarray        # (n, 3) base polygon, world coords
+    axis: np.ndarray           # unit extrusion direction
+    base_origin: np.ndarray    # a point on the base cap plane
+    height: float              # extrusion length along axis
+    tol: float
+
+
+def _loop_polygon(loop: Loop) -> np.ndarray:
+    """Ordered distinct vertices of a planar loop (world coords)."""
+    pts: List[np.ndarray] = []
+    for ce in loop.coedges:
+        p = np.asarray(ce.start_point(), dtype=float)
+        if not pts or float(np.linalg.norm(p - pts[-1])) > 1e-12:
+            pts.append(p)
+    # drop a trailing duplicate of the first point
+    if len(pts) >= 2 and float(np.linalg.norm(pts[-1] - pts[0])) < 1e-12:
+        pts.pop()
+    return np.array(pts)
+
+
+def _try_recognise_prism(body: Body) -> Optional[_PrismShape]:
+    """Recognise a single-solid planar-faced prism.
+
+    A prism here = exactly two "cap" faces whose plane normals are
+    (anti-)parallel to a common axis, plus N "side" faces all parallel to that
+    axis.  The profile is the bottom cap's outer loop; ``height`` is the axial
+    distance between the two caps.  Returns ``None`` for anything that is not a
+    clean prism (curved faces, multiple solids, holes in caps, ...).
+    """
+    if len(body.solids) != 1 or len(body.shells) != 0:
+        return None
+    solid = body.solids[0]
+    if len(solid.shells) != 1:
+        return None
+    shell = solid.shells[0]
+    if not shell.is_closed or len(shell.faces) < 4:
+        return None
+    # All faces must be planar.
+    for f in shell.faces:
+        if not isinstance(f.surface, Plane):
+            return None
+        if f.inner_loops():
+            return None  # prism profile must be a single loop (no holes)
+
+    # Find a candidate axis: a face-normal direction shared (anti-parallel) by
+    # exactly two faces (the caps), with every other face's normal orthogonal
+    # to it (the sides are parallel to the axis).
+    normals = [f.surface_normal(0.5, 0.5) for f in shell.faces]
+    n_faces = len(shell.faces)
+    for i in range(n_faces):
+        axis = _unit(normals[i])
+        caps = []
+        sides = []
+        ok = True
+        for k in range(n_faces):
+            d = float(np.dot(normals[k], axis))
+            if abs(abs(d) - 1.0) <= 1e-7:
+                caps.append(k)
+            elif abs(d) <= 1e-7:
+                sides.append(k)
+            else:
+                ok = False
+                break
+        if not ok or len(caps) != 2 or len(sides) != (n_faces - 2):
+            continue
+        # Order caps so cap0 is the "base" (lower along axis).
+        c0, c1 = caps
+        o0 = np.asarray(shell.faces[c0].surface.origin, dtype=float)
+        o1 = np.asarray(shell.faces[c1].surface.origin, dtype=float)
+        if float(np.dot(o1 - o0, axis)) < 0:
+            c0, c1 = c1, c0
+            o0, o1 = o1, o0
+        height = float(np.dot(o1 - o0, axis))
+        if height <= 1e-9:
+            continue
+        base_face = shell.faces[c0]
+        prof = _loop_polygon(base_face.outer_loop())
+        if prof.shape[0] < 3:
+            continue
+        tol = max(
+            max((v.tol for v in body.all_vertices()), default=1e-7),
+            max((e.tol for e in body.all_edges()), default=1e-7),
+            max((f.tol for f in body.all_faces()), default=1e-7),
+        )
+        return _PrismShape(
+            profile=prof, axis=axis, base_origin=o0,
+            height=height, tol=tol,
+        )
+    return None
+
+
+def _profile_to_loop(profile: np.ndarray, tol: float) -> Loop:
+    """Build a closed line-segment :class:`Loop` from an ordered 3-D polygon."""
+    n = profile.shape[0]
+    verts = [Vertex(np.asarray(profile[i], dtype=float), tol) for i in range(n)]
+    coedges: List[Coedge] = []
+    for i in range(n):
+        a = verts[i]
+        b = verts[(i + 1) % n]
+        edge = Edge(Line3(a.point, b.point), 0.0, 1.0, a, b, tol)
+        coedges.append(Coedge(edge, True))
+    return Loop(coedges, is_outer=True)
+
+
+def _loop_to_polygon(loop: Loop) -> np.ndarray:
+    """Ordered distinct world-coordinate vertices of a (rebuilt) result loop."""
+    pts: List[np.ndarray] = []
+    for ce in loop.coedges:
+        p = np.asarray(ce.start_point(), dtype=float)
+        if not pts or float(np.linalg.norm(p - pts[-1])) > 1e-12:
+            pts.append(p)
+    if len(pts) >= 2 and float(np.linalg.norm(pts[-1] - pts[0])) < 1e-12:
+        pts.pop()
+    return np.array(pts)
+
+
+def _prism_boolean(
+    pa: _PrismShape, pb: _PrismShape, operation: str, tol: float,
+) -> Body:
+    """Regularised boolean of two coaxial, coplanar-base prisms.
+
+    Reduces the 3-D problem to a 2-D regularised polygon boolean of the two
+    profiles in the shared base plane (via the production Greiner-Hormann clip
+    in :mod:`region2d`) and re-extrudes the result with :func:`extrude_to_body`,
+    inheriting that constructor's validate_body-clean guarantee.
+
+    Requires the two prisms to share an extrusion axis and a base plane (or
+    base planes coincident within tol along the axis), and — for union /
+    difference — equal heights (so the result is itself a single prism).  Any
+    precondition failure raises :class:`BuildError` (unsupported-input).
+    """
+    from kerf_cad_core.geom import region2d
+
+    out_tol = max(pa.tol, pb.tol, tol)
+    axis = _unit(pa.axis)
+    if abs(abs(float(np.dot(axis, _unit(pb.axis)))) - 1.0) > 1e-6:
+        raise BuildError(
+            "_prism_boolean: prisms do not share an extrusion axis "
+            "(unsupported-input)"
+        )
+    base_gap = float(np.dot(pb.base_origin - pa.base_origin, axis))
+    if abs(base_gap) > 1e-6 * (1.0 + abs(pa.height) + abs(pb.height)):
+        raise BuildError(
+            "_prism_boolean: prism base caps are not coplanar "
+            "(unsupported-input)"
+        )
+    ha, hb = pa.height, pb.height
+    if operation == "intersection":
+        height = min(ha, hb)
+    else:
+        if abs(ha - hb) > 1e-6 * (1.0 + abs(ha)):
+            raise BuildError(
+                "_prism_boolean: union/difference of prisms of differing "
+                "height is not a single prism (unsupported-input)"
+            )
+        height = ha
+
+    loop_a = _profile_to_loop(pa.profile, out_tol)
+    loop_b = _profile_to_loop(pb.profile, out_tol)
+    face = region2d._boolean(loop_a, loop_b, operation)
+    if face is None:
+        # Empty result (disjoint intersection / total difference).
+        return Body()
+
+    outer = face.outer_loop()
+    if outer is None:
+        return Body()
+    inner = face.inner_loops()
+    if inner:
+        raise BuildError(
+            "_prism_boolean: result profile has an interior hole; a planar "
+            "prism extrusion cannot represent a through-hole "
+            "(unsupported-input — use the box/cylinder hole path)"
+        )
+
+    body = Body()
+    # region2d may return multiple disjoint outer loops in one Face (union of
+    # disjoint profiles); each becomes its own prism solid.
+    outer_loops = [lp for lp in face.loops if lp.is_outer]
+    for lp in outer_loops:
+        prof3d = _loop_to_polygon(lp)
+        if prof3d.shape[0] < 3:
+            continue
+        sub = extrude_to_body(
+            profile_vertices=[tuple(float(c) for c in v) for v in prof3d],
+            direction=(axis * height).tolist(),
+            tol=out_tol,
+        )
+        body.solids.extend(sub.solids)
+
+    if not body.solids:
+        return Body()
+    res = validate_body(body)
+    if not res["ok"]:
+        raise BuildError(
+            f"_prism_boolean produced invalid Body: {res['errors']}", res,
+        )
+    return body
+
+
+# ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 
@@ -1099,9 +1331,15 @@ def body_union(a: Body, b: Body, tol: float = 1e-6) -> Body:
     if a_sph is not None and b_sph is not None:
         return _sphere_union_sphere(a_sph, b_sph, tol)
 
+    # GK-P09: general planar-faced (prismatic) union via 2-D profile boolean.
+    a_pr, b_pr = _try_recognise_prism(a), _try_recognise_prism(b)
+    if a_pr is not None and b_pr is not None:
+        return _prism_boolean(a_pr, b_pr, "union", tol)
+
     raise BuildError(
-        "body_union: unsupported-input combination; only "
-        "axis-aligned box+box and sphere+sphere are supported"
+        "body_union: unsupported-input combination; supported: "
+        "axis-aligned box+box, sphere+sphere, and coaxial coplanar-base "
+        "planar prisms"
     )
 
 
@@ -1127,9 +1365,15 @@ def body_intersection(a: Body, b: Body, tol: float = 1e-6) -> Body:
     if a_sph is not None and b_sph is not None:
         return _sphere_intersection_sphere(a_sph, b_sph, tol)
 
+    # GK-P09: general planar-faced (prismatic) intersection.
+    a_pr, b_pr = _try_recognise_prism(a), _try_recognise_prism(b)
+    if a_pr is not None and b_pr is not None:
+        return _prism_boolean(a_pr, b_pr, "intersection", tol)
+
     raise BuildError(
-        "body_intersection: unsupported-input combination; only "
-        "axis-aligned box+box and sphere+sphere are supported"
+        "body_intersection: unsupported-input combination; supported: "
+        "axis-aligned box+box, sphere+sphere, and coaxial coplanar-base "
+        "planar prisms"
     )
 
 
@@ -1189,10 +1433,16 @@ def body_difference(a: Body, b: Body, tol: float = 1e-6) -> Body:
             "trimming)"
         )
 
+    # GK-P09: general planar-faced (prismatic) difference.
+    a_pr, b_pr = _try_recognise_prism(a), _try_recognise_prism(b)
+    if a_pr is not None and b_pr is not None:
+        return _prism_boolean(a_pr, b_pr, "difference", tol)
+
     raise BuildError(
         "body_difference: unsupported-input combination; supported: "
         "AAB-box\\AAB-box, AAB-box\\(axis-aligned cyl pierces box), "
-        "sphere\\sphere (disjoint or containment only)"
+        "sphere\\sphere (disjoint or containment only), and coaxial "
+        "coplanar-base planar prisms"
     )
 
 
