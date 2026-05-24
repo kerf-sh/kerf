@@ -20,6 +20,7 @@ descriptive error payload instead so the frontend can surface a helpful message.
 """
 from __future__ import annotations
 
+import asyncio
 import os
 from pathlib import Path
 
@@ -28,6 +29,11 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from kerf_core.dependencies import require_auth
 
 router = APIRouter()
+
+# Concurrency cap: at most 4 simultaneous slicing jobs.  CuraEngine is a
+# subprocess that can run for up to 60 s on large meshes; running too many
+# in parallel saturates the worker's CPU.
+_SLICE_SEM = asyncio.Semaphore(4)
 
 _BAD_PATH_RESPONSE = {
     "gcode": None,
@@ -97,8 +103,14 @@ async def run_print_slice_route(req: dict, _auth: dict = Depends(require_auth)) 
         run_cura_slice,
     )
 
+    if _SLICE_SEM.locked():
+        raise HTTPException(status_code=429, detail="Too many concurrent slicing jobs — try again shortly")
+
     try:
-        result = run_cura_slice(stl_path, settings)
+        # run_cura_slice shells out to CuraEngine (subprocess, up to 60 s).
+        # Offload to a thread-pool executor so the event loop stays free.
+        async with _SLICE_SEM:
+            result = await asyncio.to_thread(run_cura_slice, stl_path, settings)
     except CuraEngineNotInstalledError as exc:
         return {
             "gcode": None,

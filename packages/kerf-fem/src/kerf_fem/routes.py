@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import importlib.util
 import json
@@ -9,6 +10,11 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException
 
 router = APIRouter()
+
+# Concurrency cap: at most 2 simultaneous FEM jobs (Gmsh + FEniCSx/CalculiX
+# are CPU-intensive and can run for minutes; more than a handful in parallel
+# would saturate the worker).
+_FEM_SEM = asyncio.Semaphore(2)
 
 # Gate dolfinx — import only if available; pyworker must boot without it.
 _DOLFINX_AVAILABLE = False
@@ -67,25 +73,40 @@ async def run_fem(req: dict):
                 "errors": [],
             }
 
-    with tempfile.TemporaryDirectory() as tmpdir:
-        step_path = Path(tmpdir) / "input.step"
-        step_path.write_bytes(step_bytes)
+    if _FEM_SEM.locked():
+        raise HTTPException(status_code=429, detail="Too many concurrent FEM jobs — try again shortly")
 
-        try:
-            msh_path = generate_mesh(str(step_path), mesh_size, tmpdir)
-        except Exception as e:
-            return {"error": f"meshing failed: {e}"}
+    class _MeshError(Exception):
+        pass
 
-        try:
-            result = run_simulation(
+    def _run_blocking() -> dict:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            step_path = Path(tmpdir) / "input.step"
+            step_path.write_bytes(step_bytes)
+
+            try:
+                msh_path = generate_mesh(str(step_path), mesh_size, tmpdir)
+            except Exception as e:
+                raise _MeshError(str(e)) from e
+
+            return run_simulation(
                 mesh_path=str(msh_path),
                 solver=solver,
                 analysis_type=analysis_type,
                 material_props=material_props,
                 boundary_conditions=boundary_conditions,
                 loads=loads,
-                tmpdir=tmpdir
+                tmpdir=tmpdir,
             )
+
+    async with _FEM_SEM:
+        # generate_mesh (Gmsh) and run_simulation (FEniCSx / CalculiX) are
+        # blocking — run them in a thread-pool executor to keep the event loop
+        # free for other requests.
+        try:
+            result = await asyncio.to_thread(_run_blocking)
+        except _MeshError as e:
+            return {"error": f"meshing failed: {e}"}
         except Exception as e:
             return {"error": f"simulation failed: {e}"}
 

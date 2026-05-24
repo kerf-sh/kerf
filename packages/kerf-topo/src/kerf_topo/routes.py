@@ -54,16 +54,23 @@ Algorithm (SIMP with Optimality Criteria update + Heaviside filter):
                   final_volume_fraction, iterations, density_field }.
 """
 
+import asyncio
 import base64
 import math
 import tempfile
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field, model_validator
 
 router = APIRouter()
+
+# Concurrency cap: at most 2 simultaneous SIMP topology-opt jobs.
+# Each job pins a CPU-bound thread for minutes; more than a handful in
+# parallel would saturate the worker.  Callers that exceed this limit
+# receive HTTP 429 immediately rather than queuing indefinitely.
+_TOPO_SEM = asyncio.Semaphore(2)
 
 # ── dependency availability gates ──────────────────────────────────────────────
 
@@ -963,8 +970,15 @@ async def run_topo(req: TopoRequest):
             "warnings": ["Engine pending — FEniCSx not yet deployed."],
         }
 
+    if _TOPO_SEM.locked():
+        raise HTTPException(status_code=429, detail="Too many concurrent topology jobs — try again shortly")
+
     try:
-        result = _run_fenicsx_simp(req)
+        async with _TOPO_SEM:
+            # _run_fenicsx_simp blocks the thread for minutes (FEM + SIMP
+            # iterations). Run it in a thread-pool executor so the asyncio
+            # event loop stays free to serve other requests.
+            result = await asyncio.to_thread(_run_fenicsx_simp, req)
         return result
     except Exception as exc:
         return {

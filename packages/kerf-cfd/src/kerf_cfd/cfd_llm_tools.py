@@ -22,10 +22,16 @@ when optional back-ends are absent.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import math
 import shutil
 from typing import Any
+
+# Concurrency cap: at most 2 simultaneous CFD jobs.  run_cfd_sync may invoke
+# the in-process Navier-Stokes solver or trigger OpenFOAM subprocesses — both
+# are blocking and CPU/IO-intensive.
+_CFD_SEM = asyncio.Semaphore(2)
 
 try:
     from kerf_chat.tools.registry import ToolSpec, err_payload, ok_payload, register
@@ -224,16 +230,24 @@ async def run_cfd(ctx: ProjectCtx, args: bytes) -> str:
     if not fluid_properties:
         return err_payload("fluid_properties is required", "BAD_ARGS")
 
-    result = run_cfd_sync(
-        file_id=file_id,
-        analysis_type=analysis_type,
-        fluid_properties=fluid_properties,
-        reynolds_number=a.get("reynolds_number"),
-        inlet_velocity=a.get("inlet_velocity"),
-        mesh_size=float(a.get("mesh_size", 0.01)),
-        turbulence_model=a.get("turbulence_model"),
-        max_iterations=int(a.get("max_iterations", 2000)),
-    )
+    if _CFD_SEM.locked():
+        return err_payload("Too many concurrent CFD jobs — try again shortly", "RATE_LIMITED")
+
+    async with _CFD_SEM:
+        # run_cfd_sync may trigger in-process solvers or OpenFOAM subprocesses
+        # (both blocking).  Run in a thread-pool executor so the event loop
+        # stays responsive to other requests.
+        result = await asyncio.to_thread(
+            run_cfd_sync,
+            file_id,
+            analysis_type,
+            fluid_properties,
+            reynolds_number=a.get("reynolds_number"),
+            inlet_velocity=a.get("inlet_velocity"),
+            mesh_size=float(a.get("mesh_size", 0.01)),
+            turbulence_model=a.get("turbulence_model"),
+            max_iterations=int(a.get("max_iterations", 2000)),
+        )
 
     if not result.get("ok"):
         return err_payload(result.get("error", "unknown error"), result.get("code", "ERROR"))
