@@ -1,5 +1,20 @@
 # Billing-hole audit — 2026-05-24
 
+> **Status update — 2026-05-24 (same day).** All 6 **P0** holes plugged via
+> T-402 fan-out (4 parallel Sonnet worktree agents, integrated by SHA):
+>
+> * R4 (Gemini cheap-tier unification) → `0d5f0682`
+> * R3 (monthly storage debit scheduler) → `0eb5ea4b`
+> * R1+R2+R8 (render charging + `user_id` threading + `record_storage` helper) → `f6d35c85`
+> * R5+R6 (render-gate bypass close + workshop-publish auth) → `b70cc6eb`
+> * Test-fixture integration patch (`_FAKE_AUTH` sub must be a UUID) → `573cd8b2`
+>
+> Full scoped pytest suite is back to the 10-failure pre-existing baseline
+> (`test_file_kinds`, `test_routes_ota` inter-test pollution, `test_byo_blender`
+> Docker daemon) — none caused by these fixes. JS suite green at 9534/9534.
+> The remaining **P1** and **P2** findings below are queued for T-402b
+> follow-ups (separate commits, smaller blast radius).
+
 **Context.** Pre-Koyeb-cutover audit ([T-401 in `tasks.md`](../../tasks.md),
 [ROADMAP § 7.1](../../ROADMAP.md#71--flyio--koyeb-p0-2026-05-24)).
 

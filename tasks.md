@@ -5494,7 +5494,7 @@ deploy model. All tasks are P0; the order is the order they should ship.
 ### T-402 Plug P0 holes from T-401
 - **Tier:** A
 - **Priority:** P0
-- **Status:** 🔴 not started (T-401 report landed, ready to start)
+- **Status:** ✅ shipped (2026-05-24) — all 6 P0 holes plugged via 4 parallel Sonnet worktree agents, integrated by SHA: R4 (`0d5f0682`), R3 (`0eb5ea4b`), R1+R2+R8 (`f6d35c85`), R5+R6 (`b70cc6eb`), test-fixture integration patch (`573cd8b2`). Full scoped pytest suite back to the 10-failure pre-existing baseline (file_kinds, OTA inter-test pollution, byo_blender Docker — none caused by these fixes). JS suite: 9534/9534 green.
 - **Scope:** Plug the 6 P0 holes from [the audit](docs/audits/billing-holes-2026-05-24.md), grouped to minimise PR count:
   1. **R1 + R2 + R8** — `kerf-render/queue_worker.py` calls `meter_render_job` after `mark_complete`; `_enqueue_render` threads `user_id` into the INSERT; `record_storage` helper added to `kerf_core.db.queries.usage_events`. Single PR, unblocks GPU + storage revenue together.
   2. **R3** — register a `StorageBillingWorker` (or extend `BillingResetWorker`) to fire `monthly_storage_debit()` on a monthly tick with an idempotency guard.
