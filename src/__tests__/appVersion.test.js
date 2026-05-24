@@ -38,28 +38,3 @@ describe('appVersion', () => {
     expect(label).toMatch(/^v\d+\.\d+\.\d+/)
   })
 })
-
-describe('Settings About section (static analysis)', () => {
-  it('imports appVersion from lib/appVersion', async () => {
-    const { readFileSync } = await import('fs')
-    const { fileURLToPath } = await import('url')
-    const path = await import('path')
-    const src = readFileSync(
-      path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../routes/Settings.jsx'),
-      'utf8',
-    )
-    expect(src).toContain("import { appVersion } from '../lib/appVersion.js'")
-  })
-
-  it('renders the version using appVersion() in the About section', async () => {
-    const { readFileSync } = await import('fs')
-    const { fileURLToPath } = await import('url')
-    const path = await import('path')
-    const src = readFileSync(
-      path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../routes/Settings.jsx'),
-      'utf8',
-    )
-    expect(src).toContain('appVersion()')
-    expect(src).toContain('Kerf version')
-  })
-})

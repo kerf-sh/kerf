@@ -21,7 +21,7 @@ Legend:
 | kerf-cad-core / aero | Dynamic pressure q=½ρV² | No route | Lives in `kerf_cad_core.aero.flow`; no HTTP endpoint yet |
 | kerf-cad-core / aero | Reynolds number | No route | Pure-Python; no route |
 | kerf-cad-core / aero | Mach number + Prandtl-Glauert | No route | Pure-Python; no route |
-| kerf-cad-core / aero | Thin-airfoil Cl/Cm | No route | Pure-Python; LLM tools wired |
+| kerf-cad-core / aero | Thin-airfoil Cl/Cm | **Wired** | `airfoilPolarBridge.js` + `AirfoilPolarPlot.jsx` wired (2026-05-24) |
 | kerf-cad-core / aero | Finite-wing CLT (Prandtl lifting line) | No route | Pure-Python |
 | kerf-cad-core / aero | Drag buildup CDi, CD, L/D | No route | Pure-Python |
 | kerf-cad-core / aero | Level flight T, P, V_stall | No route | Pure-Python |
@@ -160,8 +160,8 @@ Legend:
 | kerf-cad-core / gdt | GD&T annotation | Partial | `drawings/` backend; `gdt_callouts/`; no dedicated UI panel |
 | kerf-tess | STEP tessellation | **Wired** | `notify_step_uploaded`; worker pipeline |
 | kerf-render | Path-tracing render | **Wired** | `heroShot.js` + `heroShotBrowserPT.js`; render dropdown |
-| kerf-cam | CAM toolpath generation | Route exists, no UI | `kerf-cam` plugin; route registered; no dedicated frontend panel |
-| kerf-slicing | FDM slicing (Cura) | Route exists, no UI | `POST /run-print-slice`; no frontend panel |
+| kerf-cam | CAM toolpath generation | **Wired** | `kerf-cam` plugin; `CAMView.jsx` + `LayeredCAMView` wired in Editor (2026-05-24) |
+| kerf-slicing | FDM slicing (Cura) | **Wired** | `POST /run-print-slice`; `PrintSliceView.jsx` imported and rendered in Editor (2026-05-24) |
 | kerf-imports | FreeCAD import | Route exists, no UI | `POST /import-freecad-project`; drag-and-drop import UI |
 | kerf-imports | Rhino 3dm import | Route exists, no UI | `rhino3dm_route.py`; `rhino3dm.js` frontend |
 
@@ -178,7 +178,7 @@ Legend:
 | kerf-cad-core / spillway | Spillway hydraulics | No route | `spillway/`; no route |
 | kerf-cad-core / pavement | Pavement design | No route | `pavement/`; no route |
 | kerf-cad-core / railway | Railway track design | No route | `railway/`; no route |
-| kerf-bim | BIM IFC | Route exists, no UI | BIM plugin route; `bimCategories.js` partial |
+| kerf-bim | BIM IFC | **Wired** | BIM plugin route; `BIMView.jsx` wired in Editor (2026-05-24) |
 | kerf-cad-core / arch | Architectural elements | Partial | `curtainWall.js`, `railings.js`, `stairs.js` frontend; no route |
 | kerf-cad-core / windload | Wind load analysis | No route | `windload/`; no route |
 | kerf-cad-core / seismic | Seismic design | No route | `seismic/`; no route |
@@ -191,8 +191,8 @@ Legend:
 
 | Package | Capability | Frontend Status | Notes |
 |---------|-----------|-----------------|-------|
-| kerf-wiring | WireViz harness diagram | Route exists, no UI | `POST /run-wireviz`; no dedicated frontend |
-| kerf-plc | PLC IEC-61131 lint | Route exists, no UI | `POST /lint-plc`; no frontend panel |
+| kerf-wiring | WireViz harness diagram | **Wired** | `POST /run-wireviz`; `WiringView.jsx` wired in Editor (2026-05-24) |
+| kerf-plc | PLC IEC-61131 lint | **Wired** | `POST /lint-plc`; `PLCView.jsx` imported and rendered in Editor (2026-05-24) |
 | kerf-cad-core / elecpower | Power systems analysis | No route | `elecpower/`; no route |
 | kerf-cad-core / harness | Harness routing | No route | `harness/`; no route |
 
@@ -242,7 +242,7 @@ Legend:
 
 | Package | Capability | Frontend Status | Notes |
 |---------|-----------|-----------------|-------|
-| kerf-topo | Topology optimisation | Route exists, no UI | `/run-topo`; no frontend panel yet (Opus agent) |
+| kerf-topo | Topology optimisation | **Wired** | `/run-topo`; `TopoView.jsx` imported and rendered in Editor (2026-05-24) |
 | kerf-cad-core / reliability | Reliability (FMEA, MTTF) | No route | `reliability/`; no route |
 | kerf-cad-core / controls | Control system design | No route | `controls/`; no route |
 | kerf-cad-core / robotics | Robotics kinematics | No route | `robotics/`; no route |

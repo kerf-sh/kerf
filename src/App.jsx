@@ -46,13 +46,11 @@ const JewelryConfigurator = lazy(() => import('./routes/JewelryConfigurator.jsx'
 const JewelryShare = lazy(() => import('./routes/JewelryShare.jsx'))
 const Electronics = lazy(() => import('./routes/domains/Electronics.jsx'))
 const CompareHub = lazy(() => import('./routes/compare/index.jsx'))
-// All per-vendor compare pages (Freecad, Kicad, Rhino, Revit, Fusion,
-// Solidworks, Onshape, Altium, MatrixGold, Blender, Autocad, Inventor,
-// Civil3d, Max3ds) were migrated from JSX → markdown in commit 80fa444.
+// All per-vendor compare pages were migrated from JSX → markdown.
 // CompareMdRoute now handles every /compare/:slug — fetches the .md
 // from public/compare/, parses, and renders. Freecad.jsx is kept as it
 // exports shared sub-components (Section, CompareTable, etc.) consumed
-// by index.jsx and the KerfVs* compound pages.
+// by index.jsx.
 const CompareMdRoute = lazy(() => import('./routes/compare/CompareMdRoute.jsx'))
 // New sector domain pages (T-182)
 const CompositesPage = lazy(() => import('./routes/domains/Composites.jsx'))
