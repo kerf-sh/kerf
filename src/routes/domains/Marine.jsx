@@ -93,6 +93,7 @@ export default function Marine() {
       heroTags={['MIT licensed', 'IMO A.749 stability', 'Holtrop-Mennen / Savitsky', 'STEP / IGES export']}
       bullets={BULLETS}
       comparison={COMPARISON}
+      compareLinks={[{ slug: 'maxsurf', label: 'Bentley Maxsurf' }]}
     />
   )
 }

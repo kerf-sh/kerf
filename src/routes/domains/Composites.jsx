@@ -93,6 +93,7 @@ export default function Composites() {
       heroTags={['MIT licensed', 'Tsai-Wu / Hashin criteria', 'DXF flat patterns', 'STEP export']}
       bullets={BULLETS}
       comparison={COMPARISON}
+      compareLinks={[{ slug: 'fibersim', label: 'Siemens Fibersim' }]}
     />
   )
 }
