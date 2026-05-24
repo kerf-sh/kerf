@@ -485,9 +485,14 @@ def _get_llm_registry() -> llm_module.Registry:
 
 async def _make_byo_provider(pool, user_id: str, provider_name: str, *, fallback):
     """Build a Provider instance whose api_key comes from the user's saved
-    BYO key.  Falls back to ``fallback`` if anything goes wrong — the
-    bucket selector already decided BYO was viable, so a decryption failure
-    here is a server-side bug worth logging but not worth nuking the chat.
+    BYO key.
+
+    R12: on any failure (missing row, decryption error, unsupported provider)
+    we raise HTTP 402 with ``detail="byo_key_unavailable"`` rather than
+    silently falling back to Kerf's server key.  Falling back would bill $0
+    (bucket=Byo) while using Kerf's API key — Kerf eats the provider cost.
+    The ``fallback`` parameter is kept for signature compatibility but is
+    never used; callers should expect a possible 402.
     """
     try:
         from kerf_core.utils.encrypt import decrypt_secret
@@ -501,7 +506,8 @@ async def _make_byo_provider(pool, user_id: str, provider_name: str, *, fallback
                 user_id, provider_name,
             )
         if not row:
-            return fallback
+            _logger.warning("byo: no key row for user_id=%s provider=%s", user_id, provider_name)
+            raise HTTPException(status_code=402, detail="byo_key_unavailable")
         api_key = decrypt_secret(row["encrypted_key"], "byo-provider-key").decode()
 
         # Match Registry.resolve's provider mapping — the names we accept
@@ -514,10 +520,14 @@ async def _make_byo_provider(pool, user_id: str, provider_name: str, *, fallback
             return llm_module.MoonshotProvider(api_key)
         if provider_name == "gemini":
             return llm_module.GeminiProvider(api_key)
-        return fallback
+        # Unsupported provider name — refuse rather than fall back.
+        _logger.warning("byo: unsupported provider=%s for user_id=%s", provider_name, user_id)
+        raise HTTPException(status_code=402, detail="byo_key_unavailable")
+    except HTTPException:
+        raise
     except Exception:
-        _logger.exception("byo: provider override failed; falling back")
-        return fallback
+        _logger.exception("byo: provider override failed — raising 402 (not falling back)")
+        raise HTTPException(status_code=402, detail="byo_key_unavailable")
 
 
 @router.get("/bootstrap")
@@ -2960,8 +2970,17 @@ async def _load_part_contexts(conn, project_id: str, refs: list) -> list:
     return out
 
 
-async def _auto_title_thread(tid: str, user_content: str, assistant_content: str,
-                              provider: llm_module.Provider, model_id: str, pool) -> None:
+async def _auto_title_thread(
+    tid: str,
+    user_content: str,
+    assistant_content: str,
+    provider: llm_module.Provider,
+    model_id: str,
+    pool,
+    *,
+    user_id: Optional[str] = None,
+    project_id: Optional[str] = None,
+) -> None:
     prompt = (
         "Generate a concise 3-6 word title for the following CAD chat exchange. "
         "Return ONLY the title, no quotes, no trailing punctuation, no preamble.\n\n"
@@ -2987,6 +3006,21 @@ async def _auto_title_thread(tid: str, user_content: str, assistant_content: str
                 "UPDATE chat_threads SET title = $1, updated_at = now() WHERE id = $2",
                 title, tid,
             )
+            # R22: emit operator-cost row so auto-title COGS are auditable.
+            if settings.usage_enabled and user_id:
+                try:
+                    await usage_queries.create_usage_event(
+                        conn,
+                        user_id=uuid.UUID(user_id),
+                        kind="operator_token",
+                        project_id=uuid.UUID(project_id) if project_id else None,
+                        model=model_id,
+                        input_tokens=resp.input_tokens if hasattr(resp, "input_tokens") else 0,
+                        output_tokens=resp.output_tokens if hasattr(resp, "output_tokens") else 0,
+                        payer="operator",
+                    )
+                except Exception as _ue:
+                    _logger.warning("auto-title: usage event failed: %s", _ue)
     except Exception as e:
         _logger.warning(f"auto-title: {e}")
 
@@ -3132,7 +3166,7 @@ async def post_message(
             user_billing = await load_user_billing(pool, user_id)
 
             # Rough estimate for the credit check: assume ~1k in + ~1k out
-            # at provider COGS × 1.20.  Off by an order of magnitude on
+            # at provider COGS × markup.  Off by an order of magnitude on
             # large turns, but the spend-commit path settles against the
             # real numbers so this only gates rejection.
             bucket_model_info_price = await _get_price(
@@ -3140,7 +3174,9 @@ async def post_message(
             )
             est_cogs = bucket_model_info_price.compute_cost_usd(1000, 1000) \
                 if bucket_model_info_price else 0.0
-            est_billed = est_cogs * 1.20
+            # R7: read markup from settings
+            _token_markup = 1.0 + settings.cloud_pricing_token_markup_pct / 100.0
+            est_billed = est_cogs * _token_markup
 
             bucket = pick_bucket(
                 user_billing, bucket_model_info, est_billed,
@@ -3202,6 +3238,56 @@ async def post_message(
     tool_msgs: list = []
 
     for iteration in range(_MAX_AGENT_ITERATIONS):
+        # R10: re-snapshot user_billing and re-pick bucket on every iteration
+        # (except the first, which was already resolved above) so that a
+        # drained free-tier quota from a prior commit_spend stops the loop
+        # rather than letting later iterations proceed on a stale snapshot.
+        if iteration > 0 and settings.usage_enabled and bucket is not None:
+            try:
+                from kerf_billing.buckets import (
+                    load_user_billing as _lub,
+                    pick_bucket as _pb,
+                    InsufficientCredits as _IC,
+                )
+                _user_billing_fresh = await _lub(pool, user_id)
+                _bucket_fresh = _pb(
+                    _user_billing_fresh, bucket_model_info, est_billed,
+                    estimated_input_tokens=1000, estimated_output_tokens=1000,
+                )
+                if isinstance(_bucket_fresh, _IC):
+                    code = (
+                        "INSUFFICIENT_CREDITS_BYO_AVAILABLE"
+                        if _bucket_fresh.byo_available
+                        else "INSUFFICIENT_CREDITS"
+                    )
+                    async with pool.acquire() as conn:
+                        last_assistant = await _insert_assistant_message(
+                            conn, tid,
+                            "Insufficient credits to continue.",
+                            provider_model_id, None,
+                        )
+                        await conn.execute(
+                            "UPDATE chat_threads SET last_message_at = now(), updated_at = now() WHERE id = $1", tid
+                        )
+                    raise HTTPException(
+                        status_code=402,
+                        detail={"code": code, "provider": bucket_provider_name},
+                    )
+                bucket = _bucket_fresh
+            except HTTPException:
+                raise
+            except ImportError:
+                pass
+            except Exception as _rebucket_exc:
+                _logger.error(
+                    "bucket-recheck: unexpected error at iter=%d: %s",
+                    iteration, _rebucket_exc,
+                )
+                raise HTTPException(
+                    status_code=503,
+                    detail="billing service error — please try again",
+                )
+
         try:
             resp = await asyncio.get_event_loop().run_in_executor(
                 None,
@@ -3243,7 +3329,8 @@ async def post_message(
                     cogs = bucket_model_info_price.compute_cost_usd(
                         resp.input_tokens, resp.output_tokens,
                     ) if bucket_model_info_price else 0.0
-                    billed = cogs * 1.20
+                    # R7: read markup from settings rather than hardcoding 1.20
+                    billed = cogs * (1.0 + settings.cloud_pricing_token_markup_pct / 100.0)
                     try:
                         await commit_spend(
                             pool,
@@ -3258,7 +3345,31 @@ async def post_message(
                             api_token_id=None,  # web sessions don't have an api_token
                         )
                     except ApiTokenDailyCapExceeded as cap:
-                        _logger.warning(f"usage: api token daily cap: {cap}")
+                        # R9: known cap-exceeded is a legitimate 402 — log and
+                        # raise so the caller gets a proper error, not silence.
+                        _logger.warning(
+                            "usage: api token daily cap exceeded — "
+                            "user_id=%s model=%s est_cost=%.6f: %s",
+                            user_id, provider_model_id, billed, cap,
+                        )
+                        raise HTTPException(
+                            status_code=402,
+                            detail={"code": "API_TOKEN_DAILY_CAP_EXCEEDED"},
+                        )
+                    except Exception as billing_exc:
+                        # R9: unexpected billing failure — log with full context
+                        # and surface as 503 so the LLM call is not treated as
+                        # successfully billed.
+                        _logger.error(
+                            "usage: commit_spend failed (UNEXPECTED) — "
+                            "user_id=%s model=%s est_cost=%.6f: %s",
+                            user_id, provider_model_id, billed, billing_exc,
+                            exc_info=True,
+                        )
+                        raise HTTPException(
+                            status_code=503,
+                            detail={"code": "BILLING_WRITE_FAILED"},
+                        )
                 else:
                     # Legacy fallback path (OSS local mode / cloud_user_balances
                     # missing).  Records the token row only.
@@ -3323,7 +3434,8 @@ async def post_message(
     if is_first_user_message and registry.has_any():
         assistant_content = last_assistant.get("content", "") if last_assistant else ""
         asyncio.create_task(_auto_title_thread(
-            tid, req.content, assistant_content, provider, provider_model_id, pool
+            tid, req.content, assistant_content, provider, provider_model_id, pool,
+            user_id=user_id, project_id=pid,
         ))
 
     return {
@@ -3506,7 +3618,9 @@ async def post_message_stream(
                 user_billing = await load_user_billing(pool, user_id)
                 bucket_model_info_price = await _get_price(pool, bucket_provider_name, provider_model_id)
                 est_cogs = bucket_model_info_price.compute_cost_usd(1000, 1000) if bucket_model_info_price else 0.0
-                est_billed = est_cogs * 1.20
+                # R7: read markup from settings
+                _token_markup = 1.0 + settings.cloud_pricing_token_markup_pct / 100.0
+                est_billed = est_cogs * _token_markup
 
                 bucket = pick_bucket(
                     user_billing, bucket_model_info, est_billed,
@@ -3541,6 +3655,48 @@ async def post_message_stream(
 
         try:
             for iteration in range(_MAX_AGENT_ITERATIONS):
+                # R10: re-snapshot user_billing and re-pick bucket on every
+                # iteration after the first so a drained quota stops the loop.
+                if iteration > 0 and settings.usage_enabled and bucket is not None:
+                    try:
+                        from kerf_billing.buckets import (
+                            load_user_billing as _lub,
+                            pick_bucket as _pb,
+                            InsufficientCredits as _IC,
+                        )
+                        _user_billing_fresh = await _lub(pool, user_id)
+                        _bucket_fresh = _pb(
+                            _user_billing_fresh, bucket_model_info, est_billed,
+                            estimated_input_tokens=1000, estimated_output_tokens=1000,
+                        )
+                        if isinstance(_bucket_fresh, _IC):
+                            code = (
+                                "INSUFFICIENT_CREDITS_BYO_AVAILABLE"
+                                if _bucket_fresh.byo_available
+                                else "INSUFFICIENT_CREDITS"
+                            )
+                            yield _sse_frame("error", {
+                                "message": "Insufficient credits to continue",
+                                "code": code,
+                                "is_error": True,
+                            })
+                            return
+                        bucket = _bucket_fresh
+                    except (GeneratorExit, asyncio.CancelledError):
+                        return
+                    except ImportError:
+                        pass
+                    except Exception as _rebucket_exc:
+                        _logger.error(
+                            "bucket-recheck stream: unexpected error at iter=%d: %s",
+                            iteration, _rebucket_exc,
+                        )
+                        yield _sse_frame("error", {
+                            "message": "billing service error — please try again",
+                            "is_error": True,
+                        })
+                        return
+
                 complete_req = llm_module.CompleteRequest(
                     model=provider_model_id,
                     system=llm_module.SystemPrompt + _AGENT_SYSTEM_ADDENDUM + type_addendum,
@@ -3659,7 +3815,8 @@ async def post_message_stream(
                             from kerf_billing.spend import commit_spend, ApiTokenDailyCapExceeded
                             cogs = bucket_model_info_price.compute_cost_usd(input_tokens, output_tokens) \
                                 if bucket_model_info_price else 0.0
-                            billed = cogs * 1.20
+                            # R7: read markup from settings
+                            billed = cogs * (1.0 + settings.cloud_pricing_token_markup_pct / 100.0)
                             try:
                                 await commit_spend(
                                     pool, bucket=bucket, user_id=user_id, project_id=pid,
@@ -3667,14 +3824,42 @@ async def post_message_stream(
                                     input_tokens=input_tokens, output_tokens=output_tokens,
                                     cogs_usd=cogs, billed_usd=billed, api_token_id=None,
                                 )
-                            except Exception:
-                                pass
+                            except ApiTokenDailyCapExceeded as cap:
+                                # R9: known cap — emit SSE error and stop the loop.
+                                _logger.warning(
+                                    "usage stream: api token daily cap exceeded — "
+                                    "user_id=%s model=%s est_cost=%.6f: %s",
+                                    user_id, provider_model_id, billed, cap,
+                                )
+                                yield _sse_frame("error", {
+                                    "message": "API token daily cap exceeded",
+                                    "code": "API_TOKEN_DAILY_CAP_EXCEEDED",
+                                    "is_error": True,
+                                })
+                                return
+                            except Exception as billing_exc:
+                                # R9: unexpected billing failure — emit SSE error
+                                # and stop; do not let the loop continue unbilled.
+                                _logger.error(
+                                    "usage stream: commit_spend failed (UNEXPECTED) — "
+                                    "user_id=%s model=%s est_cost=%.6f: %s",
+                                    user_id, provider_model_id, billed, billing_exc,
+                                    exc_info=True,
+                                )
+                                yield _sse_frame("error", {
+                                    "message": "Billing write failed — please try again",
+                                    "code": "BILLING_WRITE_FAILED",
+                                    "is_error": True,
+                                })
+                                return
                         else:
                             from cloud.usage import record_token_event
                             await record_token_event(
                                 pool, user_id, pid, provider_model_id,
                                 input_tokens, output_tokens, cost_usd=0.0,
                             )
+                    except (GeneratorExit, asyncio.CancelledError):
+                        return
                     except Exception as ue:
                         _logger.warning(f"usage stream: record token event: {ue}")
 
@@ -3779,7 +3964,8 @@ async def post_message_stream(
         # Auto-title on first exchange (fire and forget)
         if is_first_user_message and registry.has_any() and last_assistant_content:
             asyncio.create_task(_auto_title_thread(
-                tid, req.content, last_assistant_content, provider, provider_model_id, pool
+                tid, req.content, last_assistant_content, provider, provider_model_id, pool,
+                user_id=user_id, project_id=pid,
             ))
 
     return StreamingResponse(
@@ -4927,6 +5113,8 @@ async def export_project(
     request: Request,
     pid: str,
     payload: dict = Depends(require_auth),
+    # R14: per-user rate limit — 20 exports per hour
+    _rl: None = Depends(rate_limit(max_per_window=20, window_seconds=3600, key_prefix="api:export")),
 ):
     uid = payload.get("sub")
 
@@ -4992,6 +5180,21 @@ async def export_project(
         project_created_at=created_at or "",
         thumbnail_storage_key=thumb_key,
     )
+
+    # R14: record egress bytes so we can audit outbound bandwidth per user.
+    bytes_sent = len(result.zip_bytes)
+    if settings.usage_enabled and uid:
+        try:
+            async with pool.acquire() as conn:
+                await usage_queries.create_usage_event(
+                    conn,
+                    user_id=uuid.UUID(uid),
+                    kind="egress",
+                    project_id=uuid.UUID(pid),
+                    bytes_delta=bytes_sent,
+                )
+        except Exception as _eg_exc:
+            _logger.warning("egress: failed to record export usage — uid=%s: %s", uid, _eg_exc)
 
     slug = slugify_name(name)
     short = pid[:8]
@@ -5235,9 +5438,14 @@ async def serve_workshop_media(
 #   • object is not in storage
 @router.get("/projects/{pid}/blobs/{oid}")
 async def serve_project_blob(
+    request: Request,
     pid: str,
     oid: str,
     auth: Optional[dict] = Depends(optional_auth),
+    # R15: per-user/per-IP rate limit — 120 blob fetches per minute
+    # TODO(T-409): presign instead of proxy — redirect to Tigris presigned URL
+    # instead of streaming through the app to eliminate bandwidth overhead.
+    _rl: None = Depends(rate_limit(max_per_window=120, window_seconds=60, key_prefix="api:blobs")),
 ):
     """GET /api/projects/:pid/blobs/:oid — stream a content-addressed object.
 
@@ -6335,6 +6543,7 @@ async def workshop_publish(
                 settings = get_settings()
                 anthropic_key = getattr(settings, "anthropic_api_key", None) or os.environ.get("ANTHROPIC_API_KEY", "")
 
+                _readme_used_llm = False
                 if anthropic_key:
                     cfg = LLMConfig(
                         anthropic_api_key=anthropic_key,
@@ -6348,9 +6557,24 @@ async def workshop_publish(
                         llm_provider=provider,
                         model_id=model_id,
                     )
+                    _readme_used_llm = True
                 else:
                     from kerf_chat.readme_gen import generate_readme_template
                     readme_text = generate_readme_template(project_ctx, bom_rows=bom_rows or None)
+
+                # R22: audit operator-cost LLM call in usage_events.
+                if _readme_used_llm and settings.usage_enabled:
+                    try:
+                        await usage_queries.create_usage_event(
+                            conn,
+                            user_id=uuid.UUID(user_id),
+                            kind="operator_token",
+                            project_id=project_id,
+                            model="claude-haiku-4-5",
+                            payer="operator",
+                        )
+                    except Exception as _ue:
+                        logging.getLogger(__name__).warning("workshop_publish: readme usage event failed: %s", _ue)
             except Exception as exc:
                 logging.getLogger(__name__).warning("README generation failed: %s", exc)
                 try:
@@ -6444,6 +6668,7 @@ async def workshop_regenerate_readme(
             settings = get_settings()
             anthropic_key = getattr(settings, "anthropic_api_key", None) or os.environ.get("ANTHROPIC_API_KEY", "")
 
+            _readme_used_llm = False
             if anthropic_key:
                 cfg = LLMConfig(anthropic_api_key=anthropic_key, default_model="claude-haiku-4-5")
                 registry = Registry(cfg)
@@ -6454,8 +6679,23 @@ async def workshop_regenerate_readme(
                     llm_provider=provider,
                     model_id=model_id,
                 )
+                _readme_used_llm = True
             else:
                 readme_text = generate_readme_template(project_ctx, bom_rows=bom_rows or None)
+
+            # R22: audit operator-cost LLM call in usage_events.
+            if _readme_used_llm and settings.usage_enabled:
+                try:
+                    await usage_queries.create_usage_event(
+                        conn,
+                        user_id=uuid.UUID(user_id),
+                        kind="operator_token",
+                        project_id=project_id,
+                        model="claude-haiku-4-5",
+                        payer="operator",
+                    )
+                except Exception as _ue:
+                    logging.getLogger(__name__).warning("workshop_regenerate_readme: usage event failed: %s", _ue)
         except Exception as exc:
             logging.getLogger(__name__).warning("README regeneration failed: %s", exc)
             try:

@@ -37,7 +37,7 @@ create table if not exists usage_events (
     id uuid primary key default gen_random_uuid(),
     user_id uuid not null references users(id) on delete cascade,
     project_id uuid references projects(id) on delete set null,
-    kind text not null check (kind in ('token','storage','gpu')),
+    kind text not null check (kind in ('token','storage','gpu','egress','operator_token')),
     model text,
     input_tokens int not null default 0,
     output_tokens int not null default 0,

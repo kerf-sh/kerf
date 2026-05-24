@@ -15,12 +15,13 @@ async def create_usage_event(
     output_tokens: int = 0,
     bytes_delta: int = 0,
     usd_cost: float = 0.0,
+    payer: str = "kerf_paid",
 ) -> Dict[str, Any]:
     row = await conn.fetchrow(
         """
         INSERT INTO usage_events
-        (user_id, project_id, kind, model, input_tokens, output_tokens, bytes_delta, usd_cost)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        (user_id, project_id, kind, model, input_tokens, output_tokens, bytes_delta, usd_cost, payer)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
         RETURNING *
         """,
         user_id,
@@ -31,6 +32,7 @@ async def create_usage_event(
         output_tokens,
         bytes_delta,
         usd_cost,
+        payer,
     )
     return dict(row)
 
