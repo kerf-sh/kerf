@@ -113,10 +113,10 @@ features:
       note: "BatchEstimator + ExtendedKalmanFilter; range/Doppler/TDRSS obs types"
       source: "https://gmat.atlassian.net/wiki/spaces/GW/pages/380273617"
     kerf:
-      status: no
-      note: "No orbit determination engine; out of scope for current version"
-      evidence: ""
-      kerf_note: "Batch OD + EKF require observations processing pipeline (range/Doppler); this is a large-scope addition. Not currently planned."
+      status: partial
+      note: "Batch weighted least-squares OD with STM measurement partials and formal covariance; range + range-rate observables; multi-station; J2 force model; a-priori constraint; EKF and real multi-pass tracking data ingestion (DSN/CCSDS TNF formats) not yet implemented"
+      evidence: "packages/kerf-aero/src/kerf_aero/orbital/orbit_determination.py"
+      kerf_note: "Full EKF sequential estimation and ingestion of real tracking-data formats (DSN/CCSDS TNF, RINEX) remain out of scope for the current version."
 
   - domain: D5
     feature: "Monte Carlo dispersion analysis"
@@ -253,7 +253,7 @@ Kerf integrates GMAT as a companion tool for spacecraft hardware design projects
 |---|---|---|
 | License | MIT (Kerf) + Apache 2.0 (GMAT) | Apache 2.0 |
 | Trajectory design | Yes (via GMAT) | Yes (Keplerian, Lambert, B-plane) |
-| Orbit determination | Yes (via GMAT) | Yes (batch + sequential) |
+| Orbit determination | Partial (batch LS + covariance; EKF pending) | Yes (batch + sequential) |
 | Manoeuvre planning | Yes (via GMAT) | Yes (impulsive + finite burn) |
 | Launch window analysis | Yes (via GMAT) | Yes (access + coverage) |
 | Re-entry analysis | Yes (via GMAT) | Yes |

@@ -1,4 +1,5 @@
-"""Orbital mechanics — Kepler, Lambert, Hohmann/bi-elliptic transfers, J2/J3 perturbations."""
+"""Orbital mechanics — Kepler, Lambert, Hohmann/bi-elliptic transfers, J2/J3 perturbations,
+STM propagation, and batch least-squares orbit determination."""
 
 from .kepler import (
     KeplerianElements,
@@ -22,6 +23,13 @@ from .perturbations import (
     j3_secular_rates,
     combined_secular_rates,
 )
+from .orbit_determination import (
+    Observation,
+    ODResult,
+    batch_least_squares_od,
+    generate_synthetic_observations,
+    geodetic_to_eci,
+)
 
 __all__ = [
     "KeplerianElements",
@@ -40,4 +48,10 @@ __all__ = [
     "j2_secular_rates",
     "j3_secular_rates",
     "combined_secular_rates",
+    # OD
+    "Observation",
+    "ODResult",
+    "batch_least_squares_od",
+    "generate_synthetic_observations",
+    "geodetic_to_eci",
 ]
