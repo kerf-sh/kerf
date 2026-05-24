@@ -34,6 +34,8 @@ Design notes
 - LM operates on 6 parameters: [apex_x, apex_y, apex_z, theta, phi, alpha].
 - The axis is kept as a unit vector via a (θ, φ) spherical representation
   during LM so that the norm constraint is never violated.
+- Linear algebra helpers (_dot, _sub, _scale, _norm, _normalise, _centroid,
+  _covariance3, _jacobi3) are imported from scan.fit to avoid duplication.
 
 Author: imranparuk
 """
@@ -43,80 +45,18 @@ import math
 import random
 from typing import Any
 
-
-# ---------------------------------------------------------------------------
-# Internal geometry helpers
-# ---------------------------------------------------------------------------
-
-def _dot(a: list[float], b: list[float]) -> float:
-    return a[0]*b[0] + a[1]*b[1] + a[2]*b[2]
-
-
-def _sub(a: list[float], b: list[float]) -> list[float]:
-    return [a[0]-b[0], a[1]-b[1], a[2]-b[2]]
-
-
-def _scale(v: list[float], s: float) -> list[float]:
-    return [v[0]*s, v[1]*s, v[2]*s]
-
-
-def _norm(v: list[float]) -> float:
-    return math.sqrt(v[0]**2 + v[1]**2 + v[2]**2)
-
-
-def _normalise(v: list[float]) -> list[float]:
-    n = _norm(v)
-    return [v[0]/n, v[1]/n, v[2]/n] if n > 1e-14 else [0.0, 0.0, 1.0]
-
-
-def _centroid(pts: list[list[float]]) -> list[float]:
-    n = len(pts)
-    return [sum(p[i] for p in pts)/n for i in range(3)]
-
-
-def _covariance3(pts: list[list[float]], c: list[float]) -> list[list[float]]:
-    cxx = cxy = cxz = cyy = cyz = czz = 0.0
-    for p in pts:
-        dx=p[0]-c[0]; dy=p[1]-c[1]; dz=p[2]-c[2]
-        cxx+=dx*dx; cxy+=dx*dy; cxz+=dx*dz
-        cyy+=dy*dy; cyz+=dy*dz; czz+=dz*dz
-    n = len(pts)
-    return [[cxx/n,cxy/n,cxz/n],[cxy/n,cyy/n,cyz/n],[cxz/n,cyz/n,czz/n]]
-
-
-def _jacobi3(A: list[list[float]], max_iter: int = 200) -> tuple[list[float], list[list[float]]]:
-    """Jacobi eigenvalue for 3×3 symmetric matrix. Returns (vals asc, vecs)."""
-    a = [row[:] for row in A]
-    V = [[1.0,0.0,0.0],[0.0,1.0,0.0],[0.0,0.0,1.0]]
-    for _ in range(max_iter):
-        mv = 0.0; p, q = 0, 1
-        for i in range(3):
-            for j in range(i+1, 3):
-                if abs(a[i][j]) > mv:
-                    mv = abs(a[i][j]); p, q = i, j
-        if mv < 1e-14:
-            break
-        theta = (0.5*math.atan2(2.0*a[p][q], a[p][p]-a[q][q])
-                 if abs(a[p][p]-a[q][q]) >= 1e-14 else math.pi/4.0)
-        c, s = math.cos(theta), math.sin(theta)
-        an = [row[:] for row in a]
-        for i in range(3):
-            an[i][p] = c*a[i][p]+s*a[i][q]
-            an[i][q] = -s*a[i][p]+c*a[i][q]
-        a = [row[:] for row in an]
-        for j in range(3):
-            a[p][j] = c*an[p][j]+s*an[q][j]
-            a[q][j] = -s*an[p][j]+c*an[q][j]
-        a[p][q] = a[q][p] = 0.0
-        Vn = [row[:] for row in V]
-        for i in range(3):
-            Vn[i][p] = c*V[i][p]+s*V[i][q]
-            Vn[i][q] = -s*V[i][p]+c*V[i][q]
-        V = Vn
-    vals = [a[0][0], a[1][1], a[2][2]]
-    vecs = [[V[0][i], V[1][i], V[2][i]] for i in range(3)]
-    order = sorted(range(3), key=lambda i: vals[i])
-    return [vals[i] for i in order], [vecs[i] for i in order]
+# Delegate shared linalg helpers to the canonical implementation in scan.fit
+# rather than duplicating them here.
+from kerf_cad_core.scan.fit import (
+    _dot,
+    _sub,
+    _scale,
+    _norm,
+    _normalise,
+    _centroid,
+    _covariance3,
+    _jacobi3,
+)
 
 
 # ---------------------------------------------------------------------------
