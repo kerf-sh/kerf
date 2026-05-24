@@ -77,6 +77,8 @@ import math
 import warnings as _warnings_module
 from typing import Any
 
+from kerf_cad_core.fluids.friction import darcy_friction_factor
+
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -147,33 +149,11 @@ def _velocity_fpm(cfm: float, diameter_in: float) -> float:
     return cfm / area_ft2 if area_ft2 > _EPS else 0.0
 
 
-def _swamee_jain(eps_d: float, re: float) -> float:
-    """Swamee-Jain explicit friction factor approximation (±3% vs Colebrook-White)."""
-    if re < 1.0:
-        re = 1.0
-    eps_d = max(eps_d, _EPS)
-    f = 0.25 / (math.log10(eps_d / 3.7 + 5.74 / re ** 0.9)) ** 2
-    return f
-
-
-def _colebrook_white(eps_d: float, re: float, f0: float) -> float:
-    """Colebrook-White friction factor by fixed-point iteration (seed from Swamee-Jain)."""
-    f = f0
-    for _ in range(10):
-        rhs = -2.0 * math.log10(eps_d / 3.7 + 2.51 / (re * math.sqrt(max(f, _EPS))))
-        f_new = 1.0 / rhs ** 2 if abs(rhs) > _EPS else f
-        f = f_new
-    return f
-
-
 def _friction_factor(re: float, roughness_ft: float, diameter_ft: float) -> float:
-    """Darcy friction factor for a round duct (Altshul/Colebrook-White approach)."""
+    """Darcy friction factor for a round duct — delegates to canonical implementation."""
     eps_d = roughness_ft / max(diameter_ft, _EPS)
-    if re < 2300.0:
-        # Laminar (unusual in HVAC but handle it)
-        return 64.0 / max(re, 1.0)
-    f0 = _swamee_jain(eps_d, re)
-    return _colebrook_white(eps_d, re, f0)
+    re_clamped = max(re, 1.0)
+    return darcy_friction_factor(re_clamped, eps_d)
 
 
 # Kinematic viscosity of air at ~70 °F (ft²/s)

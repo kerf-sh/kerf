@@ -68,6 +68,8 @@ import math
 import warnings
 from typing import Any
 
+from kerf_cad_core.fluids.friction import darcy_friction_factor
+
 
 # ---------------------------------------------------------------------------
 # Internal helpers
@@ -357,28 +359,11 @@ def required_wall_thickness(
 #    Friction factor by Colebrook-White (iterative), seeded by Swamee-Jain.
 # ---------------------------------------------------------------------------
 
+# _colebrook is kept as a thin shim for any internal callers; it now delegates
+# to the canonical darcy_friction_factor in kerf_cad_core.fluids.friction.
 def _colebrook(Re: float, eps_D: float, max_iter: int = 50) -> float:
-    """Colebrook-White friction factor (iterative, Moody chart).
-
-    Returns Darcy friction factor f.
-    If Re < 2300 (laminar): f = 64/Re.
-    """
-    if Re < 2300.0:
-        return 64.0 / Re
-
-    # Swamee-Jain as initial guess (explicit, accurate ~1% for turbulent flow)
-    f = 0.25 / (math.log10(eps_D / 3.7 + 5.74 / Re ** 0.9)) ** 2
-
-    # Colebrook-White: 1/√f = -2·log₁₀(ε/(3.7D) + 2.51/(Re·√f))
-    for _ in range(max_iter):
-        inv_sqrt_f_new = -2.0 * math.log10(eps_D / 3.7 + 2.51 / (Re * math.sqrt(f)))
-        f_new = 1.0 / inv_sqrt_f_new ** 2
-        if abs(f_new - f) < 1e-10:
-            f = f_new
-            break
-        f = f_new
-
-    return f
+    """Darcy friction factor — delegates to canonical darcy_friction_factor."""
+    return darcy_friction_factor(Re, eps_D)
 
 
 def pressure_drop(

@@ -72,6 +72,8 @@ from __future__ import annotations
 import math
 from typing import Any
 
+from kerf_cad_core.fluids.friction import darcy_friction_factor
+
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
@@ -1019,20 +1021,8 @@ def steam_pipe_pressure_drop(
     rho = 1.0 / vg_m3kg
     Re = rho * v * pipe_id_m / mu_Pa_s
 
-    if Re < 2300:
-        f = 64 / Re if Re > 0 else 0.0  # laminar
-    else:
-        # Colebrook-White iterative (3 iterations sufficient)
-        eps_D = roughness_m / pipe_id_m
-        f = 0.02  # initial guess
-        for _ in range(10):
-            if f <= 0:
-                break
-            rhs = -2.0 * math.log10(eps_D / 3.7 + 2.51 / (Re * math.sqrt(f)))
-            f_new = 1.0 / rhs**2
-            if abs(f_new - f) < 1e-8:
-                break
-            f = f_new
+    eps_D = roughness_m / pipe_id_m
+    f = darcy_friction_factor(Re if Re > 0 else 1.0, eps_D)
 
     dP = f * (pipe_length_m / pipe_id_m) * (rho * v**2 / 2)
 

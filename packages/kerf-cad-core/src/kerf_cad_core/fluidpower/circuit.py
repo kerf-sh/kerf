@@ -81,6 +81,8 @@ import math
 import warnings as _warnings_mod
 from typing import Any
 
+from kerf_cad_core.fluids.friction import darcy_friction_factor
+
 
 # ---------------------------------------------------------------------------
 # Internal helpers
@@ -846,28 +848,12 @@ def line_pressure_drop(
 
     warns: list[str] = []
 
+    rel_rough = eps / D
+    f = darcy_friction_factor(Re, rel_rough)
+    dP = f * (L_total / D) * (rho_ * v ** 2 / 2.0)
     if Re < 2300:
-        # Laminar: Hagen-Poiseuille
-        # f = 64/Re  (Darcy)
-        f = 64.0 / Re if Re > 0 else 0.0
-        # ΔP = f × (L_total/D) × (ρv²/2)
-        dP = f * (L_total / D) * (rho_ * v ** 2 / 2.0)
         regime = "laminar"
     else:
-        # Turbulent: Swamee-Jain explicit approximation to Colebrook-White
-        # 1/√f = -2·log₁₀(ε/(3.7D) + 5.74/Re^0.9)  — Swamee-Jain (1976)
-        rel_rough = eps / D
-        # Guard against zero roughness (smooth pipe → Blasius)
-        if eps == 0.0:
-            # Blasius for smooth pipe: f = 0.316 / Re^0.25 (valid Re < 1e5)
-            f = 0.316 / (Re ** 0.25)
-        else:
-            term = rel_rough / 3.7 + 5.74 / (Re ** 0.9)
-            if term <= 0:
-                f = 0.02  # fallback
-            else:
-                f = 0.25 / (math.log10(term)) ** 2
-        dP = f * (L_total / D) * (rho_ * v ** 2 / 2.0)
         regime = "turbulent"
 
     # Velocity warnings
