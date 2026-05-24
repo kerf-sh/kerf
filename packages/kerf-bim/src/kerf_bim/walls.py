@@ -34,9 +34,11 @@ __all__ = [
     "CompoundWall",
     "WallInstance",
     "WallValidationError",
+    "WallLayerGeometry",
     "make_compound_wall",
     "make_wall_instance",
     "wall_to_ifc_dict",
+    "wall_layer_faces",
     # Preset factory
     "PRESET_WALLS",
 ]
@@ -287,6 +289,119 @@ def make_wall_instance(
 
 
 # ---------------------------------------------------------------------------
+# Per-layer face geometry (GK-P31)
+# ---------------------------------------------------------------------------
+
+@dataclass
+class WallLayerGeometry:
+    """Per-layer face geometry for a :class:`WallInstance`.
+
+    Each layer is represented as a rectangular face extruded along the wall's
+    plan length.  The face is defined by four 3-D corner points:
+
+    Attributes
+    ----------
+    layer:
+        The :class:`WallLayer` this geometry belongs to.
+    layer_index:
+        Index of the layer in the compound wall (0 = exterior).
+    outer_offset:
+        Signed perpendicular offset of the outer face from the wall
+        centreline (mm), positive toward exterior.
+    inner_offset:
+        Signed perpendicular offset of the inner face from the wall
+        centreline (mm).
+    corners:
+        Four 3-D corner points of the layer face (mm), ordered:
+        ``[base_outer_start, base_outer_end,
+           top_outer_end,    top_outer_start]`` (CCW from outside).
+    """
+    layer: "WallLayer"
+    layer_index: int
+    outer_offset: float
+    inner_offset: float
+    corners: List[Tuple[float, float, float]]
+
+
+def wall_layer_faces(instance: "WallInstance") -> List[WallLayerGeometry]:
+    """Compute per-layer face geometry for a :class:`WallInstance`.
+
+    The wall is offset symmetrically about its centreline by default.
+    Each layer runs from the exterior face to the interior face; layer [0]
+    is the exterior-most layer.
+
+    The wall plan axis (start → end) defines the *length* direction.
+    The perpendicular to that axis (rotated 90° CCW in the XY plane) is the
+    *thickness* direction, with positive values toward the exterior side.
+
+    Half the total thickness extends on each side of the centreline.
+
+    Parameters
+    ----------
+    instance:
+        A placed :class:`WallInstance`.
+
+    Returns
+    -------
+    List of :class:`WallLayerGeometry`, one per layer, ordered exterior-first.
+    """
+    import numpy as np
+
+    sx, sy = float(instance.start[0]), float(instance.start[1])
+    ex, ey = float(instance.end[0]),   float(instance.end[1])
+    height = instance.effective_height
+    base_z  = float(instance.base_offset)
+
+    # Axis direction and perpendicular (thickness direction)
+    dx, dy = ex - sx, ey - sy
+    length = math.sqrt(dx * dx + dy * dy)
+    if length < 1e-10:
+        return []  # degenerate wall (zero length)
+    ux, uy = dx / length, dy / length  # unit tangent
+    # Perpendicular: rotate 90° CCW → "exterior" side
+    px, py = -uy, ux
+
+    # Cumulative offsets from the exterior face
+    # Half-thickness offset: exterior face is at +half_thickness, interior at -half_thickness
+    half_t = instance.thickness / 2.0
+
+    # Exterior face offset from centreline (positive)
+    cumul = 0.0  # accumulated from exterior inward
+    result: List[WallLayerGeometry] = []
+
+    for idx, layer in enumerate(instance.wall_type.layers):
+        outer_mm = half_t - cumul
+        inner_mm = outer_mm - layer.thickness
+        cumul += layer.thickness
+
+        # Corner points:  outer face (outer_mm from CL) and inner face (inner_mm from CL)
+        # Ordered CCW from exterior: base-start, base-end, top-end, top-start
+        def pt(ax, ay, off, z) -> Tuple[float, float, float]:
+            return (ax + off * px, ay + off * py, z)
+
+        corners = [
+            pt(sx, sy, outer_mm, base_z),               # 0 base outer start
+            pt(ex, ey, outer_mm, base_z),               # 1 base outer end
+            pt(ex, ey, outer_mm, base_z + height),      # 2 top  outer end
+            pt(sx, sy, outer_mm, base_z + height),      # 3 top  outer start
+            pt(sx, sy, inner_mm, base_z),               # 4 base inner start
+            pt(ex, ey, inner_mm, base_z),               # 5 base inner end
+            pt(ex, ey, inner_mm, base_z + height),      # 6 top  inner end
+            pt(sx, sy, inner_mm, base_z + height),      # 7 top  inner start
+        ]
+
+        result.append(WallLayerGeometry(
+            layer=layer,
+            layer_index=idx,
+            outer_offset=outer_mm,
+            inner_offset=inner_mm,
+            corners=corners,
+        ))
+
+    return result
+
+
+# ---------------------------------------------------------------------------
 # IFC dict serialisation
 # ---------------------------------------------------------------------------
 
@@ -296,10 +411,22 @@ def wall_to_ifc_dict(instance: WallInstance) -> dict:
     The returned dict is compatible with the ``walls`` list in the model
     dict accepted by :func:`kerf_bim.export_ifc.writer.export_ifc`.
 
-    Extra keys (``wall_type``, ``layers``) carry layer metadata for
-    informational purposes; the exporter uses ``from``, ``to``,
-    ``height``, and ``thickness`` for geometry.
+    Extra keys (``wall_type``, ``layers``, ``layer_faces``) carry layer
+    metadata and per-layer face geometry for section fills and IFC
+    material-layer-set export.
     """
+    layer_geom = wall_layer_faces(instance)
+    layer_faces_out = []
+    for lg in layer_geom:
+        layer_faces_out.append({
+            "layer_index":    lg.layer_index,
+            "material":       lg.layer.material,
+            "function":       lg.layer.function,
+            "thickness_mm":   lg.layer.thickness,
+            "outer_offset_mm": lg.outer_offset,
+            "inner_offset_mm": lg.inner_offset,
+            "corners":        [list(c) for c in lg.corners],
+        })
     return {
         "from":       [instance.start[0], instance.start[1]],
         "to":         [instance.end[0],   instance.end[1]],
@@ -310,6 +437,8 @@ def wall_to_ifc_dict(instance: WallInstance) -> dict:
         # Informational compound-wall metadata
         "wall_type":  instance.wall_type.name,
         "layers":     instance.wall_type.layer_summary(),
+        # Per-layer face geometry (GK-P31)
+        "layer_faces": layer_faces_out,
     }
 
 
