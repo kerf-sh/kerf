@@ -92,6 +92,12 @@ import math
 import warnings
 from typing import Any
 
+from kerf_cad_core.solarpv.geometry import (
+    solar_declination_deg as _solar_declination_deg,
+    equation_of_time_approx_min as _equation_of_time_approx_min,
+    solar_hour_angle_deg as _solar_hour_angle_deg,
+)
+
 
 # ---------------------------------------------------------------------------
 # SOLAR GEOMETRY
@@ -101,6 +107,7 @@ def solar_declination(day_of_year: int) -> float:
     """Return solar declination δ (degrees) for day-of-year n (1–365).
 
     Uses the Spencer (1971) Fourier approximation.  Accuracy ~ ±0.01°.
+    Delegates to ``kerf_cad_core.solarpv.geometry.solar_declination_deg``.
 
     Parameters
     ----------
@@ -112,23 +119,14 @@ def solar_declination(day_of_year: int) -> float:
     float
         Declination in degrees.  Range ≈ −23.45° to +23.45°.
     """
-    B = 2 * math.pi * (day_of_year - 1) / 365.0
-    delta_rad = (
-        0.006918
-        - 0.399912 * math.cos(B)
-        + 0.070257 * math.sin(B)
-        - 0.006758 * math.cos(2 * B)
-        + 0.000907 * math.sin(2 * B)
-        - 0.002697 * math.cos(3 * B)
-        + 0.00148  * math.sin(3 * B)
-    )
-    return math.degrees(delta_rad)
+    return _solar_declination_deg(day_of_year)
 
 
 def equation_of_time(day_of_year: int) -> float:
     """Return the Equation of Time E (minutes) for day-of-year n.
 
-    Uses Spencer (1971) approximation.
+    Uses the simplified Spencer (1971) trigonometric approximation.
+    Delegates to ``kerf_cad_core.solarpv.geometry.equation_of_time_approx_min``.
 
     Parameters
     ----------
@@ -139,9 +137,7 @@ def equation_of_time(day_of_year: int) -> float:
     float
         E in minutes (positive → solar noon before clock noon).
     """
-    B = 2 * math.pi * (day_of_year - 1) / 365.0
-    E_min = 9.87 * math.sin(2 * B) - 7.53 * math.cos(B) - 1.5 * math.sin(B)
-    return E_min
+    return _equation_of_time_approx_min(day_of_year)
 
 
 def solar_hour_angle(solar_time_h: float) -> float:
@@ -149,6 +145,7 @@ def solar_hour_angle(solar_time_h: float) -> float:
 
     ω = 0 at solar noon, positive in the afternoon, negative in the morning.
     Solar noon corresponds to solar_time_h = 12.0.
+    Delegates to ``kerf_cad_core.solarpv.geometry.solar_hour_angle_deg``.
 
     Parameters
     ----------
@@ -160,7 +157,7 @@ def solar_hour_angle(solar_time_h: float) -> float:
     float
         Hour angle in degrees.
     """
-    return 15.0 * (solar_time_h - 12.0)
+    return _solar_hour_angle_deg(solar_time_h)
 
 
 def solar_position(

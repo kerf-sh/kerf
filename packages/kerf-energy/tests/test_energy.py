@@ -361,3 +361,65 @@ class TestHeatLoad:
         zone = ZoneHeatLoad()
         assert zone.sensible_w(14) == 0.0
         assert zone.latent_w() == 0.0
+
+
+# ---------------------------------------------------------------------------
+# Parity test — kerf_energy.solar vs kerf_cad_core.solarpv.geometry
+# ---------------------------------------------------------------------------
+
+class TestSolarGeometryParity:
+    """Assert that the shared geometry module and kerf_energy.solar produce
+    bit-identical results for solar declination and equation of time.
+
+    Both packages now delegate to kerf_cad_core.solarpv.geometry, so this
+    test guards against accidental re-introduction of diverging formulas.
+    """
+
+    # Sample days: vernal equinox, summer solstice, autumnal equinox,
+    # winter solstice, and a few arbitrary mid-season days.
+    _SAMPLE_DOYS = [1, 32, 60, 80, 100, 121, 152, 172, 200, 230, 266, 300, 320, 355]
+
+    def test_declination_parity(self):
+        """solar_declination_deg from kerf_energy.solar matches the canonical
+        geometry module for all sample days — tolerance 1e-12 degrees."""
+        from kerf_energy.solar import solar_declination_deg as energy_decl
+        from kerf_cad_core.solarpv.geometry import solar_declination_deg as geom_decl
+
+        for doy in self._SAMPLE_DOYS:
+            e = energy_decl(doy)
+            g = geom_decl(doy)
+            assert abs(e - g) < 1e-12, (
+                f"doy={doy}: kerf_energy={e:.10f}  geometry={g:.10f}  delta={abs(e-g):.2e}"
+            )
+
+    def test_equation_of_time_parity(self):
+        """equation_of_time_minutes from kerf_energy.solar matches the
+        Spencer full-Fourier series in the canonical geometry module —
+        tolerance 1e-12 minutes."""
+        from kerf_energy.solar import equation_of_time_minutes as energy_eot
+        from kerf_cad_core.solarpv.geometry import equation_of_time_spencer_min as geom_eot
+
+        for doy in self._SAMPLE_DOYS:
+            e = energy_eot(doy)
+            g = geom_eot(doy)
+            assert abs(e - g) < 1e-12, (
+                f"doy={doy}: kerf_energy={e:.10f}  geometry={g:.10f}  delta={abs(e-g):.2e}"
+            )
+
+    def test_declination_range(self):
+        """Declination stays within ±23.5° for all days of the year."""
+        from kerf_cad_core.solarpv.geometry import solar_declination_deg
+
+        for doy in range(1, 366):
+            d = solar_declination_deg(doy)
+            assert -23.6 <= d <= 23.6, f"doy={doy}: declination={d:.4f}° out of range"
+
+    def test_sizing_solar_declination_matches_geometry(self):
+        """sizing.solar_declination (thin wrapper) matches geometry module exactly."""
+        from kerf_cad_core.solarpv.sizing import solar_declination as sizing_decl
+        from kerf_cad_core.solarpv.geometry import solar_declination_deg as geom_decl
+
+        for doy in self._SAMPLE_DOYS:
+            assert sizing_decl(doy) == geom_decl(doy), (
+                f"doy={doy}: sizing wrapper diverges from geometry module"
+            )

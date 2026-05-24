@@ -1,6 +1,12 @@
 """
 Solar geometry and clear-sky irradiance.
 
+The Spencer (1971) declination, equation-of-time, and hour-angle primitives
+are imported from the canonical home:
+  kerf_cad_core.solarpv.geometry
+
+This avoids duplicating the Fourier coefficients across packages.
+
 References:
   ASHRAE Fundamentals 2021, Ch. 14 — Climatic Design Information.
   ASHRAE Fundamentals 2021, Ch. 15 — Fenestration.
@@ -14,6 +20,27 @@ import math
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
 
+from kerf_cad_core.solarpv.geometry import (
+    solar_declination_deg,
+    equation_of_time_spencer_min as equation_of_time_minutes,
+    solar_hour_angle_deg as hour_angle_deg,
+)
+
+# Re-export so existing callers of `from kerf_energy.solar import ...` keep working.
+__all__ = [
+    "day_of_year",
+    "solar_declination_deg",
+    "equation_of_time_minutes",
+    "hour_angle_deg",
+    "local_to_solar_time",
+    "solar_position",
+    "solar_noon_altitude_deg",
+    "direct_normal_irradiance_ashrae",
+    "diffuse_horizontal_irradiance_ashrae",
+    "ClearSkyIrradiance",
+    "clear_sky_irradiance",
+]
+
 
 # ---------------------------------------------------------------------------
 # Day-of-year helpers
@@ -22,62 +49,6 @@ from datetime import date, datetime, timezone
 def day_of_year(d: date) -> int:
     """Return the day-of-year (1–366) for *d*."""
     return d.timetuple().tm_yday
-
-
-# ---------------------------------------------------------------------------
-# Solar declination and equation of time
-# ---------------------------------------------------------------------------
-
-def solar_declination_deg(doy: int) -> float:
-    """Return solar declination δ in degrees for day-of-year *doy*.
-
-    Uses Spencer's (1971) Fourier approximation.
-    """
-    B = math.radians((360 / 365) * (doy - 1))
-    delta_rad = (
-        0.006918
-        - 0.399912 * math.cos(B)
-        + 0.070257 * math.sin(B)
-        - 0.006758 * math.cos(2 * B)
-        + 0.000907 * math.sin(2 * B)
-        - 0.002697 * math.cos(3 * B)
-        + 0.00148 * math.sin(3 * B)
-    )
-    return math.degrees(delta_rad)
-
-
-def equation_of_time_minutes(doy: int) -> float:
-    """Return the equation of time in minutes for day-of-year *doy*.
-
-    Uses Spencer's (1971) approximation.
-    """
-    B = math.radians((360 / 365) * (doy - 1))
-    eot_rad = (
-        0.000075
-        + 0.001868 * math.cos(B)
-        - 0.032077 * math.sin(B)
-        - 0.014615 * math.cos(2 * B)
-        - 0.04089 * math.sin(2 * B)
-    )
-    return eot_rad * (229.18)
-
-
-# ---------------------------------------------------------------------------
-# Hour angle
-# ---------------------------------------------------------------------------
-
-def hour_angle_deg(
-    solar_time_hours: float,
-) -> float:
-    """Return the solar hour angle ω in degrees.
-
-    Parameters
-    ----------
-    solar_time_hours:
-        Local apparent solar time in decimal hours (0–24).
-        ω = 0 at solar noon; negative in the morning.
-    """
-    return 15.0 * (solar_time_hours - 12.0)
 
 
 def local_to_solar_time(
