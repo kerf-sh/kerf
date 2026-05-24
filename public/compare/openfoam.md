@@ -336,13 +336,17 @@ Kerf integrates OpenFOAM as a simulation backend, adding:
 |---|---|---|
 | License | MIT (Kerf) + GPL (OpenFOAM) | GPL |
 | Interface | Chat-native + Python SDK | Text dictionary files + CLI |
-| Incompressible flow | Yes | Yes (simpleFoam, pimpleFoam, etc.) |
-| Compressible flow | Yes | Yes (rhoCentralFoam, sonicFoam) |
-| Heat transfer / conjugate | Yes | Yes (chtMultiRegionFoam) |
-| Multiphase | Selected solvers | Full multiphase suite |
-| Combustion | Roadmap | Yes (reactingFoam, fireFoam) |
-| Turbulence models | k-ε, k-ω SST, LES | Full model library |
-| Mesh generation | snappyHexMesh via chat | blockMesh + snappyHexMesh (manual) |
+| Incompressible RANS FV solver | Partial — SIMPLE solver, staggered MAC grid, k-ω SST closure, validated vs Ghia (1982) Re=100 | Yes — simpleFoam, pimpleFoam (fully production-hardened) |
+| Pressure-velocity coupling | Partial — SIMPLE (Patankar 1980) with exact staggered-grid correction | Yes — SIMPLE, SIMPLEC, PISO, PIMPLE |
+| Turbulence models | Partial — k-ω SST (Menter 1994, 2003); laminar; LES/DES not yet | Full model library — k-ε, k-ω SST, LES, DES, v²-f, … |
+| Unstructured mesh support | Partial — Bowyer-Watson Delaunay tet meshing; polyhedral FV solver is next | Yes — arbitrary polyhedral cells via OpenFOAM fvMesh |
+| Compressible flow | No — only incompressible RANS | Yes — rhoCentralFoam, sonicFoam |
+| Heat transfer / conjugate | Yes (kerf-cfd heat_transfer module) | Yes — chtMultiRegionFoam |
+| Multiphase | No | Full multiphase suite |
+| Combustion | No | Yes — reactingFoam, fireFoam |
+| Dynamic mesh / moving boundary | No | Yes — dynamicFvMesh |
+| LES / DES | No | Yes |
+| Mesh generation | snappyHexMesh via chat + Bowyer-Watson tet | blockMesh + snappyHexMesh (manual) |
 | Geometry source | Kerf 3D model (STL export) | External STL / CAD |
 | Unified CAD + simulation | Yes | No (requires separate CAD tool) |
 | Cloud execution | Yes (hosted) | Requires Linux / HPC |
@@ -356,4 +360,4 @@ Kerf integrates OpenFOAM as a simulation backend, adding:
 OpenFOAM and Kerf's OpenFOAM integration both produce field results in OpenFOAM's native format, convertible to VTK for post-processing in ParaView. A simulation set up via Kerf's chat interface produces the identical case directory structure as a hand-crafted OpenFOAM case — the output is standard OpenFOAM, not a proprietary format. Export the case, open it in ParaView on your local machine, and continue analysis there.
 
 ---
-*Last reviewed: 2026-05-19. OpenFOAM information sourced from openfoam.org and openfoam.com. Kerf capabilities reflect the current shipped product.*
+*Last reviewed: 2026-05-25. OpenFOAM information sourced from openfoam.org and openfoam.com. Kerf capabilities reflect the current shipped product.*
