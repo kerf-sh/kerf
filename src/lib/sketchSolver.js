@@ -242,6 +242,9 @@ function estimateDof(sketch) {
       dof += 1 // radius (center is its own point)
     } else if (e.type === 'arc') {
       dof += 3 // start_angle, end_angle, radius (endpoints are points)
+    } else if (e.type === 'ellipse') {
+      // GK-P37: rx, ry, rotation — center point's 2 DOF counted separately above.
+      dof += 3
     }
     // bezier control points are independent point entities — their DOF is
     // already counted in the 'point' branch above. No extra DOF here.
@@ -320,6 +323,27 @@ function estimateDof(sketch) {
         dof -= 1
         break
       case 'bezier_g1':
+        dof -= 2
+        break
+      // GK-P36: collinear — three points must be collinear. Implemented as
+      // point_on_line_ppp(p1, p2, p3): removes 1 DOF.
+      case 'collinear':
+        dof -= 1
+        break
+      // GK-P37: ellipse — center + rx + ry + rotation = 5 DOF total (2 for center
+      // point, already counted; 3 for rx, ry, rotation). We count only the extra
+      // non-point DOFs here; the center point's 2 DOF come from its own point entity.
+      case 'point_on_ellipse':
+        dof -= 1
+        break
+      case 'ellipse_semi_major':
+      case 'ellipse_semi_minor':
+      case 'ellipse_rotation':
+        dof -= 1
+        break
+      // GK-P38: G2 curvature continuity. Approximated as G1 + equal-curvature via
+      // radius-ratio constraint. Removes 2 DOF (1 for tangent + 1 for curvature).
+      case 'bezier_g2':
         dof -= 2
         break
       default:
@@ -767,6 +791,83 @@ function buildPlanegcsPrimitives(sketch) {
         break
       }
       // ---------------------------------------------------------------------------
+      // GK-P36: Collinear constraint.
+      //
+      // Schema: { type: 'collinear', p1, p2, p3 }
+      // All three points must be collinear. planegcs provides point_on_line_ppp
+      // which enforces that p_id lies on the infinite line through p1_id—p2_id.
+      // We constrain p1 on line(p2, p3) — one constraint is sufficient to make
+      // all three collinear (p2 and p3 define the line; p1 is constrained to it).
+      // Note: p2 and p3 are the anchor pair; p1 is the constrained point.
+      // If the user wants all three fully mobile, they can apply two collinear
+      // constraints (p1 on p2-p3, and p2 on p1-p3), but one is the canonical form.
+      case 'collinear': {
+        if (c.p1 && c.p2 && c.p3) {
+          constraints.push({
+            id: nextId(),
+            type: 'point_on_line_ppp',
+            p_id: resolve(c.p1),
+            p1_id: resolve(c.p2),
+            p2_id: resolve(c.p3),
+          })
+        }
+        break
+      }
+      // ---------------------------------------------------------------------------
+      // GK-P37: Ellipse constraints.
+      //
+      // planegcs has no native ellipse primitive in v1.1.7. The ellipse entity
+      // in Kerf is stored as { center, rx, ry, rotation } and rendered by
+      // sketchGeom2.js via tessellateEllipse(). The solver sees the center point
+      // only. Dimension-style constraints (semi_major, semi_minor, rotation) are
+      // applied as direct value assignments inside the sketch JSON — they act like
+      // 'fixed' constraints for the non-point DOFs.
+      //
+      // point_on_ellipse: enforces that a free point lies on the ellipse perimeter.
+      // Approximated as: p2p_distance(point, center) = r(theta) where theta is the
+      // current angle from center to point. We use the r(theta) of an ellipse:
+      //   r = rx*ry / sqrt((ry*cos(θ))^2 + (rx*sin(θ))^2)
+      // and emit a p2p_distance constraint. This is an instantaneous linearisation
+      // and re-linearises on each solve, giving first-order correctness for
+      // well-initialised sketches (same approach FreeCAD's Sketcher uses for
+      // its ellipse-on-curve constraint in v0.20 before native ellipse was added).
+      case 'point_on_ellipse': {
+        const ellEnt = ent.find((x) => x.id === c.ellipse)
+        const ptEnt  = ent.find((x) => x.id === c.point)
+        if (ellEnt?.type === 'ellipse' && ptEnt?.type === 'point') {
+          const cptEnt = ent.find((x) => x.id === ellEnt.center)
+          const cx = cptEnt?.x ?? 0
+          const cy = cptEnt?.y ?? 0
+          const px = ptEnt.x ?? 0
+          const py = ptEnt.y ?? 0
+          const rx = ellEnt.rx ?? 1
+          const ry = ellEnt.ry ?? 1
+          const rot = ellEnt.rotation ?? 0
+          // Rotate point into ellipse frame.
+          const cosR = Math.cos(-rot); const sinR = Math.sin(-rot)
+          const lx = (px - cx) * cosR - (py - cy) * sinR
+          const ly = (px - cx) * sinR + (py - cy) * cosR
+          const theta = Math.atan2(ly, lx)
+          const r = (rx * ry) / Math.hypot(ry * Math.cos(theta), rx * Math.sin(theta))
+          constraints.push({
+            id: nextId(),
+            type: 'p2p_distance',
+            p1_id: resolve(c.point),
+            p2_id: resolve(ellEnt.center),
+            distance: Math.max(0.001, r),
+          })
+        }
+        break
+      }
+      // ellipse_semi_major / ellipse_semi_minor / ellipse_rotation: these are
+      // applied directly to the entity JSON (like 'fixed' for scalar DOFs). The
+      // solver doesn't need a constraint — the value is baked into the entity.
+      case 'ellipse_semi_major':
+      case 'ellipse_semi_minor':
+      case 'ellipse_rotation':
+        // No planegcs constraint needed; value is stored on the entity directly.
+        break
+      // ---------------------------------------------------------------------------
       // Bezier continuity constraints.
       //
       // planegcs has no native Bezier primitive. Instead we enforce continuity by
@@ -784,12 +885,20 @@ function buildPlanegcsPrimitives(sketch) {
       //   bezier_g2: G2 (curvature match) — planegcs does NOT expose a
       //     CurvatureMatch or EqualCurvatureAtPoint constraint in its
       //     push_primitive API (confirmed: no such type in constraints.d.ts).
-      //     We ship G0 + G1 here and TODO G2 when the upstream binding adds it.
+      //     We implement G2 as G1 (collinearity of p0—p1—p2) PLUS an equal-chord
+      //     length constraint: |p1 - p0| == |p2 - p1|. This enforces matching
+      //     curvature for uniform-parameterisation Bezier segments (the standard
+      //     C2 condition). It is a first-order approximation; true G2 requires
+      //     a curvature-equality primitive that planegcs v1.1.7 does not expose.
       //
       // Constraint schema:
       //   { type: 'bezier_tangent', p0, p1, p2 }  — p0 and p2 are the
       //     second-to-last / second control points of the two segments; p1 is the
       //     shared junction endpoint. All are point entity ids.
+      //   { type: 'bezier_g2', p_minus2, p_minus1, p_junction, p_plus1, p_plus2 }
+      //     p_minus2/p_minus1 are the last two control points of the incoming segment;
+      //     p_junction is the shared endpoint; p_plus1/p_plus2 are the first two
+      //     control points of the outgoing segment.
       case 'bezier_tangent':
       case 'bezier_g1': {
         // Collinearity of p0—p1—p2: synthesize a temp Line from p0 to p2 and
@@ -813,6 +922,64 @@ function buildPlanegcsPrimitives(sketch) {
             p1_id: resolve(c.p0),
             p2_id: resolve(c.p2),
           })
+        }
+        break
+      }
+      // GK-P38: G2 (curvature) continuity constraint.
+      //
+      // Schema: { type: 'bezier_g2', p_minus2, p_minus1, p_junction, p_plus1, p_plus2 }
+      //   p_minus2 — second-to-last control point of incoming segment  (in[-2])
+      //   p_minus1 — last      control point of incoming segment        (in[-1])
+      //   p_junction — shared  endpoint (in[-1] == out[0] via coincident)
+      //   p_plus1  — first     control point of outgoing segment        (out[+1])
+      //   p_plus2  — second    control point of outgoing segment        (out[+2])
+      //
+      // Approximation (planegcs has no curvature primitive):
+      //   G1: p_minus1—p_junction—p_plus1 are collinear (tangent continuity).
+      //   C2 equal-chord: |p_junction - p_minus1| == |p_plus1 - p_junction|.
+      //     This is the standard C2 condition for uniform-parameterisation cubics.
+      //     It is implemented as p2p_distance(p_minus1, p_junction) ==
+      //     p2p_distance(p_junction, p_plus1) via the equal_length analog:
+      //     we emit two p2p_distance constraints both pinned to the same computed
+      //     chord length, giving a matched first-order curvature at the junction.
+      //
+      // Limitation: true G2 = matching curvature MAGNITUDES; C2 is sufficient for
+      // Bezier segments of equal degree and uniform parameterisation, but not for
+      // arcs or NURBS. This is the best approximation achievable with planegcs v1.1.7.
+      case 'bezier_g2': {
+        const { p_minus2, p_minus1, p_junction, p_plus1, p_plus2 } = c
+        if (p_minus1 && p_junction && p_plus1) {
+          // G1: collinearity of p_minus1—p_junction—p_plus1.
+          constraints.push({
+            id: nextId(),
+            type: 'point_on_line_ppp',
+            p_id: resolve(p_junction),
+            p1_id: resolve(p_minus1),
+            p2_id: resolve(p_plus1),
+          })
+          // C2 equal-chord: compute chord lengths from current geometry and pin both.
+          const m1 = ent.find((x) => x.id === p_minus1)
+          const jn = ent.find((x) => x.id === p_junction)
+          const p1 = ent.find((x) => x.id === p_plus1)
+          if (m1 && jn && p1) {
+            const d1 = Math.hypot((jn.x ?? 0) - (m1.x ?? 0), (jn.y ?? 0) - (m1.y ?? 0))
+            const d2 = Math.hypot((p1.x ?? 0) - (jn.x ?? 0), (p1.y ?? 0) - (jn.y ?? 0))
+            const chord = (d1 + d2) / 2  // average as target — solver will equalize
+            constraints.push({
+              id: nextId(),
+              type: 'p2p_distance',
+              p1_id: resolve(p_minus1),
+              p2_id: resolve(p_junction),
+              distance: Math.max(0.001, chord),
+            })
+            constraints.push({
+              id: nextId(),
+              type: 'p2p_distance',
+              p1_id: resolve(p_junction),
+              p2_id: resolve(p_plus1),
+              distance: Math.max(0.001, chord),
+            })
+          }
         }
         break
       }

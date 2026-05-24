@@ -537,6 +537,9 @@ async def run_sketch_validate(ctx: ProjectCtx, args: bytes) -> str:
             dof += 1
         elif e.get("type") == "arc":
             dof += 3
+        elif e.get("type") == "ellipse":
+            # GK-P37: rx, ry, rotation (center point DOF counted separately).
+            dof += 3
     if has_origin:
         dof -= 2
     constraint_dof_map = {
@@ -546,6 +549,15 @@ async def run_sketch_validate(ctx: ProjectCtx, args: bytes) -> str:
         "distance": 1, "distance_x": 1, "distance_y": 1,
         "angle": 1, "radius": 1, "diameter": 1,
         "point_on_line": 1, "point_on_arc": 1, "point_on_circle": 1,
+        # GK-P36: collinear — one point on line through two others.
+        "collinear": 1,
+        # GK-P37: ellipse constraints — each dimensional DOF removal.
+        "point_on_ellipse": 1, "ellipse_semi_major": 1,
+        "ellipse_semi_minor": 1, "ellipse_rotation": 1,
+        # GK-P38: G2 curvature continuity — G1 (1) + equal-chord (1) = 2.
+        "bezier_g2": 2,
+        # Bezier G1/tangent already partially handled; kept for completeness.
+        "bezier_tangent": 1, "bezier_g1": 2,
     }
     for c in constraints:
         ct = c.get("type", "")
