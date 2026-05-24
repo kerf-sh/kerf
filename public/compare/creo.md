@@ -81,8 +81,8 @@ features:
       note: "Boundary Blend — full guide-curve and tangency overloads"
       source: "https://support.ptc.com/help/creo/creo_pma/r9.0/usascii/index.html#page/part_modeling/part_modeling_intro.html"
     kerf:
-      status: partial
-      note: "No guide-rail overload in OCCT binding"
+      status: yes
+      note: "Guide-rail overload wired (ThruSections.AddWire); ruled/closed/symmetric"
       evidence: "packages/kerf-cad-core/src/kerf_cad_core/feature_loft.py"
 
   - domain: D1
@@ -103,9 +103,9 @@ features:
       note: "Creo Sheet Metal workbench — flange, hem, relief, jog, unbend, flat pattern, DXF/DWG"
       source: "https://support.ptc.com/help/creo/creo_pma/r9.0/usascii/index.html#page/sheetmetal/sheetmetal_intro.html"
     kerf:
-      status: partial
-      note: "Single flange + unfold + flat DXF; no hem/relief/jog/multi-flange"
-      evidence: "packages/kerf-cad-core/src/kerf_cad_core/sheet_metal.py"
+      status: yes
+      note: "Flange + hem + jog + multi-flange + unfold + flat DXF (K-factor); no auto corner-relief"
+      evidence: "packages/kerf-cad-core/src/kerf_cad_core/construction_verbs_tools.py"
 
   - domain: D1
     feature: "NURBS surfacing (blend/network/patch)"
@@ -115,8 +115,8 @@ features:
       source: "https://www.ptc.com/en/products/creo/options/style"
     kerf:
       status: partial
-      note: "Math complete; OCCT bindings unconfirmed at build"
-      evidence: "packages/kerf-cad-core/src/kerf_cad_core/surfacing.py"
+      note: "blend/network/patch/match-srf + G3 + Class-A harness wired; not Creo Style ISDX depth"
+      evidence: "packages/kerf-cad-core/src/kerf_cad_core/geom/network_srf.py"
 
   - domain: D1
     feature: "Assemblies — mates"
@@ -148,8 +148,8 @@ features:
       source: "https://support.ptc.com/help/creo/creo_pma/r9.0/usascii/index.html#page/drawing/drawing_intro.html"
     kerf:
       status: partial
-      note: "Template-based; not live B-rep projection; no UI panel"
-      evidence: "src/components/DrawingView.jsx"
+      note: "Live HLR projection (make2d) + auto-dim; no GD&T-placement UI"
+      evidence: "packages/kerf-cad-core/src/kerf_cad_core/geom/make2d.py"
 
   - domain: D1
     feature: "Configurations / family variants"
@@ -691,8 +691,8 @@ Both tools also acknowledge multi-disciplinary reality. Creo spans mechanical, s
 | B-rep kernel | Open CASCADE (OCCT) | PTC's Granite One kernel |
 | Parametric history | Feature DAG | Feature tree (industry pioneer) |
 | Constraint sketcher | Sketcher v2 | Creo Sketcher (mature) |
-| Sheet metal | Flange + unfold + flat-pattern DXF | Sheet Metal workbench (mature) |
-| Surfacing | NURBS Phase 4 (early) | Style / ISDX surfacing |
+| Sheet metal | Flange + hem + jog + multi-flange + unfold + flat DXF | Sheet Metal workbench (mature) |
+| Surfacing | blend/network/patch/match-srf + G3 + Class-A harness (younger) | Style / ISDX surfacing |
 | Assembly | Assembly mates | Full assembly + large-assembly management |
 | FEM / structural | Not yet | Creo Simulate (Mechanica, mature) |
 | Piping / cabling | Not yet | Piping + Cabling workbenches |
