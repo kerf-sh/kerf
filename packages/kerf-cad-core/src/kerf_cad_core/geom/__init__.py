@@ -214,6 +214,11 @@ from kerf_cad_core.geom.surface_analysis import adaptive_refine_surface, isocurv
 from kerf_cad_core.geom.surface_analysis import draft_analysis, curvature_heatmap
 # GK-95: reflection-line + highlight-line analysis
 from kerf_cad_core.geom.surface_analysis import reflection_lines
+# GK-P11: isophote / environment-map (EMap) analyser
+from kerf_cad_core.geom.surface_analysis import (
+    isophote_analysis,
+    isophote_continuity_analyser,
+)
 # GK-138: global continuity audit
 from kerf_cad_core.geom.surface_analysis import continuity_audit
 # GK-47: STEP reader
@@ -532,6 +537,8 @@ __all__ = [
     "draft_analysis","curvature_heatmap",
     # GK-95
     "reflection_lines",
+    # GK-P11: isophote / environment-map analyser
+    "isophote_analysis","isophote_continuity_analyser",
     # GK-138
     "continuity_audit",
     "read_step","StepReadError",

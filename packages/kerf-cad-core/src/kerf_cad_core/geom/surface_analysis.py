@@ -3717,6 +3717,290 @@ def reflection_lines(
 
 
 # ---------------------------------------------------------------------------
+# GK-P11: Isophote / environment-map (EMap) analyser
+# ---------------------------------------------------------------------------
+#
+# Isophotes are the level curves of the illumination scalar μ = n̂·L̂ on a
+# surface — the contours of constant lighting under a directional light L̂.
+# The environment-map (EMap / sphere-map) inspection used by CATIA FreeStyle
+# and Rhino EMap maps the unit normal onto a unit sphere and reads back a
+# reflected colour/stripe; isophotes are the iso-bands of that map.  Because
+# the field depends *only* on the normal direction, an isophote band is:
+#
+#   * continuous (smooth contour) across a G1+ join — the normal is continuous;
+#   * **broken / kinked** across a G1 discontinuity (a crease) — the normal
+#     jumps, so the band index jumps and the contour snaps.
+#
+# This is the third class-A visual-inspection pillar alongside zebra (GK-38)
+# and reflection/highlight lines (GK-95).  ``isophote_analysis`` is the
+# single-surface UV-grid analyser; ``isophote_continuity_analyser`` is the
+# across-a-shared-edge oracle (the direct analogue of
+# ``zebra_stripe_continuity_analyser``).
+
+
+def _isophote_band(mu: float, sphere_map_res: int) -> int:
+    """Map illumination cosine μ = n̂·L̂ ∈ [−1, 1] to an equal-angle EMap band.
+
+    Banding by the *angle* θ = acos(μ) (not μ itself) gives equal-width
+    isophote bands on the environment-map sphere — the standard EMap stripe
+    parameterisation.  Returns an integer band index in [0, sphere_map_res−1].
+    """
+    mu_c = max(-1.0, min(1.0, float(mu)))
+    theta = math.acos(mu_c)  # [0, π]
+    band = int(theta / math.pi * sphere_map_res)
+    return min(max(band, 0), int(sphere_map_res) - 1)
+
+
+def isophote_analysis(
+    surf: NurbsSurface,
+    uv_grid: Tuple[int, int] = (48, 48),
+    sphere_map_res: int = 16,
+    light_dir: Optional[Sequence[float]] = None,
+) -> dict:
+    """Isophote / environment-map (EMap) continuity analyser (GK-P11).
+
+    Samples the illumination scalar ``μ = n̂·L̂`` (cosine of the angle between
+    the unit surface normal and the light direction) over a ``uv_grid`` and
+    discretises it into ``sphere_map_res`` equal-angle isophote bands (the
+    environment-map sphere bands).  Detects **isophote breaks** — where the
+    band field is discontinuous between adjacent grid cells — which is the
+    visual signature of a G1 (tangent) discontinuity: the normal jumps, so an
+    isophote contour snaps from one band to another.
+
+    Parameters
+    ----------
+    surf : NurbsSurface
+    uv_grid : (nu, nv)
+        Grid resolution.  Clamped to [3, 200] each.
+    sphere_map_res : int
+        Number of equal-angle isophote bands on the environment-map sphere.
+    light_dir : optional 3-vector
+        Directional light (from which the isophotes are measured).  Defaults to
+        world-up ``[0, 0, 1]``.
+
+    Returns
+    -------
+    dict with keys:
+
+    ``ok`` (bool), ``reason`` (str)
+    ``mu_grid`` : (nu, nv) — illumination cosine n̂·L̂ (nan at degenerate pts).
+    ``band_grid`` : (nu, nv) int — isophote band index per sample.
+    ``gradient_grid`` : (nu, nv) — magnitude of the μ-field finite-difference
+        gradient (a smooth surface has small, slowly-varying gradient).
+    ``isophote_break_mask`` : (nu, nv) bool — cells flagged as an isophote
+        break (band index jumps by ≥ 2 across an adjacent cell, i.e. the
+        normal field is discontinuous there).
+    ``num_breaks`` : int — count of flagged cells.
+    ``has_break`` : bool — any break detected.
+    ``normal_grid`` : (nu, nv, 3), ``us``, ``vs``, ``sphere_map_res``.
+    """
+    try:
+        if not isinstance(surf, NurbsSurface):
+            return {"ok": False, "reason": "surf must be a NurbsSurface"}
+        nu, nv = _clamp_grid(int(uv_grid[0]), int(uv_grid[1]))
+        smr = max(2, int(sphere_map_res))
+        us, vs = _uv_grid(surf, nu, nv)
+
+        if light_dir is None:
+            L = np.array([0.0, 0.0, 1.0])
+        else:
+            L = np.asarray(light_dir, dtype=float).ravel()[:3]
+            nrm = float(np.linalg.norm(L))
+            L = L / nrm if nrm > 1e-15 else np.array([0.0, 0.0, 1.0])
+
+        mu_grid = np.full((nu, nv), float("nan"))
+        band_grid = np.full((nu, nv), -1, dtype=int)
+        normal_grid = np.full((nu, nv, 3), float("nan"))
+
+        for i, u in enumerate(us):
+            for j, v in enumerate(vs):
+                cd = _analytic_curvature_data(surf, float(u), float(v))
+                if cd is None:
+                    continue
+                n = cd["n"]
+                normal_grid[i, j] = n
+                mu = float(np.dot(n, L))
+                mu_grid[i, j] = mu
+                band_grid[i, j] = _isophote_band(mu, smr)
+
+        # Gradient of the μ field (proxy for normal-field smoothness).
+        mu_filled = np.where(np.isfinite(mu_grid), mu_grid, 0.0)
+        grad_u = np.gradient(mu_filled, axis=0)
+        grad_v = np.gradient(mu_filled, axis=1)
+        gradient_grid = np.sqrt(grad_u ** 2 + grad_v ** 2)
+        nan_mask = ~np.isfinite(mu_grid)
+        gradient_grid[nan_mask] = float("nan")
+
+        # Isophote-break detection: a band index that jumps by >= 2 relative to
+        # an orthogonally-adjacent cell signals a normal discontinuity (a G1
+        # crease).  A smooth surface only ever steps band by 0 or 1 between
+        # neighbouring cells once the grid is fine enough.
+        break_mask = np.zeros((nu, nv), dtype=bool)
+        for i in range(nu):
+            for j in range(nv):
+                b = band_grid[i, j]
+                if b < 0:
+                    continue
+                for di, dj in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                    ii, jj = i + di, j + dj
+                    if 0 <= ii < nu and 0 <= jj < nv:
+                        nb = band_grid[ii, jj]
+                        if nb >= 0 and abs(b - nb) >= 2:
+                            break_mask[i, j] = True
+                            break
+
+        num_breaks = int(np.count_nonzero(break_mask))
+        return {
+            "ok": True,
+            "reason": "",
+            "mu_grid": mu_grid,
+            "band_grid": band_grid,
+            "gradient_grid": gradient_grid,
+            "isophote_break_mask": break_mask,
+            "num_breaks": num_breaks,
+            "has_break": num_breaks > 0,
+            "normal_grid": normal_grid,
+            "us": us,
+            "vs": vs,
+            "sphere_map_res": smr,
+        }
+    except Exception as exc:
+        nu_c, nv_c = max(int(uv_grid[0]), _MIN_GRID), max(int(uv_grid[1]), _MIN_GRID)
+        empty = np.full((nu_c, nv_c), float("nan"))
+        return {
+            "ok": False,
+            "reason": str(exc),
+            "mu_grid": empty.copy(),
+            "band_grid": np.full((nu_c, nv_c), -1, dtype=int),
+            "gradient_grid": empty.copy(),
+            "isophote_break_mask": np.zeros((nu_c, nv_c), dtype=bool),
+            "num_breaks": 0,
+            "has_break": False,
+            "normal_grid": np.full((nu_c, nv_c, 3), float("nan")),
+            "us": np.linspace(0.0, 1.0, nu_c),
+            "vs": np.linspace(0.0, 1.0, nv_c),
+            "sphere_map_res": max(2, int(sphere_map_res)),
+        }
+
+
+def isophote_continuity_analyser(
+    surf_a: NurbsSurface,
+    surf_b: NurbsSurface,
+    shared_edge_pts: Sequence,
+    num_samples: int = 20,
+    sphere_map_res: int = 16,
+    light_dir: Optional[Sequence[float]] = None,
+    band_tol: int = 1,
+) -> dict:
+    """Isophote-band continuity across a shared edge (GK-P11; GK-38 analogue).
+
+    Direct sibling of :func:`zebra_stripe_continuity_analyser`: samples the
+    illumination cosine ``μ = n̂·L̂`` on both surfaces at the shared edge,
+    discretises into ``sphere_map_res`` equal-angle environment-map bands, and
+    reports the maximum band jump across the seam.  An isophote contour that
+    runs unbroken across the join (band difference ≤ ``band_tol``) means the
+    normals agree → G1+.  A band jump > ``band_tol`` is a broken isophote → the
+    normals differ at the seam → G1 break.
+
+    Returns a dict with ``ok``, ``reason``, ``max_band_jump`` (int),
+    ``max_mu_jump`` (float), ``isophote_continuous`` (bool),
+    ``continuity_grade`` ("G1+" | "below_G1"), ``num_samples``,
+    ``sphere_map_res``, and ``per_point`` (list of per-sample dicts).
+    """
+    try:
+        if not isinstance(surf_a, NurbsSurface):
+            return {"ok": False, "reason": "surf_a must be NurbsSurface"}
+        if not isinstance(surf_b, NurbsSurface):
+            return {"ok": False, "reason": "surf_b must be NurbsSurface"}
+
+        edge_pts = [np.asarray(p, dtype=float)[:3] for p in shared_edge_pts]
+        if len(edge_pts) < 2:
+            return {"ok": False,
+                    "reason": "shared_edge_pts must have at least 2 points"}
+
+        smr = max(2, int(sphere_map_res))
+        if light_dir is None:
+            L = np.array([0.0, 0.0, 1.0])
+        else:
+            L = np.asarray(light_dir, dtype=float).ravel()[:3]
+            nrm = float(np.linalg.norm(L))
+            L = L / nrm if nrm > 1e-15 else np.array([0.0, 0.0, 1.0])
+
+        arclens = [0.0]
+        for k in range(len(edge_pts) - 1):
+            arclens.append(arclens[-1]
+                           + float(np.linalg.norm(edge_pts[k + 1] - edge_pts[k])))
+        total = arclens[-1]
+        if total < 1e-15:
+            return {"ok": False, "reason": "shared_edge_pts are coincident"}
+        norm_lens = np.array(arclens) / total
+        ns = max(3, int(num_samples))
+        t_vals = np.linspace(0.0, 1.0, ns)
+
+        def _interp(t: float) -> np.ndarray:
+            idx = int(np.searchsorted(norm_lens, t, side="right")) - 1
+            idx = max(0, min(idx, len(edge_pts) - 2))
+            seg = norm_lens[idx + 1] - norm_lens[idx]
+            a = (t - norm_lens[idx]) / seg if seg > 1e-15 else 0.0
+            return (1.0 - a) * edge_pts[idx] + a * edge_pts[idx + 1]
+
+        def _closest_uv(surf, pt, n_u=20, n_v=20):
+            uu, vv = _uv_grid(surf, n_u, n_v)
+            best = (float("inf"), uu[len(uu) // 2], vv[len(vv) // 2])
+            for u in uu:
+                for v in vv:
+                    sp = _eval_surface(surf, u, v)[:3]
+                    d2 = float(np.sum((sp - pt) ** 2))
+                    if d2 < best[0]:
+                        best = (d2, u, v)
+            return best[1], best[2]
+
+        per_point = []
+        max_band_jump = 0
+        max_mu_jump = 0.0
+        for t in t_vals:
+            pt = _interp(t)
+            ua, va = _closest_uv(surf_a, pt)
+            ub, vb = _closest_uv(surf_b, pt)
+            cda = _analytic_curvature_data(surf_a, ua, va)
+            cdb = _analytic_curvature_data(surf_b, ub, vb)
+            if cda is None or cdb is None:
+                continue
+            mu_a = float(np.dot(cda["n"], L))
+            mu_b = float(np.dot(cdb["n"], L))
+            # Orient B's normal to the same hemisphere as A so a mere
+            # orientation flip is not mistaken for a break.
+            if mu_a * mu_b < 0 and abs(mu_a) > 1e-6 and abs(mu_b) > 1e-6:
+                mu_b = -mu_b
+            band_a = _isophote_band(mu_a, smr)
+            band_b = _isophote_band(mu_b, smr)
+            bj = abs(band_a - band_b)
+            mj = abs(mu_a - mu_b)
+            max_band_jump = max(max_band_jump, bj)
+            max_mu_jump = max(max_mu_jump, mj)
+            per_point.append({
+                "mu_a": mu_a, "mu_b": mu_b,
+                "band_a": band_a, "band_b": band_b,
+                "band_jump": bj, "mu_jump": mj,
+            })
+
+        continuous = max_band_jump <= int(band_tol)
+        return {
+            "ok": True,
+            "reason": "",
+            "max_band_jump": int(max_band_jump),
+            "max_mu_jump": float(max_mu_jump),
+            "isophote_continuous": bool(continuous),
+            "continuity_grade": "G1+" if continuous else "below_G1",
+            "num_samples": ns,
+            "sphere_map_res": smr,
+            "per_point": per_point,
+        }
+    except Exception as exc:
+        return {"ok": False, "reason": str(exc)}
+
+
+# ---------------------------------------------------------------------------
 # GK-138: Global continuity audit
 # ---------------------------------------------------------------------------
 
