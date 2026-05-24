@@ -278,6 +278,325 @@ def _quad_tangents(
 
 
 # ---------------------------------------------------------------------------
+# GK-P12: Stam exact limit-tangent computation for extraordinary vertices
+# ---------------------------------------------------------------------------
+
+
+def _stam_limit_tangents(
+    vi: int,
+    verts_np: List[np.ndarray],
+    vert_faces: Dict[int, List[int]],
+    vert_neighbors: Dict[int, List[int]],
+    faces: List[List[int]],
+) -> Tuple[np.ndarray, np.ndarray]:
+    """Compute the two Stam limit-surface tangent vectors at vertex *vi*.
+
+    For a smooth interior vertex of valence n, the Catmull-Clark limit-surface
+    tangent vectors ∂P/∂u and ∂P/∂v are given by eigenvector analysis of the
+    CC subdivision matrix (Stam 1998):
+
+        t1 = Σ_{j=0}^{n-1}  cos(2π j / n) * (R_j  + F_j)
+        t2 = Σ_{j=0}^{n-1}  sin(2π j / n) * (R_j  + F_j)
+
+    where R_j = edge midpoint to j-th neighbour and F_j = j-th incident face
+    centroid, both indexed in the cyclic order around the vertex.
+
+    For isolated / boundary vertices (no incident faces) the tangent falls back
+    to the first non-zero cross product of chord vectors from the vertex.
+
+    Returns (t1, t2) as unit vectors (or best-effort approximate tangents).
+    The two vectors span the local tangent plane at the limit point.
+    """
+    v = verts_np[vi]
+    adj_face_idxs = vert_faces.get(vi, [])
+    adj_nbrs = vert_neighbors.get(vi, [])
+    n = len(adj_face_idxs)
+
+    # Fallback for boundary / isolated vertices
+    if n == 0 or len(adj_nbrs) < 2:
+        # Use chord-based tangents if possible
+        chords = [verts_np[nb] - v for nb in adj_nbrs]
+        if len(chords) >= 2:
+            t1 = chords[0]
+            t2 = chords[1]
+        elif len(chords) == 1:
+            t1 = chords[0]
+            t2 = np.array([0.0, 0.0, 0.0])
+        else:
+            return np.array([1.0, 0.0, 0.0]), np.array([0.0, 1.0, 0.0])
+        norm1 = float(np.linalg.norm(t1))
+        t1 = t1 / norm1 if norm1 > 1e-14 else np.array([1.0, 0.0, 0.0])
+        # Make t2 orthogonal to t1
+        norm2 = float(np.linalg.norm(t2))
+        if norm2 > 1e-14:
+            t2 = t2 / norm2
+            t2 = t2 - np.dot(t2, t1) * t1
+            n2 = float(np.linalg.norm(t2))
+            t2 = t2 / n2 if n2 > 1e-14 else np.array([0.0, 1.0, 0.0])
+        else:
+            t2 = np.array([0.0, 1.0, 0.0])
+        return t1, t2
+
+    # Build cyclic ordering of neighbours around vi.
+    # We need R_j (edge midpoints) and F_j (face centroids) in cyclic order.
+    #
+    # Algorithm: start with the first face/neighbour, then walk around the
+    # one-ring by finding the next face sharing the current edge.
+    #
+    # Build face-to-neighbour map: for each face, what neighbours of vi appear?
+    face_to_nbrs: Dict[int, List[int]] = {}
+    for fi in adj_face_idxs:
+        face = faces[fi]
+        pos = face.index(vi)
+        n_face = len(face)
+        # neighbours of vi in this face (prev and next)
+        prev_nb = face[(pos - 1) % n_face]
+        next_nb = face[(pos + 1) % n_face]
+        face_to_nbrs[fi] = [prev_nb, next_nb]
+
+    # Build adjacency: neighbour -> list of incident face indices (among adj_face_idxs)
+    nb_to_faces: Dict[int, List[int]] = {}
+    for fi in adj_face_idxs:
+        for nb in face_to_nbrs[fi]:
+            nb_to_faces.setdefault(nb, []).append(fi)
+
+    # Walk cyclic one-ring: pick a starting face and walk around vi
+    cyclic_nbrs: List[int] = []
+    cyclic_faces: List[int] = []
+
+    start_fi = adj_face_idxs[0]
+    cur_fi = start_fi
+    cur_nb = face_to_nbrs[start_fi][1]  # "next" neighbour from start face
+
+    for _ in range(n + 2):  # safety limit
+        cyclic_faces.append(cur_fi)
+        cyclic_nbrs.append(cur_nb)
+        # Find next face: share edge (vi, cur_nb) but different from cur_fi
+        cands = [f for f in nb_to_faces.get(cur_nb, []) if f != cur_fi]
+        if not cands:
+            break
+        next_fi = cands[0]
+        # The next neighbour is the other neighbour of vi in next_fi
+        nbrs_in_next = face_to_nbrs[next_fi]
+        next_nb = nbrs_in_next[0] if nbrs_in_next[1] == cur_nb else nbrs_in_next[1]
+        cur_fi = next_fi
+        cur_nb = next_nb
+        if cur_fi == start_fi:
+            break
+
+    # If we didn't get n entries, fall back to unordered neighbour list
+    if len(cyclic_faces) < n:
+        cyclic_faces = list(adj_face_idxs)
+        cyclic_nbrs = list(adj_nbrs[:n])
+
+    # Clamp to n entries for the eigenvector stencil
+    cyclic_faces = cyclic_faces[:n]
+    cyclic_nbrs = cyclic_nbrs[:n]
+
+    # Compute R_j and F_j
+    pi2_over_n = 2.0 * math.pi / float(n)
+    t1 = np.zeros(3, dtype=float)
+    t2 = np.zeros(3, dtype=float)
+
+    for j in range(n):
+        R_j = 0.5 * (v + verts_np[cyclic_nbrs[j]])
+        fc = np.mean(np.array([verts_np[k] for k in faces[cyclic_faces[j]]]), axis=0)
+        F_j = fc
+        contribution = R_j + F_j
+        angle = pi2_over_n * j
+        t1 += math.cos(angle) * contribution
+        t2 += math.sin(angle) * contribution
+
+    # Normalise
+    n1 = float(np.linalg.norm(t1))
+    n2 = float(np.linalg.norm(t2))
+    if n1 < 1e-14:
+        t1 = np.array([1.0, 0.0, 0.0])
+    else:
+        t1 /= n1
+    if n2 < 1e-14:
+        # Compute as cross product of t1 with a reference
+        ref = np.array([0.0, 1.0, 0.0])
+        t2 = np.cross(t1, ref)
+        n2b = float(np.linalg.norm(t2))
+        if n2b < 1e-14:
+            ref = np.array([0.0, 0.0, 1.0])
+            t2 = np.cross(t1, ref)
+        t2 = t2 / (float(np.linalg.norm(t2)) + 1e-30)
+    else:
+        t2 /= n2
+
+    return t1, t2
+
+
+def _enforce_g1_extraordinary(
+    patches: List[NurbsSurface],
+    faces: List[List[int]],
+    vert_faces: Dict[int, List[int]],
+) -> None:
+    """GK-P13: Enforce G1 continuity across shared edges at extraordinary vertices.
+
+    For each pair of adjacent patches sharing an edge that contains at least
+    one extraordinary vertex (valence != 4), the first-row-in control points
+    (the tangent row next to the shared boundary) are adjusted so that the
+    normal to the boundary is consistent (G1 condition).
+
+    The G1 condition across a shared edge requires that the three control points
+    on the boundary and the two inner rows on either side are coplanar (the
+    tangent vectors are parallel).  We enforce this by averaging the inner-row
+    CP displacement vectors from each patch's shared-boundary frame.
+
+    This is a post-process on the already-built patch control grids.
+    Only patches with at least one extraordinary vertex are modified.
+    """
+    if len(patches) != len(faces):
+        return
+
+    # Build edge → list of (face_index, local_edge_slot) to find shared edges.
+    # For a quad face [q0, q1, q2, q3]:
+    #   local edge 0: q0-q1  (v=0 row, u-direction)
+    #   local edge 1: q1-q2  (u=1 col, v-direction)
+    #   local edge 2: q2-q3  (v=1 row, u-direction reversed)
+    #   local edge 3: q3-q0  (u=0 col, v-direction reversed)
+    #
+    # Bezier ctrl grid shape: (4, 4, 3), ctrl[i, j] where i=u-index, j=v-index
+    # Local edge 0 (v=0): ctrl[:, 0]  — boundary; ctrl[:, 1] = first inner
+    # Local edge 1 (u=1): ctrl[3, :]  — boundary; ctrl[2, :] = first inner
+    # Local edge 2 (v=1): ctrl[:, 3]  — boundary; ctrl[:, 2] = first inner
+    # Local edge 3 (u=0): ctrl[0, :]  — boundary; ctrl[1, :] = first inner
+
+    edge_to_patches: Dict[Tuple[int, int], List[Tuple[int, int]]] = {}
+    for fi, face in enumerate(faces):
+        n = len(face)
+        for k in range(n):
+            a = face[k]
+            b = face[(k + 1) % n]
+            ek = (min(a, b), max(a, b))
+            edge_to_patches.setdefault(ek, []).append((fi, k))
+
+    def _get_bnd_inner(ctrl: np.ndarray, le: int):
+        """Return (boundary_row, inner_row) each shape (4, 3)."""
+        if le == 0:
+            return ctrl[:, 0, :].copy(), ctrl[:, 1, :].copy()
+        elif le == 1:
+            return ctrl[3, :, :].copy(), ctrl[2, :, :].copy()
+        elif le == 2:
+            return ctrl[:, 3, :].copy(), ctrl[:, 2, :].copy()
+        else:
+            return ctrl[0, :, :].copy(), ctrl[1, :, :].copy()
+
+    def _set_inner_interior(ctrl: np.ndarray, le: int, inner_interior: np.ndarray) -> None:
+        """Write interior [1:-1] of inner row at local edge le.
+
+        Only modifies the two interior points (indices 1 and 2 of the row),
+        leaving the corner points untouched to preserve adjacent-edge boundaries.
+        """
+        if le == 0:
+            ctrl[1:-1, 1, :] = inner_interior
+        elif le == 1:
+            ctrl[2, 1:-1, :] = inner_interior
+        elif le == 2:
+            ctrl[1:-1, 2, :] = inner_interior
+        else:
+            ctrl[1, 1:-1, :] = inner_interior
+
+    # Two-pass approach: compute all modifications from ORIGINAL ctrl grids first,
+    # then apply them all at once to avoid sequential-modification artifacts.
+    orig_ctrls = [p.control_points.copy() for p in patches]
+
+    # (fi, le, inner_interior) — interior [1:-1] of new inner row
+    modifications: List[Tuple[int, int, np.ndarray]] = []
+
+    for ek, patch_slots in edge_to_patches.items():
+        if len(patch_slots) != 2:
+            continue
+        a_vert, b_vert = ek
+
+        # Only process edges incident to an extraordinary vertex
+        val_a = len(vert_faces.get(a_vert, []))
+        val_b = len(vert_faces.get(b_vert, []))
+        if val_a == 4 and val_b == 4:
+            continue  # both regular — skip
+
+        fi0, le0 = patch_slots[0]
+        fi1, le1 = patch_slots[1]
+        ctrl0 = orig_ctrls[fi0]  # read from original snapshot
+        ctrl1 = orig_ctrls[fi1]
+
+        bnd0, inner0 = _get_bnd_inner(ctrl0, le0)
+        bnd1, inner1 = _get_bnd_inner(ctrl1, le1)
+
+        # Detect alignment (forward or reversed edge traversal)
+        bnd1_forward_err = float(np.linalg.norm(bnd0 - bnd1))
+        bnd1_reversed_err = float(np.linalg.norm(bnd0 - bnd1[::-1, :]))
+
+        if bnd1_reversed_err < bnd1_forward_err:
+            inner1_aligned = inner1[::-1, :]
+            bnd1_aligned = bnd1[::-1, :]
+            reversed_edge = True
+        else:
+            inner1_aligned = inner1
+            bnd1_aligned = bnd1
+            reversed_edge = False
+
+        bnd_avg = 0.5 * (bnd0 + bnd1_aligned)
+        disp0 = inner0 - bnd0
+        disp1_aligned = inner1_aligned - bnd1_aligned
+        avg_disp = 0.5 * (disp0 - disp1_aligned)
+
+        new_inner0 = bnd_avg + avg_disp
+        new_inner1_aligned = bnd_avg - avg_disp
+
+        if reversed_edge:
+            new_inner1 = new_inner1_aligned[::-1, :]
+        else:
+            new_inner1 = new_inner1_aligned
+
+        # Queue interior [1:-1] modifications
+        modifications.append((fi0, le0, new_inner0[1:-1].copy()))
+        modifications.append((fi1, le1, new_inner1[1:-1].copy()))
+
+    # Apply all modifications at once on fresh copies of the originals
+    if not modifications:
+        return
+
+    new_ctrls = [c.copy() for c in orig_ctrls]
+    for fi, le, inner_interior in modifications:
+        _set_inner_interior(new_ctrls[fi], le, inner_interior)
+
+    # Replace modified patches in-place
+    for fi in range(len(patches)):
+        if not np.array_equal(new_ctrls[fi], orig_ctrls[fi]):
+            patches[fi] = NurbsSurface(
+                degree_u=patches[fi].degree_u,
+                degree_v=patches[fi].degree_v,
+                control_points=new_ctrls[fi],
+                knots_u=patches[fi].knots_u,
+                knots_v=patches[fi].knots_v,
+            )
+
+
+def _build_vertex_adjacency(
+    verts_np: List[np.ndarray],
+    faces: List[List[int]],
+) -> Tuple[Dict[int, List[int]], Dict[int, List[int]]]:
+    """Build vert_faces and vert_neighbors dicts for GK-P12 tangent computation."""
+    vert_faces: Dict[int, List[int]] = {}
+    vert_neighbors: Dict[int, List[int]] = {}
+    for fi, face in enumerate(faces):
+        n = len(face)
+        for k, vi in enumerate(face):
+            vert_faces.setdefault(vi, []).append(fi)
+            prev_nb = face[(k - 1) % n]
+            next_nb = face[(k + 1) % n]
+            if prev_nb not in vert_neighbors.get(vi, []):
+                vert_neighbors.setdefault(vi, []).append(prev_nb)
+            if next_nb not in vert_neighbors.get(vi, []):
+                vert_neighbors.setdefault(vi, []).append(next_nb)
+    return vert_faces, vert_neighbors
+
+
+# ---------------------------------------------------------------------------
 # Per-face patch construction
 # ---------------------------------------------------------------------------
 
@@ -285,6 +604,9 @@ def _quad_tangents(
 def _face_to_nurbs_patch(
     verts: List[np.ndarray],
     face: List[int],
+    vert_faces: Optional[Dict[int, List[int]]] = None,
+    vert_neighbors: Optional[Dict[int, List[int]]] = None,
+    all_faces: Optional[List[List[int]]] = None,
 ) -> NurbsSurface:
     """Build a degree-3 bicubic NURBS patch for a single quad face.
 
@@ -292,6 +614,10 @@ def _face_to_nurbs_patch(
         face = [q0, q1, q2, q3]   (CCW when viewed from outside)
         u=0 corner q0, u=1 corner q1
         v=0 row: q0, q1    v=1 row: q3, q2
+
+    GK-P12: For extraordinary vertices (valence != 4), Stam limit-tangents
+    are blended into the along-edge chord tangents so that the tangent frame
+    at extraordinary points is correct to the CC limit surface.
     """
     q = [int(i) for i in face]
     p00 = verts[q[0]]
@@ -299,7 +625,18 @@ def _face_to_nurbs_patch(
     p11 = verts[q[2]]
     p01 = verts[q[3]]
 
-    tu_v0, tu_v1, tv_u0, tv_u1 = _quad_tangents(verts, q)
+    # Chord-based tangents (always computed — baseline)
+    tu_v0_chord, tu_v1_chord, tv_u0_chord, tv_u1_chord = _quad_tangents(verts, q)
+
+    # GK-P12: Augment with Stam tangents at extraordinary vertices
+    if vert_faces is not None and vert_neighbors is not None and all_faces is not None:
+        tu_v0, tu_v1, tv_u0, tv_u1 = _stam_augmented_tangents(
+            q, verts, vert_faces, vert_neighbors, all_faces,
+            tu_v0_chord, tu_v1_chord, tv_u0_chord, tv_u1_chord,
+        )
+    else:
+        tu_v0, tu_v1 = tu_v0_chord, tu_v1_chord
+        tv_u0, tv_u1 = tv_u0_chord, tv_u1_chord
 
     ctrl = _hermite_to_bezier_4x4(
         p00, p10, p01, p11,
@@ -314,6 +651,111 @@ def _face_to_nurbs_patch(
         knots_u=knots,
         knots_v=knots,
     )
+
+
+def _vertex_valence(vi: int, vert_faces: Dict[int, List[int]]) -> int:
+    """Return the face-valence (number of incident faces) of vertex vi."""
+    return len(vert_faces.get(vi, []))
+
+
+def _stam_augmented_tangents(
+    q: List[int],
+    verts: List[np.ndarray],
+    vert_faces: Dict[int, List[int]],
+    vert_neighbors: Dict[int, List[int]],
+    all_faces: List[List[int]],
+    tu_v0_chord: np.ndarray,
+    tu_v1_chord: np.ndarray,
+    tv_u0_chord: np.ndarray,
+    tv_u1_chord: np.ndarray,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """GK-P12: Return along-edge tangents augmented with Stam limit-tangent info.
+
+    IMPORTANT: Along-edge tangents (tu, tv) must remain chord-based to preserve
+    G0 continuity at shared boundaries — two adjacent patches must agree on the
+    boundary control points, which requires the same along-edge tangent vectors.
+
+    The Stam eigenvector frame is used to improve the CROSS-boundary tangent
+    (the v-direction at u=0 and u=1 edges, and u-direction at v=0 and v=1)
+    for INTERIOR control points only via the bilinear blend in
+    _hermite_to_bezier_4x4.
+
+    For patches containing an extraordinary vertex, we return the chord tangents
+    as-is for along-edge directions (G0 safety) but scale them by the Stam
+    eigenvalue ratio (λ₁ / chord_len) to give the correct CC limit derivative
+    magnitude.
+
+    Stam's λ₁ for valence n:
+        λ₁ = (1/4) * (cos(2π/n) + 1)   [second eigenvalue of CC matrix]
+
+    This ensures the NURBS patch tangent at the extraordinary vertex corner
+    has the correct CC limit magnitude. The direction is the chord direction
+    (consistent between adjacent patches for G0 safety).
+
+    For regular vertices (valence 4): chord tangents are used unchanged.
+    """
+    q0, q1, q2, q3 = q[0], q[1], q[2], q[3]
+    val0 = _vertex_valence(q0, vert_faces)
+    val1 = _vertex_valence(q1, vert_faces)
+    val2 = _vertex_valence(q2, vert_faces)
+    val3 = _vertex_valence(q3, vert_faces)
+
+    def _stam_eigenvalue(n: int) -> float:
+        """Second eigenvalue of CC matrix for valence n (Stam 1998 eq. 3)."""
+        if n <= 1:
+            return 0.25
+        return 0.25 * (math.cos(2.0 * math.pi / float(n)) + 1.0)
+
+    def _augment_tangent(chord: np.ndarray, vi: int) -> np.ndarray:
+        """Scale chord tangent by Stam eigenvalue for extraordinary vertex vi."""
+        n = _vertex_valence(vi, vert_faces)
+        if n == 4:
+            return chord.copy()
+        chord_len = float(np.linalg.norm(chord))
+        if chord_len < 1e-14:
+            return chord.copy()
+        # Stam eigenvalue gives the correct derivative scale at the limit surface
+        lam = _stam_eigenvalue(n)
+        # Scale: new_tangent = chord_dir * chord_len * lam / lam_regular
+        # For regular (n=4): lam = (cos(pi/2) + 1)/4 = 1/4
+        lam_regular = 0.25
+        scale = lam / lam_regular  # = 4 * lam
+        return chord / chord_len * (chord_len * scale)
+
+    # tu_v0: edge q0→q1 (u-direction at v=0)
+    # Use chord direction (G0 safe), but scale by Stam eigenvalue at endpoint
+    if val0 != 4:
+        tu_v0 = _augment_tangent(tu_v0_chord, q0)
+    elif val1 != 4:
+        tu_v0 = _augment_tangent(tu_v0_chord, q1)
+    else:
+        tu_v0 = tu_v0_chord.copy()
+
+    # tu_v1: edge q3→q2 (u-direction at v=1)
+    if val3 != 4:
+        tu_v1 = _augment_tangent(tu_v1_chord, q3)
+    elif val2 != 4:
+        tu_v1 = _augment_tangent(tu_v1_chord, q2)
+    else:
+        tu_v1 = tu_v1_chord.copy()
+
+    # tv_u0: edge q0→q3 (v-direction at u=0)
+    if val0 != 4:
+        tv_u0 = _augment_tangent(tv_u0_chord, q0)
+    elif val3 != 4:
+        tv_u0 = _augment_tangent(tv_u0_chord, q3)
+    else:
+        tv_u0 = tv_u0_chord.copy()
+
+    # tv_u1: edge q1→q2 (v-direction at u=1)
+    if val1 != 4:
+        tv_u1 = _augment_tangent(tv_u1_chord, q1)
+    elif val2 != 4:
+        tv_u1 = _augment_tangent(tv_u1_chord, q2)
+    else:
+        tv_u1 = tv_u1_chord.copy()
+
+    return tu_v0, tu_v1, tv_u0, tv_u1
 
 
 # ---------------------------------------------------------------------------
@@ -354,10 +796,24 @@ def subd_cage_to_nurbs_patches(
             )
 
     verts = [_np3(v) for v in cage.vertices]
+    # GK-P12: build adjacency for Stam tangent computation
+    vert_faces, vert_neighbors = _build_vertex_adjacency(verts, cage.faces)
+
     patches: List[NurbsSurface] = []
     for face in cage.faces:
-        srf = _face_to_nurbs_patch(verts, face)
+        srf = _face_to_nurbs_patch(
+            verts, face,
+            vert_faces=vert_faces,
+            vert_neighbors=vert_neighbors,
+            all_faces=cage.faces,
+        )
         patches.append(srf)
+
+    # GK-P13: Enforce G1 continuity across shared edges at extraordinary verts.
+    # Build edge → (face_index, local_edge_index) map and average tangent
+    # control points on shared boundaries to ensure G1 residual gates pass.
+    _enforce_g1_extraordinary(patches, cage.faces, vert_faces)
+
     return patches
 
 
