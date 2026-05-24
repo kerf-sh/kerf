@@ -778,3 +778,148 @@ async def run_lumped_capacitance(ctx: ProjectCtx, args: bytes) -> str:
         **kwargs
     )
     return ok_payload(result)
+
+
+# ---------------------------------------------------------------------------
+# Tool: hx_tube_count  (Bell-Delaware / TEMA tube layout)
+# ---------------------------------------------------------------------------
+
+from kerf_cad_core.heatxfer.shell_tube_bell import (  # noqa: E402
+    tube_count as _tube_count,
+    shell_tube_design as _shell_tube_design,
+)
+
+_tube_count_spec = ToolSpec(
+    name="hx_tube_count",
+    description=(
+        "Estimate TEMA tube count for a shell-and-tube heat exchanger.\n"
+        "\n"
+        "Uses the TEMA tube-layout formula:\n"
+        "  N_t = (CTP/CL) * (π/4) * (D_s / P_t)²\n"
+        "where CL is the layout packing factor and CTP is the tube-count\n"
+        "correction for multiple passes.\n"
+        "\n"
+        "Supported layouts: triangular_30, rotated_60, square_90, rotated_45.\n"
+        "TEMA minimum pitch = 1.25 × tube_od.\n"
+        "\n"
+        "Returns N_tubes (int).\n"
+        "Errors: {ok:false, reason}. Never raises."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "shell_id": {"type": "number", "description": "Shell inner diameter (m). Must be > 0."},
+            "tube_od":  {"type": "number", "description": "Tube outer diameter (m). Must be > 0."},
+            "pitch":    {"type": "number", "description": "Tube pitch centre-to-centre (m). Must be >= 1.25*tube_od."},
+            "layout":   {
+                "type": "string",
+                "enum": ["triangular_30", "rotated_60", "square_90", "rotated_45"],
+                "description": "TEMA tube layout pattern.",
+            },
+            "n_passes": {"type": "integer", "description": "Number of tube passes (1, 2, 4, or 6). Default 1."},
+        },
+        "required": ["shell_id", "tube_od", "pitch", "layout"],
+    },
+)
+
+
+@register(_tube_count_spec, write=False)
+async def run_tube_count(ctx: ProjectCtx, args: bytes) -> str:
+    try:
+        a = json.loads(args)
+    except Exception as exc:
+        return err_payload(f"invalid args JSON: {exc}", "BAD_ARGS")
+    for field in ("shell_id", "tube_od", "pitch", "layout"):
+        if a.get(field) is None:
+            return json.dumps({"ok": False, "reason": f"{field} is required"})
+    try:
+        n = _tube_count(
+            a["shell_id"], a["tube_od"], a["pitch"], a["layout"],
+            a.get("n_passes", 1),
+        )
+        return ok_payload({"N_tubes": n})
+    except Exception as exc:
+        return err_payload(str(exc), "BAD_ARGS")
+
+
+# ---------------------------------------------------------------------------
+# Tool: hx_shell_tube_bell_delaware
+# ---------------------------------------------------------------------------
+
+_bell_delaware_spec = ToolSpec(
+    name="hx_shell_tube_bell_delaware",
+    description=(
+        "Full Bell-Delaware shell-and-tube heat exchanger design.\n"
+        "\n"
+        "Computes shell-side h_s with Bell-Delaware correction factors\n"
+        "(Jc baffle-cut, Jl leakage, Jb bypass, Jr laminar, Js uneven spacing),\n"
+        "tube-side h_t (Dittus-Boelter / Hausen), overall U, required area A_req,\n"
+        "tube count, baffle count, and ΔP (tube-side + shell-side).\n"
+        "\n"
+        "Validated against Kern (1950) kerosene cooler example:\n"
+        "  h_s ~500 W/m²·K, h_t ~3000 W/m²·K, U ~400 W/m²·K, A ~50 m² @ 1 MW.\n"
+        "\n"
+        "Returns: U_W_m2K, A_req_m2, A_actual_m2, overdesign, N_tubes, N_baffles,\n"
+        "         h_t_W_m2K, h_s_W_m2K, Re_t, Re_s, LMTD_K, dP_tube_Pa, dP_shell_Pa,\n"
+        "         factors (Jc/Jl/Jb/Jr/Js).\n"
+        "Errors: {ok:false, reason}. Never raises."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "duty_W":      {"type": "number", "description": "Heat duty (W). Must be > 0."},
+            "t_hot_in":    {"type": "number", "description": "Hot-fluid inlet temperature (°C or K)."},
+            "t_hot_out":   {"type": "number", "description": "Hot-fluid outlet temperature."},
+            "t_cold_in":   {"type": "number", "description": "Cold-fluid inlet temperature."},
+            "t_cold_out":  {"type": "number", "description": "Cold-fluid outlet temperature."},
+            "shell_props": {
+                "type": "object",
+                "description": (
+                    "Shell-side fluid properties: "
+                    "{rho: kg/m³, mu: Pa·s, cp: J/kg·K, k: W/m·K, Pr: (opt), m_dot: kg/s (opt)}."
+                ),
+            },
+            "tube_props": {
+                "type": "object",
+                "description": (
+                    "Tube-side fluid properties: "
+                    "{rho: kg/m³, mu: Pa·s, cp: J/kg·K, k: W/m·K, Pr: (opt), m_dot: kg/s (opt)}."
+                ),
+            },
+            "geometry": {
+                "type": "object",
+                "description": (
+                    "HX geometry: {D_s, tube_od, tube_id, pitch, layout, L_tube, N_t, n_passes, "
+                    "N_b, B, baffle_cut, k_wall, R_foul_t, R_foul_s, D_tb, D_sb, n_ss (all optional except D_s/tube_od/tube_id/pitch/L_tube/N_t/N_b/B)}."
+                ),
+            },
+        },
+        "required": ["duty_W", "t_hot_in", "t_hot_out", "t_cold_in", "t_cold_out",
+                     "shell_props", "tube_props", "geometry"],
+    },
+)
+
+
+@register(_bell_delaware_spec, write=False)
+async def run_shell_tube_bell_delaware(ctx: ProjectCtx, args: bytes) -> str:
+    try:
+        a = json.loads(args)
+    except Exception as exc:
+        return err_payload(f"invalid args JSON: {exc}", "BAD_ARGS")
+    required = ("duty_W", "t_hot_in", "t_hot_out", "t_cold_in", "t_cold_out",
+                "shell_props", "tube_props", "geometry")
+    for field in required:
+        if a.get(field) is None:
+            return json.dumps({"ok": False, "reason": f"{field} is required"})
+    try:
+        result = _shell_tube_design(
+            a["duty_W"],
+            a["t_hot_in"], a["t_hot_out"],
+            a["t_cold_in"], a["t_cold_out"],
+            a["shell_props"],
+            a["tube_props"],
+            a["geometry"],
+        )
+        return ok_payload(result)
+    except Exception as exc:
+        return err_payload(str(exc), "COMPUTE_ERROR")
