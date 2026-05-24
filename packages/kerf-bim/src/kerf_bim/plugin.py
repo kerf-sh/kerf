@@ -62,6 +62,11 @@ def _register_tools(ctx, provides: list) -> None:
         ("kerf_bim.tools.import_ifc", "bim.ifc-import"),
         ("kerf_bim.tools.export_ifc", "bim.ifc-export"),
         ("kerf_bim.tools.family_library", "bim.family-library"),
+        # GK-P49: architectural geometry ops
+        ("kerf_bim.tools.roof_geometry", "bim.roof-geometry"),
+        ("kerf_bim.tools.curtain_wall_geom", "bim.curtain-wall-geom"),
+        ("kerf_bim.tools.drafting", "bim.drafting"),
+        ("kerf_bim.tools.site_geometry", "bim.site-geometry"),
     ]
 
     for module_path, capability in tool_modules:

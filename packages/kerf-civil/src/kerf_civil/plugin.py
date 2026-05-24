@@ -46,11 +46,25 @@ async def register(app: FastAPI, ctx):
         run_civil_earthwork_volume,
     )
 
+    # GK-P49: corridor B-rep / volume / IFC alignment
+    try:
+        from kerf_civil.tools_corridor import TOOLS as _corridor_tools
+        for tool_name, tool_spec, tool_handler in _corridor_tools:
+            ctx.tools.register(tool_name, tool_spec, tool_handler)
+    except Exception as _exc:
+        import logging as _logging
+        _logging.getLogger(__name__).warning(
+            "kerf-civil: failed to load tools_corridor: %s", _exc
+        )
+
     provides = [
         "civil.horizontal_alignment",
         "civil.vertical_alignment",
         "civil.corridor",
         "civil.earthwork",
+        "civil.corridor-brep",
+        "civil.corridor-volume",
+        "civil.corridor-ifc",
     ]
 
     try:
