@@ -5738,12 +5738,12 @@ where the op has an OCCT path. **Sequenced AFTER GK-P43/P44** (they own
 one commit. Already-wired (boolean P09, class-A P01-08, trim P40/41,
 SubD-eval P12-14, analytic-deriv P15) are NOT re-touched.
 
-- **GK-P45** 🔴 Wire **SubD/mesh authoring ops** as ToolSpecs + UI + LLM docs: `subd_poke` (P20), `subd_extrude_along` (P21), `sculpt_brush` (P27), `MultiresStack` (P26). `surfacing.py` (or a `subd_tools.py`) + `FeatureView.jsx`. Size M.
-- **GK-P46** 🔴 Wire **mesh/implicit ops**: `sdf_csg` + marching-cubes (P22), `uv_unwrap` (P24), `isotropic_remesh` (P23), `retopo_snap` (P25) as ToolSpecs + UI + docs. Size M.
-- **GK-P47** 🔴 Wire **surfacing additions**: `isophote_analysis` (P11) as a read-only analysis ToolSpec; MatchSrf **G3** as a `continuity="G3"` option on the existing match tool (P10); loft **guide_curves** param on `feature_loft` + OCCT-worker `ThruSections.AddWire` dispatch (P16). Size M.
-- **GK-P48** 🔴 Wire **construction verbs**: sheet-metal `hem/jog/multi_flange` (P17), direct-edit `delete_face`/non-planar push-pull (P18), weldment `gusset_plate`/cope-notch (P19) as ToolSpecs + UI + docs. Size M.
+- **GK-P45** ✅ Wire **SubD/mesh authoring ops** as ToolSpecs + UI + LLM docs: `subd_poke` (P20), `subd_extrude_along` (P21), `sculpt_brush` (P27), `MultiresStack` (P26). `surfacing.py` (or a `subd_tools.py`) + `FeatureView.jsx`. Size M.
+- **GK-P46** ✅ Wire **mesh/implicit ops**: `sdf_csg` + marching-cubes (P22), `uv_unwrap` (P24), `isotropic_remesh` (P23), `retopo_snap` (P25) as ToolSpecs + UI + docs. Size M.
+- **GK-P47** ✅ Wire **surfacing additions**: `isophote_analysis` (P11) as a read-only analysis ToolSpec; MatchSrf **G3** as a `continuity="G3"` option on the existing match tool (P10); loft **guide_curves** param on `feature_loft` + OCCT-worker `ThruSections.AddWire` dispatch (P16). Size M.
+- **GK-P48** ✅ Wire **construction verbs**: sheet-metal `hem/jog/multi_flange` (P17), direct-edit `delete_face`/non-planar push-pull (P18), weldment `gusset_plate`/cope-notch (P19) as ToolSpecs + UI + docs. Size M.
 - **GK-P49** ✅ Register **architectural ops as BIM/civil tools**: `make_roof` (P29), `curtain_wall_geometry` (P30), `hatch_region` (P32), `section_fill` (P33), `make2d_from_brep` (P28), `Toposolid.to_brep` (P34), corridor `to_brep` (P35) in the `kerf-bim` / `kerf-civil` tool plugins + LLM docs. Size L.
-- **GK-P50** 🔴 Wire **`write_3dm` export** (P39) into the project export/download route (alongside the STEP/STL/GLB exporters), not a feature ToolSpec. Size S.
+- **GK-P50** ✅ Wire **`write_3dm` export** (P39) into the project export/download route (alongside the STEP/STL/GLB exporters), not a feature ToolSpec. Size S.
 - **DoD (all):** each wired op is invokable via the `.feature` workflow + appears in the LLM tool list + renders its params in `FeatureView.jsx`; a wiring test asserts dispatch. After this group, `git grep` of each new op name shows a ToolSpec/plugin/UI hit (closes the audit the user flagged).
 
 ## CAD feature-parity gap closure — big wave (2026-05-24)
