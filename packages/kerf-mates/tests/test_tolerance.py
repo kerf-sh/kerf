@@ -36,9 +36,16 @@ def test_rss():
 
 
 def test_it_grade_lookup():
-    assert abs(grade_to_tolerance("IT8") - 0.007) <= 0.0001
-    assert abs(grade_to_tolerance("IT7") - 0.005) <= 0.0001
-    assert abs(grade_to_tolerance("IT6") - 0.003) <= 0.0001
+    # Values are now formula-based (ISO 286-1) at default 25 mm nominal.
+    # Old static table (7/5/3 µm) was only accurate for ~1-3 mm sizes.
+    # At 25 mm: D = sqrt(18*30) ≈ 23.24 mm, i ≈ 1.296 µm
+    #   IT8: 25*i ≈ 32.4 µm → 0.0324 mm
+    #   IT7: 16*i ≈ 20.7 µm → 0.0207 mm
+    #   IT6: 10*i ≈ 12.96 µm → 0.013 mm
+    assert grade_to_tolerance("IT8") > 0.025, "IT8@25mm should be > 25µm"
+    assert grade_to_tolerance("IT7") > 0.015, "IT7@25mm should be > 15µm"
+    assert grade_to_tolerance("IT6") > 0.010, "IT6@25mm should be > 10µm"
+    assert grade_to_tolerance("IT6") < grade_to_tolerance("IT7") < grade_to_tolerance("IT8")
     assert grade_to_tolerance("IT99") == 0.0
     print("test_it_grade_lookup PASSED")
 

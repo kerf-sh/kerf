@@ -4,33 +4,69 @@ import random
 from kerf_chat.tools.registry import ToolSpec, err_payload, ok_payload, register
 from kerf_core.utils.context import ProjectCtx
 
+# ---------------------------------------------------------------------------
+# ISO 286-1 IT-grade tolerance — canonical implementation
+# ---------------------------------------------------------------------------
+# The authoritative formula lives in kerf_cad_core.gdt.it_grades.
+# IT_GRADE_TOLERANCES was a size-independent µm table that was only accurate
+# for very small nominals (≈ 1–3 mm range) and diverged by 2–5× for larger
+# sizes.  It is replaced below by the formula-based canonical module.
+#
+# grade_to_tolerance() preserves its original signature (grade → mm) by
+# using a 25 mm default nominal (mid-range reference size per ISO 286-1),
+# which matches propose.py's fallback.  Callers that have a real nominal
+# dimension should call it_tolerance_mm(grade, nominal_mm) directly.
 
-IT_GRADE_TOLERANCES = {
-    "IT01": 0.15,
-    "IT0": 0.25,
-    "IT1": 0.4,
-    "IT2": 0.6,
-    "IT3": 1.0,
-    "IT4": 1.5,
-    "IT5": 2.0,
-    "IT6": 3.0,
-    "IT7": 5.0,
-    "IT8": 7.0,
-    "IT9": 12.5,
-    "IT10": 20.0,
-    "IT11": 30.0,
-    "IT12": 50.0,
-    "IT13": 70.0,
-    "IT14": 125.0,
-    "IT15": 200.0,
-    "IT16": 315.0,
-}
+try:
+    from kerf_cad_core.gdt.it_grades import it_tolerance_mm as _it_tolerance_mm, VALID_GRADES as _VALID_GRADES
 
+    #: Retained for backward-compat imports; prefer it_tolerance_mm() for
+    #: size-specific lookups.
+    IT_GRADE_TOLERANCES: dict[str, float] = {
+        g: round(_it_tolerance_mm(g, 25.0) * 1000.0, 4)
+        for g in [
+            "IT01", "IT0", "IT1", "IT2", "IT3", "IT4",
+            "IT5", "IT6", "IT7", "IT8", "IT9", "IT10",
+            "IT11", "IT12", "IT13", "IT14", "IT15", "IT16",
+        ]
+    }
 
-def grade_to_tolerance(grade: str) -> float:
-    if grade in IT_GRADE_TOLERANCES:
-        return IT_GRADE_TOLERANCES[grade] / 1000.0
-    return 0.0
+    def grade_to_tolerance(grade: str, nominal_mm: float = 25.0) -> float:
+        """
+        Return the ISO 286-1 IT-grade tolerance in mm.
+
+        Parameters
+        ----------
+        grade:
+            IT grade string, e.g. ``'IT7'`` (case-insensitive).
+        nominal_mm:
+            Nominal feature size in mm (default 25 mm).  The tolerance
+            depends on the size band — pass the actual dimension when known.
+
+        Returns
+        -------
+        float
+            Tolerance in mm, or 0.0 for an unknown grade.
+        """
+        try:
+            return _it_tolerance_mm(grade, nominal_mm)
+        except ValueError:
+            return 0.0
+
+except ImportError:
+    # kerf-cad-core not installed — fall back to a minimal static table so
+    # the package is still importable in environments without the full stack.
+    IT_GRADE_TOLERANCES: dict[str, float] = {
+        "IT01": 0.15, "IT0": 0.25, "IT1": 0.4,  "IT2": 0.6,   "IT3": 1.0,
+        "IT4":  1.5,  "IT5": 2.0,  "IT6": 3.0,  "IT7": 5.0,   "IT8": 7.0,
+        "IT9": 12.5, "IT10": 20.0, "IT11": 30.0, "IT12": 50.0, "IT13": 70.0,
+        "IT14": 125.0, "IT15": 200.0, "IT16": 315.0,
+    }
+
+    def grade_to_tolerance(grade: str, nominal_mm: float = 25.0) -> float:  # noqa: F811
+        if grade in IT_GRADE_TOLERANCES:
+            return IT_GRADE_TOLERANCES[grade] / 1000.0
+        return 0.0
 
 
 def compute_histogram(data: list[float], bins: int = 20) -> tuple[list[dict], list[float]]:

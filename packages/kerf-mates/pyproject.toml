@@ -12,6 +12,7 @@ requires-python = ">=3.11"
 dependencies = [
     "fastapi",
     "pydantic",
+    "kerf-cad-core",
 ]
 
 [project.optional-dependencies]

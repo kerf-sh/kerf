@@ -43,68 +43,25 @@ Tolerancing intent values (guide how tight to make calls):
 """
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
 from kerf_cad_core.gdt.datums import Datum, DatumType, DatumReferenceFrame
 from kerf_cad_core.gdt.tolerances import GeometricTolerance, ToleranceSymbol
 from kerf_cad_core.gdt.modifiers import ToleranceModifier
+from kerf_cad_core.gdt.it_grades import (
+    IT_GRADE_MULTIPLIERS as IT_GRADES,
+    GRADE_ORDER as _GRADE_ORDER,
+    VALID_GRADES,
+    it_tolerance_mm,
+    _find_dim_range,
+    _tolerance_unit_i,
+)
 
 
-# ---------------------------------------------------------------------------
-# IT-grade tables
-# ---------------------------------------------------------------------------
-
-#: ISO 286-1 dimension ranges: (lower_exclusive, upper_inclusive) in mm
-_DIM_RANGES: list[tuple[float, float]] = [
-    (0.0,   3.0),
-    (3.0,   6.0),
-    (6.0,  10.0),
-    (10.0, 18.0),
-    (18.0, 30.0),
-    (30.0, 50.0),
-    (50.0, 80.0),
-    (80.0, 120.0),
-    (120.0, 180.0),
-    (180.0, 250.0),
-    (250.0, 315.0),
-    (315.0, 400.0),
-    (400.0, 500.0),
-]
-
-#: k-factor (units of i) per IT grade
-IT_GRADES: dict[str, float] = {
-    "IT01": 0.3,
-    "IT0":  0.5,
-    "IT1":  0.8,
-    "IT2":  1.2,
-    "IT3":  2.0,
-    "IT4":  3.0,
-    "IT5":  7.0,
-    "IT6":  10.0,
-    "IT7":  16.0,
-    "IT8":  25.0,
-    "IT9":  40.0,
-    "IT10": 64.0,
-    "IT11": 100.0,
-    "IT12": 160.0,
-    "IT13": 250.0,
-    "IT14": 400.0,
-    "IT15": 640.0,
-    "IT16": 1000.0,
-    "IT17": 1600.0,
-    "IT18": 2500.0,
-}
-
-#: Ordered list of grades from finest to coarsest (for intent adjustments)
-_GRADE_ORDER: list[str] = [
-    "IT01", "IT0", "IT1", "IT2", "IT3", "IT4",
-    "IT5", "IT6", "IT7", "IT8", "IT9", "IT10",
-    "IT11", "IT12", "IT13", "IT14", "IT15", "IT16", "IT17", "IT18",
-]
-
-VALID_GRADES: frozenset[str] = frozenset(IT_GRADES.keys())
+def it_grade_tolerance(nominal_mm: float, grade: str) -> float:
+    """Thin wrapper preserving the legacy (nominal_mm, grade) call signature."""
+    return it_tolerance_mm(grade, nominal_mm)
 
 #: Tolerancing intent → grade offset (positive = coarser)
 _INTENT_OFFSET: dict[str, int] = {
@@ -121,72 +78,6 @@ VALID_FEATURE_TYPES: frozenset[str] = frozenset({
     "hole", "slot", "planar_face", "cylindrical", "pattern", "freeform",
 })
 
-
-def _geometric_mean_of_range(low: float, high: float) -> float:
-    """Geometric mean of the boundary values for the dimension range."""
-    return math.sqrt(low * high)
-
-
-def _tolerance_unit_i(D_mm: float) -> float:
-    """
-    Standard tolerance unit i (µm) for nominal dimension D (mm).
-
-    i = 0.45 * D^(1/3) + 0.001 * D
-    """
-    return 0.45 * (D_mm ** (1.0 / 3.0)) + 0.001 * D_mm
-
-
-def _find_dim_range(nominal_mm: float) -> tuple[float, float]:
-    """
-    Return the ISO 286-1 dimension range that contains nominal_mm.
-
-    For values ≤ 0 the first range is returned.
-    For values > 500 the last range is returned (extrapolation).
-    """
-    if nominal_mm <= 0.0:
-        return _DIM_RANGES[0]
-    for low, high in _DIM_RANGES:
-        if nominal_mm <= high:
-            return (low, high)
-    return _DIM_RANGES[-1]
-
-
-def it_grade_tolerance(nominal_mm: float, grade: str) -> float:
-    """
-    Return the IT grade tolerance value in millimetres for a given nominal
-    dimension and IT grade string (e.g. 'IT7').
-
-    Parameters
-    ----------
-    nominal_mm:
-        Nominal feature dimension in mm (e.g. bore diameter).  Must be > 0.
-    grade:
-        IT grade string such as 'IT7'.
-
-    Returns
-    -------
-    Tolerance value in mm (always > 0).
-
-    Raises
-    ------
-    ValueError
-        If grade is unknown.
-    """
-    grade_upper = grade.upper()
-    if grade_upper not in IT_GRADES:
-        raise ValueError(
-            f"Unknown IT grade '{grade}'. Valid grades: {sorted(IT_GRADES)}"
-        )
-    k = IT_GRADES[grade_upper]
-    low, high = _find_dim_range(max(nominal_mm, 0.001))
-    # Use geometric mean of range boundaries; special case: range (0, 3] → D = 1.5
-    if low == 0.0:
-        D = 1.5
-    else:
-        D = _geometric_mean_of_range(low, high)
-    i_um = _tolerance_unit_i(D)
-    tol_um = k * i_um
-    return round(tol_um / 1000.0, 6)  # convert µm → mm
 
 
 def _grade_order_idx(grade: str) -> int:
