@@ -5758,3 +5758,20 @@ standards/validated methods per the max-depth directive) + mark `[x]`;
 Wave 1 (now): domain-package gaps disjoint from kerf-cad-core (BIM, sim,
 soft-goods, process, med/dent/optics, EDA). Wave 2 (after W2a lands):
 kerf-cad-core MCAD/surfacing parity (catia 53, solidworks 41, rhino, fusion…).
+
+## Wave 3 — frontend-UI wiring + engine epics (2026-05-24)
+
+User directive "do all of these". Closes the two remaining parity buckets:
+(A) frontend-UI gaps where the backend engine exists but no UI affordance;
+(B) the genuine multi-month engine epics — each agent implements the
+real tractable CORE to validated depth (textbook/standards methods +
+tests, NO stubs), flips its matrix row honestly (no→partial or
+partial→yes), and flags the remaining commercial-grade depth. Disjoint
+packages, integrate by SHA.
+- UI-WIRE: tool-palette + FeatureView + inspector + simple panels (src/)
+- CFD-EPIC: unstructured RANS core (kerf-cfd)
+- CLOTH-EPIC: physically-based cloth-drape (kerf-textiles)
+- OPTICS-EPIC: physical-optics propagation POP/BPM (kerf-optics)
+- DENTAL-EPIC: IOS scan-registration pipeline (kerf-dental)
+- AERO-EPIC: orbit determination (kerf-aero)
+- MARINE-EPIC: class-rule scantlings (kerf-marine)
