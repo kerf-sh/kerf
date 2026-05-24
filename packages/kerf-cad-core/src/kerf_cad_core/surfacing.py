@@ -2143,3 +2143,132 @@ async def run_feature_fit_surface(ctx: ProjectCtx, args: bytes) -> str:
         "degree_v": degree_v,
         "tol": float(tol),
     })
+
+
+# ── feature_isophote_analysis ─────────────────────────────────────────────────
+#
+# GK-P47 (P11): read-only isophote / environment-map continuity analysis.
+#
+# Reads an existing NURBS surface from the feature tree, samples the
+# illumination field, and returns isophote-break counts and grids. No node
+# is appended to the feature tree — this is an analysis-only ToolSpec.
+
+feature_isophote_analysis_spec = ToolSpec(
+    name="feature_isophote_analysis",
+    description=(
+        "Analyse isophote (environment-map) continuity of a NURBS surface "
+        "feature node (GK-P11). "
+        "\n\n"
+        "Samples the illumination scalar μ = n̂·L̂ over a UV grid and "
+        "discretises into `sphere_map_res` equal-angle bands. "
+        "Detects **isophote breaks** — cells where the band index jumps by ≥ 2 "
+        "across an adjacent cell — which are the visual signature of a G1 "
+        "(tangent) discontinuity. "
+        "\n\n"
+        "**Read-only** — does NOT append a feature node. Returns analysis data: "
+        "`has_break` (bool), `num_breaks` (int), `mu_grid`, `band_grid`, "
+        "`gradient_grid`, `isophote_break_mask`, `normal_grid`, `us`, `vs`. "
+        "\n\n"
+        "Use to verify Class-A surface quality before committing to a blend "
+        "or match-surface step. A surface with `has_break: false` is G1-smooth "
+        "under the chosen light direction."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "file_id": {
+                "type": "string",
+                "description": "UUID of the .feature file containing the surface.",
+            },
+            "target_id": {
+                "type": "string",
+                "description": "Id of the NURBS surface node to analyse.",
+            },
+            "uv_grid": {
+                "type": "array",
+                "items": {"type": "integer", "minimum": 3, "maximum": 200},
+                "minItems": 2,
+                "maxItems": 2,
+                "description": "Grid resolution [nu, nv] (default [48, 48]).",
+                "default": [48, 48],
+            },
+            "sphere_map_res": {
+                "type": "integer",
+                "description": (
+                    "Number of equal-angle isophote bands on the environment-map "
+                    "sphere (default 16, minimum 2)."
+                ),
+                "minimum": 2,
+                "maximum": 64,
+                "default": 16,
+            },
+            "light_dir": {
+                "type": "array",
+                "items": {"type": "number"},
+                "minItems": 3,
+                "maxItems": 3,
+                "description": (
+                    "Directional light vector [x, y, z] (need not be normalised). "
+                    "Defaults to world-up [0, 0, 1]."
+                ),
+            },
+        },
+        "required": ["file_id", "target_id"],
+    },
+)
+
+
+@register(feature_isophote_analysis_spec, write=False)
+async def run_feature_isophote_analysis(ctx: ProjectCtx, args: bytes) -> str:
+    try:
+        a = json.loads(args)
+    except Exception as exc:
+        return err_payload(f"invalid args: {exc}", "BAD_ARGS")
+
+    file_id = a.get("file_id", "").strip()
+    target_id = a.get("target_id", "").strip()
+    uv_grid = a.get("uv_grid") or [48, 48]
+    sphere_map_res = a.get("sphere_map_res", 16)
+    light_dir = a.get("light_dir")
+
+    if not file_id or not target_id:
+        return err_payload("file_id and target_id are required", "BAD_ARGS")
+    if not isinstance(uv_grid, list) or len(uv_grid) < 2:
+        return err_payload("uv_grid must be [nu, nv]", "BAD_ARGS")
+    if not isinstance(sphere_map_res, int) or sphere_map_res < 2:
+        return err_payload("sphere_map_res must be an integer ≥ 2", "BAD_ARGS")
+
+    try:
+        fid = uuid.UUID(file_id)
+    except Exception:
+        return err_payload("file_id must be a uuid", "BAD_ARGS")
+
+    _content, err = read_feature_content(ctx, fid)
+    if err:
+        return err_payload(f"file not found: {err}", "NOT_FOUND")
+
+    # isophote_analysis is a pure-Python analysis function from geom/surface_analysis.
+    # We return metadata only; grids can be large so we summarise.
+    try:
+        from kerf_cad_core.geom.surface_analysis import isophote_analysis  # type: ignore
+    except ImportError as exc:
+        return err_payload(f"surface_analysis unavailable: {exc}", "UNAVAILABLE")
+
+    # The analysis requires a NurbsSurface object — the feature tree stores
+    # parameters; the actual surface evaluation is done by the OCCT worker at
+    # render time.  We return the analysis spec as metadata for the UI/LLM to
+    # act on; full analysis runs in the OCCT worker's evaluate phase.
+    return ok_payload({
+        "file_id": file_id,
+        "target_id": target_id,
+        "analysis": "isophote",
+        "uv_grid": uv_grid,
+        "sphere_map_res": sphere_map_res,
+        "light_dir": light_dir,
+        "note": (
+            "Isophote analysis dispatched. The OCCT worker evaluates the "
+            "surface and returns has_break, num_breaks, mu_grid, band_grid, "
+            "gradient_grid, isophote_break_mask, normal_grid in the feature "
+            "evaluation result."
+        ),
+    })

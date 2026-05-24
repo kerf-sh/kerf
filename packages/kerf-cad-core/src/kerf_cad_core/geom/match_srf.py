@@ -1559,7 +1559,11 @@ if _REGISTRY_AVAILABLE:
         description=(
             "Modify a source NURBS surface's boundary control points so that "
             "the specified edge matches the edge of a target NURBS surface at "
-            "G0 (position), G1 (tangent), or G2 (curvature) continuity.\n"
+            "G0 (position), G1 (tangent), G2 (curvature), or G3 "
+            "(curvature-rate) continuity. "
+            "G3 is the GK-P10 best-effort pure-Python pole-adjustment; "
+            "requires source degree ≥ 3 and ≥ 4 CP rows in the matched "
+            "direction.\n"
             "\n"
             "This is the pure-Python 'MatchSrf' implementation.  The OCC "
             "GeomFill_NSections binding (WASM-blocked) is not used.\n"
@@ -1570,7 +1574,8 @@ if _REGISTRY_AVAILABLE:
             "  max_position_deviation  : float  (G0 seam error)\n"
             "  max_tangent_deviation   : float  (G1 angle radians; null if N/A)\n"
             "  max_curvature_deviation : float  (G2 curvature diff; null if N/A)\n"
-            "  continuity_achieved     : str    (G0/G1/G2/none)\n"
+            "  max_curvature_rate_deviation : float (G3 dκ/ds diff; null if N/A)\n"
+            "  continuity_achieved     : str    (G0/G1/G2/G3/none)\n"
             "\n"
             "On error: {ok: false, reason: str}.  Never raises."
         ),
@@ -1603,7 +1608,14 @@ if _REGISTRY_AVAILABLE:
                 },
                 "continuity": {
                     "type": "string",
-                    "enum": ["G0", "G1", "G2"],
+                    "enum": ["G0", "G1", "G2", "G3"],
+                    "description": (
+                        "Continuity class: G0 (position), G1 (tangent), "
+                        "G2 (curvature), G3 (curvature-rate). "
+                        "G3 requires source degree ≥ 3 and ≥ 4 control rows "
+                        "in the matched direction; returns BAD_ARGS if the "
+                        "surface is too low degree. GK-P10 (best-effort OCCT-G3)."
+                    ),
                 },
                 "samples": {"type": "integer"},
                 "tolerance": {"type": "number"},
