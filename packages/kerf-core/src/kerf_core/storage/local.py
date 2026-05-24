@@ -84,7 +84,13 @@ class LocalStorage(Storage):
         return base
 
     async def put_chunk(
-        self, upload_key: str, chunk_index: int, body: IO[bytes]
+        self,
+        upload_key: str,
+        chunk_index: int,
+        body: IO[bytes],
+        *,
+        conn=None,
+        session_id=None,
     ) -> None:
         if chunk_index < 0:
             raise ValueError("Negative chunk index")
@@ -118,7 +124,7 @@ class LocalStorage(Storage):
                     continue
         return sorted(indices)
 
-    async def concat_chunks_to(self, upload_key: str, dst_key: str) -> int:
+    async def concat_chunks_to(self, upload_key: str, dst_key: str, *, conn=None, session_id=None) -> int:
         indices = await self.list_chunks(upload_key)
         if not indices:
             raise ValueError(f"No chunks for upload {upload_key}")

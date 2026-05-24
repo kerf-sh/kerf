@@ -2891,15 +2891,25 @@ async def _insert_tool_message(conn, tid: str, tool_call_id: str, content: str, 
     return dict(row)
 
 
+_CHAT_HISTORY_LIMIT = int(__import__("os").environ.get("KERF_CHAT_HISTORY_LIMIT", "200"))
+
+
 async def _load_llm_history(conn, thread_id: str, exclude_id: str) -> list:
+    # Fetch the most-recent N messages to bound memory usage, then re-order
+    # chronologically so the LLM receives them oldest-first.
     rows = await conn.fetch(
         """
         SELECT role, content, tool_calls, tool_call_id, is_error
-        FROM chat_messages
-        WHERE thread_id = $1 AND id <> $2
+        FROM (
+            SELECT role, content, tool_calls, tool_call_id, is_error, created_at
+            FROM chat_messages
+            WHERE thread_id = $1 AND id <> $2
+            ORDER BY created_at DESC
+            LIMIT $3
+        ) sub
         ORDER BY created_at ASC
         """,
-        thread_id, exclude_id,
+        thread_id, exclude_id, _CHAT_HISTORY_LIMIT,
     )
     out = []
     for row in rows:
@@ -4360,7 +4370,10 @@ async def put_chunk(
         if len(body) > chunk_slack:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="chunk too large")
 
-        await storage.put_chunk(row["storage_key"], n, io.BytesIO(body))
+        await storage.put_chunk(
+            row["storage_key"], n, io.BytesIO(body),
+            conn=conn, session_id=row["id"],
+        )
 
         received_chunks = list(row["received_chunks"]) if row["received_chunks"] else []
         if n not in received_chunks:
@@ -4514,7 +4527,10 @@ async def finalize_upload(
         storage = get_storage_required()
 
         final_key = f"projects/{pid}/assets/{uuid.uuid4()}-{row['filename']}"
-        size = await storage.concat_chunks_to(row["storage_key"], final_key)
+        size = await storage.concat_chunks_to(
+            row["storage_key"], final_key,
+            conn=conn, session_id=row["id"],
+        )
 
         mime_type = row["mime"] or "model/step"
 

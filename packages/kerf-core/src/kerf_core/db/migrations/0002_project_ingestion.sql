@@ -69,6 +69,13 @@ create table if not exists upload_sessions (
     received_chunks int[] not null default '{}',
     bytes_received bigint not null default 0,
     complete boolean not null default false,
+    -- S3 multipart state folded here so multi-replica deploys share it via DB.
+    -- s3_upload_id: the AWS multipart UploadId returned by CreateMultipartUpload.
+    -- s3_parts: JSON array of {"ETag": "...", "PartNumber": N} objects, one per
+    --   successfully uploaded part.  NULL for local-storage uploads.
+    s3_upload_id text,
+    s3_parts jsonb not null default '[]'::jsonb,
+    s3_temp_key text,
     created_at timestamptz not null default now(),
     expires_at timestamptz not null default now() + interval '24 hours'
 );

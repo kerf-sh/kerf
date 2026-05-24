@@ -124,3 +124,62 @@ async def cleanup_expired_upload_sessions(
     )
     count = int(result.split(" ")[1]) if result.startswith("DELETE ") else 0
     return count
+
+
+# ---------------------------------------------------------------------------
+# S3 multipart state helpers (DB-backed, safe under horizontal scale)
+# ---------------------------------------------------------------------------
+
+async def init_s3_multipart(
+    conn: asyncpg.Connection,
+    session_id: uuid.UUID,
+    s3_upload_id: str,
+    s3_temp_key: str,
+) -> None:
+    """Record the S3 multipart upload_id and temp key against an upload session."""
+    await conn.execute(
+        """
+        UPDATE upload_sessions
+        SET s3_upload_id = $2, s3_temp_key = $3, s3_parts = '[]'::jsonb
+        WHERE id = $1
+        """,
+        session_id, s3_upload_id, s3_temp_key,
+    )
+
+
+async def append_s3_part(
+    conn: asyncpg.Connection,
+    session_id: uuid.UUID,
+    part_number: int,
+    etag: str,
+) -> None:
+    """Append a completed part record to the session's s3_parts array."""
+    await conn.execute(
+        """
+        UPDATE upload_sessions
+        SET s3_parts = s3_parts || jsonb_build_object('PartNumber', $2, 'ETag', $3)::jsonb
+        WHERE id = $1
+        """,
+        session_id, part_number, etag,
+    )
+
+
+async def get_s3_multipart_state(
+    conn: asyncpg.Connection,
+    session_id: uuid.UUID,
+) -> Optional[Dict[str, Any]]:
+    """Return {'upload_id': str, 'temp_key': str, 'parts': list} or None."""
+    row = await conn.fetchrow(
+        "SELECT s3_upload_id, s3_temp_key, s3_parts FROM upload_sessions WHERE id = $1",
+        session_id,
+    )
+    if not row or not row["s3_upload_id"]:
+        return None
+    import json as _json
+    parts_raw = row["s3_parts"]
+    parts = _json.loads(parts_raw) if isinstance(parts_raw, (str, bytes)) else (parts_raw or [])
+    return {
+        "upload_id": row["s3_upload_id"],
+        "temp_key": row["s3_temp_key"],
+        "parts": parts,
+    }

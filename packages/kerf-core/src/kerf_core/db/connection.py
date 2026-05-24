@@ -61,14 +61,27 @@ async def transaction():
 
 
 async def create_pool_from_config(config) -> asyncpg.Pool:
-    """Open and cache an asyncpg pool using a kerf_core Config/Settings instance."""
+    """Open and cache an asyncpg pool using a kerf_core Config/Settings instance.
+
+    Pool size is resolved from (in priority order):
+    1. ``KERF_DB_MAX_CONNS`` environment variable
+    2. ``config.db_max_conns`` attribute (if present)
+    3. Default of 10
+    """
+    import os as _os
     global _pool
     if not getattr(config, "database_url", ""):
         raise ValueError("Config.database_url is required but not set")
+
+    try:
+        max_size = int(_os.environ.get("KERF_DB_MAX_CONNS", "") or getattr(config, "db_max_conns", 10))
+    except (ValueError, TypeError):
+        max_size = 10
+
     pool = await asyncpg.create_pool(
         config.database_url,
         min_size=2,
-        max_size=10,
+        max_size=max_size,
         command_timeout=60,
         timeout=10,
     )

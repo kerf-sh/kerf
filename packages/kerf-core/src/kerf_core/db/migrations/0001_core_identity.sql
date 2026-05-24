@@ -184,6 +184,7 @@ create index if not exists files_storage_key_idx on files(storage_key);
 create index if not exists files_deleted_at_idx on files(deleted_at);
 create index if not exists files_extension_idx on files(extension);
 create index if not exists files_created_by_idx on files(created_by);
+create index if not exists files_kind_idx on files(kind);
 
 create table if not exists file_revisions (
     id uuid primary key default gen_random_uuid(),

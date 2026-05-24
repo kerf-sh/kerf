@@ -107,30 +107,62 @@ class S3Storage(Storage):
         return base
 
     async def put_chunk(
-        self, upload_key: str, chunk_index: int, body: IO[bytes]
+        self,
+        upload_key: str,
+        chunk_index: int,
+        body: IO[bytes],
+        *,
+        conn=None,
+        session_id=None,
     ) -> None:
         if chunk_index < 0:
             raise ValueError("Negative chunk index")
 
-        await self._ensure_multipart(upload_key)
-
-        state = self._multipart[upload_key]
         content = body.read() if hasattr(body, "read") else body
-
         part_number = chunk_index + 1
-        response = await _run_sync(
-            self.client.upload_part,
-            Bucket=self.bucket,
-            Key=state["dst_key"],
-            UploadId=state["upload_id"],
-            PartNumber=part_number,
-            Body=content,
-        )
 
-        state["parts"][chunk_index] = {
-            "ETag": response["ETag"],
-            "PartNumber": part_number,
-        }
+        if conn is not None and session_id is not None:
+            # DB-backed path: safe under horizontal scale.
+            from kerf_core.db.queries.upload_sessions import (
+                init_s3_multipart,
+                append_s3_part,
+                get_s3_multipart_state,
+            )
+            state = await get_s3_multipart_state(conn, session_id)
+            if state is None:
+                temp_key = self._temp_key(upload_key)
+                response = await _run_sync(
+                    self.client.create_multipart_upload, Bucket=self.bucket, Key=temp_key
+                )
+                upload_id = response["UploadId"]
+                await init_s3_multipart(conn, session_id, upload_id, temp_key)
+                state = {"upload_id": upload_id, "temp_key": temp_key, "parts": []}
+
+            part_response = await _run_sync(
+                self.client.upload_part,
+                Bucket=self.bucket,
+                Key=state["temp_key"],
+                UploadId=state["upload_id"],
+                PartNumber=part_number,
+                Body=content,
+            )
+            await append_s3_part(conn, session_id, part_number, part_response["ETag"])
+        else:
+            # Fallback: in-process dict (single-replica only).
+            await self._ensure_multipart(upload_key)
+            state = self._multipart[upload_key]
+            response = await _run_sync(
+                self.client.upload_part,
+                Bucket=self.bucket,
+                Key=state["dst_key"],
+                UploadId=state["upload_id"],
+                PartNumber=part_number,
+                Body=content,
+            )
+            state["parts"][chunk_index] = {
+                "ETag": response["ETag"],
+                "PartNumber": part_number,
+            }
 
     async def list_chunks(self, upload_key: str) -> list[int]:
         state = self._multipart.get(upload_key)
@@ -138,18 +170,29 @@ class S3Storage(Storage):
             return []
         return sorted(state["parts"].keys())
 
-    async def concat_chunks_to(self, upload_key: str, dst_key: str) -> int:
-        state = self._multipart.get(upload_key)
-        if not state:
-            raise ValueError(f"No multipart state for upload {upload_key}")
-
-        indices = sorted(state["parts"].keys())
-        if not indices:
-            raise ValueError(f"No parts uploaded for {upload_key}")
-
-        parts = [state["parts"][idx] for idx in indices]
-        temp_key = state["dst_key"]
-        upload_id = state["upload_id"]
+    async def concat_chunks_to(self, upload_key: str, dst_key: str, *, conn=None, session_id=None) -> int:
+        if conn is not None and session_id is not None:
+            # DB-backed path.
+            from kerf_core.db.queries.upload_sessions import get_s3_multipart_state
+            state_db = await get_s3_multipart_state(conn, session_id)
+            if not state_db:
+                raise ValueError(f"No DB multipart state for upload {upload_key}")
+            parts = sorted(state_db["parts"], key=lambda p: p["PartNumber"])
+            if not parts:
+                raise ValueError(f"No parts uploaded for {upload_key}")
+            temp_key = state_db["temp_key"]
+            upload_id = state_db["upload_id"]
+        else:
+            # Fallback: in-process dict.
+            state = self._multipart.get(upload_key)
+            if not state:
+                raise ValueError(f"No multipart state for upload {upload_key}")
+            indices = sorted(state["parts"].keys())
+            if not indices:
+                raise ValueError(f"No parts uploaded for {upload_key}")
+            parts = [state["parts"][idx] for idx in indices]
+            temp_key = state["dst_key"]
+            upload_id = state["upload_id"]
 
         await _run_sync(
             self.client.complete_multipart_upload,
@@ -171,7 +214,8 @@ class S3Storage(Storage):
         head = await _run_sync(self.client.head_object, Bucket=self.bucket, Key=dst_key)
         size = head.get("ContentLength", 0)
 
-        del self._multipart[upload_key]
+        if conn is None or session_id is None:
+            self._multipart.pop(upload_key, None)
         return size
 
     async def delete_prefix(self, prefix: str) -> int:

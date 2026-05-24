@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime
-from typing import IO, AsyncIterator
+from typing import IO, AsyncIterator, Optional, Any
 
 
 @dataclass
@@ -31,14 +31,27 @@ class Storage(ABC):
 
     @abstractmethod
     async def put_chunk(
-        self, upload_key: str, chunk_index: int, body: IO[bytes]
+        self,
+        upload_key: str,
+        chunk_index: int,
+        body: IO[bytes],
+        *,
+        conn: Optional[Any] = None,
+        session_id: Optional[Any] = None,
     ) -> None: ...
 
     @abstractmethod
     async def list_chunks(self, upload_key: str) -> list[int]: ...
 
     @abstractmethod
-    async def concat_chunks_to(self, upload_key: str, dst_key: str) -> int: ...
+    async def concat_chunks_to(
+        self,
+        upload_key: str,
+        dst_key: str,
+        *,
+        conn: Optional[Any] = None,
+        session_id: Optional[Any] = None,
+    ) -> int: ...
 
     @abstractmethod
     async def delete_upload(self, upload_key: str) -> None: ...

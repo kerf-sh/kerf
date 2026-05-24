@@ -24,10 +24,11 @@ import structlog
 import os
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from kerf_core.config import Config
 from kerf_core.plugin import (
@@ -56,6 +57,35 @@ def _wire_storage(config):
 
 
 logger: structlog.BoundLogger = structlog.get_logger("kerf_core.app")
+
+# Default 200 MB; configurable via KERF_MAX_BODY_BYTES.
+_DEFAULT_MAX_BODY_BYTES = 200 * 1024 * 1024
+
+
+class _BodySizeLimitMiddleware(BaseHTTPMiddleware):
+    """Reject requests whose Content-Length exceeds the configured cap.
+
+    Uses the Content-Length header for a fast early reject (before reading
+    the body). Streaming uploads without Content-Length are not checked here;
+    they are bounded at the application layer (chunked-upload routes).
+    """
+
+    def __init__(self, app, max_bytes: int = _DEFAULT_MAX_BODY_BYTES):
+        super().__init__(app)
+        self.max_bytes = max_bytes
+
+    async def dispatch(self, request: Request, call_next):
+        cl = request.headers.get("content-length")
+        if cl is not None:
+            try:
+                if int(cl) > self.max_bytes:
+                    return JSONResponse(
+                        {"detail": f"Request body too large (max {self.max_bytes} bytes)"},
+                        status_code=413,
+                    )
+            except ValueError:
+                pass
+        return await call_next(request)
 
 
 def create_app(config: Config | None = None, config_path: str = "") -> FastAPI:
@@ -95,6 +125,12 @@ def create_app(config: Config | None = None, config_path: str = "") -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    try:
+        _max_body = int(os.environ.get("KERF_MAX_BODY_BYTES", "") or _DEFAULT_MAX_BODY_BYTES)
+    except (ValueError, TypeError):
+        _max_body = _DEFAULT_MAX_BODY_BYTES
+    app.add_middleware(_BodySizeLimitMiddleware, max_bytes=_max_body)
 
     app.state.config = config
     app.state.loaded_plugins: list[PluginManifest] = []
