@@ -54,149 +54,23 @@ import math
 import warnings as _warnings_module
 from typing import List, Optional, Tuple
 
+from kerf_cad_core._linalg import (
+    identity4 as _identity4,
+    mat4_mul as _mat4_mul,
+    mat4_col as _mat4_col,
+    cross3 as _cross3,
+    dot3 as _dot3,
+    norm3 as _norm3,
+    mat_mul_rect as _mat_mul_rect,
+    mat_transpose as _mat_transpose,
+    det_square as _det_square,
+)
+
 # ---------------------------------------------------------------------------
-# Internal matrix helpers (pure-Python 4×4 matrices as list-of-lists)
+# Type alias kept for local annotations
 # ---------------------------------------------------------------------------
 
 _Mat4 = List[List[float]]
-
-
-def _identity4() -> _Mat4:
-    """Return a 4×4 identity matrix."""
-    return [
-        [1.0, 0.0, 0.0, 0.0],
-        [0.0, 1.0, 0.0, 0.0],
-        [0.0, 0.0, 1.0, 0.0],
-        [0.0, 0.0, 0.0, 1.0],
-    ]
-
-
-def _mat4_mul(A: _Mat4, B: _Mat4) -> _Mat4:
-    """Multiply two 4×4 matrices."""
-    C = [[0.0] * 4 for _ in range(4)]
-    for i in range(4):
-        for j in range(4):
-            s = 0.0
-            for k in range(4):
-                s += A[i][k] * B[k][j]
-            C[i][j] = s
-    return C
-
-
-def _mat4_col(T: _Mat4, j: int) -> List[float]:
-    """Extract column j (0-indexed) from a 4×4 matrix as a list."""
-    return [T[i][j] for i in range(4)]
-
-
-def _cross3(a: List[float], b: List[float]) -> List[float]:
-    """Cross product of two 3-vectors."""
-    return [
-        a[1] * b[2] - a[2] * b[1],
-        a[2] * b[0] - a[0] * b[2],
-        a[0] * b[1] - a[1] * b[0],
-    ]
-
-
-def _dot3(a: List[float], b: List[float]) -> float:
-    return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
-
-
-def _norm3(v: List[float]) -> float:
-    return math.sqrt(_dot3(v, v))
-
-
-def _mat_det3x3(m: List[List[float]]) -> float:
-    """Determinant of a 3×3 matrix (row-major list-of-lists)."""
-    a, b, c = m[0], m[1], m[2]
-    return (
-        a[0] * (b[1] * c[2] - b[2] * c[1])
-        - a[1] * (b[0] * c[2] - b[2] * c[0])
-        + a[2] * (b[0] * c[1] - b[1] * c[0])
-    )
-
-
-def _mat_mul_rect(A: List[List[float]], B: List[List[float]]) -> List[List[float]]:
-    """Multiply an (m×n) by (n×p) matrix."""
-    m = len(A)
-    n = len(A[0])
-    p = len(B[0])
-    C = [[0.0] * p for _ in range(m)]
-    for i in range(m):
-        for j in range(p):
-            s = 0.0
-            for k in range(n):
-                s += A[i][k] * B[k][j]
-            C[i][j] = s
-    return C
-
-
-def _mat_transpose(A: List[List[float]]) -> List[List[float]]:
-    rows, cols = len(A), len(A[0])
-    return [[A[r][c] for r in range(rows)] for c in range(cols)]
-
-
-def _det_6x6(M: List[List[float]]) -> float:
-    """
-    Determinant of a 6×6 matrix via cofactor expansion.
-    Used for Yoshikawa manipulability on the 6×6 product J·J^T.
-    Efficient enough for 6×6 (pure-Python, small constant size).
-    Uses LU decomposition (Gaussian elimination).
-    """
-    n = 6
-    # Copy
-    A = [row[:] for row in M]
-    det = 1.0
-    for col in range(n):
-        # Find pivot
-        max_row = col
-        max_val = abs(A[col][col])
-        for row in range(col + 1, n):
-            if abs(A[row][col]) > max_val:
-                max_val = abs(A[row][col])
-                max_row = row
-        if max_row != col:
-            A[col], A[max_row] = A[max_row], A[col]
-            det *= -1.0
-        pivot = A[col][col]
-        if abs(pivot) < 1e-15:
-            return 0.0
-        det *= pivot
-        for row in range(col + 1, n):
-            factor = A[row][col] / pivot
-            for k in range(col, n):
-                A[row][k] -= factor * A[col][k]
-    return det
-
-
-def _det_square(M: List[List[float]]) -> float:
-    """Determinant of an n×n matrix (Gaussian elimination)."""
-    n = len(M)
-    if n == 3:
-        return _mat_det3x3(M)
-    if n == 6:
-        return _det_6x6(M)
-    # General
-    A = [row[:] for row in M]
-    det = 1.0
-    for col in range(n):
-        max_row = col
-        max_val = abs(A[col][col])
-        for row in range(col + 1, n):
-            if abs(A[row][col]) > max_val:
-                max_val = abs(A[row][col])
-                max_row = row
-        if max_row != col:
-            A[col], A[max_row] = A[max_row], A[col]
-            det *= -1.0
-        pivot = A[col][col]
-        if abs(pivot) < 1e-15:
-            return 0.0
-        det *= pivot
-        for row in range(col + 1, n):
-            factor = A[row][col] / pivot
-            for k in range(col, n):
-                A[row][k] -= factor * A[col][k]
-    return det
 
 
 # ---------------------------------------------------------------------------

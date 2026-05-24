@@ -40,117 +40,19 @@ import math
 from dataclasses import dataclass, field
 from typing import Any
 
-
-# ---------------------------------------------------------------------------
-# Small dense linear algebra (pure Python, no numpy/scipy dependency)
-# ---------------------------------------------------------------------------
-
-def _dot(A: list[list[float]], B: list[list[float]]) -> list[list[float]]:
-    """Matrix multiply A (m×k) @ B (k×n) → (m×n)."""
-    m, k = len(A), len(A[0])
-    n = len(B[0])
-    C = [[0.0] * n for _ in range(m)]
-    for i in range(m):
-        for j in range(n):
-            s = 0.0
-            for p in range(k):
-                s += A[i][p] * B[p][j]
-            C[i][j] = s
-    return C
-
-
-def _matvec(A: list[list[float]], x: list[float]) -> list[float]:
-    """Matrix-vector product A (m×n) @ x (n,) → (m,)."""
-    m = len(A)
-    n = len(x)
-    y = [0.0] * m
-    for i in range(m):
-        s = 0.0
-        for j in range(n):
-            s += A[i][j] * x[j]
-        y[i] = s
-    return y
-
-
-def _transpose(A: list[list[float]]) -> list[list[float]]:
-    if not A:
-        return []
-    m, n = len(A), len(A[0])
-    return [[A[i][j] for i in range(m)] for j in range(n)]
-
-
-def _vecadd(a: list[float], b: list[float]) -> list[float]:
-    return [a[i] + b[i] for i in range(len(a))]
-
-
-def _vecsub(a: list[float], b: list[float]) -> list[float]:
-    return [a[i] - b[i] for i in range(len(a))]
-
-
-def _vecscale(s: float, a: list[float]) -> list[float]:
-    return [s * v for v in a]
-
-
-def _vecdot(a: list[float], b: list[float]) -> float:
-    return sum(ai * bi for ai, bi in zip(a, b))
-
-
-def _vecnorm(a: list[float]) -> float:
-    return math.sqrt(sum(v * v for v in a))
-
-
-def _zeros(n: int) -> list[float]:
-    return [0.0] * n
-
-
-def _eye(n: int) -> list[list[float]]:
-    I = [[0.0] * n for _ in range(n)]
-    for i in range(n):
-        I[i][i] = 1.0
-    return I
-
-
-def _lu_solve(A: list[list[float]], b: list[float]) -> list[float] | None:
-    """
-    Solve Ax = b via LU decomposition with partial pivoting.
-    Returns None if the system is singular (|pivot| < 1e-14).
-    A is modified in-place.
-    """
-    n = len(A)
-    # Work on copies to avoid modifying caller data
-    M = [row[:] for row in A]
-    r = b[:]
-    perm = list(range(n))
-
-    for col in range(n):
-        # Find pivot
-        max_val = abs(M[col][col])
-        max_row = col
-        for row in range(col + 1, n):
-            if abs(M[row][col]) > max_val:
-                max_val = abs(M[row][col])
-                max_row = row
-        if max_val < 1e-14:
-            return None
-        if max_row != col:
-            M[col], M[max_row] = M[max_row], M[col]
-            r[col], r[max_row] = r[max_row], r[col]
-        pivot = M[col][col]
-        for row in range(col + 1, n):
-            factor = M[row][col] / pivot
-            M[row][col] = factor
-            for k in range(col + 1, n):
-                M[row][k] -= factor * M[col][k]
-            r[row] -= factor * r[col]
-
-    # Back-substitution
-    x = [0.0] * n
-    for i in range(n - 1, -1, -1):
-        s = r[i]
-        for j in range(i + 1, n):
-            s -= M[i][j] * x[j]
-        x[i] = s / M[i][i]
-    return x
+from kerf_cad_core._linalg import (
+    matmul as _dot,
+    matvec as _matvec,
+    transpose as _transpose,
+    vadd as _vecadd,
+    vsub as _vecsub,
+    vscale as _vecscale,
+    vdot as _vecdot,
+    vnorm as _vecnorm,
+    zeros as _zeros,
+    eye as _eye,
+    lu_solve as _lu_solve,
+)
 
 
 # ---------------------------------------------------------------------------
