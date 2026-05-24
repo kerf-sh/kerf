@@ -189,14 +189,14 @@ The pure-Python kernel (`packages/kerf-cad-core/src/kerf_cad_core/geom/`) now ma
 
 | # | What | Why it matters | Status |
 |---|---|---|---|
-| **P0-5** | **Large-assembly performance ceiling** — measured budget + LOD / lazy-load for 1000s of parts. Automotive full-vehicle DMU is the extreme case. | First credibility block for automotive and large mechanical. | 🔴 not started |
-| **P0-6** | **Broaden text / code file support** — common text and code files open as editable text with syntax highlighting. | Every project benefits; gates firmware depth. | 🔴 not started |
-| **P0-7** | **Project export / materialize foundation** — plain file-tree for `kerf export` / `kerf import` / `kerf sync`. | The anti-lock-in guarantee's substrate. | 🔴 not started |
+| **P0-5** | **Large-assembly performance ceiling** — measured budget + LOD / lazy-load for 1000s of parts. Automotive full-vehicle DMU is the extreme case. | First credibility block for automotive and large mechanical. | 🚧 in flight — `assembly/perf.py`: LOD planner + lazy-load ordering + performance harness shipped; viewport integration + real-part catalogue pending — `kerf_cad_core/assembly/perf.py` |
+| **P0-6** | **Broaden text / code file support** — common text and code files open as editable text with syntax highlighting. | Every project benefits; gates firmware depth. | ✅ shipped — `FileEditor.jsx` + `editorModes.js`: 30+ extensions (Python, C/C++, JS/TS, Markdown, YAML, …) mapped to Monaco language IDs — `src/components/FileEditor.jsx` |
+| **P0-7** | **Project export / materialize foundation** — plain file-tree for `kerf export` / `kerf import` / `kerf sync`. | The anti-lock-in guarantee's substrate. | 🚧 in flight — `GET /projects/{pid}/export` ZIP route + `materialize_project_tree` shipped; bulk `POST /projects/import` endpoint deferred (file-by-file workaround works) — `kerf-api/routes.py`, `kerf-cli/portability.py` |
 | **P0-8** | **Testing / seeding / deploy-hardening** — broad test suites + realistic seed data + one-command local/dev loops. | Quality gate before broader build-out. | 🚧 in flight |
-| **P1-7** | **3D in-vehicle wiring harness** — route through DMU, bundle/segment/connector libs, formboard flatten, length/gauge/voltage-drop. | Closes the ECAD-to-harness loop. | 🔴 not started |
+| **P1-7** | **3D in-vehicle wiring harness** — route through DMU, bundle/segment/connector libs, formboard flatten, length/gauge/voltage-drop. | Closes the ECAD-to-harness loop. | 🚧 in flight — 3D polyline bundle routing + wire-gauge + length/voltage-drop shipped; formboard-flatten noted as T-37 follow-on — `kerf-wiring/tools/route_harness_3d.py`, `kerf-wiring/harness3d.py` |
 | **P1-8** | **Git-as-substrate with automatic large-file handling + free forks** — every project a stock-`git clone`-able repo; large/binary files auto-detected + kept in storage with a small in-git pointer; near-instant forks via shared content-addressed storage. | Own-your-data guarantee. | 🚧 in flight |
 | **P1-9** | **Unified `pip install kerf` client** — cloud-default, easy optional self-host; fail-fast on missing database URL. | Reach: one client for all install modes. | 🚧 in flight |
-| **P1-10** | **Local folder sync + export/import portability** — `kerf sync` two-way folder mirror; `kerf export` / `kerf import` plain file tree; symmetric cloud ↔ self-host. | Anti-lock-in, demonstrable not just promised. | 🔴 not started |
+| **P1-10** | **Local folder sync + export/import portability** — `kerf sync` two-way folder mirror; `kerf export` / `kerf import` plain file tree; symmetric cloud ↔ self-host. | Anti-lock-in, demonstrable not just promised. | 🚧 in flight — two-way sync daemon (one-shot + watch mode + OCC conflict detection) shipped; symmetric cloud↔self-host portability complete — `kerf-cli/sync.py`, `kerf-cli/portability.py` |
 | **GK-P** | **Geometry kernel parity series** — close the gap list from the multi-CAD survey (GK-01..GK-139 landed; wiring + foundational + SubD + architectural geometry remaining). | Every persona's work quality depends on kernel robustness. | 🚧 in flight |
 | **T-100** | **FEM matching CalculiX / Z88 / Mystran depth** — nonlinear, explicit, acoustics, EM, fatigue beyond the verified linear-static+modal+thermal slice. | Serious simulation work. | 🚧 in flight |
 | **T-101** | **CFD (CfdOF-class)** — turbulence models, 3-D unstructured meshing, OpenFOAM bridge beyond the 2-D laminar foundation. | Fluid and aero simulation. | 🚧 in flight |
@@ -210,20 +210,20 @@ The pure-Python kernel (`packages/kerf-cad-core/src/kerf_cad_core/geom/`) now ma
 
 | # | Gap | vs | Status |
 |---|---|---|---|
-| G-3 | **Interactive push-and-shove diff-pair tuning** — Kerf has length tuning only | KiCad / Altium | 🔴 not started |
-| G-4 | **Broader ECAD import** — Allegro / PADS / gEDA / Eagle v10 | Altium / Cadence | 🔴 not started |
+| G-3 | **Interactive push-and-shove diff-pair tuning** — full diff-pair routing, length-skew tuning, and push-shove | KiCad / Altium | ✅ shipped — `route_diff_pair` + `tune_diff_pair_skew` + `validate_diff_pair` + `push_shove_segment` — `kerf-electronics/routing/push_shove.py` |
+| G-4 | **Broader ECAD import** — Allegro / PADS / gEDA / Eagle v10 | Altium / Cadence | ✅ shipped — four dedicated readers with tests — `kerf-imports/src/kerf_imports/{allegro_reader,pads_reader,geda_reader,eagle_reader}.py` |
 | G-5 | **Kernel G3 / class-A leading** — wired G3 blends + curvature-comb + imprint | Alias / ICEM Surf | 🚧 in flight |
-| G-6 | **SubD authoring with creases + edit workflow** | Rhino 8 SubD | 🔴 not started |
-| G-7 | **Render: caustics + dispersion** — in-browser path-tracer + Blender Cycles spectral | Cycles / V-Ray / KeyShot | 🔴 not started |
-| G-8 | **Direct + parametric history coexistence** | Fusion / Inventor / Onshape | 🔴 not started |
-| G-9 | **Full joint system** — rigid/revolute/slider/cam/gear/pin-slot | Inventor / SolidWorks | 🔴 not started |
-| G-10 | **BIM parametric family authoring UX** | Revit | 🔴 not started |
-| G-11 | **BIM family library** — curated catalog | Revit | 🔴 not started |
-| G-12 | **BIM walls / doors / windows / slabs full parametric** | Revit | 🔴 not started |
-| G-13 | **BIM stairs / ramps full** | Revit | 🔴 not started |
-| G-14 | **BIM structural grid + framing** | Revit Structure / Tekla | 🔴 not started |
-| G-15 | **BIM site / earthwork (toposolids)** | Revit / Civil 3D | 🔴 not started |
-| G-16 | **BIM material catalogue with render appearance** | Revit / Enscape | 🔴 not started |
+| G-6 | **SubD authoring with creases + edit workflow** | Rhino 8 SubD | ✅ shipped — cage creation/extrude/bevel/loop-cut/slide/crease/bevel-weight + Catmull-Clark evaluation — `kerf-cad-core/geom/subd_authoring.py` |
+| G-7 | **Render: caustics + dispersion** — in-browser path-tracer + Blender Cycles spectral | Cycles / V-Ray / KeyShot | 🔴 not started — Cycles translator stashes Sellmeier/Abbe coefficients for downstream use but no caustic solver is wired; in-browser path-tracer not started |
+| G-8 | **Direct + parametric history coexistence** | Fusion / Inventor / Onshape | ✅ shipped — history mode (direct edit promoted to DAG feature node, replays on upstream changes) + in-place mode; 30+ tests — `kerf-cad-core/direct_edit.py`, `geom/history/direct_edit.py` |
+| G-9 | **Full joint system** — rigid/revolute/slider/cam/gear/pin-slot | Inventor / SolidWorks | ✅ shipped — all six joint types with analytic kinematics and drive support — `kerf-mates/joints.py` |
+| G-10 | **BIM parametric family authoring UX** | Revit | ✅ shipped — `FamilyTemplate` schema + expression evaluator + cycle detection + `generate_body` — `kerf-bim/family_authoring.py` |
+| G-11 | **BIM family library** — curated catalog | Revit | ✅ shipped — 40+ entries across Doors / Windows / Walls / Columns / MEP / Furniture categories — `kerf-bim/family_library.py`, `family_library_data.py` |
+| G-12 | **BIM walls / doors / windows / slabs full parametric** | Revit | ✅ shipped — `Door` + `Window` + `JambProfile` hosted in walls with IFC mapping; walls/slabs already in core BIM — `kerf-bim/openings.py` |
+| G-13 | **BIM stairs / ramps full** | Revit | ✅ shipped — multi-flight stairs + winder geometry + code-compliance (IBC/BS/SANS) + ramps + handrails + IFC export — `kerf-bim/stairs.py` |
+| G-14 | **BIM structural grid + framing** | Revit Structure / Tekla | ✅ shipped — `StructuralGrid` axes + `ColumnMember`/`BeamMember`/`ConnectionNode` snapped to grid + rebar + IFC mapping — `kerf-bim/grid.py`, `kerf-bim/framing.py` |
+| G-15 | **BIM site / earthwork (toposolids)** | Revit / Civil 3D | ✅ shipped — toposolid B-rep grading + IFC site export — `kerf-bim/tools/site_geometry.py`, `kerf-bim/site_ifc.py` |
+| G-16 | **BIM material catalogue with render appearance** | Revit / Enscape | ✅ shipped — 40+ materials with PBR properties (`base_color`, `metallic`, `roughness`, `ior`, `transmission`) wired to Cycles translator — `kerf-bim/material_catalogue.py` |
 
 ### Long-tail verticals
 
@@ -257,13 +257,50 @@ These are roadmap-level moats that span every sector simultaneously and compound
 |---|---|
 | **Generative / topology / multi-objective optimization** — manufacturing-constrained, multi-load-case, lattice-infill. Basic single-objective SIMP shipped; production-grade unbuilt. | 🚧 in flight |
 | **Simulation pillar** — nonlinear FEA, explicit dynamics / crash, fatigue & durability, CFD (full turbulence), low/high-frequency EM, acoustics FEM, coupled multiphysics. Linear-static + modal + steady thermal + CFD 2-D laminar shipped. | 🚧 in flight |
-| **Automatic Feature Recognition (AFR)** — turns any imported "dumb" STEP into an editable parametric feature tree; critical for the LLM to edit any model, not just ones authored in Kerf. | 🔴 not started |
+| **Automatic Feature Recognition (AFR)** — turns any imported "dumb" STEP into an editable parametric feature tree; critical for the LLM to edit any model, not just ones authored in Kerf. | 🚧 in flight — AAG-based classifier (through-hole, blind-hole, counterbore, countersink, pocket, slot, boss, fillet, chamfer, rib, step) shipped with tests; full topology ordering into a replay-able parametric tree is the remaining step — `kerf-cad-core/afr/recognize.py`, `geom/feature_recognition.py` |
 | **Knowledge-based engineering / code-compliance** — AISC/ACI/Eurocode/ASME/ISO rules driven directly by the model. Shipped: AISC 360-22 + ACI 318-19 + EC2/3/5/8 + NDS 2018 + ASCE 7-22 + ISO 6336 + IAPWS-IF97 + IEEE 1584 + IEC 60255. General KBE configurator layer unbuilt. | 🚧 in flight |
 | **3D tolerance / variation analysis** — statistical stack-up + contributor analysis. Shipped: 1D worst-case/RSS/Monte-Carlo + 3D vector-loop 6-DOF Jacobian. Full FEA-coupled variation simulation ahead. | 🚧 in flight |
 | **PLM depth** — configurator, 150% / effectivity BOM, where-used, ECR/ECO, digital thread, MBSE/SysML traceability. File revisions + cloud git + configurations + BOM rollup shipped (partial PLM). | 🚧 in flight |
-| **Multi-CAD interop & geometry healing** — STEP AP242 / JT / Parasolid / QIF + automatic repair. STEP I/O shipped; general heal unbuilt. | 🚧 in flight |
-| **Reverse-engineering pipeline** — point cloud → segmentation → feature fit → parametric solid. | 🔴 not started |
-| **Mechanism synthesis & motion** — linkage / cam / gear-train *synthesis*. Constraint solver shipped; synthesis unbuilt. | 🔴 not started |
+| **Multi-CAD interop & geometry healing** — STEP AP242 / JT / Parasolid / QIF + automatic repair. STEP + JT + Parasolid + QIF + 3DM I/O shipped; body-level geometric heal (vertex weld, sliver-gap close, sub-tolerance edge removal) shipped — `kerf-cad-core/geom/body_heal.py`, `kerf-imports/heal.py`. FEA-grade topology repair for severely degenerate STEP not yet covered. | 🚧 in flight |
+| **Reverse-engineering pipeline** — point cloud → segmentation → feature fit → parametric solid. | 🚧 in flight — full pipeline shipped: PLY/PCD I/O, outlier removal, sequential-RANSAC segmentation for plane/sphere/cylinder/cone/torus, feature-map classification, ICP mesh registration (dental) — `kerf-cad-core/reverse_engineering/pipeline.py`, `kerf-dental/registration.py`. Topology ordering + freeform NURBS fit deferred (depends on NURBS kernel). |
+| **Mechanism synthesis & motion** — linkage / cam / gear-train *synthesis*. | 🚧 in flight — four-bar (Burmester), cam-profile, and gear-train synthesis shipped with reference-oracle tests — `kerf-mates/synthesis/{fourbar,cam,gear_train}.py`. Multi-body dynamic simulation (kerf-motion integrator) also shipped. |
+
+---
+
+## Genuinely outstanding
+
+*Last verified: 2026-05-25 (status verify-pass against live codebase).* Items that are actually `🔴 not started` or meaningfully incomplete after the pass above.
+
+### Tractable soon (weeks, well-scoped)
+
+- **G-7 caustics + in-browser path-tracer** — Cycles spectral dispersion data (Sellmeier/Abbe) is stashed by the translator but no caustic solver is wired; in-browser WebGPU path-tracer not started.
+- **GK-P wiring** — expose shipped class-A math (G3 blends, zebra analyser, curvature-rate oracle) from `geom/__init__.py` / `surfacing.py`; mostly small plumbing tasks.
+- **P0-7 bulk import endpoint** — `POST /api/projects/import` (ZIP archive upload); workaround (file-by-file) exists; bulk path not yet implemented.
+- **P0-5 viewport integration** — LOD planner and lazy-load ordering are implemented in `assembly/perf.py` but not yet wired to the 3D viewport renderer.
+
+### Multi-month epics
+
+- **GK-P foundational kernel** — general solid boolean for NURBS-faced bodies; Stam limit-tangents + G1 at extraordinary SubD points; fractional creases; MatchSrf G3; analytic surface derivatives.
+- **GK-P construction verbs** — loft guide-rails; sheet-metal hem/jog/multi-flange; direct-edit delete-face + non-planar push-pull; weldment gussets/end-treatments; surface patch-from-points.
+- **GK-P SubD / mesh** — multires displacement; SDF CSG + marching-cubes; sculpt brush engine; LSCM UV unwrap (module exists, wiring incomplete).
+- **GK-P architectural geometry** — B-rep→2D tessellate; roof/curtain-wall/corridor generators; wall compound-layer offset; hatch/section-fill.
+- **GK-P sketcher** — collinear constraint; ellipse solver entity; G2 continuity.
+- **GK-P interop** — 3DM write with Hausdorff read→write→read oracle.
+- **T-100 FEM depth** — nonlinear static + explicit dynamics + acoustics FEM + EM + fatigue (multi-axial critical-plane shipped; coupled FEA-based variation not yet).
+- **T-101 CFD depth** — RANS turbulence models; 3-D unstructured meshing; OpenFOAM bridge.
+- **AFR topology ordering** — promote the AAG feature classifier output into a fully replay-able parametric DAG (depends on NURBS kernel completeness).
+- **Reverse-engineering freeform fit** — freeform NURBS surface fit from segmented point clouds; currently only analytic primitives (plane/sphere/cylinder/cone/torus).
+- **PLM configurator layer** — 150%/effectivity BOM, where-used, ECR/ECO workflow, MBSE/SysML traceability.
+- **KBE general configurator** — rule-driven design configurator layer on top of the existing standard-specific compliance engines.
+
+### Needs UI / deploy-gated
+
+- **P0-8 deploy-hardening** — realistic seed data + one-command dev loop; test coverage breadth still expanding.
+- **P1-7 formboard flatten** — harness 3D path routing is shipped; 2D formboard-flattening output (T-37 follow-on) not yet wired.
+- **P1-8 large-file git** — pointer kind + Phase 1 shipped; deduplication-based free-fork accounting and content-addressed LFS store in progress.
+- **Hosted infra GPU migration** — Cycles render cost; no self-host impact.
+- **G-5 class-A wiring** — math complete; frontend viewport toggle + imprint toolpath not yet exposed.
+- **Long-tail verticals** — see "Long-tail verticals" list above; all committed, none started.
 
 ---
 
