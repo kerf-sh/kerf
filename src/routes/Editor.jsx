@@ -61,6 +61,11 @@ import { isTextCodeFile } from '../lib/editorModes.js'
 import UnsavedRestoreBanner from '../components/UnsavedRestoreBanner.jsx'
 import Modal from '../components/Modal.jsx'
 import TopBarMoreMenu from '../components/TopBarMoreMenu.jsx'
+import CAMView from '../components/CAMView.jsx'
+import BIMView from '../components/BIMView.jsx'
+import AirfoilPolarPlot from '../components/AirfoilPolarPlot.jsx'
+import OrbitViewer from '../components/OrbitViewer.jsx'
+import { fetchAirfoilPolar } from '../lib/airfoilPolarBridge.js'
 
 // ---------------------------------------------------------------------------
 // Build3DDropdown — toolbar dropdown in the sketch header that scaffolds a
@@ -583,6 +588,34 @@ function isPrintFile(file) {
   return n.endsWith('.print')
 }
 
+function isCAMFile(file) {
+  if (!file) return false
+  if (file.kind === 'cam') return true
+  const n = (file.name || '').toLowerCase()
+  return n.endsWith('.cam')
+}
+
+function isBIMFile(file) {
+  if (!file) return false
+  if (file.kind === 'bim') return true
+  const n = (file.name || '').toLowerCase()
+  return n.endsWith('.bim')
+}
+
+function isAirfoilFile(file) {
+  if (!file) return false
+  if (file.kind === 'airfoil') return true
+  const n = (file.name || '').toLowerCase()
+  return n.endsWith('.airfoil')
+}
+
+function isOrbitFile(file) {
+  if (!file) return false
+  if (file.kind === 'orbit') return true
+  const n = (file.name || '').toLowerCase()
+  return n.endsWith('.orbit')
+}
+
 // ---------------------------------------------------------------------------
 // ActivityTimelineBody — the ActivityTimeline panel body without its own outer
 // drawer wrapper. Rendered inside the unified right drawer's content area when
@@ -598,6 +631,91 @@ function ActivityTimelineBody({ projectId }) {
       open={true}
       onClose={closeRightDrawer}
     />
+  )
+}
+
+// ---------------------------------------------------------------------------
+// AirfoilFileView — wrapper that parses a .airfoil JSON file and fetches
+// polar data from the aero endpoint before rendering AirfoilPolarPlot.
+//
+// .airfoil file shape (JSON):
+//   { airfoil: "naca0012", alpha_range: [-10, 15, 1] }
+// Falls back to showing the raw content as code when parsing fails.
+// ---------------------------------------------------------------------------
+function AirfoilFileView({ content, fileName }) {
+  const [polar, setPolar] = useState(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState(null)
+
+  useEffect(() => {
+    setPolar(null)
+    setError(null)
+    let cancelled = false
+    let parsed
+    try { parsed = JSON.parse(content || '{}') } catch { parsed = {} }
+    const airfoil = parsed.airfoil || ''
+    const alphaRange = Array.isArray(parsed.alpha_range) ? parsed.alpha_range : [-10, 15, 1]
+    if (!airfoil) return
+    setLoading(true)
+    fetchAirfoilPolar(airfoil, alphaRange)
+      .then((data) => { if (!cancelled) { setPolar(data); setLoading(false) } })
+      .catch((err) => { if (!cancelled) { setError(err?.message || String(err)); setLoading(false) } })
+    return () => { cancelled = true }
+  }, [content])
+
+  return (
+    <div className="flex-1 min-h-0 overflow-auto flex flex-col items-center justify-center gap-4 p-6 bg-ink-950">
+      <div className="text-[11px] text-ink-500 font-mono mb-2">{fileName || ''}</div>
+      {loading && (
+        <div className="flex items-center gap-2 text-ink-400 text-sm">
+          <div className="w-4 h-4 border-2 border-kerf-400 border-t-transparent rounded-full animate-spin" />
+          Computing polar…
+        </div>
+      )}
+      {error && (
+        <div className="text-red-400 text-xs font-mono max-w-sm text-center">{error}</div>
+      )}
+      {polar && (
+        <AirfoilPolarPlot polar={polar} showCD width={560} height={340} />
+      )}
+      {!loading && !polar && !error && (
+        <div className="text-ink-500 text-xs">
+          Set <code className="font-mono bg-ink-800 px-1 rounded">airfoil</code> in the file to load polar data.
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// OrbitFileView — wrapper that parses a .orbit JSON file and renders the
+// satellite trajectory using OrbitViewer.
+//
+// .orbit file shape (JSON):
+//   { trajectory: [{x, y, z}, ...] }   — pre-propagated IJK points (km)
+//   OR
+//   { elements: { a, e, i, Omega, omega, nu0, duration_s, n_steps } }
+//   (future: fetch from /api/aero/orbit/propagate via orbitBridge)
+//
+// Currently renders whatever trajectory array is present in the file.
+// ---------------------------------------------------------------------------
+function OrbitFileView({ content, fileName }) {
+  let parsed = {}
+  try { parsed = JSON.parse(content || '{}') } catch { /* ignore */ }
+  const trajectory = Array.isArray(parsed.trajectory) ? parsed.trajectory : []
+
+  return (
+    <div className="flex-1 min-h-0 overflow-auto flex flex-col items-center justify-center gap-4 p-6 bg-ink-950">
+      <div className="text-[11px] text-ink-500 font-mono mb-2">{fileName || ''}</div>
+      {trajectory.length === 0 ? (
+        <div className="text-ink-500 text-xs text-center max-w-xs">
+          No trajectory data yet. Add a <code className="font-mono bg-ink-800 px-1 rounded">trajectory</code> array
+          (IJK km points) or use the LLM tool to propagate an orbit.
+        </div>
+      ) : (
+        <OrbitViewer trajectory={trajectory} width={600} height={400} />
+      )}
+    </div>
   )
 }
 
@@ -677,6 +795,10 @@ export default function Editor() {
     if (isPLCFile(w.currentFile)) return
     if (isQuadMeshFile(w.currentFile)) return
     if (isPrintFile(w.currentFile)) return
+    if (isCAMFile(w.currentFile)) return
+    if (isBIMFile(w.currentFile)) return
+    if (isAirfoilFile(w.currentFile)) return
+    if (isOrbitFile(w.currentFile)) return
     if (runTimerRef.current) clearTimeout(runTimerRef.current)
     const code = w.currentFileContent
     const delay = runDebounceFor(code)
@@ -1132,6 +1254,10 @@ export default function Editor() {
   }, [femFile, w.parts])
 
   const printFile = isPrintFile(w.currentFile)
+  const camFile = isCAMFile(w.currentFile)
+  const bimFile = isBIMFile(w.currentFile)
+  const airfoilFile = isAirfoilFile(w.currentFile)
+  const orbitFile = isOrbitFile(w.currentFile)
   // T-116: plain-text / code files — matched by extension via editorModes.js.
   // Must be checked AFTER all dedicated-extension checks above so that e.g.
   // a .json family file is not accidentally grabbed by the plain editor.
@@ -1803,6 +1929,8 @@ export default function Editor() {
                 viewRef={currentViewRef}
                 content={w.currentFileContent}
                 fileName={w.currentFile?.name}
+                projectId={projectId}
+                fileId={w.currentFileId}
               />
               {w.toast && (
                 <div className="absolute bottom-3 right-3 z-20 px-3 py-2 rounded-md bg-ink-900 border border-kerf-300/60 text-kerf-300 text-xs shadow-xl"
@@ -1811,6 +1939,46 @@ export default function Editor() {
                 </div>
               )}
             </div>
+          ) : camFile ? (
+            <div className="flex-1 min-h-0 overflow-y-auto p-3">
+              <CAMView
+                viewRef={currentViewRef}
+                file={w.currentFile}
+                projectId={projectId}
+              />
+              {w.toast && (
+                <div className="absolute bottom-3 right-3 z-20 px-3 py-2 rounded-md bg-ink-900 border border-kerf-300/60 text-kerf-300 text-xs shadow-xl"
+                  onClick={() => w.dismissToast()}>
+                  {w.toast}
+                </div>
+              )}
+            </div>
+          ) : bimFile ? (
+            <div className="flex-1 min-h-0 relative">
+              <BIMView
+                viewRef={currentViewRef}
+                ifc_base64={null}
+                className="w-full h-full"
+              />
+              {w.toast && (
+                <div className="absolute bottom-3 right-3 z-20 px-3 py-2 rounded-md bg-ink-900 border border-kerf-300/60 text-kerf-300 text-xs shadow-xl"
+                  onClick={() => w.dismissToast()}>
+                  {w.toast}
+                </div>
+              )}
+            </div>
+          ) : airfoilFile ? (
+            <AirfoilFileView
+              viewRef={currentViewRef}
+              content={w.currentFileContent}
+              fileName={w.currentFile?.name}
+            />
+          ) : orbitFile ? (
+            <OrbitFileView
+              viewRef={currentViewRef}
+              content={w.currentFileContent}
+              fileName={w.currentFile?.name}
+            />
           ) : printFile ? (
             <div className="flex-1 min-h-0 relative">
               <PrintSliceView

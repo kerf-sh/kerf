@@ -28,6 +28,7 @@ import { useEffect, useImperativeHandle, useRef, useState } from 'react'
 import { Activity, AlertTriangle, Box, Loader2, Play, Sigma } from 'lucide-react'
 import { useWorkspace } from '../store/workspace.js'
 import { snapshotCanvas } from '../lib/snapshotHelpers.js'
+import { api } from '../lib/api.js'
 
 const ENGINE_PENDING_WARNING = 'Engine pending — FEniCSx not yet deployed.'
 
@@ -109,7 +110,7 @@ export function addEnginePendingWarning(parsed) {
   }
 }
 
-export default function TopoView({ content, fileName, viewRef }) {
+export default function TopoView({ content, fileName, viewRef, projectId, fileId }) {
   const parsed = parseTopo(content || '')
   const [running, setRunning] = useState(false)
   const rootRef = useRef(null)
@@ -130,25 +131,36 @@ export default function TopoView({ content, fileName, viewRef }) {
     !parsed.spec.design_space_feature_path ||
     !parsed.spec.material_path
 
-  const onRun = () => {
+  const onRun = async () => {
     if (runDisabled) return
-    let doc
-    try {
-      doc = JSON.parse(content || '{}')
-    } catch (_e) {
-      useWorkspace.getState().toast = 'Cannot run topo: file is not valid JSON.'
-      return
-    }
-    const updated = addEnginePendingWarning(doc)
     setRunning(true)
     try {
-      useWorkspace.getState().editContent(JSON.stringify(updated, null, 2))
+      // POST to backend; if engine is pending the response carries
+      // { status: 'pending' } and we fall through to show the warning.
+      if (projectId && fileId) {
+        const result = await api.runTopo(projectId, fileId)
+        if (result?.status === 'pending') {
+          // Engine not deployed — update file with pending warning so
+          // the results panel reflects the ENGINE_PENDING state.
+          let doc
+          try { doc = JSON.parse(content || '{}') } catch { doc = {} }
+          const updated = addEnginePendingWarning(doc)
+          useWorkspace.getState().editContent(JSON.stringify(updated, null, 2))
+        }
+        // On success the backend writes results back into the file via the
+        // job system — no local update needed.
+      } else {
+        // No project context (e.g. storybook / test) — fall back to warning.
+        let doc
+        try { doc = JSON.parse(content || '{}') } catch { doc = {} }
+        const updated = addEnginePendingWarning(doc)
+        useWorkspace.getState().editContent(JSON.stringify(updated, null, 2))
+      }
     } catch (err) {
+      useWorkspace.getState().toast = err?.message || 'Failed to start topology run'
+    } finally {
       setRunning(false)
-      useWorkspace.getState().toast = err?.message || 'Failed to update topo file'
-      return
     }
-    setTimeout(() => setRunning(false), 500)
   }
 
   if (parsed.kind === 'invalid' || parsed.kind === 'unsupported') {

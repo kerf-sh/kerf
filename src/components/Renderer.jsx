@@ -1,10 +1,5 @@
-<<<<<<< HEAD
-import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
-import { Sun, SlidersHorizontal, Check, ChevronDown, MonitorX } from 'lucide-react'
-=======
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
-import { Sun, SlidersHorizontal, Check, ChevronDown } from 'lucide-react'
->>>>>>> fd0561b4 (feat(a11y): T-C5 canvas keyboard + SR affordance)
+import { Sun, SlidersHorizontal, Check, ChevronDown, MonitorX } from 'lucide-react'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { Line2 } from 'three/examples/jsm/lines/Line2.js'

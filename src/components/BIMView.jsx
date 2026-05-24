@@ -19,7 +19,7 @@ import { snapshotCanvas } from '../lib/snapshotHelpers.js'
 async function tryLoadDeps() {
   try {
     const [webifc, three] = await Promise.all([
-      import('web-ifc'),
+      /* @vite-ignore */ import('web-ifc'),
       import('three'),
     ])
     return { IfcAPI: webifc.IfcAPI, THREE: three }

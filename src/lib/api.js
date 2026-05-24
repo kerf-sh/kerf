@@ -613,6 +613,12 @@ export const api = {
       },
     }),
 
+  // ---- Topology optimisation run ----
+  // POSTs to the kerf-api thin handler which forwards to pyworker /run-topo.
+  // Returns { job_id, status } or { status: 'pending' } when engine not deployed.
+  runTopo: (projectId, fileId) =>
+    request(`/api/projects/${projectId}/files/${fileId}/topo/run`, { method: 'POST' }),
+
   // ---- Wiring diagram render ----
   // POSTs to the kerf-api thin handler which forwards to pyworker /run-wireviz.
   // Returns { svg: string|null, warnings: string[] }.

@@ -33,6 +33,11 @@ export default defineConfig(({ mode }) => {
       outDir: 'dist',
       emptyOutDir: true,
       rollupOptions: {
+        // web-ifc is an optional runtime dep for BIMView; it loads lazily via
+        // dynamic import and falls back gracefully when absent (BIMView shows
+        // an install-prompt stub). Mark it external so the build doesn't choke
+        // when the package isn't installed in the monorepo node_modules.
+        external: ['web-ifc'],
         output: {
           // Split the heaviest deps into their own chunks so first paint
           // doesn't drag in Monaco / three.js / JSCAD up-front. occt-import-js,

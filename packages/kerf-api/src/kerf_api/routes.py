@@ -6718,6 +6718,70 @@ async def admin_update_library_submission(
 
 
 # ---------------------------------------------------------------------------
+# Topology optimisation run
+# ---------------------------------------------------------------------------
+
+@router.post("/projects/{pid}/files/{fid}/topo/run")
+async def run_topo_proxy(pid: str, fid: str, request: Request, payload: dict = Depends(require_auth)):
+    """
+    Forward the .topo file's JSON spec to the pyworker /run-topo route.
+    Returns { job_id, status } or { status: 'pending' } when pyworker
+    is unavailable (engine not yet deployed).
+
+    The file must be of kind 'topo'.  Viewers and editors may trigger this.
+    """
+    user_id = payload.get("sub")
+
+    pool = await get_pool_required()
+    async with pool.acquire() as conn:
+        ws_id = await project_workspace_id(pid)
+        if not ws_id:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="project not found")
+
+        role = await get_user_workspace_role(conn, ws_id, user_id)
+        if not role:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="project not found")
+
+        row = await conn.fetchrow(
+            "SELECT kind, content FROM files WHERE id = $1 AND project_id = $2 AND deleted_at IS NULL",
+            fid, pid,
+        )
+        if not row:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="file not found")
+        if row["kind"] != "topo":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="file is not a .topo file",
+            )
+
+        try:
+            spec = json.loads(row["content"] or "{}")
+        except Exception:
+            spec = {}
+
+    spec["file_id"] = fid
+    spec["project_id"] = pid
+
+    pyworker_url = os.environ.get("PYWORKER_URL", "http://localhost:9090")
+    try:
+        import httpx as _httpx
+        async with _httpx.AsyncClient(timeout=120.0) as client:
+            resp = await client.post(
+                f"{pyworker_url}/run-topo",
+                json=spec,
+            )
+        if resp.status_code == 200:
+            return resp.json()
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"pyworker error: {resp.text[:300]}",
+        )
+    except _httpx.HTTPError:
+        # Engine not yet deployed — return pending status so the UI can
+        # show the ENGINE_PENDING warning instead of a hard error.
+        return {"status": "pending", "message": "Engine pending — FEniCSx not yet deployed."}
+
+
 # Wiring diagram run
 # ---------------------------------------------------------------------------
 
