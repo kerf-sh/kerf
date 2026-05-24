@@ -38,9 +38,9 @@ features:
       note: "Full sheet-metal workspace with flat-pattern, DXF"
       source: "https://cad.onshape.com/help/Content/sheetmetal.htm"
     kerf:
-      status: partial
-      note: "Flange+unfold+flat DXF; no hem/relief/jog/multi-flange"
-      evidence: "packages/kerf-cad-core/src/kerf_cad_core/surfacing.py"
+      status: yes
+      note: "Flange + hem + jog + multi-flange + unfold + flat DXF (K-factor); no auto corner-relief"
+      evidence: "packages/kerf-cad-core/src/kerf_cad_core/construction_verbs_tools.py"
 
   - domain: D1
     feature: "Assemblies — mates"
@@ -82,9 +82,9 @@ features:
       note: "Surface modelling tools in Part Studios"
       source: "https://www.onshape.com/en/features/surfacing"
     kerf:
-      status: partial
-      note: "Math complete; OCCT bindings unconfirmed at build"
-      evidence: "packages/kerf-cad-core/src/kerf_cad_core/surfacing.py"
+      status: yes
+      note: "blend_srf, network_srf (Gordon), patch_srf_fit, match_srf, G3 blends wired"
+      evidence: "packages/kerf-cad-core/src/kerf_cad_core/geom/network_srf.py"
 
   - domain: D1
     feature: "GD&T on drawings / MBD / PMI"
@@ -686,7 +686,7 @@ Onshape (PTC) pioneered cloud-native parametric CAD and remains the benchmark fo
 | Mobile / tablet editing | ✅ iOS / Android apps | ⚠️ Responsive browser; no dedicated mobile app |
 | Parametric B-rep | ✅ Mature Part Studios (OCCT underneath) | ✅ OCCT feature tree |
 | Constraint sketcher | ✅ Full parametric sketcher | ✅ Sketcher v2 — all major constraints |
-| Sheet metal | ✅ Full sheet-metal workspace | ✅ Flange + unfold + flat-pattern DXF |
+| Sheet metal | ✅ Full sheet-metal workspace | ✅ Flange + hem + jog + multi-flange + unfold + flat DXF |
 | Custom parametric features | ✅ FeatureScript (rich App Store ecosystem) | ✅ MIT kernel directly; open DAG |
 | Scripting / automation | ⚠️ FeatureScript only; REST API limited | ✅ kerf-sdk on PyPI — HTTP/JSON-RPC |
 | BYO LLM / AI | ❌ None | ✅ BYO key or hosted models |
