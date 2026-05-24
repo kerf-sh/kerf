@@ -1372,12 +1372,124 @@ def _surface_surface_intersect_impl(
     except Exception:
         pass
 
+    # ---- GK-P15: branch-stitching robustness pass ----
+    # Over-seeding (coarse + fine grids) and tangential degeneracies fragment a
+    # single intersection curve into several open sub-branches whose endpoints
+    # coincide.  Stitch any open branches that share an endpoint within the
+    # join tolerance into one ordered polyline, and re-detect loop closure on
+    # the stitched result.  This is the dominant SSI robustness defect on
+    # freeform×freeform fixtures.
+    branches = _stitch_branches(branches, actual_step)
+
     return {
         "ok": True,
         "reason": "",
         "branches": branches,
         "branch_count": len(branches),
     }
+
+
+# ---------------------------------------------------------------------------
+# GK-P15 — branch stitching (SSI robustness)
+# ---------------------------------------------------------------------------
+
+
+def _stitch_branches(branches: List[dict], step: float) -> List[dict]:
+    """Merge open branches whose endpoints coincide into single polylines.
+
+    Greedy endpoint-matching: repeatedly find two open branches whose any-pair
+    of endpoints are within ``join_tol`` and concatenate them (reversing as
+    needed) so the shared endpoint is the join.  After no more joins are
+    possible, a polyline whose two free ends meet within ``join_tol`` is
+    relabelled ``closed``.  Branches already flagged ``closed`` are passed
+    through untouched.
+    """
+    if len(branches) <= 1:
+        return branches
+
+    join_tol = max(step * 1.5, 1e-9)
+
+    closed = [b for b in branches if b.get("closed")]
+    open_b = [
+        {
+            "points": list(b["points"]),
+            "params_a": list(b["params_a"]),
+            "params_b": list(b["params_b"]),
+        }
+        for b in branches if not b.get("closed")
+    ]
+
+    def _p(b, idx):
+        return np.asarray(b["points"][idx], dtype=float)
+
+    changed = True
+    while changed and len(open_b) > 1:
+        changed = False
+        for i in range(len(open_b)):
+            for j in range(i + 1, len(open_b)):
+                bi, bj = open_b[i], open_b[j]
+                if len(bi["points"]) < 1 or len(bj["points"]) < 1:
+                    continue
+                ei0, ei1 = _p(bi, 0), _p(bi, -1)
+                ej0, ej1 = _p(bj, 0), _p(bj, -1)
+                # Four endpoint pairings; pick the closest under join_tol.
+                pairings = [
+                    (np.linalg.norm(ei1 - ej0), "tail-head"),
+                    (np.linalg.norm(ei1 - ej1), "tail-tail"),
+                    (np.linalg.norm(ei0 - ej0), "head-head"),
+                    (np.linalg.norm(ei0 - ej1), "head-tail"),
+                ]
+                d, how = min(pairings, key=lambda x: x[0])
+                if d > join_tol:
+                    continue
+
+                def _rev(b):
+                    return {
+                        "points": list(reversed(b["points"])),
+                        "params_a": list(reversed(b["params_a"])),
+                        "params_b": list(reversed(b["params_b"])),
+                    }
+
+                if how == "tail-head":
+                    merged_src = (bi, bj)
+                elif how == "tail-tail":
+                    merged_src = (bi, _rev(bj))
+                elif how == "head-head":
+                    merged_src = (_rev(bi), bj)
+                else:  # head-tail
+                    merged_src = (_rev(bi), _rev(bj))
+
+                first, second = merged_src
+                merged = {
+                    "points": first["points"] + second["points"][1:],
+                    "params_a": first["params_a"] + second["params_a"][1:],
+                    "params_b": first["params_b"] + second["params_b"][1:],
+                }
+                open_b = (
+                    [open_b[k] for k in range(len(open_b)) if k not in (i, j)]
+                    + [merged]
+                )
+                changed = True
+                break
+            if changed:
+                break
+
+    out: List[dict] = list(closed)
+    for b in open_b:
+        pts = b["points"]
+        is_closed = (
+            len(pts) >= 4
+            and float(np.linalg.norm(
+                np.asarray(pts[0], dtype=float) - np.asarray(pts[-1], dtype=float)
+            )) < join_tol
+        )
+        out.append({
+            "points": pts,
+            "params_a": b["params_a"],
+            "params_b": b["params_b"],
+            "closed": bool(is_closed),
+        })
+    return out
 
 
 # ---------------------------------------------------------------------------
