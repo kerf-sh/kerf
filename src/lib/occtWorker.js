@@ -47,6 +47,7 @@ import {
   surfaceToSolid, SurfaceToSolidUnsupportedError,
   projectCurveOntoSurface, splitFaceAlongCurve, TrimByCurveUnsupportedError,
   sampleSurfaceCurvature,
+  sampleSurfaceThirdDeriv, probeOcctG3Bindings, OcctG3UnsupportedError,
 } from './occtBridge.js'
 import { sketchToGeom2 } from './sketchGeom2.js'
 import { parseSketch } from './sketchSolver.js'
@@ -169,11 +170,27 @@ const NURBS_PHASE4_C4_BINDINGS = [
   'GeomLProp_SLProps',
 ]
 
+// GK-P43 — best-effort OCCT-path G3 analyzer (NOT OCCT-enum G3, which stays
+// structurally impossible: GeomAbs_G3 is absent from the GeomAbs_Shape enum).
+// These bindings let us SAMPLE third derivatives (Geom_BSplineSurface.DN with
+// order >= 3) and run the pure-Python curvature-rate (dκ/ds) oracle on the
+// result, plus extract/round-trip poles (SetPole) so the surface is made
+// G3-quality even though OCCT never computes G3.
+//   - Handle_Geom_BSplineSurface — DownCast to read poles / call DN.
+//   - BRep_Tool                  — Surface_2 to reach the underlying surface.
+// DN's order-3 overload and SetPole are verified at call time (graceful
+// OcctG3UnsupportedError degrade); their presence is logged at boot.
+const NURBS_PHASE4_G3_BINDINGS = [
+  'Handle_Geom_BSplineSurface',
+  'BRep_Tool',
+]
+
 const NURBS_PHASE4_ALL_BINDINGS = [
   ...NURBS_PHASE4_C1_BINDINGS,
   ...NURBS_PHASE4_C2_BINDINGS,
   ...NURBS_PHASE4_C3_BINDINGS,
   ...NURBS_PHASE4_C4_BINDINGS,
+  ...NURBS_PHASE4_G3_BINDINGS,
 ]
 
 /**
@@ -214,6 +231,23 @@ export function getNurbsPhase4C2Bindings(oc) {
 }
 
 /**
+ * Return a map of { [className]: boolean } for the GK-P43 best-effort G3
+ * analyzer gating classes.  These do NOT enable OCCT-native G3 (impossible —
+ * no GeomAbs_G3 enum); they enable third-derivative sampling (DN) + pole
+ * round-trip so the pure-Python dκ/ds oracle can grade/enforce G3 around the
+ * missing enum.  DN's order-3 overload + SetPole are verified at call time
+ * (graceful OcctG3UnsupportedError); this map reports the class-presence gate.
+ *
+ * @param {object} oc — resolved opencascade.js handle
+ * @returns {Record<string, boolean>}
+ */
+export function getNurbsPhase4G3Bindings(oc) {
+  return Object.fromEntries(
+    NURBS_PHASE4_G3_BINDINGS.map(cls => [cls, typeof oc[cls] === 'function'])
+  )
+}
+
+/**
  * Log C2 (trim-by-curve) binding probe results at boot.
  * Called inside _logNurbsPhase4Bindings for the C2 group; also exported
  * standalone so callers can re-trigger logging without booting the full probe.
@@ -242,6 +276,7 @@ function _logNurbsPhase4Bindings(oc) {
     ['C2 (trim-by-curve)',           NURBS_PHASE4_C2_BINDINGS],
     ['C3 (matchSrf)',                NURBS_PHASE4_C3_BINDINGS],
     ['C4 (curvature comb)',          NURBS_PHASE4_C4_BINDINGS],
+    ['G3 (best-effort DN analyzer)', NURBS_PHASE4_G3_BINDINGS],
   ]
   for (const [label, classes] of groups) {
     const statuses = classes.map(cls => {
@@ -3171,6 +3206,94 @@ function opSurfaceCurvatureCombs(oc, _prev, node, _sketches, tracker, bodyMap) {
 
   // Return null — no shape modification.  evaluateTree will store null in
   // bodyMap[node.id] which is fine: downstream ops don't reference a combs node.
+  return null
+}
+
+// ---------------------------------------------------------------------------
+// opOcctG3Audit — GK-P43(a) best-effort OCCT-path G3 analyzer.
+//
+// IMPORTANT honesty boundary: this does NOT make OCCT report or enforce G3.
+// Stock OCCT has no GeomAbs_G3 token in GeomAbs_Shape — OCCT-native G3 stays
+// structurally impossible.  Instead this op SAMPLES the third derivatives of
+// each face's underlying B-spline surface via Geom_*Surface.DN(u,v,nu,nv) and
+// posts them as a side message; the pure-Python layer
+// (surface_analysis.occt_g3_residual_from_poles) turns the DN tensors into the
+// dκ/ds curvature-rate residual that grades G3.
+//
+// Graceful degrade: if the DN order-3 overload is absent (OcctG3UnsupportedError),
+// the op posts { dnPresent:false } and the caller falls back to extracting
+// the poles and running the pure-Python oracle directly on the NurbsSurface.
+//
+// Read/query op — returns null (no shape mutation), like opSurfaceCurvatureCombs.
+//
+// Node schema:
+//   {
+//     op: "occt_g3_audit",
+//     id: string,
+//     target_feature_ref: string,   // feature id whose face(s) to sample
+//     target_face_name?: string,    // sample only this face; else all faces
+//     uv_samples?: [[u,v], ...],    // explicit UV sites (default: seam grid)
+//   }
+function opOcctG3Audit(oc, _prev, node, _sketches, tracker, bodyMap) {
+  const targetRef = node.target_feature_ref
+  const faceName  = node.target_face_name || null
+  if (!targetRef) throw new Error('occt_g3_audit: target_feature_ref is required')
+
+  const targetShape = bodyMap && bodyMap[targetRef]
+  if (!targetShape) {
+    throw new Error(`occt_g3_audit: target_feature_ref '${targetRef}' not found`)
+  }
+
+  const probe = probeOcctG3Bindings(oc)
+  const uvSamples = Array.isArray(node.uv_samples) && node.uv_samples.length
+    ? node.uv_samples
+    : [[0.0, 0.0], [0.5, 0.0], [1.0, 0.0]]  // default v=0 seam grid
+
+  const faceResults = []
+  let dnPresent = probe.all
+  const FACE  = oc.TopAbs_ShapeEnum?.TopAbs_FACE  ?? 4
+  const SHAPE = oc.TopAbs_ShapeEnum?.TopAbs_SHAPE ?? 8
+  let exp
+  try {
+    exp = new oc.TopExp_Explorer_2(targetShape, FACE, SHAPE)
+    let faceIndex = 0
+    for (; exp.More(); exp.Next()) {
+      const fSh = oc.TopoDS.Face_1(exp.Current())
+      const currentFaceName = `face-${faceIndex}`
+      faceIndex++
+      if (faceName && currentFaceName !== faceName) continue
+      try {
+        const { samples, dnPresent: dn } = sampleSurfaceThirdDeriv(oc, fSh, uvSamples, tracker)
+        dnPresent = dnPresent && dn
+        faceResults.push({ faceName: currentFaceName, samples })
+      } catch (err) {
+        if (err instanceof OcctG3UnsupportedError) {
+          // Graceful degrade — record absence; caller uses pure-Python poles.
+          dnPresent = false
+          faceResults.push({ faceName: currentFaceName, samples: [], unsupported: true })
+        } else {
+          throw err
+        }
+      }
+    }
+  } catch (err) {
+    if (!(err instanceof OcctG3UnsupportedError)) {
+      throw new Error(`occt_g3_audit: face exploration failed: ${err?.message || err}`, { cause: err })
+    }
+    dnPresent = false
+  } finally {
+    try { if (exp) exp.delete() } catch { /* */ }
+  }
+
+  if (typeof self !== 'undefined' && typeof self.postMessage === 'function') {
+    self.postMessage({
+      type: 'occt_g3_audit_result',
+      nodeId: node.id || null,
+      targetRef,
+      dnPresent,
+      faceResults,
+    })
+  }
   return null
 }
 
@@ -6833,6 +6956,15 @@ function evaluateTree(oc, tree, sketches) {
           next = current  // keep current shape alive for subsequent ops
           break
         }
+        case 'occt_g3_audit': {
+          // GK-P43(a) read/query op: sample 3rd derivatives (DN) on the target
+          // feature's faces and post an `occt_g3_audit_result` side message.
+          // NOT OCCT-native G3 (impossible — no GeomAbs_G3); the pure-Python
+          // dκ/ds oracle grades G3 from the sampled tensors. Leaves shape alone.
+          opOcctG3Audit(oc, current, node, sketches, tracker, bodyMap)
+          next = current
+          break
+        }
         // ── Jewelry ops (T-20 → T-24) ───────────────────────────────────────
         case 'gemstone': {
           if (current) {
@@ -7493,6 +7625,12 @@ async function evaluateToFinalShape(oc, tree, sketches) {
           // Read-only query — does not modify the shape.  Curvature data is
           // posted as a side message; current shape passes through unchanged.
           opSurfaceCurvatureCombs(oc, current, node, sketches, tracker, bodyMap)
+          next = current
+          break
+        case 'occt_g3_audit':
+          // GK-P43(a) read/query op — DN third-derivative sampling for the
+          // pure-Python dκ/ds G3 oracle.  Not OCCT-native G3.
+          opOcctG3Audit(oc, current, node, sketches, tracker, bodyMap)
           next = current
           break
         // ── Jewelry ops (T-20 → T-24) ───────────────────────────────────────

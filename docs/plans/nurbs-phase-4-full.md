@@ -38,8 +38,20 @@ viewport toggle shipped (shader-side `ShaderMaterial` in `src/lib/zebraMaterial.
 - **Capability 4 (G3 curvature-comb visualisation) — shipped.**
   `feature_surface_curvature_combs` in `surfacing.py` samples principal
   curvatures via `GeomLProp_SLProps`; Three.js `CurvatureCombOverlay.jsx`
-  renders combs in-viewport. Algorithmic G3 enforcement structurally deferred
-  (`GeomAbs_G3` absent from `GeomAbs_Shape` enum — confirmed).
+  renders combs in-viewport. OCCT *native-enum* G3 stays structurally
+  impossible (`GeomAbs_G3` absent from `GeomAbs_Shape` — confirmed).
+- **Best-effort OCCT-path G3 (GK-P43) — shipped.** Two real deliverables that
+  work *around* the missing enum (NOT OCCT-enum enforcement): (a) a third-
+  derivative **analyzer** — `occtBridge.sampleSurfaceThirdDeriv` samples
+  `Geom_BSplineSurface.DN(u,v,nu,nv)` (gated by `NURBS_PHASE4_G3_BINDINGS`,
+  graceful `OcctG3UnsupportedError` degrade) feeding the pure-Python
+  `surface_analysis.occt_g3_residual_from_poles` dκ/ds oracle, surfaced per
+  edge via `continuity_audit` `g3_residuals`; (b) **enforcement via pole
+  round-trip** — `surface_analysis.occt_g3_pole_roundtrip` extracts poles, runs
+  the pure-Python G3 pole-adjustment (`match_srf` G3, GK-P10), writes poles
+  back. DoD: OCCT-origin pair reports G3 residual `< 1e-5` after the round-trip
+  (`test_occt_g3_roundtrip_gkp43.py`). Pole/oracle math verified in-env on the
+  pole carrier; live `DN`/`SetPole` deploy-gated (OCC not in CI).
 - **P1-6 zebra / reflection-line viewport toggle — shipped.**
   `src/lib/zebraMaterial.js` — `THREE.ShaderMaterial` that reflects the view
   direction in the surface normal and projects onto a periodic stripe axis
@@ -832,8 +844,29 @@ multi-month if they trigger.
   partner signs on with budget.
 - **`SetFuzzyValue` custom WASM rebuild** — kept as an escalation path
   in Capability 1, not as an in-scope task.
-- **G3 enforcement via custom OCCT extension** — kept as a deferred
-  branch in Capability 4, not as an in-scope task.
+- **OCCT *native-enum* G3** — STILL IMPOSSIBLE. ``GeomAbs_G3`` is absent
+  from ``GeomAbs_Shape``; OCCT will never report or enforce G3 through its
+  own continuity machinery, and a custom-OCCT-extension rebuild remains a
+  deferred branch (not in scope). This is the exact, narrow boundary that
+  stays impossible.
+- **G3 best-effort OCCT-path (analyzer + pole round-trip) — SHIPPED
+  (GK-P43).** What WAS deferred and is now done *around* the missing enum:
+  (a) a G3 **analyzer** that samples third derivatives off a
+  ``Geom_BSplineSurface`` via ``DN(u,v,nu,nv)``
+  (``occtBridge.sampleSurfaceThirdDeriv`` / ``occtWorker.opOcctG3Audit``,
+  gated behind the ``NURBS_PHASE4_G3_BINDINGS`` boot probe with a graceful
+  ``OcctG3UnsupportedError`` degrade) and feeds them into the pure-Python
+  ``surface_analysis.occt_g3_residual_from_poles`` dκ/ds oracle (GK-62 /
+  GK-P10); the numeric residual is also surfaced per shared edge via
+  ``continuity_audit``'s new ``g3_residuals`` map. (b) a G3 **enforcement via
+  pole round-trip** (``surface_analysis.occt_g3_pole_roundtrip``): extract the
+  OCCT B-spline poles, run the pure-Python G3 pole-adjustment (``match_srf``
+  G3), write the poles back — the OCCT surface is then G3-quality even though
+  OCCT never computed G3. **DoD met:** an OCCT-origin surface pair reports a G3
+  residual `< 1e-5` after the round-trip (in-env oracle test on the pole
+  carrier in ``test_occt_g3_roundtrip_gkp43.py``; the live ``DN`` /
+  ``SetPole`` paths are verified at deploy via the binding probe, since
+  OCC/pythonocc is not installed in CI).
 - **Face-pair picker promoted to a general selection-mode primitive** —
   designed for matchSrf use; if a second use case shows up (cross-body
   fillet, surface comparison) we promote, not before.

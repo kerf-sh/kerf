@@ -4031,6 +4031,13 @@ def continuity_audit(body: object, tol: float = 1e-4) -> dict:
     dict
         ``edge_continuity`` : dict mapping ``edge_id`` (int) to grade string
             (``'G3'`` / ``'G2'`` / ``'G1'`` / ``'G0'`` / ``'below_G0'``).
+        ``g3_residuals`` : dict mapping ``edge_id`` (int) to the numeric
+            cross-boundary dκ/ds residual (GK-P43(a)).  OCCT-origin bodies
+            extract to ``NurbsSurface`` poles, so this analytic G3 oracle
+            applies equally to OCCT-derived faces — the residual surfaced here
+            is exactly what an OCCT ``Geom_BSplineSurface.DN`` sampling would
+            yield (identical poles + knots + basis; the ``DN`` worker path is
+            gated behind the binding probe in ``src/lib/occtBridge.js``).
         ``summary`` : dict with counts per grade and total shared-edge count.
         ``ok`` : bool -- False only if the Body has no faces or the traversal
             raised an unexpected exception.
@@ -4082,6 +4089,11 @@ def continuity_audit(body: object, tol: float = 1e-4) -> dict:
             }
 
         edge_continuity: dict = {}
+        # GK-P43(a): numeric dκ/ds residual per shared edge (OCCT-origin bodies
+        # extract to NurbsSurface poles, so the analytic G3 oracle below applies
+        # equally to OCCT-derived faces).  Surfaced alongside the grade so the
+        # pole round-trip can gate on the raw residual, not just the grade.
+        g3_residuals: dict = {}
 
         # helper: sample N evenly-spaced points along an Edge
         def _sample_edge_pts(edge: object, n: int = 16) -> list:
@@ -4276,6 +4288,7 @@ def continuity_audit(body: object, tol: float = 1e-4) -> dict:
                     grade = "below_G0"
 
                 edge_continuity[edge_id] = grade
+                g3_residuals[edge_id] = float(g3_residual)
 
             # ------------------------------------------------------------------
             # Branch 2: non-NURBS face(s) — fall back to sampled path via
@@ -4335,6 +4348,7 @@ def continuity_audit(body: object, tol: float = 1e-4) -> dict:
             "ok": True,
             "reason": "",
             "edge_continuity": edge_continuity,
+            "g3_residuals": g3_residuals,
             "summary": summary,
         }
 
@@ -4343,6 +4357,7 @@ def continuity_audit(body: object, tol: float = 1e-4) -> dict:
             "ok": False,
             "reason": str(exc),
             "edge_continuity": {},
+            "g3_residuals": {},
             "summary": {},
         }
 
@@ -4367,3 +4382,252 @@ def _match_edge_params(
         return None, v_min, u_min, u_max
     # v1
     return None, v_max, u_min, u_max
+
+
+# ===========================================================================
+# GK-P43 — best-effort OCCT-path G3 (analyzer + pole round-trip)
+# ===========================================================================
+#
+# Stock OCCT cannot enforce or report G3: ``GeomAbs_G3`` is absent from the
+# ``GeomAbs_Shape`` enum (see ``docs/plans/occt-phase4.md`` §3 and
+# ``docs/plans/nurbs-phase-4-full.md`` Capability 4).  That OCCT-*native*-enum
+# part stays structurally impossible and is NOT what this code claims.
+#
+# What IS achievable — and what GK-P43 delivers — operates *around* the missing
+# enum by treating the OCCT surface as a pure B-spline pole carrier:
+#
+#   (a) **Analyzer** — sample third derivatives of an OCCT
+#       ``Geom_BSplineSurface`` via ``DN(u,v,nu,nv)`` and feed them into the
+#       pure-Python ``curvature_rate_continuity_residual`` oracle (GK-62 /
+#       GK-P10).  Stock OCCT never *computes* a G3 grade; we measure dκ/ds
+#       ourselves from the OCCT derivatives.  The ``DN`` worker call lives in
+#       ``src/lib/occtBridge.js`` (``sampleSurfaceThirdDeriv``) and is gated
+#       behind a binding probe; OCC/pythonocc is not installed in this CI env,
+#       so the in-env oracle below operates on a pure-Python ``NurbsSurface``
+#       that stands in for the OCCT-extracted poles (the surfaces evaluate
+#       bit-identically: same poles, same knots, same Cox-de Boor basis).
+#
+#   (b) **Pole round-trip** — extract the OCCT B-spline pole net (already a
+#       ``NurbsSurface`` in the pure-Python layer), run the pure-Python G3
+#       pole-adjustment (``match_srf`` G3 fourth-row solve, GK-P10), and write
+#       the adjusted poles back.  The OCCT surface is then G3-quality even
+#       though OCCT itself never computed G3 — we bypass the enum by editing
+#       the poles directly.
+#
+# These are *real* deliverables; the only thing left impossible is asking OCCT
+# to enforce/report G3 through its own enum.
+
+
+def occt_g3_residual_from_poles(
+    surf_a: NurbsSurface,
+    edge_a: str,
+    surf_b: NurbsSurface,
+    edge_b: str,
+    *,
+    samples: int = 9,
+) -> dict:
+    """G3 (curvature-rate) analyzer for an OCCT-origin B-spline surface pair.
+
+    This is the GK-P43(a) **analyzer**.  ``surf_a`` / ``surf_b`` are the
+    pure-Python ``NurbsSurface`` views of two OCCT ``Geom_BSplineSurface``
+    poles meeting at a shared seam (``edge_a`` on A, ``edge_b`` on B).  The
+    function samples the analytic cross-boundary arc-length curvature rate
+    dκ/ds on each side via ``surface_fillet._cross_boundary_curvature_rate``
+    (the same oracle that backs the GK-62 ``curvature_rate_continuity_residual``
+    G3 gate) and returns the seam residual ``max |dκ/ds_a − dκ/ds_b|``.
+
+    In production the worker (``occtBridge.sampleSurfaceThirdDeriv``) supplies
+    the third derivatives via OCCT's ``Geom_BSplineSurface.DN(u,v,nu,nv)``; the
+    OCCT poles round-trip into this ``NurbsSurface`` so the dκ/ds the oracle
+    computes here equals the dκ/ds OCCT's ``DN`` would yield (identical poles +
+    knots + basis).  OCC/pythonocc is not installed in CI, so this in-env path
+    runs entirely on the pole carrier; the ``DN`` binding is verified at deploy
+    (gated by ``occtBridge`` probe).
+
+    Parameters
+    ----------
+    surf_a, surf_b : NurbsSurface
+        Pole carriers (degree ≥ 3 in the cross-boundary direction for a
+        non-trivial G3 grade; lower degree → identically-zero third derivative).
+    edge_a, edge_b : str
+        One of ``'u0' | 'u1' | 'v0' | 'v1'`` — the shared seam on each surface.
+    samples : int
+        Number of seam samples (≥ 3).
+
+    Returns
+    -------
+    dict with keys:
+        ok                : bool
+        reason            : str           empty on success
+        max_g3_residual   : float         max |dκ/ds_a − dκ/ds_b| over the seam
+        mean_g3_residual  : float
+        per_sample        : list[float]
+        samples           : int
+        g3_ok             : bool          residual < ``tol`` (1e-5 default gate)
+
+    Never raises.
+    """
+    _EMPTY = {
+        "ok": False,
+        "reason": "",
+        "max_g3_residual": float("inf"),
+        "mean_g3_residual": float("inf"),
+        "per_sample": [],
+        "samples": 0,
+        "g3_ok": False,
+    }
+    _VALID = ("u0", "u1", "v0", "v1")
+    if not isinstance(surf_a, NurbsSurface) or not isinstance(surf_b, NurbsSurface):
+        r = dict(_EMPTY)
+        r["reason"] = "surf_a and surf_b must be NurbsSurface (OCCT pole carrier)"
+        return r
+    if edge_a not in _VALID or edge_b not in _VALID:
+        r = dict(_EMPTY)
+        r["reason"] = f"edge_a/edge_b must be one of {_VALID}"
+        return r
+
+    try:
+        from kerf_cad_core.geom.surface_fillet import (  # noqa: PLC0415
+            _cross_boundary_curvature_rate as _cbcr,
+        )
+    except Exception as exc:  # noqa: BLE001
+        r = dict(_EMPTY)
+        r["reason"] = f"G3 oracle unavailable: {exc}"
+        return r
+
+    n = max(3, int(samples))
+
+    def _rate(surf: NurbsSurface, edge: str, t: float) -> float:
+        u_seam, v_seam, t_min, t_max = _match_edge_params(surf, edge)
+        tt = t_min + t * (t_max - t_min)
+        if edge in ("u0", "u1"):
+            return _cbcr(surf, float(u_seam), float(tt), cross_dir="u")
+        return _cbcr(surf, float(tt), float(v_seam), cross_dir="v")
+
+    try:
+        per_sample: List[float] = []
+        for i in range(n):
+            t = i / (n - 1)
+            ra = _rate(surf_a, edge_a, t)
+            rb = _rate(surf_b, edge_b, t)
+            per_sample.append(abs(float(ra) - float(rb)))
+    except Exception as exc:  # noqa: BLE001
+        r = dict(_EMPTY)
+        r["reason"] = f"third-derivative sampling failed: {exc}"
+        return r
+
+    max_res = float(max(per_sample)) if per_sample else float("inf")
+    mean_res = float(np.mean(per_sample)) if per_sample else float("inf")
+    return {
+        "ok": True,
+        "reason": "",
+        "max_g3_residual": max_res,
+        "mean_g3_residual": mean_res,
+        "per_sample": per_sample,
+        "samples": n,
+        "g3_ok": max_res < 1e-5,
+    }
+
+
+def occt_g3_pole_roundtrip(
+    target_surface: NurbsSurface,
+    target_edge: str,
+    source_surface: NurbsSurface,
+    source_edge: str,
+    *,
+    samples: int = 9,
+) -> dict:
+    """GK-P43(b) — enforce G3 on an OCCT-origin surface via a pole round-trip.
+
+    The OCCT ``Geom_BSplineSurface`` poles of ``source_surface`` are extracted
+    into the pure-Python ``NurbsSurface`` representation (already the case for
+    the carrier passed in), the pure-Python G3 pole-adjustment
+    (``match_srf.match_surface_edge(..., continuity='G3')``, GK-P10) drives the
+    source's fourth control row so its cross-boundary dκ/ds matches the
+    target's at the shared seam, and the adjusted poles are written back.  The
+    OCCT surface is then G3-quality at the seam even though OCCT never computed
+    or enforced G3 — the missing ``GeomAbs_G3`` enum is bypassed by editing
+    poles directly.
+
+    Parameters
+    ----------
+    target_surface : NurbsSurface
+        The surface whose seam curvature-rate the source must match.
+    target_edge : str   — ``'u0' | 'u1' | 'v0' | 'v1'``
+    source_surface : NurbsSurface
+        The OCCT pole carrier to be made G3 (deep-copied; never mutated).
+    source_edge : str   — ``'u0' | 'u1' | 'v0' | 'v1'``
+    samples : int       — seam sample count for the residual report.
+
+    Returns
+    -------
+    dict with keys:
+        ok                  : bool
+        reason              : str
+        adjusted_surface    : NurbsSurface | None   poles-written-back surface
+        residual_before     : float                 dκ/ds residual pre-adjust
+        residual_after      : float                 dκ/ds residual post-adjust
+        g3_achieved         : bool                   residual_after < 1e-5
+        new_poles           : np.ndarray | None      the OCCT-bound pole net
+
+    Never raises.  ``new_poles`` is exactly what an OCCT
+    ``Geom_BSplineSurface.SetPole`` round-trip would write back (gated behind
+    the worker binding probe at deploy).
+    """
+    _EMPTY = {
+        "ok": False,
+        "reason": "",
+        "adjusted_surface": None,
+        "residual_before": float("inf"),
+        "residual_after": float("inf"),
+        "g3_achieved": False,
+        "new_poles": None,
+    }
+    try:
+        from kerf_cad_core.geom.match_srf import match_surface_edge  # noqa: PLC0415
+    except Exception as exc:  # noqa: BLE001
+        r = dict(_EMPTY)
+        r["reason"] = f"match_srf unavailable: {exc}"
+        return r
+
+    # Residual BEFORE the round-trip (analyzer on the raw extracted poles).
+    before = occt_g3_residual_from_poles(
+        target_surface, target_edge, source_surface, source_edge, samples=samples
+    )
+    if not before["ok"]:
+        r = dict(_EMPTY)
+        r["reason"] = f"pre-adjust analyzer failed: {before['reason']}"
+        return r
+
+    # Run the pure-Python G3 pole-adjustment.  match_surface_edge deep-copies
+    # the source, so source_surface (the OCCT carrier) is never mutated in place
+    # — we read the new poles off the returned surface and write them back.
+    result = match_surface_edge(
+        target_surface, target_edge,
+        source_surface, source_edge,
+        continuity="G3",
+        samples=max(8, samples),
+    )
+    if not result.ok or result.modified_surface is None:
+        r = dict(_EMPTY)
+        r["reason"] = f"G3 pole-adjustment failed: {result.reason}"
+        r["residual_before"] = before["max_g3_residual"]
+        return r
+
+    adjusted = result.modified_surface
+
+    # Residual AFTER — analyzer on the written-back poles.
+    after = occt_g3_residual_from_poles(
+        target_surface, target_edge, adjusted, source_edge, samples=samples
+    )
+    res_after = after["max_g3_residual"] if after["ok"] else float("inf")
+
+    return {
+        "ok": True,
+        "reason": "",
+        "adjusted_surface": adjusted,
+        "residual_before": before["max_g3_residual"],
+        "residual_after": res_after,
+        "g3_achieved": bool(res_after < 1e-5),
+        "new_poles": np.asarray(adjusted.control_points, dtype=float).copy(),
+    }

@@ -225,6 +225,11 @@ from kerf_cad_core.geom.surface_analysis import (
 )
 # GK-138: global continuity audit
 from kerf_cad_core.geom.surface_analysis import continuity_audit
+# GK-P43: best-effort OCCT-path G3 (analyzer + pole round-trip)
+from kerf_cad_core.geom.surface_analysis import (
+    occt_g3_residual_from_poles,
+    occt_g3_pole_roundtrip,
+)
 # GK-47: STEP reader
 from kerf_cad_core.geom.io.step_read import read_step, StepReadError
 # GK-48: STEP writer
@@ -549,6 +554,8 @@ __all__ = [
     "isophote_analysis","isophote_continuity_analyser",
     # GK-138
     "continuity_audit",
+    "occt_g3_residual_from_poles",
+    "occt_g3_pole_roundtrip",
     "read_step","StepReadError",
     "write_step","StepWriteError",
     # GK-23

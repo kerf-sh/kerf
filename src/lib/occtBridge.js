@@ -1798,3 +1798,131 @@ export function sampleSurfaceCurvature(oc, face, uvDensity = 0.1, tracker = []) 
 
   return { points, stats, geomLPropSLPropsPresent }
 }
+
+// ---------------------------------------------------------------------------
+// GK-P43(a) — OCCT-path G3 analyzer: third-derivative sampling via DN.
+//
+// Stock OCCT has no GeomAbs_G3 (the enum literally lacks the token), so OCCT
+// will NEVER report or enforce G3 through its own continuity machinery — that
+// remains structurally impossible.  But the third derivatives needed to
+// MEASURE G3 (the cross-boundary arc-length curvature rate dκ/ds) ARE
+// extractable: a Geom_BSplineSurface exposes DN(u, v, nu, nv) for arbitrary
+// derivative orders.  We sample DN up to order 3, hand the derivative tensor
+// to the pure-Python curvature_rate_continuity_residual oracle (GK-62 / GK-P10
+// surface_analysis.occt_g3_residual_from_poles), and so compute a G3 residual
+// OCCT itself cannot.
+//
+// Binding probe / graceful degrade: the DN(*, *, ≥3) overload and the
+// Handle_Geom_BSplineSurface.DownCast path are gated below.  If absent, this
+// throws OcctG3UnsupportedError (mirrors TrimByCurveUnsupportedError /
+// SurfaceToSolidUnsupportedError) so the worker can fall back to the
+// pole-extraction + pure-Python path with no hard failure.  OCC/pythonocc is
+// not installed in CI; the DN path here is verified at deploy via the boot
+// probe (see NURBS_PHASE4_G3_BINDINGS in occtWorker.js).
+// ---------------------------------------------------------------------------
+
+export class OcctG3UnsupportedError extends Error {
+  constructor(msg) {
+    super(
+      msg ||
+      'occt_g3: Geom_BSplineSurface.DN(u,v,*,*) with derivative order >= 3 is ' +
+      'not bound in this OCCT build. Stock OCCT has no GeomAbs_G3 enum (G3 ' +
+      'reporting/enforcement is structurally impossible); the best-effort ' +
+      'analyzer needs the DN third-derivative overload. Fall back to the ' +
+      'pure-Python pole-extraction + curvature-rate oracle path.'
+    )
+    this.name = 'OcctG3UnsupportedError'
+    this.code = 'OCCT_BINDING_MISSING'
+  }
+}
+
+/**
+ * Probe whether the OCCT build exposes the bindings needed to sample third
+ * derivatives of a B-spline surface (the GK-P43 best-effort G3 analyzer path).
+ *
+ * @param {object} oc — opencascade.js handle
+ * @returns {{ downCast: boolean, dn: boolean, all: boolean }}
+ */
+export function probeOcctG3Bindings(oc) {
+  const downCast = !!(oc && oc.Handle_Geom_BSplineSurface
+    && typeof oc.Handle_Geom_BSplineSurface.DownCast === 'function')
+  // BRep_Tool.Surface_2 yields a Handle_Geom_Surface; the underlying
+  // Geom_BSplineSurface (or Geom_Surface) exposes DN(u, v, nu, nv). We can't
+  // know DN's arity without an instance, so we treat presence of DownCast +
+  // BRep_Tool as the gate and verify DN's order-3 overload at call time.
+  const dn = !!(oc && oc.BRep_Tool && typeof oc.BRep_Tool.Surface_2 === 'function')
+  return { downCast, dn, all: downCast && dn }
+}
+
+/**
+ * sampleSurfaceThirdDeriv — sample the cross-boundary 1st/2nd/3rd derivatives
+ * of an OCCT face's surface at a set of UV parameters, via Geom_*Surface.DN.
+ *
+ * This is the OCCT-side half of the GK-P43(a) best-effort G3 analyzer.  It does
+ * NOT compute a G3 grade (OCCT can't); it extracts the derivative tensors the
+ * pure-Python dκ/ds oracle consumes.  The kerf worker hands the returned
+ * derivative samples to occt_g3_residual_from_poles (or, equivalently, extracts
+ * the poles and runs the pure-Python NurbsSurface oracle directly).
+ *
+ * @param {object} oc      — opencascade.js handle
+ * @param {object} face    — TopoDS_Face (read-only)
+ * @param {Array<[number,number]>} uvSamples — UV parameter pairs to sample
+ * @param {Array}  tracker — OCCT object lifetime tracker (optional)
+ * @returns {{ samples: Array, dnPresent: boolean }}
+ *   samples: [{ u, v, S, dU, dV, dUU, dUV, dVV, dVVV, dUUU }] where each value
+ *   is a [x,y,z] vector (DN(u,v,nu,nv) result). dnPresent reflects whether the
+ *   order-3 DN overload was callable on this surface.
+ * @throws {OcctG3UnsupportedError} when the DN third-derivative overload is absent.
+ */
+export function sampleSurfaceThirdDeriv(oc, face, uvSamples = [], tracker = []) {
+  const probe = probeOcctG3Bindings(oc)
+  if (!probe.all || !face) {
+    throw new OcctG3UnsupportedError()
+  }
+
+  let surf
+  try {
+    surf = oc.BRep_Tool.Surface_2(face)
+  } catch (err) {
+    throw new OcctG3UnsupportedError(
+      `occt_g3: BRep_Tool.Surface_2 failed: ${err?.message || err}`
+    )
+  }
+  // Track the surface handle for cleanup if it is an OCCT allocation.
+  if (surf && typeof surf.delete === 'function' && Array.isArray(tracker)) {
+    tracker.push(surf)
+  }
+  if (!surf || typeof surf.DN !== 'function') {
+    throw new OcctG3UnsupportedError(
+      'occt_g3: surface handle does not expose DN(u,v,nu,nv)'
+    )
+  }
+
+  const toVec = (gpVec) => [gpVec.X(), gpVec.Y(), gpVec.Z()]
+  const samples = []
+
+  for (const [u, v] of uvSamples) {
+    try {
+      // DN(u, v, Nu, Nv): the (Nu+Nv)-th mixed partial. Order 3 is the gate.
+      const S = toVec(surf.DN(u, v, 0, 0))
+      const dU = toVec(surf.DN(u, v, 1, 0))
+      const dV = toVec(surf.DN(u, v, 0, 1))
+      const dUU = toVec(surf.DN(u, v, 2, 0))
+      const dUV = toVec(surf.DN(u, v, 1, 1))
+      const dVV = toVec(surf.DN(u, v, 0, 2))
+      // Third derivatives — the order-3 overload that gates the whole path.
+      const dVVV = toVec(surf.DN(u, v, 0, 3))
+      const dUUU = toVec(surf.DN(u, v, 3, 0))
+      samples.push({ u, v, S, dU, dV, dUU, dUV, dVV, dVVV, dUUU })
+    } catch (err) {
+      // The order-3 overload threw → the build lacks it. Bail out cleanly.
+      throw new OcctG3UnsupportedError(
+        `occt_g3: DN order-3 sampling failed at (u=${u}, v=${v}): ${err?.message || err}`
+      )
+    }
+  }
+
+  // dnPresent is True here by construction: probe.all gated the entry, and the
+  // order-3 DN overload above succeeded for every sample (else we threw).
+  return { samples, dnPresent: true }
+}

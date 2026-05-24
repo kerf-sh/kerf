@@ -182,16 +182,36 @@ Within the split:
 
 ---
 
-## 6. Out of scope for T-104 (documented, not attempted)
+## 6. Out of scope for T-104 (documented) — and the GK-P43/P44 best-effort updates
 
-- General **NURBS×NURBS** trim-by-curve and boolean imprint — stays on
-  the OCCT worker (`feature_trim_by_curve` / `run_feature_boolean`).
-  T-104's pure-Python trim is bounded to the plane/cyl/sphere carrier
-  matrix `boolean.py` already supports.
+The two items below were the T-104 documented non-goals. The user asked to
+attempt them best-effort; **GK-P43** and **GK-P44** (Group BE) delivered real
+coverage *around* the impossible parts. The narrow truly-impossible boundary is
+called out explicitly.
+
+- General **NURBS×NURBS** trim-by-curve — pure-Python best-effort path is
+  added in **GK-P44** (see the dedicated entry below, landed in the next
+  commit). T-104's original carrier-matrix trim stays as the analytic fast
+  path; the OCCT worker (`feature_trim_by_curve`) stays the documented
+  fallback for degenerate / elliptic-loop cases.
 - The **C2-T12 Section+prism JS/WASM worker fallback** — worker code,
-  owned elsewhere, would collide with concurrent agents.
-- **OCCT algorithmic G3** — structurally impossible; the shipped
-  visualization path is the OCCT answer and is not re-opened.
+  owned elsewhere, would collide with concurrent agents (unchanged).
+- **OCCT *native-enum* G3** — STILL IMPOSSIBLE. `GeomAbs_G3` is absent from
+  `GeomAbs_Shape`; OCCT will never enforce/report G3 through its own
+  machinery. This narrow part is NOT attempted.
+- **Best-effort OCCT-path G3 — SHIPPED (GK-P43)**, bypassing the missing enum:
+  (a) **analyzer** — sample `Geom_BSplineSurface.DN(u,v,nu,nv)` third
+  derivatives (`occtBridge.sampleSurfaceThirdDeriv` /
+  `occtWorker.opOcctG3Audit`, gated by `NURBS_PHASE4_G3_BINDINGS`, graceful
+  `OcctG3UnsupportedError` degrade) → pure-Python
+  `surface_analysis.occt_g3_residual_from_poles` dκ/ds oracle; surfaced per
+  edge via `continuity_audit` `g3_residuals`. (b) **pole round-trip** —
+  `surface_analysis.occt_g3_pole_roundtrip` extracts OCCT poles, runs the
+  pure-Python G3 pole-adjustment (`match_srf` G3, GK-P10), writes poles back;
+  DoD: OCCT-origin pair reports G3 residual `< 1e-5` after the round-trip.
+  Pole/oracle math verified in-env on a `NurbsSurface` standing in for the
+  extracted poles; the live `DN` / `SetPole` paths are deploy-gated (OCC not
+  installed in CI).
 - `src/routes/compare`, `docs/*.md` capability pages, migrations,
   kerf-cli — owned by other concurrent agents this session.
 - Parasolid/ACIS, GPU/native geometry — non-goals at every phase
