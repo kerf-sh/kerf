@@ -5745,3 +5745,16 @@ SubD-eval P12-14, analytic-deriv P15) are NOT re-touched.
 - **GK-P49** ✅ Register **architectural ops as BIM/civil tools**: `make_roof` (P29), `curtain_wall_geometry` (P30), `hatch_region` (P32), `section_fill` (P33), `make2d_from_brep` (P28), `Toposolid.to_brep` (P34), corridor `to_brep` (P35) in the `kerf-bim` / `kerf-civil` tool plugins + LLM docs. Size L.
 - **GK-P50** 🔴 Wire **`write_3dm` export** (P39) into the project export/download route (alongside the STEP/STL/GLB exporters), not a feature ToolSpec. Size S.
 - **DoD (all):** each wired op is invokable via the `.feature` workflow + appears in the LLM tool list + renders its params in `FeatureView.jsx`; a wiring test asserts dispatch. After this group, `git grep` of each new op name shows a ToolSpec/plugin/UI hit (closes the audit the user flagged).
+
+## CAD feature-parity gap closure — big wave (2026-05-24)
+
+Driven by the user directive "all cad feature parity done". The 40 compare
+matrices in `public/compare/*.md` enumerate every `kerf: status: [ ]/no/partial`
+row — ~400+ gaps. Protocol per gap: (1) verify against actual `packages/` code;
+(2) if Kerf already has it → mark `[x]` with `kerf:evidence` (stale-matrix fix);
+(3) if genuinely missing + tractable → implement to domain depth (full
+standards/validated methods per the max-depth directive) + mark `[x]`;
+(4) if genuinely large/out-of-scope → leave `[ ]` with an honest note.
+Wave 1 (now): domain-package gaps disjoint from kerf-cad-core (BIM, sim,
+soft-goods, process, med/dent/optics, EDA). Wave 2 (after W2a lands):
+kerf-cad-core MCAD/surfacing parity (catia 53, solidworks 41, rhino, fusion…).
