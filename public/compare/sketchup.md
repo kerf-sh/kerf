@@ -59,8 +59,8 @@ features:
       source: "https://help.sketchup.com/en/layout/getting-started-layout"
     kerf:
       status: partial
-      note: "Template-based, not live B-rep projection; no UI panel"
-      evidence: "packages/kerf-cad-core/src/drawings/"
+      note: "Live HLR projection (make2d) + auto-dim; no GD&T-placement UI"
+      evidence: "packages/kerf-cad-core/src/kerf_cad_core/geom/make2d.py"
 
   - domain: D1
     feature: "Sheet metal"
@@ -69,9 +69,9 @@ features:
       note: "No sheet metal tooling, no unfold/flat-pattern"
       source: "https://www.sketchup.com/products/sketchup-pro"
     kerf:
-      status: partial
-      note: "Single flange + unfold + flat DXF; no hem/relief/jog/multi-flange"
-      evidence: "packages/kerf-cad-core/src/sheetmetal/"
+      status: yes
+      note: "Flange + hem + jog + multi-flange + unfold + flat DXF (K-factor); no auto corner-relief"
+      evidence: "packages/kerf-cad-core/src/kerf_cad_core/construction_verbs_tools.py"
 
   - domain: D2
     feature: "Structural member design (AISC/ACI)"
@@ -318,7 +318,7 @@ Both tools are also used by non-traditional engineering users — hobbyists, mak
 | Modelling paradigm | Parametric feature tree + sketcher | Direct push/pull (no feature history) |
 | Precision / tolerances | Exact B-rep (OCCT) | Approximate (face-inference, small-error accumulation) |
 | Constraint sketcher | Sketcher v2 | None |
-| Sheet metal | Flange + unfold + flat-pattern | Not included |
+| Sheet metal | Flange + hem + jog + multi-flange + unfold + flat DXF | Not included |
 | Technical drawings | Multi-sheet + GD&T | LayOut (presentation, not engineering standard) |
 | IFC export | IFC Tier 2 import | IFC export (Studio) |
 | PCB / electronics | In-box | Not applicable |

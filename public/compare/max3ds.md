@@ -56,8 +56,8 @@ features:
       source: "https://help.autodesk.com/view/3DSMAX/2025/ENU/"
     kerf:
       status: partial
-      note: "Mesh tools + quad remesh; no Modifier Stack depth"
-      evidence: "packages/kerf-mesh/"
+      note: "SubD authoring + poke/extrude/subdivide/sculpt + quad/isotropic remesh; no Modifier Stack depth"
+      evidence: "packages/kerf-cad-core/src/kerf_cad_core/subd_tools.py"
   - domain: D2
     feature: "Structural / FEA — code checks (AISC, ACI, ASCE 7)"
     competitor:
@@ -348,7 +348,7 @@ features:
 | Caustics / GI / dispersion | ✅ Production caustics via Arnold/V-Ray/Corona | ⚠️ In progress (jewelry use case) |
 | PBR materials | ✅ Physical Material + Slate editor | ⚠️ PBR material library in progress |
 | Archviz material libraries | ✅ Chaos Cosmos, Forest Pack, etc. | ❌ None |
-| Edit Poly / Modifier Stack | ✅ Industry-standard mesh modeling | ⚠️ Mesh tools + quad remesh; no Modifier Stack |
+| Edit Poly / Modifier Stack | ✅ Industry-standard mesh modeling | ⚠️ SubD authoring + sculpt + remesh; no Modifier Stack |
 | Animation / rigging | ✅ Full skeletal, IK/FK, CAT, particles | ❌ None |
 | GD&T / tolerances | ❌ None | ✅ ASME Y14.5 datum + tolerance framework |
 | 2D technical drawings | ❌ None | ✅ Multi-sheet drawings |
