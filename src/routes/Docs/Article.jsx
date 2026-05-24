@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useParams, Navigate } from 'react-router-dom'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import CodeBlock, { InlineCode } from '../../components/CodeBlock.jsx'
+import rehypeHighlight from 'rehype-highlight'
+import { InlineCode } from '../../components/CodeBlock.jsx'
 import {
   ArrowLeft,
   ArrowRight,
@@ -153,6 +154,7 @@ function ArticleBody({ entry, prev, next, userGroup }) {
         <div className="docs-prose">
           <ReactMarkdown
             remarkPlugins={[remarkGfm]}
+            rehypePlugins={[[rehypeHighlight, { detect: true, ignoreMissing: true }]]}
             components={mdComponents}
           >
             {trimmedBody}
@@ -465,19 +467,30 @@ const mdComponents = {
       {children}
     </blockquote>
   ),
-  code: ({ className, children }) => {
-    // In react-markdown v10, block code always has a className like "language-X".
-    // Inline code has no className (or no language- prefix).
+  code: ({ className, children, node: _node, ...rest }) => {
+    // rehype-highlight injects `language-X` className on block code nodes and
+    // passes pre-highlighted React spans as children. Inline code has no
+    // `language-` prefix. We render highlighted children directly so the hljs
+    // spans survive — never stringify the React tree.
     const isBlock = /\blanguage-/.test(className || '')
     if (!isBlock) {
       return <InlineCode>{children}</InlineCode>
     }
-    const language = (className || '').replace(/^.*\blanguage-([^\s]+).*$/, '$1')
-    const source = typeof children === 'string' ? children.replace(/\n$/, '') : String(children ?? '')
-    return <CodeBlock language={language}>{source}</CodeBlock>
+    return (
+      <code
+        className={`hljs ${className || ''} font-mono text-[13px]`}
+        {...rest}
+      >
+        {children}
+      </code>
+    )
   },
-  // pre is a no-op wrapper since CodeBlock renders its own <pre>.
-  pre: ({ children }) => <>{children}</>,
+  // pre wraps the highlighted code block.
+  pre: ({ children }) => (
+    <pre className="overflow-x-auto bg-ink-900 rounded-md p-3 my-3 text-sm border border-ink-800 leading-[1.6]">
+      {children}
+    </pre>
+  ),
   hr: (props) => <hr className="my-8 border-ink-800" {...props} />,
   table: ({ children, ...props }) => (
     <div className="my-5 overflow-x-auto rounded-lg border border-ink-800">
