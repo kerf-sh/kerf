@@ -56,9 +56,9 @@ features:
       source: https://wiki.freecad.org/PartDesign_Workbench
       note: "PartDesign AdditiveLoft / SubtractiveLoft"
     kerf:
-      status: partial
-      evidence: packages/kerf-cad-core/src/kerf_cad_core/surfacing.py
-      note: "no guide-rail overload in binding"
+      status: yes
+      evidence: packages/kerf-cad-core/src/kerf_cad_core/feature_loft.py
+      note: "guide-rail overload wired (ThruSections.AddWire); ruled/closed/symmetric"
 
   - name: Sheet metal
     competitor:
@@ -66,9 +66,9 @@ features:
       source: https://wiki.freecad.org/SheetMetal_Workbench/en
       note: "SheetMetal addon (community) — bend/unfold/flat-pattern/K-factor"
     kerf:
-      status: partial
-      evidence: packages/kerf-cad-core/src/kerf_cad_core/sheet_metal.py
-      note: "single flange + unfold + flat DXF; no hem/jog/multi-flange"
+      status: yes
+      evidence: packages/kerf-cad-core/src/kerf_cad_core/construction_verbs_tools.py
+      note: "flange + hem + jog + multi-flange + unfold + flat DXF (K-factor)"
 
   - name: Assemblies — mates
     competitor:
@@ -106,9 +106,9 @@ features:
       source: https://wiki.freecad.org/Workbenches
       note: "Surface WB (built-in, limited) — no class-A NURBS"
     kerf:
-      status: partial
-      evidence: packages/kerf-cad-core/src/kerf_cad_core/surfacing.py
-      note: "math complete; OCCT bindings unconfirmed at build"
+      status: yes
+      evidence: packages/kerf-cad-core/src/kerf_cad_core/geom/network_srf.py
+      note: "blend_srf, network_srf (Gordon), patch_srf_fit, match_srf, G3 blends wired"
 
   - name: Configurations / family variants
     competitor:
@@ -126,9 +126,9 @@ features:
       source: https://wiki.freecad.org/PartDesign_Workbench
       note: "Part WB — limited direct face editing"
     kerf:
-      status: partial
-      evidence: packages/kerf-cad-core/src/kerf_cad_core/geom/history/direct_edit.py
-      note: "planar only; no move/delete-face"
+      status: yes
+      evidence: packages/kerf-cad-core/src/kerf_cad_core/geom/direct_edit.py
+      note: "push_pull (planar + curved), move_face, delete_face wired as ops"
 
   # D2 — Structural / FEA
   - name: FE — solid (tet/hex) solver
@@ -678,8 +678,8 @@ FreeCAD reached 1.0 in November 2024 after ~20 years of development: a genuinely
 | Parametric B-rep | ✅ Part Design WB (OCCT) | ✅ OCCT feature tree — pad/pocket/revolve/loft |
 | Constraint sketcher | ✅ Sketcher WB (mature solver) | ✅ Sketcher v2 — all major constraints |
 | Topological naming | ✅ Largely fixed in 1.0 | ✅ Persistent face names (Phase 4) |
-| NURBS surfacing | ⚠️ Surface WB (limited) | ⚠️ NURBS Phase 4 (early) |
-| Sheet metal | ✅ SheetMetal WB (community) | ✅ Flange + unfold + flat-pattern DXF |
+| NURBS surfacing | ⚠️ Surface WB (limited) | ✅ blend/network/patch/match-srf + G3 blends (younger) |
+| Sheet metal | ✅ SheetMetal WB (community) | ✅ Flange + hem + jog + multi-flange + unfold + flat DXF |
 | Assembly / mates | ✅ Built-in Assembly WB (1.0, new solver) | ✅ Full joint system — rigid/revolute/slider/cam/gear/pin-slot |
 | 2D technical drawings | ✅ TechDraw WB | ✅ Multi-sheet drawings |
 | GD&T | ⚠️ TechDraw annotations (basic) | ✅ ASME Y14.5 datum + tolerance framework |
