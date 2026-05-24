@@ -17,7 +17,7 @@ CHEAP_TIER_ALLOWLIST: list[tuple[str, str]] = [
     ("anthropic", "claude-sonnet-4-7-*"),
     ("anthropic", "claude-sonnet-4-6"),
     ("anthropic", "claude-sonnet-4-6-*"),
-    # Google
+    # Google — legacy LiteLLM provider keys and Vertex AI
     ("google", "gemini-3-flash-preview"),
     ("google", "gemini-3-flash-*"),
     ("google", "gemini-2-flash"),
@@ -26,6 +26,18 @@ CHEAP_TIER_ALLOWLIST: list[tuple[str, str]] = [
     ("google", "gemini/gemini-2-flash*"),
     ("vertex_ai", "gemini-3-flash*"),
     ("vertex_ai", "gemini-2-flash*"),
+    # Gemini — kerf_chat catalogue provider key (provider="gemini").
+    # Kept as additive rows (option a) rather than renaming the catalogue to
+    # "google" because DB rows and any existing telemetry already store
+    # provider='gemini'; renaming would break joins without a migration.
+    ("gemini", "gemini-3-flash-preview"),
+    ("gemini", "gemini-3-flash-*"),
+    ("gemini", "gemini-2-flash"),
+    ("gemini", "gemini-2-flash-*"),
+    ("gemini", "gemini-2.5-flash"),
+    ("gemini", "gemini-2.5-flash-*"),
+    ("gemini", "gemini-2.5-flash-lite"),
+    ("gemini", "gemini-2.5-flash-lite-*"),
     # DeepSeek
     ("deepseek", "deepseek-v3"),
     ("deepseek", "deepseek-v3-*"),

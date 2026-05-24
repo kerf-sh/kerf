@@ -293,23 +293,27 @@ def build_user_message(user_content: str, parts: list[PartContext]) -> str:
 
 
 CATALOG = [
-    {"id": "claude-opus-4-7", "provider": "anthropic", "label": "Claude Opus 4.7", "context_window": 200_000},
-    {"id": "claude-sonnet-4-6", "provider": "anthropic", "label": "Claude Sonnet 4.6", "context_window": 200_000},
-    {"id": "claude-haiku-4-5", "provider": "anthropic", "label": "Claude Haiku 4.5", "context_window": 200_000},
-    {"id": "gpt-4o", "provider": "openai", "label": "GPT-4o", "context_window": 128_000},
-    {"id": "gpt-4o-mini", "provider": "openai", "label": "GPT-4o mini", "context_window": 128_000},
-    {"id": "o3-mini", "provider": "openai", "label": "o3-mini", "context_window": 200_000},
-    {"id": "kimi-k2-0905-preview", "provider": "moonshot", "label": "Kimi K2", "context_window": 256_000},
-    {"id": "moonshot-v1-128k", "provider": "moonshot", "label": "Moonshot v1 128k", "context_window": 128_000},
-    {"id": "moonshot-v1-32k", "provider": "moonshot", "label": "Moonshot v1 32k", "context_window": 32_000},
+    # cheap_tier_eligible=True iff the model is listed in
+    # kerf_pricing.cheap_tier.CHEAP_TIER_ALLOWLIST (provider="gemini" rows
+    # added in T-402 R4).  The snapshot test in kerf-pricing asserts these
+    # two sources stay in sync.
+    {"id": "claude-opus-4-7", "provider": "anthropic", "label": "Claude Opus 4.7", "context_window": 200_000, "cheap_tier_eligible": False},
+    {"id": "claude-sonnet-4-6", "provider": "anthropic", "label": "Claude Sonnet 4.6", "context_window": 200_000, "cheap_tier_eligible": True},
+    {"id": "claude-haiku-4-5", "provider": "anthropic", "label": "Claude Haiku 4.5", "context_window": 200_000, "cheap_tier_eligible": False},
+    {"id": "gpt-4o", "provider": "openai", "label": "GPT-4o", "context_window": 128_000, "cheap_tier_eligible": False},
+    {"id": "gpt-4o-mini", "provider": "openai", "label": "GPT-4o mini", "context_window": 128_000, "cheap_tier_eligible": False},
+    {"id": "o3-mini", "provider": "openai", "label": "o3-mini", "context_window": 200_000, "cheap_tier_eligible": False},
+    {"id": "kimi-k2-0905-preview", "provider": "moonshot", "label": "Kimi K2", "context_window": 256_000, "cheap_tier_eligible": False},
+    {"id": "moonshot-v1-128k", "provider": "moonshot", "label": "Moonshot v1 128k", "context_window": 128_000, "cheap_tier_eligible": False},
+    {"id": "moonshot-v1-32k", "provider": "moonshot", "label": "Moonshot v1 32k", "context_window": 32_000, "cheap_tier_eligible": False},
     # Gemini — keep 2.5 line + the latest 3-series previews. cheap_tier.py
     # also lists these glob patterns ("gemini-3-flash-*") for billing-bucket
     # routing; the catalog here is what the chat picker / /api/models shows.
-    {"id": "gemini-3-pro-preview", "provider": "gemini", "label": "Gemini 3 Pro (preview)", "context_window": 2_000_000},
-    {"id": "gemini-3-flash-preview", "provider": "gemini", "label": "Gemini 3 Flash (preview)", "context_window": 1_000_000},
-    {"id": "gemini-2.5-pro", "provider": "gemini", "label": "Gemini 2.5 Pro", "context_window": 2_000_000},
-    {"id": "gemini-2.5-flash", "provider": "gemini", "label": "Gemini 2.5 Flash", "context_window": 1_000_000},
-    {"id": "gemini-2.5-flash-lite", "provider": "gemini", "label": "Gemini 2.5 Flash Lite", "context_window": 1_000_000},
+    {"id": "gemini-3-pro-preview", "provider": "gemini", "label": "Gemini 3 Pro (preview)", "context_window": 2_000_000, "cheap_tier_eligible": False},
+    {"id": "gemini-3-flash-preview", "provider": "gemini", "label": "Gemini 3 Flash (preview)", "context_window": 1_000_000, "cheap_tier_eligible": True},
+    {"id": "gemini-2.5-pro", "provider": "gemini", "label": "Gemini 2.5 Pro", "context_window": 2_000_000, "cheap_tier_eligible": False},
+    {"id": "gemini-2.5-flash", "provider": "gemini", "label": "Gemini 2.5 Flash", "context_window": 1_000_000, "cheap_tier_eligible": True},
+    {"id": "gemini-2.5-flash-lite", "provider": "gemini", "label": "Gemini 2.5 Flash Lite", "context_window": 1_000_000, "cheap_tier_eligible": True},
 ]
 
 

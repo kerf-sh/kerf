@@ -1,6 +1,8 @@
 """Allow-list matching for cheap_tier_eligible."""
 from __future__ import annotations
 
+import pytest
+
 from kerf_pricing.cheap_tier import CHEAP_TIER_ALLOWLIST, is_cheap_tier
 
 
@@ -58,3 +60,74 @@ class TestCheapTier:
 
     def test_allowlist_non_empty(self):
         assert len(CHEAP_TIER_ALLOWLIST) > 0
+
+
+class TestCheapTierCatalogSnapshot:
+    """Snapshot test: every entry in kerf_chat.CATALOG must agree with
+    is_cheap_tier() — prevents silent drift between the two sources.
+
+    T-402 R4: catalogue uses provider='gemini'; allowlist previously only
+    had 'google'/'vertex_ai'.  Adding 'gemini' rows to CHEAP_TIER_ALLOWLIST
+    (option a) means this test would have caught the regression at commit
+    time.
+    """
+
+    def _catalog(self):
+        from kerf_chat.llm import CATALOG  # type: ignore[import]
+        return CATALOG
+
+    def test_catalog_cheap_tier_flag_agrees_with_allowlist(self):
+        """For every model in the kerf_chat CATALOG, the cheap_tier_eligible
+        flag in the catalogue entry must match what is_cheap_tier() returns."""
+        catalog = self._catalog()
+        mismatches: list[str] = []
+        for entry in catalog:
+            provider = entry["provider"]
+            model_id = entry["id"]
+            flagged = entry.get("cheap_tier_eligible", False)
+            computed = is_cheap_tier(provider, model_id)
+            if flagged != computed:
+                mismatches.append(
+                    f"  provider={provider!r} model={model_id!r}: "
+                    f"catalogue says cheap_tier_eligible={flagged}, "
+                    f"is_cheap_tier() returned {computed}"
+                )
+        assert not mismatches, (
+            "kerf_chat CATALOG and kerf_pricing CHEAP_TIER_ALLOWLIST are out of sync:\n"
+            + "\n".join(mismatches)
+            + "\n\nFix: update CHEAP_TIER_ALLOWLIST in cheap_tier.py OR correct "
+            "cheap_tier_eligible flags in kerf_chat/llm.py CATALOG."
+        )
+
+    def test_catalog_has_cheap_tier_eligible_field(self):
+        """All catalogue entries must explicitly declare cheap_tier_eligible."""
+        catalog = self._catalog()
+        missing = [
+            f"provider={e['provider']!r} model={e['id']!r}"
+            for e in catalog
+            if "cheap_tier_eligible" not in e
+        ]
+        assert not missing, (
+            "These CATALOG entries are missing 'cheap_tier_eligible':\n"
+            + "\n".join(missing)
+        )
+
+    @pytest.mark.parametrize("model_id", [
+        "gemini-3-flash-preview",
+        "gemini-2.5-flash",
+        "gemini-2.5-flash-lite",
+    ])
+    def test_gemini_provider_flash_models_are_cheap_tier(self, model_id: str):
+        """Flash models registered under provider='gemini' must pass the gate."""
+        assert is_cheap_tier("gemini", model_id), (
+            f"is_cheap_tier('gemini', {model_id!r}) returned False — "
+            "free-tier users cannot access Gemini Flash"
+        )
+
+    @pytest.mark.parametrize("model_id", [
+        "gemini-3-pro-preview",
+        "gemini-2.5-pro",
+    ])
+    def test_gemini_provider_pro_models_are_not_cheap_tier(self, model_id: str):
+        """Pro/heavy Gemini models must NOT be cheap-tier eligible."""
+        assert not is_cheap_tier("gemini", model_id)
