@@ -14,10 +14,14 @@
 > Docker daemon) — none caused by these fixes. JS suite green at 9534/9534.
 >
 > **P1/P2 follow-ups (T-402b) also shipped 2026-05-24:**
-> R7, R9, R10, R12, R14, R15, R22 → `40415932`; R11, R19 → folded into
-> `ca795e1c`; R16, R17, R20, R21 → `ca795e1c`. Deferred: **R13** (BYO key
-> save-validation — no save endpoint exists yet) and R15's presign-instead-of-proxy
-> (→ T-409). Scoped pytest still at the 10-fail baseline; vitest 9534/9534.
+> R7, R9, R10, R12, R14, R15, R22 → `40415932`; R11, R19 → `d2a0d3a2`;
+> R16, R17, R20, R21 → `ca795e1c`. (The three T-402b agent worktrees
+> chained, so the commits form a linear `d2a0d3a2 → ca795e1c → 40415932`
+> chain rather than three independent cherry-picks — verified each R-ID
+> applied exactly once, no duplication.) Deferred: **R13** (BYO key
+> save-validation — no save endpoint exists yet) and R15's
+> presign-instead-of-proxy (→ T-409). Scoped pytest at the 10-fail
+> baseline; vitest 9534/9534.
 
 **Context.** Pre-Koyeb-cutover audit ([T-401 in `tasks.md`](../../tasks.md),
 [ROADMAP § 7.1](../../ROADMAP.md#71--flyio--koyeb-p0-2026-05-24)).
