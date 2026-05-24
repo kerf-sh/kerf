@@ -62,3 +62,66 @@ Operating rules for the loop:
 - [!] **P5-MOTION** — fold `robotics/` FK/IK into `kerf-motion`.
 
 These change the public module layout / LLM tool surface; attempt only after Phases 1–4 are green and verified, and re-confirm scope before executing.
+
+---
+
+## Phase 6 — Domain depth sweep (go as deep as possible, all domains)
+
+Directive (2026-05-24): every engineering domain engine should reach **maximum
+professional fidelity** — full coverage of governing standards/editions,
+higher-order and validated methods, complete boundary/load/edge cases, and
+regression tests against analytic or published references. Sequenced AFTER
+Phases 1–4 so depth lands on consolidated/canonical code, not duplicates. Each
+family's depth pass also absorbs the relevant Phase 5 merge. Per-family agent
+brief: (1) enumerate the standards + methods a professional tool in this domain
+has; (2) gap-analyse current code vs that; (3) implement the missing depth;
+(4) add reference-validated tests; (5) wire new capability to LLM tools / routes.
+
+- [ ] **D1-GEOMETRY** — geom, frep, surfacing/NURBS Phase 4, assembly, drawings, sketch solver, sheet-metal, thread, gdt rendering. Deepen: NURBS surfacing (loft/sweep/blend/fillet-surface), robust booleans, persistent face naming, full GD&T-on-drawing.
+- [ ] **D2-STRUCTURAL** — beam, struct, fea, steelconn, concrete, timber, seismic, windload, fatigue, pressvessel, tank, firesafety (+kerf-structural, kerf-fem). Deepen: full AISC/ACI/NDS/Eurocode editions, plate/shell + nonlinear FE, modal/buckling, response-spectrum.
+- [ ] **D3-MACHINE** — gears (gearbox+gearstrength+wormbevel merge), beltchain, clutchbrake, shaft, bearings, springs, fasteners, lubrication, cam, crane+rigging merge, conveyor, elevator. Deepen: full AGMA/ISO gear rating, bearing L10 + ISO/TS, fastener VDI 2230, EHL lubrication.
+- [ ] **D4-THERMOFLUID** — thermocycle, refrigeration, boiler, heatxfer, heattreat, hvac, psychro, buildingenergy, combustion, fluidpower, pneumatics, pumpsys, piping, plumbing, flowmeter, waterhammer, vacuum, channel, spillway (+kerf-hvac/piping/cfd/microfluidics). Deepen: real refrigerant/steam property tables (CoolProp-grade), NTU-effectiveness HX, full ASHRAE loads, transient pipe networks.
+- [ ] **D5-AEROSPACE-MARINE** — aero, turbo, combustion, windturbine, navalarch, marine, mooring, hydroturbine (+kerf-aero, kerf-marine). Deepen: full USSA76, VLM/panel + viscous coupling, 6-DOF + stability derivatives, orbital (multi-rev Lambert), full hydrostatics + stability + seakeeping.
+- [ ] **D6-ELECTRONICS** — SI/EMC/PDN/PCB-thermal/antenna/battery/BMS/motordrive/gatedrive/leddriver, silicon (synth/STA/DRC/GDS), sysml1d. Deepen: full transmission-line + S-parameter SI, IBIS, PDN target-Z, STA with real liberty timing, P&R.
+- [ ] **D7-MANUFACTURING** — cam (3/4/5-axis + posts), cncfeeds, cuttingtool, turning, gcode, casting, forming, injection, additive, welding, thermalcut, dfm, cmm, nesting (+kerf-cam/manufacturing/mold/slicing). Deepen: validated toolpath strategies, full feeds/speeds + tool-life, moldflow, DFM rule library.
+- [ ] **D8-CIVIL-GEO** — civil, earthworks, pavement, railway, surveying, geodesy, geotech, hydrology, spillway (+kerf-civil, kerf-landscape). Deepen: full alignment/corridor, AASHTO pavement, bearing-capacity + settlement + slope methods, SCS/rational hydrology.
+- [ ] **D9-DYNAMICS** — dynamics, mbd, kinematics, robotics (fold into kerf-motion), vibration, controls (+kerf-systems). Deepen: 3-D constrained multibody w/ contact, full FK/IK/Jacobian/dynamics, MDOF modal + FRF, state-space + modern control.
+- [ ] **D10-ELECTRICAL-ENERGY** — elecpower, solarpv, harness (+kerf-energy, kerf-wiring, kerf-plc). Deepen: load-flow/short-circuit/protection coordination, full PV system + shading + inverter, harness electrical + routing.
+- [ ] **D11-TOLERANCING-QA** — gdt, gdt_callouts, tolfits, tolstack, cmm, reliability (+kerf-gdnt, kerf-mates). Deepen: full ASME Y14.5 evaluation, 3-D tolerance stacks + Monte-Carlo, GR&R/SPC, FMEA/FMECA/MTBF.
+- [ ] **D12-OPTICS-ACOUSTICS** — optics, photonics, acoustics. Deepen: sequential + non-sequential ray trace, aberrations, Gaussian beams, room/duct acoustics, transmission loss.
+- [ ] **D13-VERTICALS** — jewelry, dental, horology, apparel, textiles, woodworking, interior, packaging, BIM/arch (+landscape). Deepen each vertical to its professional workflow depth.
+- [ ] **D14-COST-MATERIALS** — costing, quoting, procsim, materials, matsel, ergonomics (+kerf-lca, kerf-rules, kerf-partsgen). Deepen: should-cost models, full material DB + Ashby selection, process-sim, LCA per ISO 14040.
+
+Each Dnn is large and will span multiple agent waves; treat each as a mini-roadmap.
+
+---
+
+## Phase 7 — Scalability hardening
+
+Directive (2026-05-24): audit + harden scalability (alongside the completed
+redundancy + security audits). Populated from the scalability audit. Expected themes:
+- [ ] **S7-JOBS** — move heavy/long compute (render, FEM, CFD, topo, slicing) off synchronous request handlers onto an async job queue with status polling; idempotency keys; backpressure; per-user concurrency caps.
+- [ ] **S7-DB** — connection-pool sizing, N+1 query elimination, pagination on list endpoints, indexes for hot queries.
+- [ ] **S7-STORAGE** — stream large artifacts (don't buffer in memory); signed/expiring URLs (ties to the security thumbnail finding).
+- [ ] **S7-LIMITS** — rate limiting + request size limits + worker autoscale policy.
+
+## Phase 8 — GPU compute backend (cloud Fly GPU + OSS-compatible)
+
+Directive: add GPU instances on Fly for advanced rendering and advanced
+projects (heavy FEM/CFD/topo), with an abstraction so OSS/self-host can use GPU too.
+- [ ] **G8-IFACE** — define a `ComputeBackend` abstraction (enqueue job → run → artifact → notify) used by render + heavy-compute. Two implementations: `local` (host subprocess, optional local GPU via CUDA/Metal detection, CPU fallback) and `cloud-gpu` (Fly GPU machine pool). MIT-root: the interface + local backend are open; the Fly-pool orchestration lives under the proprietary cloud/ tree.
+- [ ] **G8-FLY** — Fly GPU machine config (e.g. l40s/a100), scale-to-zero, on-demand spin-up per job, GPU worker image (Blender + CUDA), job dispatch + result fetch. Build kerf-workers GPU worker. **Do NOT `fly deploy` / provision GPU machines autonomously — user triggers deployment.**
+- [ ] **G8-OSS** — self-host docs + config so a self-hoster points Kerf at a local/own GPU box; no proprietary dependency in the OSS path; graceful CPU fallback.
+- [ ] **G8-WIRE** — route GPU-eligible jobs (render quality tiers, large sims) to the GPU backend; expose status in the UI (ties to TopoView/render wiring in Phase 2).
+
+## Phase 9 — Billing for GPU + billing-model fix/run
+
+Directive: fix and run the billing model to account for GPU.
+- [ ] **B9-METER** — meter GPU-seconds as a billable resource; emit usage events from the GPU backend; atomic, server-authoritative credit decrement (builds on the P1-API billing fail-closed fix).
+- [ ] **B9-BUCKETS** — extend the three-bucket model: GPU jobs require kerf_paid credits (priced at cost + markup, consistent with existing model); kerf_free = CPU-only or a tight GPU cap; kerf_byo / self-host = own infra, zero Kerf billing.
+- [ ] **B9-MODEL** — update the `billingmodel/` calculator with GPU line items (Fly GPU machine $/s + markup) and RUN it to produce refreshed pricing numbers; reconcile with the Free/Studio/Pro/Enterprise tiers.
+- [ ] **B9-AUDIT** — close the billing-bypass + storage-URL-signing security findings as part of this pass.
+
+Sequencing: Phase 7 (scalability) and the Phase 8/9 design depend on the
+scalability + compute-architecture + billing-model audits (read-only, run first).
+
