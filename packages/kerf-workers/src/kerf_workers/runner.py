@@ -70,6 +70,29 @@ def _maybe_rate_limit_gc_worker(pool):
         return []
 
 
+def _maybe_cycles_workers(pool, count: int):
+    """Instantiate CyclesWorker instances that drain the render_jobs table.
+
+    Lazy import so a missing kerf-render doesn't hard-fail the worker set.
+    Uses a dedicated async wrapper (:class:`_CyclesQueueWorker`) that follows
+    the BaseWorker poll-loop pattern.
+
+    The number of workers defaults to the ``CYCLES_WORKERS`` env var
+    (default ``1``).  Set to ``0`` to disable.
+    """
+    if count <= 0:
+        return []
+    try:
+        from kerf_render.queue_worker import CyclesQueueWorker  # type: ignore
+        return [CyclesQueueWorker(pool=pool) for _ in range(count)]
+    except ImportError:
+        logger.warning("kerf-workers: kerf_render not installed; skipping CyclesQueueWorker")
+        return []
+    except Exception:
+        logger.exception("kerf-workers: failed to create CyclesQueueWorker")
+        return []
+
+
 class DummyStorage:
     async def get(self, key: str):
         raise NotImplementedError("storage not configured")
@@ -93,6 +116,7 @@ async def start_all_workers(
     cam_count: int = 0,
     auto_tess_count: int = 0,
     compaction_count: int = 1,
+    cycles_count: int = 1,
     fem_timeout: int = 300,
     sim_timeout: int = 300,
     tess_timeout: int = 300,
@@ -110,6 +134,7 @@ async def start_all_workers(
         fem_count=fem_count, sim_count=sim_count, tess_count=tess_count,
         cam_count=cam_count, auto_tess_count=auto_tess_count,
         compaction_count=compaction_count,
+        cycles_count=cycles_count,
         fem_timeout=fem_timeout, sim_timeout=sim_timeout,
         tess_timeout=tess_timeout, cam_timeout=cam_timeout,
         cloud_enabled=cloud_enabled, local_mode=local_mode,
@@ -155,6 +180,7 @@ def _build_workers(
     cam_count: int = 0,
     auto_tess_count: int = 0,
     compaction_count: int = 1,
+    cycles_count: int = 1,
     fem_timeout: int = 300,
     sim_timeout: int = 300,
     tess_timeout: int = 300,
@@ -185,6 +211,8 @@ def _build_workers(
     workers.extend(_maybe_pricing_worker(pool))
     # RateLimitGCWorker: prunes rate_limit_buckets rows older than 24h.
     workers.extend(_maybe_rate_limit_gc_worker(pool))
+    # CyclesQueueWorker: drains render_jobs table (kerf-render); lazy import.
+    workers.extend(_maybe_cycles_workers(pool, cycles_count))
     return workers
 
 
@@ -266,6 +294,7 @@ async def run_workers():
             tess_count=int(os.getenv("TESS_WORKERS", "1")),
             cam_count=int(os.getenv("CAM_WORKERS", "0")),
             compaction_count=int(os.getenv("COMPACTION_WORKERS", "1")),
+            cycles_count=int(os.getenv("CYCLES_WORKERS", "1")),
             cloud_enabled=_cloud_enabled,
             local_mode=_local_mode,
         )

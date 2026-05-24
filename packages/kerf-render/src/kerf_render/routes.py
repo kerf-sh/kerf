@@ -1,43 +1,51 @@
 """
-Blender Cycles render engine route.
+Blender Cycles render engine routes.
 
 POST /run-render
-Body: {
-    "version": 1,
-    "name": str,
-    "scene_file_id": str,
-    "mesh_b64": str,           # base64 OBJ/STL/GLB bytes
-    "mesh_format": str,        # "obj" | "stl" | "glb"
-    "camera": {
-        "position": [x, y, z],
-        "target": [x, y, z],
-        "up": [x, y, z],
-        "fov_deg": float,
-        "type": "perspective" | "ortho"
-    },
-    "lights": [...],
-    "materials_override": {"*": {...}},
-    "environment": {"kind": "color", "color": "#202020"} | {"kind": "hdri", ...},
-    "render_settings": {
-        "resolution": [width, height],
-        "samples": int,
-        "denoise": bool,
-        "output_format": "png" | "exr"
-    }
-}
+    Enqueue a Blender Cycles render job.  Returns ``{job_id, status:"queued"}``
+    immediately; a :class:`~kerf_render.queue_worker.CyclesQueueWorker`
+    (registered in kerf-workers) drains the ``render_jobs`` table.
 
-Returns: { "output_b64": str, "format": str, "render_seconds": float }
+    When no DB pool is wired (``request.app.state.pool`` is absent — e.g.
+    in standalone / test deployments) the route falls back to the legacy
+    synchronous subprocess path so existing callers keep working.
+
+GET /render/status/{job_id}
+    Poll the status of an enqueued render job.  Returns the ``render_jobs``
+    row as a dict (status, samples_done, samples_total, signed_url, error).
+
+Body schema (POST /run-render):
+    {
+        "version": 1,
+        "name": str,
+        "scene_file_id": str,
+        "mesh_b64": str,           # base64 OBJ/STL/GLB bytes
+        "mesh_format": str,        # "obj" | "stl" | "glb"
+        "camera": {...},
+        "lights": [...],
+        "materials_override": {"*": {...}},
+        "environment": {"kind": "color", "color": "#202020"},
+        "render_settings": {
+            "resolution": [width, height],
+            "samples": int,
+            "denoise": bool,
+            "output_format": "png" | "exr"
+        }
+    }
 """
 
 import base64
+import hashlib
+import json
 import os
 import shutil
 import subprocess
 import tempfile
 import textwrap
 import time
+import uuid
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field
 from typing import Any, Dict, List, Optional
 
@@ -261,12 +269,96 @@ def _build_blender_script(req: RenderRequest, mesh_path: str, output_path: str) 
 
 
 @router.post("/run-render")
-async def run_render(req: RenderRequest, _auth: dict = Depends(require_auth)):
-    """
-    Run a Blender Cycles render from a .render scene description.
+async def run_render(req: RenderRequest, request: Request, _auth: dict = Depends(require_auth)):
+    """Enqueue a Blender Cycles render job (async job-queue path).
 
-    Returns {output_b64, format, render_seconds} on success.
-    If blender binary is not on PATH, returns a clear error immediately.
+    When a DB pool is available on ``request.app.state.pool``, the request is
+    inserted into ``render_jobs`` and ``{job_id, status: "queued"}`` is
+    returned immediately.  Poll :http:get:`/render/status/{job_id}` for
+    progress.
+
+    Fallback (no pool wired): runs synchronously via the legacy subprocess
+    path so existing standalone / test callers keep working.
+    """
+    # --- Attempt async job-queue path ------------------------------------
+    pool = _get_pool(request)
+    if pool is not None:
+        return await _enqueue_render(req, pool)
+
+    # --- Legacy synchronous fallback (no pool wired) ----------------------
+    return await _run_render_sync(req)
+
+
+def _get_pool(request: Request):
+    """Return the asyncpg pool from app state, or None if not configured."""
+    try:
+        return getattr(request.app.state, "pool", None)
+    except Exception:
+        return None
+
+
+async def _enqueue_render(req: RenderRequest, pool) -> dict:
+    """Insert a render_jobs row and return {job_id, status: queued}."""
+    from kerf_render.job_lifecycle import submit_job
+
+    # Build a stable content hash from the request so cache dedup works.
+    req_dict = req.model_dump()
+    scene_blob_hash = hashlib.sha256(
+        json.dumps(req_dict, sort_keys=True).encode()
+    ).hexdigest()
+
+    # Determine preset from samples count (map to nearest preset).
+    from kerf_render.cycles_worker import PRESET_SAMPLES
+    samples = req.render_settings.samples
+    # Pick the preset whose sample count is closest to the request value.
+    preset = min(PRESET_SAMPLES, key=lambda p: abs(PRESET_SAMPLES[p] - samples))
+
+    output_format = req.render_settings.output_format.lower()
+    job_id = str(uuid.uuid4())
+
+    # Build the full payload dict that CyclesQueueWorker will receive.
+    payload = {
+        **req_dict,
+        "job_id": job_id,
+        "preset": preset,
+        "output_format": output_format,
+        "scene_blob_hash": scene_blob_hash,
+    }
+
+    # Persist payload in render_jobs.payload_json so the queue worker can
+    # reconstruct the full request without refetching from the DB.
+    await pool.execute(
+        """
+        INSERT INTO render_jobs
+            (id, user_id, scene_blob_hash, preset, status,
+             samples_done, samples_total, payload_json, created_at, updated_at)
+        VALUES
+            ($1, NULL, $2, $3, 'queued',
+             0, $4, $5, now(), now())
+        ON CONFLICT DO NOTHING
+        """,
+        job_id,
+        scene_blob_hash,
+        preset,
+        PRESET_SAMPLES[preset],
+        json.dumps(payload),
+    )
+
+    return {
+        "status": "queued",
+        "job_id": job_id,
+        "preset": preset,
+        "output_format": output_format,
+    }
+
+
+async def _run_render_sync(req: RenderRequest) -> dict:
+    """Legacy synchronous subprocess render (fallback when no pool is wired).
+
+    Preserved for backward compatibility with standalone deployments and
+    tests that do not configure a DB pool.  The event loop is blocked for
+    the duration of the render; prefer the async job-queue path in
+    production.
     """
     if not _BLENDER_AVAILABLE:
         return {
@@ -352,7 +444,6 @@ async def run_render(req: RenderRequest, _auth: dict = Depends(require_auth)):
 
         # EXR renders may append frame number suffix
         if not os.path.exists(output_path):
-            # Try with frame suffix e.g. render0001.png
             candidates = [
                 os.path.join(tmpdir, f)
                 for f in os.listdir(tmpdir)
@@ -378,4 +469,46 @@ async def run_render(req: RenderRequest, _auth: dict = Depends(require_auth)):
         "output_b64": output_b64,
         "format": out_fmt,
         "render_seconds": render_seconds,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Status polling route
+# ---------------------------------------------------------------------------
+
+
+@router.get("/render/status/{job_id}")
+async def get_render_status(job_id: str, request: Request):
+    """Poll the status of an async render job.
+
+    Returns the ``render_jobs`` row normalised to::
+
+        {
+            "job_id":        str,
+            "status":        "queued" | "rendering" | "complete" | "failed" | "cancelled",
+            "samples_done":  int,
+            "samples_total": int,
+            "signed_url":    str | null,   # present when status == "complete"
+            "error":         str | null,   # present when status == "failed"
+        }
+
+    Returns ``{"error": "not_found"}`` when the job ID is unknown.
+    Returns ``{"error": "no_pool"}`` when no DB pool is configured.
+    """
+    pool = _get_pool(request)
+    if pool is None:
+        return {"error": "no_pool", "detail": "DB pool not configured on this instance."}
+
+    from kerf_render.job_lifecycle import get_job_status
+    row = await get_job_status(pool, job_id)
+    if row is None:
+        return {"error": "not_found", "job_id": job_id}
+
+    return {
+        "job_id":        row["id"],
+        "status":        row["status"],
+        "samples_done":  row["samples_done"],
+        "samples_total": row["samples_total"],
+        "signed_url":    row.get("signed_url"),
+        "error":         row.get("error"),
     }

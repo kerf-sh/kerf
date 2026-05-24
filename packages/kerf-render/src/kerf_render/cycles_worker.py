@@ -338,20 +338,53 @@ def _build_render_script(
     output_format: str,
     samples: int,
     resolution: Tuple[int, int],
+    gpu_enabled: bool = False,
 ) -> str:
     """Compose the final Blender script that will be written to a tempfile.
 
     We take the script produced by :func:`cycles_translator.translate_body_to_gltf_plus_materials`
     and append:
+      - optional GPU device activation (when ``gpu_enabled=True``)
       - tile-progress reporting shim
       - an explicit ``bpy.ops.render.render(write_still=True)`` call
       - ``sys.exit(0)`` so Blender returns cleanly
+
+    GPU activation
+    --------------
+    When ``gpu_enabled`` is ``True`` (controlled by the ``KERF_RENDER_GPU=1``
+    environment variable — read by :func:`CyclesWorker._invoke_blender`), the
+    script sets ``scene.cycles.device = 'GPU'``, selects ``CUDA`` as the
+    compute device type, and enables all available CUDA devices.  If no CUDA
+    devices are found at runtime Blender silently falls back to CPU rendering.
+
+    To use a future ``FlyGPUBackend`` (see
+    ``kerf_workers.compute_backend.FlyGPUBackend`` extension point in
+    ``cloud/``), set ``KERF_RENDER_GPU=1`` in the GPU machine environment.
     """
     # The translator's generated script defines ``main()`` but deliberately
     # does NOT call ``bpy.ops.render.render``.  We append that here together
     # with the progress shim.
     res_x, res_y = resolution
     out_fmt_upper = output_format.upper()
+
+    # GPU activation block — injected only when KERF_RENDER_GPU=1.
+    gpu_block = ""
+    if gpu_enabled:
+        gpu_block = """
+# ── GPU device activation (KERF_RENDER_GPU=1) ──────────────────────────────
+# Sets Cycles to GPU rendering via CUDA.  If no CUDA devices are present
+# Blender silently falls back to CPU so the render still completes.
+_scene = _bpy.context.scene
+if hasattr(_scene, "cycles"):
+    _scene.cycles.device = "GPU"
+_prefs = _bpy.context.preferences.addons.get("cycles")
+if _prefs is not None:
+    _cprefs = _prefs.preferences
+    _cprefs.compute_device_type = "CUDA"
+    for _dev in _cprefs.devices:
+        _dev.use = True
+# ───────────────────────────────────────────────────────────────────────────
+"""
 
     suffix = f'''
 import sys as _sys
@@ -365,7 +398,7 @@ _bpy.context.scene.render.resolution_x = {res_x}
 _bpy.context.scene.render.resolution_y = {res_y}
 if hasattr(_bpy.context.scene, "cycles"):
     _bpy.context.scene.cycles.samples = {samples}
-
+{gpu_block}
 # Tile progress: register a render-stats handler that emits JSON lines.
 def _kerf_tile_handler(scene):
     try:
@@ -670,6 +703,11 @@ class CyclesWorker:
     ) -> Dict[str, Any]:
         """Write temp files, call Blender, read back output.
 
+        GPU activation is controlled by the ``KERF_RENDER_GPU`` environment
+        variable.  Set ``KERF_RENDER_GPU=1`` (or ``true``/``yes``) to enable
+        CUDA GPU rendering inside the Blender subprocess.  When unset or set to
+        any other value the script runs on CPU (the default).
+
         Returns
         -------
         dict
@@ -677,6 +715,10 @@ class CyclesWorker:
             Failure: ``{"ok": False, "reason": str, "stderr_tail": str}``
         """
         ext = "png" if output_format == "png" else "exr"
+
+        # Honour KERF_RENDER_GPU env flag — graceful CPU fallback when unset.
+        gpu_flag = os.environ.get("KERF_RENDER_GPU", "").strip().lower()
+        gpu_enabled = gpu_flag in ("1", "true", "yes")
 
         with tempfile.TemporaryDirectory(prefix="kerf_render_") as tmpdir:
             # Write glTF blob
@@ -693,6 +735,7 @@ class CyclesWorker:
                 output_format=output_format,
                 samples=samples,
                 resolution=resolution,
+                gpu_enabled=gpu_enabled,
             )
             script_path = os.path.join(tmpdir, "render_script.py")
             with open(script_path, "w") as fh:
