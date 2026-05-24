@@ -466,6 +466,8 @@ def _candidate_points(ifp: Polygon, grid_step: float = 10.0) -> List[Tuple[float
     """
     Generate candidate placement positions: IFP vertices + interior grid.
     """
+    # Floor prevents pathological O((bin/step)^2) memory blow-up from caller input.
+    grid_step = max(float(grid_step), 1.0)
     pts: List[Tuple[float, float]] = list(ifp.vertices)
     bx0, by0, bx1, by1 = ifp.bbox()
     x = bx0

@@ -612,6 +612,9 @@ def pvt_sweep(
             f"Supported: {sorted(supported)}"
         )
 
+    # 60 corners × n_mc — clamp to prevent unbounded compute from caller input.
+    n_mc_per_corner = max(1, min(int(n_mc_per_corner), 10_000))
+
     rng = random.Random(seed)
     all_corners = pvt_corners()
     results: list[CornerResult] = []

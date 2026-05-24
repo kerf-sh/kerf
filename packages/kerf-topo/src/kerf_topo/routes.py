@@ -61,7 +61,8 @@ import tempfile
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
+from kerf_core.dependencies import require_auth
 from pydantic import BaseModel, Field, model_validator
 
 router = APIRouter()
@@ -947,7 +948,7 @@ def _run_fenicsx_simp(req: TopoRequest) -> dict:
 # ── route ──────────────────────────────────────────────────────────────────────
 
 @router.post("/run-topo")
-async def run_topo(req: TopoRequest):
+async def run_topo(req: TopoRequest, _auth: dict = Depends(require_auth)):
     """
     Run SIMP topology optimization.
 
