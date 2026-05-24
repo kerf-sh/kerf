@@ -57,57 +57,13 @@ from __future__ import annotations
 
 import math
 from typing import Any
+from kerf_cad_core._guards import _err, _guard_nonneg, _guard_positive
 
 
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
 
-def _err(reason: str) -> dict:
-    return {"ok": False, "reason": reason}
-
-
-def _guard_positive(name: str, value: Any) -> str | None:
-    try:
-        v = float(value)
-    except (TypeError, ValueError):
-        return f"{name} must be a number, got {value!r}"
-    if not math.isfinite(v):
-        return f"{name} must be finite, got {v}"
-    if v <= 0:
-        return f"{name} must be > 0, got {v}"
-    return None
-
-
-def _guard_nonneg(name: str, value: Any) -> str | None:
-    try:
-        v = float(value)
-    except (TypeError, ValueError):
-        return f"{name} must be a number, got {value!r}"
-    if not math.isfinite(v):
-        return f"{name} must be finite, got {v}"
-    if v < 0:
-        return f"{name} must be >= 0, got {v}"
-    return None
-
-
-# ---------------------------------------------------------------------------
-# Hunter curve data
-# ---------------------------------------------------------------------------
-# Hunter (1940) BMS 65, Tables 1–3, reproduced in IPC Commentary.
-# Points are (total fixture units, demand_gpm) for flush-tank and flush-valve
-# systems.  Intermediate values are linearly interpolated.
-#
-# Flush-tank system (private + public fixture units use same table at low FU;
-# at higher counts the flush-valve table diverges).
-
-# Authoritative Hunter curve. Source: IPC (International Plumbing Code)
-# Appendix E, Table E103.3(2) "predominantly flush tanks" and
-# Table E103.3(3) "predominantly flushometer valves"; identical to the
-# original R.B. Hunter NBS BMS65 (1940) Tables 1 & 3 and reproduced in the
-# ASPE Plumbing Engineering Design Handbook Vol. 2.  These tables also appear
-# in the Uniform Plumbing Code Appendix A and Cleveland/Mohinder Nayyar
-# "Piping Handbook" 7th ed., Table A8.
 _HUNTER_FT: list[tuple[float, float]] = [
     # (FU, GPM) flush-tank — IPC E103.3(2) / NBS BMS65 Table 1
     (1,    3.0),

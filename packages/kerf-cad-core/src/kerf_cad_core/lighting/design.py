@@ -79,6 +79,7 @@ from __future__ import annotations
 
 import math
 from typing import Any
+from kerf_cad_core._guards import _err
 
 # ---------------------------------------------------------------------------
 # Internal helpers
@@ -95,17 +96,6 @@ def _ok(**kwargs: Any) -> _RESULT:
     return d
 
 
-def _err(reason: str) -> _RESULT:
-    return {"ok": False, "reason": reason}
-
-
-# ---------------------------------------------------------------------------
-# CU interpolation table helpers
-# ---------------------------------------------------------------------------
-
-# Default CU table: rows keyed by (rho_ceiling, rho_walls), columns by RCR 0..10.
-# Values are typical for a diffuse direct/indirect luminaire (Type IV, 50% upward).
-# Source: IES HB-10 Table 9.1 (simplified representative values).
 _DEFAULT_CU_TABLE: dict[tuple[int, int], list[float]] = {
     # (rho_ceiling %, rho_walls %)  →  CU at RCR 0,1,2,3,4,5,6,7,8,9,10
     (80, 50): [1.19, 1.07, 0.97, 0.88, 0.80, 0.73, 0.67, 0.62, 0.57, 0.53, 0.49],

@@ -81,6 +81,7 @@ import json
 import math
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
+from kerf_cad_core._guards import _err
 
 # ---------------------------------------------------------------------------
 # Import-guarded CAM helpers
@@ -180,10 +181,6 @@ _RING_BORE_TRIGGER_RATIO = 0.3   # bore_dia / stock_width
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
-
-def _err(reason: str) -> dict:
-    return {"ok": False, "reason": reason}
-
 
 def _positive(name: str, val: Any) -> Optional[str]:
     try:

@@ -99,6 +99,7 @@ from __future__ import annotations
 import math
 import warnings
 from typing import Any
+from kerf_cad_core._guards import _guard_nonneg, _guard_positive
 
 
 # ---------------------------------------------------------------------------
@@ -217,30 +218,6 @@ def _comb(n: int, k: int) -> float:
 # ---------------------------------------------------------------------------
 # Input guards
 # ---------------------------------------------------------------------------
-
-def _guard_positive(name: str, value: Any) -> str | None:
-    try:
-        v = float(value)
-    except (TypeError, ValueError):
-        return f"{name} must be a number, got {value!r}"
-    if not math.isfinite(v):
-        return f"{name} must be finite"
-    if v <= 0:
-        return f"{name} must be > 0, got {v}"
-    return None
-
-
-def _guard_nonneg(name: str, value: Any) -> str | None:
-    try:
-        v = float(value)
-    except (TypeError, ValueError):
-        return f"{name} must be a number, got {value!r}"
-    if not math.isfinite(v):
-        return f"{name} must be finite"
-    if v < 0:
-        return f"{name} must be >= 0, got {v}"
-    return None
-
 
 def _guard_prob(name: str, value: Any) -> str | None:
     try:

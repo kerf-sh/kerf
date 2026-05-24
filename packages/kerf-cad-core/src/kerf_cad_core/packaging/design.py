@@ -81,45 +81,13 @@ from __future__ import annotations
 
 import math
 from typing import Any
+from kerf_cad_core._guards import _err, _guard_nonneg, _guard_positive
 
 
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
 
-def _guard_positive(name: str, value: Any) -> str | None:
-    try:
-        v = float(value)
-    except (TypeError, ValueError):
-        return f"{name} must be a number, got {value!r}"
-    if not math.isfinite(v):
-        return f"{name} must be finite, got {v}"
-    if v <= 0:
-        return f"{name} must be > 0, got {v}"
-    return None
-
-
-def _guard_nonneg(name: str, value: Any) -> str | None:
-    try:
-        v = float(value)
-    except (TypeError, ValueError):
-        return f"{name} must be a number, got {value!r}"
-    if not math.isfinite(v):
-        return f"{name} must be finite, got {v}"
-    if v < 0:
-        return f"{name} must be >= 0, got {v}"
-    return None
-
-
-def _err(reason: str) -> dict:
-    return {"ok": False, "reason": reason}
-
-
-# ---------------------------------------------------------------------------
-# Flute geometry constants  (mm)
-# Keys: flute letter → (thickness_mm, take-up factor)
-# Take-up factor k: corrugated medium length = k * board length
-# ---------------------------------------------------------------------------
 _FLUTE: dict[str, tuple[float, float]] = {
     "A": (4.8, 1.56),
     "B": (3.0, 1.32),

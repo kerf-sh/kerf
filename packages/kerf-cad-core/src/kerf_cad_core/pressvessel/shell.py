@@ -65,50 +65,11 @@ from __future__ import annotations
 import math
 import warnings as _warnings_mod
 from typing import Any
+from kerf_cad_core._guards import _err, _guard_nonneg, _guard_positive
 
 
 # ---------------------------------------------------------------------------
 # Internal helpers
-# ---------------------------------------------------------------------------
-
-def _guard_positive(name: str, value: Any) -> str | None:
-    try:
-        v = float(value)
-    except (TypeError, ValueError):
-        return f"{name} must be a number, got {value!r}"
-    if not math.isfinite(v):
-        return f"{name} must be finite, got {v}"
-    if v <= 0:
-        return f"{name} must be > 0, got {v}"
-    return None
-
-
-def _guard_nonneg(name: str, value: Any) -> str | None:
-    try:
-        v = float(value)
-    except (TypeError, ValueError):
-        return f"{name} must be a number, got {value!r}"
-    if not math.isfinite(v):
-        return f"{name} must be finite, got {v}"
-    if v < 0:
-        return f"{name} must be >= 0, got {v}"
-    return None
-
-
-def _err(reason: str) -> dict:
-    return {"ok": False, "reason": reason}
-
-
-# ---------------------------------------------------------------------------
-# 1. cylindrical_shell_thickness — UG-27(c)(1) & UG-27(c)(2)
-#
-# Circumferential (hoop) stress governs (UG-27(c)(1)):
-#     t_c = P·R / (S·E - 0.6·P) + c
-#
-# Longitudinal stress check (UG-27(c)(2)) — typically half of hoop:
-#     t_l = P·R / (2·S·E + 0.4·P) + c
-#
-# The larger of the two is the required thickness.
 # ---------------------------------------------------------------------------
 
 def cylindrical_shell_thickness(

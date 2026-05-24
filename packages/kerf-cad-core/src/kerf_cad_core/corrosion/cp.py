@@ -76,35 +76,12 @@ from __future__ import annotations
 
 import math
 from typing import Any
+from kerf_cad_core._guards import _err, _guard_nonneg, _guard_positive
 
 
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
-
-def _guard_positive(name: str, value: Any) -> str | None:
-    try:
-        v = float(value)
-    except (TypeError, ValueError):
-        return f"{name} must be a number, got {value!r}"
-    if not math.isfinite(v):
-        return f"{name} must be finite, got {v}"
-    if v <= 0:
-        return f"{name} must be > 0, got {v}"
-    return None
-
-
-def _guard_nonneg(name: str, value: Any) -> str | None:
-    try:
-        v = float(value)
-    except (TypeError, ValueError):
-        return f"{name} must be a number, got {value!r}"
-    if not math.isfinite(v):
-        return f"{name} must be finite, got {v}"
-    if v < 0:
-        return f"{name} must be >= 0, got {v}"
-    return None
-
 
 def _guard_fraction(name: str, value: Any) -> str | None:
     try:
@@ -118,18 +95,6 @@ def _guard_fraction(name: str, value: Any) -> str | None:
     return None
 
 
-def _err(reason: str) -> dict:
-    return {"ok": False, "reason": reason}
-
-
-# ---------------------------------------------------------------------------
-# Galvanic series — open-circuit potentials vs SCE (saturated calomel) in
-# seawater at ~25 °C, then converted to SHE by adding +0.242 V.
-# Source: NACE Corrosion Engineer's Reference Handbook / Fontana Table 2-4.
-# Values are representative midpoints for alloy groups.
-# ---------------------------------------------------------------------------
-
-# Potential vs SHE (V).  More negative = more anodic (active end of series).
 _GALVANIC_SERIES: dict[str, float] = {
     # Active (anodic) end
     "magnesium":          -1.75,

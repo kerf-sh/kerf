@@ -99,52 +99,12 @@ from __future__ import annotations
 
 import math
 from typing import Any
+from kerf_cad_core._guards import _err, _guard_nonneg, _guard_positive
 
 
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
-
-def _guard_positive(name: str, value: Any) -> str | None:
-    try:
-        v = float(value)
-    except (TypeError, ValueError):
-        return f"{name} must be a number, got {value!r}"
-    if not math.isfinite(v):
-        return f"{name} must be finite, got {v}"
-    if v <= 0:
-        return f"{name} must be > 0, got {v}"
-    return None
-
-
-def _guard_nonneg(name: str, value: Any) -> str | None:
-    try:
-        v = float(value)
-    except (TypeError, ValueError):
-        return f"{name} must be a number, got {value!r}"
-    if not math.isfinite(v):
-        return f"{name} must be finite, got {v}"
-    if v < 0:
-        return f"{name} must be >= 0, got {v}"
-    return None
-
-
-def _err(reason: str) -> dict:
-    return {"ok": False, "reason": reason}
-
-
-# ---------------------------------------------------------------------------
-# 1. grossmann_DI — Ideal critical diameter from composition & grain size
-# ---------------------------------------------------------------------------
-# Grossmann multiplying factors (fC, fMn, fSi, fCr, fNi, fMo, fCu, fV)
-# Base factor from C + grain-size, alloy elements treated as multipliers.
-# Source: Grossmann (1942), ASM Handbook Vol. 4, Table 2.
-
-# Carbon base ideal diameter (DI0, inches) vs C wt% — polynomial fit to
-# Grossmann's chart (valid ~0.05–1.0 wt% C, ASTM grain size 7).
-# DI0(C, GS=7) ≈ (0.54 * sqrt(C)) inches per Grossmann
-# We use the improved version from ASM HB Vol. 4:
-#   DI0 (in) = (0.54√C)[1 + 0.046(GS − 7)] -- simplified grain-size correction
 
 def _di_base_inches(C_wt_pct: float, grain_size_ASTM: float) -> float:
     """Base ideal diameter (in.) from C and ASTM grain size."""

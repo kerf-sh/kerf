@@ -40,6 +40,7 @@ from __future__ import annotations
 
 import math
 from typing import Any
+from kerf_cad_core._guards import _err
 
 _G = 9.81  # m/s²
 
@@ -54,10 +55,6 @@ def _ok(**kw: Any) -> dict:
     if "warnings" not in d:
         d["warnings"] = []
     return d
-
-
-def _err(reason: str) -> dict:
-    return {"ok": False, "reason": reason}
 
 
 def _pos(val: Any, name: str) -> str | None:

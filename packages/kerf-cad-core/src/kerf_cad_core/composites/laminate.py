@@ -58,6 +58,7 @@ from __future__ import annotations
 import math
 import warnings
 from typing import Any
+from kerf_cad_core._guards import _err, _guard_nonneg, _guard_positive
 
 __all__ = [
     "reduced_stiffness",
@@ -73,39 +74,6 @@ __all__ = [
 
 # ---------------------------------------------------------------------------
 # Internal helpers
-# ---------------------------------------------------------------------------
-
-def _err(reason: str) -> dict:
-    return {"ok": False, "reason": reason}
-
-
-def _guard_positive(name: str, value: Any) -> str | None:
-    try:
-        v = float(value)
-    except (TypeError, ValueError):
-        return f"{name} must be a number, got {value!r}"
-    if not math.isfinite(v):
-        return f"{name} must be finite, got {v}"
-    if v <= 0:
-        return f"{name} must be > 0, got {v}"
-    return None
-
-
-def _guard_nonneg(name: str, value: Any) -> str | None:
-    try:
-        v = float(value)
-    except (TypeError, ValueError):
-        return f"{name} must be a number, got {value!r}"
-    if not math.isfinite(v):
-        return f"{name} must be finite, got {v}"
-    if v < 0:
-        return f"{name} must be >= 0, got {v}"
-    return None
-
-
-# ---------------------------------------------------------------------------
-# 3×3 matrix helpers (stored as flat list, row-major)
-# M[i][j] = flat[i*3 + j]
 # ---------------------------------------------------------------------------
 
 def _mat3_zero() -> list[float]:

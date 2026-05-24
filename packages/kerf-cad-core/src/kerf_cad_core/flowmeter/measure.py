@@ -59,6 +59,7 @@ from __future__ import annotations
 
 import math
 from typing import Any
+from kerf_cad_core._guards import _err
 
 # ---------------------------------------------------------------------------
 # Internal helpers
@@ -66,10 +67,6 @@ from typing import Any
 
 def _ok(**kwargs: Any) -> dict:
     return {"ok": True, **kwargs}
-
-
-def _err(reason: str) -> dict:
-    return {"ok": False, "reason": reason}
 
 
 def _pos(name: str, val: Any) -> str | None:

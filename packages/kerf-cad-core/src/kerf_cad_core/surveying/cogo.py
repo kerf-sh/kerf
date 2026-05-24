@@ -46,6 +46,7 @@ from __future__ import annotations
 import math
 import warnings
 from typing import Any
+from kerf_cad_core._guards import _err, _guard_finite, _guard_nonneg, _guard_positive
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -58,38 +59,6 @@ _DEFAULT_TRAVERSE_TOLERANCE = 1.0 / 5000.0  # 1:5000 precision ratio
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
-
-def _err(reason: str) -> dict:
-    return {"ok": False, "reason": reason}
-
-
-def _guard_finite(name: str, value: Any) -> str | None:
-    try:
-        v = float(value)
-    except (TypeError, ValueError):
-        return f"{name} must be a number, got {value!r}"
-    if not math.isfinite(v):
-        return f"{name} must be finite, got {v}"
-    return None
-
-
-def _guard_positive(name: str, value: Any) -> str | None:
-    err = _guard_finite(name, value)
-    if err:
-        return err
-    if float(value) <= 0.0:
-        return f"{name} must be > 0, got {value}"
-    return None
-
-
-def _guard_nonneg(name: str, value: Any) -> str | None:
-    err = _guard_finite(name, value)
-    if err:
-        return err
-    if float(value) < 0.0:
-        return f"{name} must be >= 0, got {value}"
-    return None
-
 
 def _deg_to_rad(deg: float) -> float:
     return deg * math.pi / 180.0

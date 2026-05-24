@@ -72,44 +72,11 @@ from __future__ import annotations
 import math
 import warnings as _warnings_module
 from typing import Any
+from kerf_cad_core._guards import _err, _guard_nonneg, _guard_positive
 
 
 # ---------------------------------------------------------------------------
 # Internal helpers
-# ---------------------------------------------------------------------------
-
-def _err(reason: str) -> dict:
-    return {"ok": False, "reason": reason}
-
-
-def _guard_positive(name: str, value: Any) -> str | None:
-    try:
-        v = float(value)
-    except (TypeError, ValueError):
-        return f"{name} must be a number, got {value!r}"
-    if not math.isfinite(v):
-        return f"{name} must be finite, got {v}"
-    if v <= 0:
-        return f"{name} must be > 0, got {v}"
-    return None
-
-
-def _guard_nonneg(name: str, value: Any) -> str | None:
-    try:
-        v = float(value)
-    except (TypeError, ValueError):
-        return f"{name} must be a number, got {value!r}"
-    if not math.isfinite(v):
-        return f"{name} must be finite, got {v}"
-    if v < 0:
-        return f"{name} must be >= 0, got {v}"
-    return None
-
-
-# ---------------------------------------------------------------------------
-# Exposure category parameters (ASCE 7-22 Table 26.10-1)
-# alpha (power-law exponent), zg (gradient height, m), z_min (m)
-# alpha_bar, b_bar, c, l_bar, epsilon_bar for turbulence / gust calcs
 # ---------------------------------------------------------------------------
 
 _EXPOSURE_PARAMS: dict[str, dict] = {

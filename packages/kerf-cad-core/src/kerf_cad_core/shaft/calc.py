@@ -54,45 +54,11 @@ from __future__ import annotations
 
 import math
 from typing import Any
+from kerf_cad_core._guards import _err, _guard_nonneg, _guard_positive
 
 
 # ---------------------------------------------------------------------------
 # Internal helpers
-# ---------------------------------------------------------------------------
-
-def _guard_positive(name: str, value: Any) -> str | None:
-    """Return an error string if *value* is not a finite positive number."""
-    try:
-        v = float(value)
-    except (TypeError, ValueError):
-        return f"{name} must be a number, got {value!r}"
-    if not math.isfinite(v):
-        return f"{name} must be finite, got {v}"
-    if v <= 0:
-        return f"{name} must be > 0, got {v}"
-    return None
-
-
-def _guard_nonneg(name: str, value: Any) -> str | None:
-    """Return an error string if *value* is not a finite non-negative number."""
-    try:
-        v = float(value)
-    except (TypeError, ValueError):
-        return f"{name} must be a number, got {value!r}"
-    if not math.isfinite(v):
-        return f"{name} must be finite, got {v}"
-    if v < 0:
-        return f"{name} must be >= 0, got {v}"
-    return None
-
-
-def _err(reason: str) -> dict:
-    return {"ok": False, "reason": reason}
-
-
-# ---------------------------------------------------------------------------
-# ANSI B17.1 standard key-size table (shaft diameter → w × h, both in mm)
-# Entries: (d_min_mm, d_max_mm) → (width_mm, height_mm)
 # ---------------------------------------------------------------------------
 
 _KEY_TABLE: list[tuple[tuple[float, float], tuple[float, float]]] = [

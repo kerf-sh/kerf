@@ -68,49 +68,11 @@ from __future__ import annotations
 import math
 import warnings as _warnings_mod
 from typing import Any
+from kerf_cad_core._guards import _err, _guard_nonneg, _guard_positive
 
 
 # ---------------------------------------------------------------------------
 # Internal helpers
-# ---------------------------------------------------------------------------
-
-def _guard_positive(name: str, value: Any) -> str | None:
-    try:
-        v = float(value)
-    except (TypeError, ValueError):
-        return f"{name} must be a number, got {value!r}"
-    if not math.isfinite(v):
-        return f"{name} must be finite, got {v}"
-    if v <= 0:
-        return f"{name} must be > 0, got {v}"
-    return None
-
-
-def _guard_nonneg(name: str, value: Any) -> str | None:
-    try:
-        v = float(value)
-    except (TypeError, ValueError):
-        return f"{name} must be a number, got {value!r}"
-    if not math.isfinite(v):
-        return f"{name} must be finite, got {v}"
-    if v < 0:
-        return f"{name} must be >= 0, got {v}"
-    return None
-
-
-def _err(reason: str) -> dict:
-    return {"ok": False, "reason": reason}
-
-
-# ---------------------------------------------------------------------------
-# ISO metric thread geometry table
-# Source: ISO 68-1, ISO 724, and Shigley Table 8-1 (10th ed.)
-# Keys: nominal_diameter_mm (int or float where needed)
-# Values: pitch_mm, minor_diameter_mm (d_minor), pitch_diameter_mm (d_pitch),
-#         stress_area_mm2 (At) — tensile stress area per ISO 898
-#
-# stress_area formula:  At = π/4 × ((d_pitch + d_minor)/2)²  ← ISO 898-1 Annex B
-# For consistency the table uses published At values from Shigley Table 8-1.
 # ---------------------------------------------------------------------------
 
 ISO_THREAD: dict[float, dict] = {

@@ -92,34 +92,11 @@ from __future__ import annotations
 
 import math
 from typing import Any
+from kerf_cad_core._guards import _err, _guard_nonneg, _guard_positive
 
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
-
-def _guard_positive(name: str, value: Any) -> str | None:
-    try:
-        v = float(value)
-    except (TypeError, ValueError):
-        return f"{name} must be a number, got {value!r}"
-    if not math.isfinite(v):
-        return f"{name} must be finite, got {v}"
-    if v <= 0:
-        return f"{name} must be > 0, got {v}"
-    return None
-
-
-def _guard_nonneg(name: str, value: Any) -> str | None:
-    try:
-        v = float(value)
-    except (TypeError, ValueError):
-        return f"{name} must be a number, got {value!r}"
-    if not math.isfinite(v):
-        return f"{name} must be finite, got {v}"
-    if v < 0:
-        return f"{name} must be >= 0, got {v}"
-    return None
-
 
 def _guard_range(name: str, value: Any, lo: float, hi: float) -> str | None:
     try:
@@ -132,27 +109,6 @@ def _guard_range(name: str, value: Any, lo: float, hi: float) -> str | None:
         return f"{name} must be in [{lo}, {hi}], got {v}"
     return None
 
-
-def _err(reason: str) -> dict:
-    return {"ok": False, "reason": reason}
-
-
-# ---------------------------------------------------------------------------
-# AASHTO '93 Flexible Pavement — Structural Number
-# ---------------------------------------------------------------------------
-
-# AASHTO '93 flexible pavement design equation (log10 form):
-#
-# log10(W18) = ZR·S0 + 9.36·log10(SN+1) - 0.20
-#              + log10(ΔPSI / (4.2 - 1.5)) / (0.40 + 1094/(SN+1)^5.19)
-#              + 2.32·log10(MR) - 8.07
-#
-# Rearranged to solve for SN iteratively (bisection on SN in [0, 50]).
-
-# ΔPSI thresholds:
-#   highway initial PSI = 4.2 (AASHTO default)
-#   terminal PSI = 2.5 (major roads) or 2.0 (minor roads)
-#   hence ΔPSI = 4.2 - terminal = 1.7 or 2.2 typically
 
 _PSI_INITIAL = 4.2   # initial PSI (AASHTO standard highway)
 _PSI_TERM_DEFAULT = 2.5  # terminal PSI default

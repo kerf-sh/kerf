@@ -62,35 +62,12 @@ from __future__ import annotations
 
 import math
 from typing import Any
+from kerf_cad_core._guards import _err, _guard_nonneg, _guard_positive
 
 
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
-
-def _guard_positive(name: str, value: Any) -> str | None:
-    try:
-        v = float(value)
-    except (TypeError, ValueError):
-        return f"{name} must be a number, got {value!r}"
-    if not math.isfinite(v):
-        return f"{name} must be finite, got {v}"
-    if v <= 0:
-        return f"{name} must be > 0, got {v}"
-    return None
-
-
-def _guard_nonneg(name: str, value: Any) -> str | None:
-    try:
-        v = float(value)
-    except (TypeError, ValueError):
-        return f"{name} must be a number, got {value!r}"
-    if not math.isfinite(v):
-        return f"{name} must be finite, got {v}"
-    if v < 0:
-        return f"{name} must be >= 0, got {v}"
-    return None
-
 
 def _guard_range(name: str, value: Any, lo: float, hi: float) -> str | None:
     try:
@@ -104,21 +81,6 @@ def _guard_range(name: str, value: Any, lo: float, hi: float) -> str | None:
     return None
 
 
-def _err(reason: str) -> dict:
-    return {"ok": False, "reason": reason}
-
-
-# ---------------------------------------------------------------------------
-# CEMA cross-sectional area tables
-# ---------------------------------------------------------------------------
-# CEMA belt conveyor cross-sectional load area:
-# For a 3-roll equal troughing idler:
-#   A = A1 + A2  where
-#   A1 = (b/2)^2 * tan(λ)     (triangular surcharge portion, b = belt width)
-#   A2 = b² * K_θ             (troughed portion, K_θ depends on trough angle)
-#
-# CEMA Table 4-4 surcharge correction coefficients K_θ (trough + flat factor):
-# These are approximate CEMA-derived values for 3-equal-roll idlers.
 _CEMA_KTROUGH: dict[int, float] = {
     0:  0.0000,   # flat belt
     20: 0.0615,

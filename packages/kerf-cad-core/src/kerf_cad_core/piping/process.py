@@ -67,48 +67,13 @@ from __future__ import annotations
 import math
 import warnings
 from typing import Any
+from kerf_cad_core._guards import _err, _guard_nonneg, _guard_positive
 
 from kerf_cad_core.fluids.friction import darcy_friction_factor
 
 
 # ---------------------------------------------------------------------------
 # Internal helpers
-# ---------------------------------------------------------------------------
-
-def _guard_positive(name: str, value: Any) -> str | None:
-    try:
-        v = float(value)
-    except (TypeError, ValueError):
-        return f"{name} must be a number, got {value!r}"
-    if not math.isfinite(v):
-        return f"{name} must be finite, got {v}"
-    if v <= 0:
-        return f"{name} must be > 0, got {v}"
-    return None
-
-
-def _guard_nonneg(name: str, value: Any) -> str | None:
-    try:
-        v = float(value)
-    except (TypeError, ValueError):
-        return f"{name} must be a number, got {value!r}"
-    if not math.isfinite(v):
-        return f"{name} must be finite, got {v}"
-    if v < 0:
-        return f"{name} must be >= 0, got {v}"
-    return None
-
-
-def _err(reason: str) -> dict:
-    return {"ok": False, "reason": reason}
-
-
-# ---------------------------------------------------------------------------
-# ASME B36.10M / B36.19M — Nominal Pipe Size tables
-#
-# Format: NPS_in → (OD_mm, {schedule_str: wall_mm})
-# OD is fixed per NPS; wall varies by schedule.
-# Source: ASME B36.10M-2018 Table 1 (selected common sizes)
 # ---------------------------------------------------------------------------
 
 _NPS_TABLE: dict[str, tuple[float, dict[str, float]]] = {

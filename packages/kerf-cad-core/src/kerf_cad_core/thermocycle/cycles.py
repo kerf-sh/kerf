@@ -23,6 +23,7 @@ from __future__ import annotations
 import math
 import warnings
 from typing import Optional
+from kerf_cad_core._guards import _err
 
 from kerf_cad_core.fluids.steam import steam_properties as _steam_props
 
@@ -43,10 +44,6 @@ R_AIR  = 287.0     # J/kg·K  (specific gas constant for air)
 
 def _ok(**kwargs) -> dict:
     return {"ok": True, **kwargs}
-
-
-def _err(reason: str) -> dict:
-    return {"ok": False, "reason": reason}
 
 
 def _validate_positive(*pairs: tuple) -> Optional[dict]:

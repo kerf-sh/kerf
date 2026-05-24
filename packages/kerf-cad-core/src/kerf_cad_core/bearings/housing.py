@@ -27,33 +27,13 @@ from __future__ import annotations
 import math
 import re
 from typing import Any
+from kerf_cad_core._guards import _err, _guard_positive
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
-
-def _guard_positive(name: str, value: Any) -> str | None:
-    try:
-        v = float(value)
-    except (TypeError, ValueError):
-        return f"{name} must be a number, got {value!r}"
-    if not math.isfinite(v):
-        return f"{name} must be finite, got {v}"
-    if v <= 0:
-        return f"{name} must be > 0, got {v}"
-    return None
-
-
-def _err(reason: str) -> dict:
-    return {"ok": False, "reason": reason}
-
-
-# ---------------------------------------------------------------------------
-# ISO 286-1:2010 Table 1 — IT grade tolerance widths (µm)
-# Rows: (over_mm, upto_mm, IT3, IT4, IT5, IT6, IT7, IT8, IT9, IT10, IT11)
-# ---------------------------------------------------------------------------
 
 _IT_BANDS: list[tuple] = [
     (0,    3,    2,    3,    4,    6,    10,   14,   25,   40,   60),

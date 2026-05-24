@@ -88,6 +88,7 @@ from __future__ import annotations
 import json
 import math
 from typing import Any, Dict, List, Optional
+from kerf_cad_core._guards import _err
 
 # ---------------------------------------------------------------------------
 # Import-guarded LLM registration
@@ -195,10 +196,6 @@ _BLOCK_STOCK: List[tuple] = [
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-def _err(reason: str) -> dict:
-    return {"ok": False, "reason": reason}
-
 
 def _validate_positive(name: str, val: Any) -> Optional[str]:
     try:
