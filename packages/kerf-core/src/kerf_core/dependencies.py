@@ -162,7 +162,7 @@ def rate_limit(
         if user_id:
             caller = user_id
         else:
-            # X-Forwarded-For is set by Fly.io / nginx; fall back to direct IP.
+            # X-Forwarded-For is set by Koyeb / Fly.io / nginx; fall back to direct IP.
             forwarded = request.headers.get("X-Forwarded-For", "")
             caller = forwarded.split(",")[0].strip() if forwarded else (
                 request.client.host if request.client else "unknown"

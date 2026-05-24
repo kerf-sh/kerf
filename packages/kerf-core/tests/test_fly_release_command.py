@@ -1,5 +1,11 @@
 """Regression: fly.toml must run migrations in `[deploy] release_command`.
 
+# Fly-specific, see deployment/fly.md
+#
+# The hosted Koyeb deployment uses `pre_deploy_command` in koyeb.yaml for the
+# same invariant; see test_release_command.py for the host-agnostic runner
+# tests.  This file stays so the self-host Fly path can't regress silently.
+
 Without release_command, migrations land via `flyctl ssh console -C ...`
 AFTER `flyctl deploy` returns. By then the new machine has already booted
 its in-process workers (KERF_INPROCESS_WORKERS=true) and they immediately

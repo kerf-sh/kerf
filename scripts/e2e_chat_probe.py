@@ -6,7 +6,7 @@ drives the SSE `/messages/stream` endpoint with a real prompt, logs every
 event that comes back, and deletes everything on the way out.
 
 Usage:
-    KERF_BASE_URL=https://kerf-dev.fly.dev \\
+    KERF_BASE_URL=https://kerf-dev.koyeb.app \\
     python scripts/e2e_chat_probe.py
 
 Optional env vars:
@@ -47,7 +47,7 @@ from typing import Iterator
 import httpx
 
 
-BASE_URL = os.environ.get("KERF_BASE_URL", "https://kerf-dev.fly.dev").rstrip("/")
+BASE_URL = os.environ.get("KERF_BASE_URL", "https://kerf-dev.koyeb.app").rstrip("/")
 MODEL = os.environ.get("KERF_MODEL", "").strip()
 PROMPT = os.environ.get("KERF_PROMPT", "make me a box with a lid")
 TIMEOUT = float(os.environ.get("KERF_TIMEOUT", "180"))

@@ -75,8 +75,8 @@ worth knowing if you're auditing:
   daily spend cap to bound stolen-credential blast radius.
 - **GitHub OAuth tokens** and **distributor credentials** are encrypted
   at rest with AES-GCM (`packages/kerf-core/src/kerf_core/utils/encrypt.py`).
-- **LLM API keys** in the hosted tier live as fly.io secrets, never in
-  the database.
+- **LLM API keys** in the hosted tier are injected as Koyeb secrets
+  (`koyeb-cli secrets create`), never stored in the database.
 - **The chat tool surface is wide.** The LLM can read project files,
   edit them, and call tools that hit storage / Postgres on behalf of
   the user. Tool calls are scoped to the calling user's projects and

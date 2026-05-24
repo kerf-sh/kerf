@@ -8,7 +8,10 @@
 # Steps (only with --yes):
 #   1. Read DATABASE_URL from .env.dev (without echoing it)
 #   2. DROP + recreate the dev Neon schema
-#   3. Deploy to Fly dev via  scripts/deploy-fly.sh --dev  (runs migrations)
+#   3. Deploy to Koyeb dev via  scripts/deploy-koyeb.sh --dev  (runs migrations
+#      via the pre_deploy_command defined in koyeb.yaml).
+#      NOTE: The legacy Fly path (scripts/deploy-fly.sh --dev) is kept for
+#      self-hosters; see deployment/fly.md.
 #   4. Smoke: curl /healthz + one API smoke hit
 #   5. Report
 #
@@ -20,8 +23,8 @@
 #
 # Prereqs:
 #   - .env.dev exists (cp .env.z.example .env.dev)
-#   - flyctl installed and authenticated (FLY_CONFIG_DIR=./.fly)
-#   - .fly/ auth token present (flyctl auth login with FLY_CONFIG_DIR=./.fly)
+#   - koyeb CLI installed and authenticated (`koyeb login`)
+#   - KOYEB_TOKEN set in environment or ~/.koyeb/config.yaml
 
 set -uo pipefail
 _REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -37,7 +40,7 @@ if [[ "$YES" != "true" ]]; then
   echo "loop_dev.sh: no-op. Pass --yes to proceed with the dev cycle."
   echo ""
   echo "  CAUTION: this script drops and recreates the dev Neon schema and"
-  echo "  triggers a Fly.io deploy. It requires explicit opt-in."
+  echo "  triggers a Koyeb deploy. It requires explicit opt-in."
   echo ""
   echo "  Usage: ./scripts/loop_dev.sh --yes"
   exit 1
@@ -71,7 +74,7 @@ if echo "$DATABASE_URL" | grep -qiE "(prod|production|kerf-prod|kerf\.sh)"; then
   exit 1
 fi
 
-# App name for smoke check: kerf-dev (derived from deploy-fly.sh --dev logic)
+# App name for smoke check: kerf-dev (derived from deploy-koyeb.sh --dev logic)
 DEV_APP_NAME="kerf-dev"
 if echo "$DEV_APP_NAME" | grep -qiE "(prod|production|kerf-prod)"; then
   echo "ERROR: derived app name looks like production. Refusing."
@@ -82,7 +85,7 @@ echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "  loop_dev.sh  [--yes confirmed]"
 echo "  env file : $ENV_FILE  (secrets not echoed)"
-echo "  fly app  : $DEV_APP_NAME"
+echo "  koyeb app: $DEV_APP_NAME"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
 # ── 1. DROP + recreate dev schema ─────────────────────────────────────────────
@@ -91,16 +94,16 @@ echo "▸ dropping and recreating public schema on dev Neon …"
 # Pass via env — psql reads PGPASSWORD / connection string; never print the URL.
 psql "$DATABASE_URL" -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;" 1>&2
 
-# ── 2. Deploy to Fly dev (runs migrations on the remote side) ─────────────────
+# ── 2. Deploy to Koyeb dev (runs migrations via pre_deploy_command) ───────────
 echo ""
-echo "▸ deploying to Fly dev via scripts/deploy-fly.sh --dev …"
-FLY_CONFIG_DIR="./.fly" "$_REPO_ROOT/scripts/deploy-fly.sh" --dev
+echo "▸ deploying to Koyeb dev via scripts/deploy-koyeb.sh --dev …"
+"$_REPO_ROOT/scripts/deploy-koyeb.sh" --dev
 
 # ── 3. Smoke: health + one API hit ───────────────────────────────────────────
 echo ""
 echo "▸ smoke checks …"
 
-DEV_BASE_URL="https://${DEV_APP_NAME}.fly.dev"
+DEV_BASE_URL="https://${DEV_APP_NAME}.koyeb.app"
 
 # Health check (allow up to 30 s for the deploy to finish booting)
 HEALTH_OK=false
@@ -131,5 +134,5 @@ echo ""
 echo "════════════════════════════════════════════════════════════════════════"
 echo "  loop_dev.sh complete"
 echo "  app  : ${DEV_BASE_URL}"
-echo "  logs : flyctl logs --app $DEV_APP_NAME"
+echo "  logs : koyeb service logs $DEV_APP_NAME"
 echo "════════════════════════════════════════════════════════════════════════"
