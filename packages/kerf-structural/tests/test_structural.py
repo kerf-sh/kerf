@@ -20,6 +20,7 @@ import math
 import pytest
 
 from kerf_structural.rc_beam import design_rc_beam, check_rc_beam
+from kerf_cad_core.concrete.design import beam_flexure as _core_beam_flexure, beam_required_As as _core_required_As
 from kerf_structural.steel_beam import design_steel_beam, w_section
 from kerf_structural.rebar_detailing import (
     bar_info, development_length, lap_splice_length, hook_development_length
@@ -267,3 +268,104 @@ class TestSteelBeam:
         """Lp for W18X50 should be in the range 5–10 ft (typical)."""
         res = design_steel_beam("W18X50", Lb_ft=1.0)
         assert 4.0 * 12 <= res.Lp <= 12.0 * 12   # 4 to 12 ft in inches
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Parity test: kerf-structural and kerf-cad-core concrete routines must agree
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestRCBeamParityWithCadCore:
+    """Verify that kerf-structural's RC beam functions agree with the canonical
+    kerf_cad_core.concrete.design implementation after deduplication.
+
+    Reference beam: 12 in wide × 24 in deep, f'c = 4 000 psi, fy = 60 000 psi,
+    Mu = 200 kip-ft.  Default cover / stirrup / bar geometry.
+    Tolerance: 0.1% relative (engineering parity, not floating-point identity).
+    """
+
+    _B = 12.0          # in
+    _H = 24.0          # in
+    _FC = 4_000.0      # psi
+    _FY = 60_000.0     # psi
+    _MU_KIPFT = 200.0  # kip-ft
+    _COVER = 1.5       # in
+    _STIR = 0.375      # in
+    _BAR = 0.625       # in
+
+    @classmethod
+    def _d(cls) -> float:
+        return cls._H - cls._COVER - cls._STIR - cls._BAR / 2.0
+
+    def test_beta1_agrees(self):
+        """_beta1 imported from kerf_cad_core returns the same value for
+        4 000, 5 000 and 8 000 psi as the historical local formula."""
+        from kerf_cad_core.concrete.design import _beta1 as canon_beta1
+        for fc in (3_000, 4_000, 5_000, 8_000, 10_000):
+            # Historical formula inline for comparison
+            if fc <= 4_000:
+                expected = 0.85
+            else:
+                expected = max(0.85 - 0.05 * (fc - 4_000) / 1_000, 0.65)
+            assert canon_beta1(fc) == pytest.approx(expected, rel=1e-9), (
+                f"_beta1({fc}) mismatch"
+            )
+
+    def test_design_rc_beam_As_matches_core_required_As(self):
+        """design_rc_beam As_required must agree with core beam_required_As
+        to within 0.1% for the reference beam."""
+        structural = design_rc_beam(
+            b=self._B, h=self._H, Mu_kip_ft=self._MU_KIPFT,
+            fc=self._FC, fy=self._FY,
+            cover=self._COVER, stirrup_dia=self._STIR, bar_dia=self._BAR,
+        )
+        assert structural.ok, structural.reason
+
+        Mu_kipin = self._MU_KIPFT * 12.0
+        core = _core_required_As(self._B, self._d(), Mu_kipin, self._FC, self._FY)
+
+        assert abs(structural.As_required - core["As_req_in2"]) / core["As_req_in2"] < 0.001, (
+            f"As mismatch: structural={structural.As_required:.4f} in² "
+            f"vs core={core['As_req_in2']:.4f} in²"
+        )
+
+    def test_check_rc_beam_phi_Mn_matches_core_beam_flexure(self):
+        """check_rc_beam phi_Mn_kip_ft must agree with core beam_flexure
+        phi_Mn_kipin / 12 to within 0.1% for the reference beam's As."""
+        structural_design = design_rc_beam(
+            b=self._B, h=self._H, Mu_kip_ft=self._MU_KIPFT,
+            fc=self._FC, fy=self._FY,
+            cover=self._COVER, stirrup_dia=self._STIR, bar_dia=self._BAR,
+        )
+        assert structural_design.ok
+
+        As = structural_design.As_required
+        cap = check_rc_beam(
+            b=self._B, h=self._H, As=As,
+            fc=self._FC, fy=self._FY,
+            cover=self._COVER, stirrup_dia=self._STIR, bar_dia=self._BAR,
+        )
+        assert cap["ok"]
+
+        core = _core_beam_flexure(self._B, self._d(), As, self._FC, self._FY)
+        core_phi_Mn_kip_ft = core["phi_Mn_kipin"] / 12.0
+
+        assert abs(cap["phi_Mn_kip_ft"] - core_phi_Mn_kip_ft) / core_phi_Mn_kip_ft < 0.001, (
+            f"phi_Mn mismatch: structural={cap['phi_Mn_kip_ft']:.4f} kip-ft "
+            f"vs core={core_phi_Mn_kip_ft:.4f} kip-ft"
+        )
+
+    def test_check_rc_beam_geometry_keys_agree(self):
+        """Stress-block depth a, neutral-axis c, and epsilon_t from check_rc_beam
+        must match core beam_flexure exactly (they delegate to the same call)."""
+        As = 2.20  # in² — representative design area
+        cap = check_rc_beam(
+            b=self._B, h=self._H, As=As,
+            fc=self._FC, fy=self._FY,
+            cover=self._COVER, stirrup_dia=self._STIR, bar_dia=self._BAR,
+        )
+        core = _core_beam_flexure(self._B, self._d(), As, self._FC, self._FY)
+
+        assert cap["a"] == pytest.approx(core["a_in"], rel=1e-9)
+        assert cap["c"] == pytest.approx(core["c_in"], rel=1e-9)
+        assert cap["epsilon_t"] == pytest.approx(core["eps_t"], rel=1e-9)
+        assert cap["phi"] == pytest.approx(core["phi"], rel=1e-9)

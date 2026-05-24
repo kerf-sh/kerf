@@ -15,6 +15,14 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
+# Canonical ACI 318-19 helpers live in kerf-cad-core — import from there to
+# avoid duplication.  kerf-cad-core is the low-level base layer that all CAD
+# compute plugins share.
+from kerf_cad_core.concrete.design import (
+    _beta1,
+    beam_flexure as _beam_flexure,
+)
+
 
 @dataclass
 class RCBeamResult:
@@ -43,13 +51,8 @@ class RCBeamResult:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-
-def _beta1(fc_psi: float) -> float:
-    """ACI 318-19 §22.2.2.4.3 — stress block depth factor β₁."""
-    if fc_psi <= 4_000:
-        return 0.85
-    beta = 0.85 - 0.05 * (fc_psi - 4_000) / 1_000
-    return max(beta, 0.65)
+# _beta1 is re-exported from kerf_cad_core.concrete.design (imported above).
+# The local definition has been removed to eliminate the true code duplicate.
 
 
 def design_rc_beam(
@@ -182,6 +185,9 @@ def check_rc_beam(
     """
     Compute the design moment capacity φMn for a given steel area.
 
+    Delegates to :func:`kerf_cad_core.concrete.design.beam_flexure` — the
+    canonical ACI 318-19 singly-reinforced beam flexural analysis routine.
+
     Returns
     -------
     dict with keys: ok, phi_Mn_kip_ft, Mn_kip_ft, a, c, epsilon_t, phi
@@ -190,21 +196,17 @@ def check_rc_beam(
     if d <= 0 or b <= 0 or As <= 0:
         return {"ok": False, "reason": "Invalid geometry or As"}
 
-    a = As * fy / (0.85 * fc * b)          # depth of stress block (in)
-    b1 = _beta1(fc)
-    c = a / b1                              # neutral-axis depth (in)
-    epsilon_t = 0.003 * (d - c) / c        # net tensile strain
-    phi_actual = 0.9 if epsilon_t >= 0.005 else (
-        0.65 + (epsilon_t - 0.002) * (250.0 / 3.0) if epsilon_t >= 0.002 else 0.65
-    )
-    Mn = As * fy * (d - a / 2.0) / 12_000.0   # kip-ft
-    phi_Mn = phi_actual * Mn
+    # Delegate to canonical implementation (kerf_cad_core.concrete.design)
+    core = _beam_flexure(b, d, As, fc, fy)
+
+    # Translate core result keys → kerf-structural's public dict shape.
+    # kerf-structural returns Mn/phiMn in kip-ft; core uses kip-in.
     return {
         "ok": True,
-        "phi_Mn_kip_ft": phi_Mn,
-        "Mn_kip_ft": Mn,
-        "a": a,
-        "c": c,
-        "epsilon_t": epsilon_t,
-        "phi": phi_actual,
+        "phi_Mn_kip_ft": core["phi_Mn_kipin"] / 12.0,
+        "Mn_kip_ft": core["Mn_kipin"] / 12.0,
+        "a": core["a_in"],
+        "c": core["c_in"],
+        "epsilon_t": core["eps_t"],
+        "phi": core["phi"],
     }

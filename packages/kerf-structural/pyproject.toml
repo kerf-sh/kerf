@@ -11,6 +11,7 @@ description = "Structural RC / steel + rebar design plugin for Kerf"
 requires-python = ">=3.11"
 dependencies = [
     "fastapi",
+    "kerf-cad-core",
 ]
 
 [project.entry-points."kerf.plugins"]
