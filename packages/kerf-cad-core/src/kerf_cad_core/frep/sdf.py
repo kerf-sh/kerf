@@ -27,6 +27,12 @@ import json
 import math
 from typing import Callable, List, Optional, Tuple
 
+from kerf_cad_core.geom.tpms import (
+    gyroid_field as _gyroid_field,
+    schwarz_p_field as _schwarz_p_field,
+    diamond_field as _diamond_field,
+)
+
 # ---------------------------------------------------------------------------
 # Type aliases
 # ---------------------------------------------------------------------------
@@ -136,22 +142,15 @@ def sdf_plane(nx: float = 0.0, ny: float = 0.0, nz: float = 1.0,
 
 def sdf_gyroid(period: float = 1.0, iso: float = 0.0) -> SDF:
     """Gyroid TPMS: sin(X)cos(Y) + sin(Y)cos(Z) + sin(Z)cos(X) = iso."""
-    k = 2.0 * math.pi / period
-
     def _f(x, y, z):
-        kx, ky, kz = k * x, k * y, k * z
-        return (math.sin(kx) * math.cos(ky)
-                + math.sin(ky) * math.cos(kz)
-                + math.sin(kz) * math.cos(kx)) - iso
+        return _gyroid_field(x, y, z, period) - iso
     return _f
 
 
 def sdf_schwarz_p(period: float = 1.0, iso: float = 0.0) -> SDF:
     """Schwarz-P TPMS: cos(X) + cos(Y) + cos(Z) = iso."""
-    k = 2.0 * math.pi / period
-
     def _f(x, y, z):
-        return math.cos(k * x) + math.cos(k * y) + math.cos(k * z) - iso
+        return _schwarz_p_field(x, y, z, period) - iso
     return _f
 
 
@@ -159,15 +158,8 @@ def sdf_diamond(period: float = 1.0, iso: float = 0.0) -> SDF:
     """Diamond (Schwarz-D) TPMS:
     sin(X)sin(Y)sin(Z) + sin(X)cos(Y)cos(Z) +
     cos(X)sin(Y)cos(Z) + cos(X)cos(Y)sin(Z) = iso."""
-    k = 2.0 * math.pi / period
-
     def _f(x, y, z):
-        kx, ky, kz = k * x, k * y, k * z
-        sx, cx_ = math.sin(kx), math.cos(kx)
-        sy, cy_ = math.sin(ky), math.cos(ky)
-        sz, cz_ = math.sin(kz), math.cos(kz)
-        return (sx * sy * sz + sx * cy_ * cz_
-                + cx_ * sy * cz_ + cx_ * cy_ * sz) - iso
+        return _diamond_field(x, y, z, period) - iso
     return _f
 
 

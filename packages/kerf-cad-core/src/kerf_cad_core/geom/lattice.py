@@ -55,6 +55,8 @@ from __future__ import annotations
 import math
 from typing import Callable, List, Tuple
 
+from kerf_cad_core.geom.tpms import gyroid_field, schwarz_p_field
+
 # ---------------------------------------------------------------------------
 # Type aliases
 # ---------------------------------------------------------------------------
@@ -63,31 +65,21 @@ Strut = Tuple[Point3, Point3]
 
 
 # ---------------------------------------------------------------------------
-# TPMS helpers
+# TPMS helpers — thin closures over the shared field functions
 # ---------------------------------------------------------------------------
 
 def _make_gyroid_f(cell_size: float) -> Callable[[float, float, float], float]:
     """Return the gyroid implicit function scaled to *cell_size*."""
-    k = 2.0 * math.pi / cell_size
-
     def f(x: float, y: float, z: float) -> float:
-        # Gyroid: sin(kx)cos(ky) + sin(ky)cos(kz) + sin(kz)cos(kx) = 0
-        return (
-            math.sin(k * x) * math.cos(k * y)
-            + math.sin(k * y) * math.cos(k * z)
-            + math.sin(k * z) * math.cos(k * x)
-        )
+        return gyroid_field(x, y, z, cell_size)
 
     return f
 
 
 def _make_schwarz_p_f(cell_size: float) -> Callable[[float, float, float], float]:
     """Return the Schwarz-P implicit function scaled to *cell_size*."""
-    k = 2.0 * math.pi / cell_size
-
     def f(x: float, y: float, z: float) -> float:
-        # Schwarz-P: cos(kx) + cos(ky) + cos(kz) = 0
-        return math.cos(k * x) + math.cos(k * y) + math.cos(k * z)
+        return schwarz_p_field(x, y, z, cell_size)
 
     return f
 
