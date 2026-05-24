@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "generatedAt": "2026-05-24T20:13:47.426Z",
+  "generatedAt": "2026-05-24T20:56:43.420Z",
   "items": [
     {
       "slug": "revit",
@@ -21,7 +21,7 @@
           "name": "Curtain wall system (grid, panels, mullions)",
           "domain": "D13",
           "competitor": "paid: false",
-          "kerf": "evidence: \"cloud/bim/\""
+          "kerf": "evidence: \"packages/kerf-bim/src/kerf_bim/tools/curtain_wall.py\""
         },
         {
           "name": "Doors and windows (host-based, parametric families)",
@@ -39,7 +39,7 @@
           "name": "Roof (footprint, extrusion, mass)",
           "domain": "D13",
           "competitor": "paid: false",
-          "kerf": "evidence: \"cloud/bim/\""
+          "kerf": "evidence: \"packages/kerf-bim/src/kerf_bim/roof_geometry.py\""
         },
         {
           "name": "Stairs (run/landing/railing, code check)",
@@ -75,19 +75,19 @@
           "name": "MEP — HVAC duct systems",
           "domain": "D13",
           "competitor": "paid: false",
-          "kerf": "evidence: \"cloud/bim/\""
+          "kerf": "evidence: \"packages/kerf-bim/src/kerf_bim/tools/mep.py\""
         },
         {
           "name": "MEP — plumbing (pipe systems, fixtures)",
           "domain": "D13",
           "competitor": "paid: false",
-          "kerf": "evidence: \"cloud/bim/\""
+          "kerf": "evidence: \"packages/kerf-bim/src/kerf_bim/tools/mep.py\""
         },
         {
           "name": "MEP — electrical (circuits, panels, lighting)",
           "domain": "D13",
           "competitor": "paid: false",
-          "kerf": "evidence: \"cloud/bim/\""
+          "kerf": "evidence: \"packages/kerf-bim/src/kerf_bim/tools/mep.py\""
         },
         {
           "name": "Parametric family editor (nested families, type catalogue)",
@@ -117,7 +117,7 @@
           "name": "Rooms and spaces (area, occupancy, program)",
           "domain": "D13",
           "competitor": "paid: false",
-          "kerf": "evidence: \"cloud/bim/spaces.go\""
+          "kerf": "evidence: \"packages/kerf-bim/src/kerf_bim/spaces.py\""
         },
         {
           "name": "BIM views (plan, section, elevation, 3D, callout)",
@@ -320,8 +320,8 @@
           },
           "kerf": {
             "status": "partial",
-            "note": "Basic earthworks / site grading; no corridor-driven volumes",
-            "evidence": "packages/kerf-civil/"
+            "note": "TIN surface from point cloud + cut/fill volumes; contour extraction; no corridor-driven composite TINs",
+            "evidence": "packages/kerf-civil/src/kerf_civil/tin.py"
           }
         },
         {
@@ -334,7 +334,8 @@
           },
           "kerf": {
             "status": "no",
-            "evidence": "packages/kerf-civil/"
+            "note": "TR-55 hydrology + D8 flow accumulation exist; no gravity pipe network design/sizing/plan workflow",
+            "evidence": "packages/kerf-civil/src/kerf_civil/"
           }
         },
         {
@@ -346,8 +347,9 @@
             "source": "https://help.autodesk.com/view/CIV3D/2026/ENU/?guid=GUID-A57BA96E-A2F5-4A4F-B0B3-2E3D8F6E1C9D"
           },
           "kerf": {
-            "status": "no",
-            "evidence": "packages/kerf-civil/"
+            "status": "partial",
+            "note": "Hardy-Cross steady-state pressure pipe network solver (Darcy-Weisbach, Hazen-Williams) in kerf-cad-core; no plan-production or fittings layout",
+            "evidence": "packages/kerf-cad-core/src/kerf_cad_core/civil/hydraulics.py"
           }
         },
         {
@@ -444,7 +446,8 @@
           },
           "kerf": {
             "status": "no",
-            "evidence": "packages/kerf-civil/"
+            "note": "Needs parcel/lot-layout epic; not in current civil module scope",
+            "evidence": "packages/kerf-civil/src/kerf_civil/"
           }
         },
         {
@@ -457,7 +460,8 @@
           },
           "kerf": {
             "status": "no",
-            "evidence": "packages/kerf-civil/"
+            "note": "No scan / point-cloud ingestion; needs LiDAR/photogrammetry import pipeline",
+            "evidence": "packages/kerf-civil/src/kerf_civil/"
           }
         },
         {
@@ -470,7 +474,8 @@
           },
           "kerf": {
             "status": "no",
-            "evidence": "packages/kerf-civil/"
+            "note": "No automated civil plan/profile sheet generation; corridor DXF export exists but no sheet-set workflow",
+            "evidence": "packages/kerf-civil/src/kerf_civil/"
           }
         },
         {
@@ -511,8 +516,8 @@
           },
           "kerf": {
             "status": "yes",
-            "note": "Backend; Hardy-Cross clean-water pipe network",
-            "evidence": "packages/kerf-civil/"
+            "note": "Hardy-Cross steady-state pressure pipe network + Method-of-Characteristics transient solver",
+            "evidence": "packages/kerf-cad-core/src/kerf_cad_core/civil/hydraulics.py"
           }
         },
         {
@@ -717,9 +722,9 @@
             "source": "https://help.graphisoft.com/AC/27/INT/_AC27_Help/content/020_elemtools/020_elemtools-9.htm"
           },
           "kerf": {
-            "status": "partial",
-            "note": "Basic roof slab; no hip/gable/barrel roof generator",
-            "evidence": "packages/kerf-bim/src/bim.py"
+            "status": "yes",
+            "note": "Parametric hip / gable / shed / mono-pitch roof B-rep generator with IFC IfcRoof export",
+            "evidence": "packages/kerf-bim/src/kerf_bim/roof_geometry.py"
           }
         },
         {
@@ -732,8 +737,8 @@
           },
           "kerf": {
             "status": "partial",
-            "note": "IFC Tier 2 import; IFC export in progress, not yet certified",
-            "evidence": "packages/kerf-bim/src/ifc_import.py"
+            "note": "IFC4 export wired (walls/slabs/doors/windows/spaces/stairs/openings/site); Tier 2 import; not yet buildingSMART certified",
+            "evidence": "packages/kerf-bim/src/kerf_bim/export_ifc/writer.py"
           }
         },
         {
@@ -760,8 +765,8 @@
           },
           "kerf": {
             "status": "partial",
-            "note": "Backend MEP routing calculator; no BIM MEP routing UI",
-            "evidence": "packages/kerf-bim/src/mep.py"
+            "note": "BIM MEP routing (duct/pipe/conduit segments, fittings, endpoints) via create_mep_route tool; no clash-aware auto-routing UI",
+            "evidence": "packages/kerf-bim/src/kerf_bim/tools/mep.py"
           }
         },
         {
@@ -787,9 +792,9 @@
             "source": "https://help.graphisoft.com/AC/27/INT/_AC27_Help/content/060_documentation/060_documentation-5.htm"
           },
           "kerf": {
-            "status": "partial",
-            "note": "BOM panel in assemblies; no BIM-element schedule generator",
-            "evidence": "src/components/BOMPanel.jsx"
+            "status": "yes",
+            "note": "BIM element schedules (walls/doors/windows/spaces/slabs); area/volume/occupancy totals per level; bim_space_schedule tool",
+            "evidence": "packages/kerf-bim/src/kerf_bim/tools/schedule.py"
           }
         },
         {
@@ -801,9 +806,9 @@
             "source": "https://help.graphisoft.com/AC/27/INT/_AC27_Help/content/020_elemtools/020_elemtools-16.htm"
           },
           "kerf": {
-            "status": "no",
-            "note": "No curtain wall tool",
-            "evidence": ""
+            "status": "yes",
+            "note": "Parametric curtain wall: panel grid (u/v divisions, count/spacing), mullion profiles (square/round), glass/solid/opening panels, B-rep mullion + panel solids",
+            "evidence": "packages/kerf-bim/src/kerf_bim/tools/curtain_wall.py"
           }
         },
         {
@@ -815,9 +820,9 @@
             "source": "https://help.graphisoft.com/AC/27/INT/_AC27_Help/content/020_elemtools/020_elemtools-13.htm"
           },
           "kerf": {
-            "status": "no",
-            "note": "No room/space/zone BIM object",
-            "evidence": ""
+            "status": "yes",
+            "note": "IfcSpace-compliant space objects with area/volume/occupancy; bim_create_space + bim_space_schedule tools; IFC import + export of spaces wired",
+            "evidence": "packages/kerf-bim/src/kerf_bim/spaces.py"
           }
         },
         {
@@ -830,7 +835,7 @@
           },
           "kerf": {
             "status": "no",
-            "note": "No federated BIM hotlink mechanism",
+            "note": "No federated BIM hotlink/XRef mechanism; cloud git provides file-level references but not BIM-level live linking",
             "evidence": ""
           }
         },
@@ -1107,8 +1112,8 @@
           },
           "kerf": {
             "status": "partial",
-            "note": "Template-based, not live B-rep projection; no UI panel",
-            "evidence": "packages/kerf-cad-core/src/drawings/"
+            "note": "Live HLR projection (make2d) + auto-dim; no GD&T-placement UI",
+            "evidence": "packages/kerf-cad-core/src/kerf_cad_core/geom/make2d.py"
           }
         },
         {
@@ -1120,9 +1125,9 @@
             "source": "https://www.sketchup.com/products/sketchup-pro"
           },
           "kerf": {
-            "status": "partial",
-            "note": "Single flange + unfold + flat DXF; no hem/relief/jog/multi-flange",
-            "evidence": "packages/kerf-cad-core/src/sheetmetal/"
+            "status": "yes",
+            "note": "Flange + hem + jog + multi-flange + unfold + flat DXF (K-factor); no auto corner-relief",
+            "evidence": "packages/kerf-cad-core/src/kerf_cad_core/construction_verbs_tools.py"
           }
         },
         {
@@ -1537,9 +1542,9 @@
             "source": "https://app-help.vectorworks.net/2024/eng/index.htm#t=VW2024_Guide%2FSite_Model%2FCreating_Site_Models.htm"
           },
           "kerf": {
-            "status": "no",
-            "note": "No site model or DTM grading; civil engines are backend only with no UI",
-            "evidence": "packages/kerf-civil/"
+            "status": "yes",
+            "note": "Contour extraction (marching squares), cut/fill volumes (prismatic), planar grade application; landscape_contours + landscape_cut_fill tools",
+            "evidence": "packages/kerf-landscape/src/kerf_landscape/grading.py"
           }
         },
         {
@@ -1551,9 +1556,9 @@
             "source": "https://app-help.vectorworks.net/2024/eng/index.htm#t=VW2024_Guide%2FSite_Model%2FAnalyzing_Site_Models.htm"
           },
           "kerf": {
-            "status": "no",
-            "note": "Backend terrain algorithms exist; no UI route",
-            "evidence": "packages/kerf-civil/terrain.py"
+            "status": "yes",
+            "note": "Marching-squares iso-contour extraction from DEM grid; grade_surface applies uniform planar grade; landscape_contours tool",
+            "evidence": "packages/kerf-landscape/src/kerf_landscape/grading.py"
           }
         },
         {
@@ -1565,9 +1570,9 @@
             "source": "https://app-help.vectorworks.net/2024/eng/index.htm#t=VW2024_Guide%2FHardscapes%2FHardscape_Objects.htm"
           },
           "kerf": {
-            "status": "no",
-            "note": "Not implemented",
-            "evidence": ""
+            "status": "yes",
+            "note": "Paver pattern generator (running-bond/stack-bond/herringbone-45/basketweave) + material takeoff; retaining wall (Rankine) sizing; landscape_paver_pattern + landscape_retaining_wall tools",
+            "evidence": "packages/kerf-landscape/src/kerf_landscape/hardscape.py"
           }
         },
         {
@@ -1579,9 +1584,9 @@
             "source": "https://app-help.vectorworks.net/2024/eng/index.htm#t=VW2024_Guide%2FIrrigation%2FIrrigation_Overview.htm"
           },
           "kerf": {
-            "status": "no",
-            "note": "Not implemented",
-            "evidence": ""
+            "status": "yes",
+            "note": "Irrigation zone scheduling (head spacing, zone flow demand, weekly run-time schedule, DU audit); ASABE/ICC 802-2014; landscape_irrigation_schedule tool",
+            "evidence": "packages/kerf-landscape/src/kerf_landscape/irrigation.py"
           }
         },
         {
@@ -1705,9 +1710,9 @@
             "source": "https://app-help.vectorworks.net/2024/eng/index.htm#t=VW2024_Guide%2FCurtain_Walls%2FCurtain_Wall_Overview.htm"
           },
           "kerf": {
-            "status": "partial",
-            "note": "BIM curtain wall pattern exists; limited parametric control",
-            "evidence": "packages/kerf-bim/"
+            "status": "yes",
+            "note": "Parametric curtain wall: u/v panel grid (count/spacing/mixed), square/round mullion profiles, glass/solid/opening panels, B-rep mullion+panel solids",
+            "evidence": "packages/kerf-bim/src/kerf_bim/tools/curtain_wall.py"
           }
         },
         {
@@ -1733,9 +1738,9 @@
             "source": "https://app-help.vectorworks.net/2024/eng/index.htm#t=VW2024_Guide%2FPlants%2FPlants_Overview.htm"
           },
           "kerf": {
-            "status": "partial",
-            "note": "Landscape backend exists (drainage/grading/planting); no plant symbol library or scheduling UI",
-            "evidence": "packages/kerf-verticals/landscape.py"
+            "status": "yes",
+            "note": "Xeriscape plant catalogue (USDA zone + WUCOLS water-use filtering); planting-grid spacing; annual water budget (WUCOLS ET factors); landscape_plants tool",
+            "evidence": "packages/kerf-landscape/src/kerf_landscape/planting.py"
           }
         },
         {
@@ -1872,6 +1877,7 @@
           "kerf": {
             "status": "no",
             "note": "View-only; no cursor-driven interactive route/place in UI",
+            "kerf_note": "Frontend PCB canvas editor gap (cad-core UI). Backend shove router and FreeRouting autorouter are wired. Chat-native routing (describe → LLM → routes) partially compensates.",
             "evidence": "packages/kerf-electronics/src/kerf_electronics/routing/push_shove.py"
           }
         },
@@ -1898,8 +1904,8 @@
             "source": "https://www.kicad.org/discover/pcb-design/"
           },
           "kerf": {
-            "status": "partial",
-            "note": "FreeRouting integrated; SHA unpinned — blocked until pinned",
+            "status": "yes",
+            "note": "FreeRouting v1.9.0 JAR integrated; SHA-256 pinned (9084a48…); DSN→SES round-trip",
             "evidence": "packages/kerf-electronics/src/kerf_electronics/freerouting/freerouting.py"
           }
         },
@@ -1912,9 +1918,9 @@
             "source": "https://docs.kicad.org/8.0/en/pcbnew/pcbnew.html"
           },
           "kerf": {
-            "status": "partial",
-            "note": "Length tuning tool; diff-pair routing lighter than KiCad",
-            "evidence": "packages/kerf-electronics/src/kerf_electronics/tools/length_tuning.py"
+            "status": "yes",
+            "note": "add_diff_pair + route_diff_pair (IPC-2141A / Wadell impedance) + length-group match; interactive cursor drag is the UI gap (cad-core)",
+            "evidence": "packages/kerf-electronics/src/kerf_electronics/tools/diffpair.py"
           }
         },
         {
@@ -1996,8 +2002,8 @@
             "source": "https://docs.kicad.org/8.0/en/pcbnew/pcbnew.html"
           },
           "kerf": {
-            "status": "partial",
-            "note": "thermal_board — 2-D FD steady-state (backend); lumped Rθ",
+            "status": "yes",
+            "note": "thermal_board — 2-D FD steady-state; forced/natural convection; thermal-via G; copper-pour k_eff; hotspot mapping; copper+via recommendation engine (backend)",
             "evidence": "packages/kerf-electronics/src/kerf_electronics/thermal_board.py"
           }
         },
@@ -2346,8 +2352,8 @@
             "tier": "paid"
           },
           "kerf": {
-            "status": "[~]",
-            "notes": "Hierarchical sheets cover repeated blocks; no Altium-style room replication",
+            "status": "[x]",
+            "notes": "replicate_channel tool: Altium-style N-channel replication; per-channel net prefixing; global nets (GND/VCC/VDD/VBUS) shared; 2–64 channels; position offsets; PCB room replication is cad-core wave 2",
             "evidence": "packages/kerf-electronics/src/kerf_electronics/tools/hier_schematic.py"
           }
         },
@@ -2408,6 +2414,7 @@
           "kerf": {
             "status": "[ ]",
             "notes": "View-only; no cursor interactive editing today",
+            "kerf_note": "Requires frontend canvas PCB editor (cad-core UI work). Backend router is ready; UI layer is the gap.",
             "evidence": "packages/kerf-electronics/src/kerf_electronics/routing/push_shove.py"
           }
         },
@@ -2436,8 +2443,8 @@
             "tier": "paid"
           },
           "kerf": {
-            "status": "[~]",
-            "notes": "FreeRouting JAR integrated; SHA unpinned — blocked until set",
+            "status": "[x]",
+            "notes": "FreeRouting v1.9.0 integrated; SHA-256 pinned; DSN→SES round-trip via autoroute_circuit tool",
             "evidence": "packages/kerf-electronics/src/kerf_electronics/tools/autoroute.py"
           }
         },
@@ -2451,8 +2458,8 @@
             "tier": "paid"
           },
           "kerf": {
-            "status": "[~]",
-            "notes": "Length tuning present; differential-pair routing lighter",
+            "status": "[x]",
+            "notes": "add_diff_pair + route_diff_pair (IPC-2141A / Wadell coupled impedance) + length-group skew check; interactive cursor drag requires cad-core UI",
             "evidence": "packages/kerf-electronics/src/kerf_electronics/tools/diffpair.py"
           }
         },
@@ -2496,8 +2503,8 @@
             "tier": "paid"
           },
           "kerf": {
-            "status": "[~]",
-            "notes": "Via types supported; HDI rule depth lighter than Altium",
+            "status": "[x]",
+            "notes": "Buried/blind/micro-via types; microstrip/embedded-microstrip/stripline/CPWG/differential impedance; trace-width-for-Z0 solver; back-drill modelled as clearance constraint; Altium HDI DRC depth (back-drill mechanical rules) = honest gap",
             "evidence": "packages/kerf-electronics/src/kerf_electronics/stackup/impedance.py"
           }
         },
@@ -2543,6 +2550,7 @@
           "kerf": {
             "status": "[ ]",
             "notes": "Single-board per project today; no multi-board equivalent",
+            "kerf_note": "Multi-board 3D workspace is a large project-model architectural gap. Requires multi-PCB project type + 3D clearance checks across boards. Epic — wave 2.",
             "evidence": "packages/kerf-electronics/src/kerf_electronics/plugin.py"
           }
         },
@@ -2557,7 +2565,8 @@
           },
           "kerf": {
             "status": "[~]",
-            "notes": "Board 3D view via STEP; shallower clearance DRC",
+            "notes": "Board 3D via STEP export + OCCT viewer; 3D component-body clearance DRC shallower than Altium's native 3D DRC engine",
+            "kerf_note": "Full 3D PCB body-clearance DRC requires cad-core 3D geometry intersection engine; tractable wave 2.",
             "evidence": "packages/kerf-electronics/src/kerf_electronics/tools/fab.py"
           }
         },
@@ -2661,8 +2670,8 @@
             "tier": "paid"
           },
           "kerf": {
-            "status": "[~]",
-            "notes": "thermal_board 2-D FD steady-state (backend); lumped Rθ model",
+            "status": "[x]",
+            "notes": "thermal_board 2-D FD steady-state; forced/natural convection; thermal-via G; copper-pour k_eff; hotspot map; copper+via recommendation engine (backend)",
             "evidence": "packages/kerf-electronics/src/kerf_electronics/thermal_board.py"
           }
         },
@@ -2856,8 +2865,8 @@
             "tier": "paid"
           },
           "kerf": {
-            "status": "[~]",
-            "notes": "DFM rule checker (backend, mesh-based)",
+            "status": "[x]",
+            "notes": "DFM checker: annular ring, trace spacing, drill-to-copper, silkscreen-over-pad, acid traps, slivers, courtyard overlap, smallest-passive; score + severity tiers (backend)",
             "evidence": "packages/kerf-electronics/src/kerf_electronics/dfm/rules.py"
           }
         },
@@ -2926,6 +2935,7 @@
           "kerf": {
             "status": "partial",
             "note": "View-only; no cursor editing",
+            "kerf_note": "Frontend PCB canvas editor is the gap (cad-core UI); backend shove router and FreeRouting autorouter are already wired.",
             "evidence": "packages/kerf-electronics/"
           }
         },
@@ -2938,9 +2948,9 @@
             "source": "https://www.autodesk.com/products/eagle"
           },
           "kerf": {
-            "status": "partial",
-            "note": "FreeRouting JAR integration present; SHA unpinned — blocked until resolved",
-            "evidence": "packages/kerf-electronics/"
+            "status": "yes",
+            "note": "FreeRouting v1.9.0 integrated; SHA-256 pinned; DSN→SES round-trip",
+            "evidence": "packages/kerf-electronics/src/kerf_electronics/freerouting/freerouting.py"
           }
         },
         {
@@ -3022,9 +3032,9 @@
             "source": "https://www.autodesk.com/products/eagle"
           },
           "kerf": {
-            "status": "partial",
-            "note": "Lumped Rtheta; backend",
-            "evidence": "packages/kerf-electronics/"
+            "status": "yes",
+            "note": "Full 2-D FD steady-state solver; natural+forced convection; thermal vias; hotspot map (backend)",
+            "evidence": "packages/kerf-electronics/src/kerf_electronics/thermal_board.py"
           }
         },
         {
@@ -3245,6 +3255,7 @@
           "kerf": {
             "status": "no",
             "note": "View-only; no cursor editing today",
+            "kerf_note": "Frontend PCB canvas editor is the gap (cad-core UI); backend router and FreeRouting autorouter are already wired.",
             "evidence": "packages/kerf-electronics/pcb/"
           }
         },
@@ -3258,8 +3269,8 @@
           },
           "kerf": {
             "status": "yes",
-            "note": "FreeRouting integrated (JAR SHA must be pinned)",
-            "evidence": "packages/kerf-electronics/autoroute/"
+            "note": "FreeRouting v1.9.0 integrated; SHA-256 pinned; DSN→SES round-trip",
+            "evidence": "packages/kerf-electronics/src/kerf_electronics/freerouting/freerouting.py"
           }
         },
         {
@@ -3604,9 +3615,9 @@
             "source": "https://github.com/thiagoralves/OpenPLC_Editor"
           },
           "kerf": {
-            "status": "no",
-            "note": "C libs present; server-side OTA endpoint not yet wired",
-            "evidence": "packages/kerf-plc/"
+            "status": "yes",
+            "note": "POST /firmware/ota/release (Ed25519-signed) + GET /firmware/ota/check; C backends for ESP32/STM32/SAMD",
+            "evidence": "packages/kerf-firmware/src/kerf_firmware/routes.py"
           }
         },
         {
@@ -3834,9 +3845,9 @@
             "note": "PartDesign AdditiveLoft / SubtractiveLoft"
           },
           "kerf": {
-            "status": "partial",
-            "evidence": "packages/kerf-cad-core/src/kerf_cad_core/surfacing.py",
-            "note": "no guide-rail overload in binding"
+            "status": "yes",
+            "evidence": "packages/kerf-cad-core/src/kerf_cad_core/feature_loft.py",
+            "note": "guide-rail overload wired (ThruSections.AddWire); ruled/closed/symmetric"
           }
         },
         {
@@ -3847,9 +3858,9 @@
             "note": "SheetMetal addon (community) — bend/unfold/flat-pattern/K-factor"
           },
           "kerf": {
-            "status": "partial",
-            "evidence": "packages/kerf-cad-core/src/kerf_cad_core/sheet_metal.py",
-            "note": "single flange + unfold + flat DXF; no hem/jog/multi-flange"
+            "status": "yes",
+            "evidence": "packages/kerf-cad-core/src/kerf_cad_core/construction_verbs_tools.py",
+            "note": "flange + hem + jog + multi-flange + unfold + flat DXF (K-factor)"
           }
         },
         {
@@ -3899,9 +3910,9 @@
             "note": "Surface WB (built-in, limited) — no class-A NURBS"
           },
           "kerf": {
-            "status": "partial",
-            "evidence": "packages/kerf-cad-core/src/kerf_cad_core/surfacing.py",
-            "note": "math complete; OCCT bindings unconfirmed at build"
+            "status": "yes",
+            "evidence": "packages/kerf-cad-core/src/kerf_cad_core/geom/network_srf.py",
+            "note": "blend_srf, network_srf (Gordon), patch_srf_fit, match_srf, G3 blends wired"
           }
         },
         {
@@ -3925,9 +3936,9 @@
             "note": "Part WB — limited direct face editing"
           },
           "kerf": {
-            "status": "partial",
-            "evidence": "packages/kerf-cad-core/src/kerf_cad_core/geom/history/direct_edit.py",
-            "note": "planar only; no move/delete-face"
+            "status": "yes",
+            "evidence": "packages/kerf-cad-core/src/kerf_cad_core/geom/direct_edit.py",
+            "note": "push_pull (planar + curved), move_face, delete_face wired as ops"
           }
         },
         {
@@ -4615,9 +4626,9 @@
             "source": "https://help.autodesk.com/view/fusion360/ENU/?guid=GUID-584BEC15-41E6-4466-9705-5464748227BF"
           },
           "kerf": {
-            "status": "partial",
-            "note": "No guide-rail overload in OCCT binding",
-            "evidence": "packages/kerf-cad-core/src/kerf_cad_core"
+            "status": "yes",
+            "note": "Guide-rail overload wired (ThruSections.AddWire); ruled/closed/symmetric",
+            "evidence": "packages/kerf-cad-core/src/kerf_cad_core/feature_loft.py"
           }
         },
         {
@@ -4629,9 +4640,9 @@
             "source": "https://autocadeverything.com/what-is-fusion-360/"
           },
           "kerf": {
-            "status": "partial",
-            "note": "Single flange + unfold + flat DXF; no hem/jog/multi-flange",
-            "evidence": "packages/kerf-cad-core/src/kerf_cad_core"
+            "status": "yes",
+            "note": "Flange + hem + jog + multi-flange + unfold + flat DXF (K-factor); no auto corner-relief",
+            "evidence": "packages/kerf-cad-core/src/kerf_cad_core/construction_verbs_tools.py"
           }
         },
         {
@@ -4643,9 +4654,9 @@
             "source": "https://www.autodesk.com/products/fusion-360/blog/surface-modeling-overview/"
           },
           "kerf": {
-            "status": "partial",
-            "note": "Math complete; OCCT bindings unconfirmed at build",
-            "evidence": "packages/kerf-cad-core/src/kerf_cad_core"
+            "status": "yes",
+            "note": "blend_srf, network_srf (Gordon), patch_srf_fit, match_srf wired as ops",
+            "evidence": "packages/kerf-cad-core/src/kerf_cad_core/geom/network_srf.py"
           }
         },
         {
@@ -4727,9 +4738,9 @@
             "source": "https://autocadeverything.com/fusion-360-parametric-modeling/"
           },
           "kerf": {
-            "status": "partial",
-            "note": "Planar push-pull only; no move/delete-face",
-            "evidence": "packages/kerf-cad-core/src/kerf_cad_core"
+            "status": "yes",
+            "note": "push_pull (planar + curved), move_face, delete_face wired as ops",
+            "evidence": "packages/kerf-cad-core/src/kerf_cad_core/geom/direct_edit.py"
           }
         },
         {
@@ -5788,9 +5799,9 @@
             "source": "https://help.solidworks.com/2026/English/SolidWorks/sldworks/t_Creating_Sheet_Metal_Flat_Pattern_Configurations.htm"
           },
           "kerf": {
-            "status": "partial",
-            "note": "Single flange + unfold + flat DXF + bend table; no hem/relief/jog",
-            "evidence": "packages/kerf-cad-core/src/kerf_cad_core/sheet_metal.py"
+            "status": "yes",
+            "note": "Flange + hem + jog + multi-flange + unfold + flat DXF + bend table; no auto corner-relief",
+            "evidence": "packages/kerf-cad-core/src/kerf_cad_core/construction_verbs_tools.py"
           }
         },
         {
@@ -5802,9 +5813,9 @@
             "source": "https://help.solidworks.com/2024/english/solidworks/sldworks/c_Surfaces_Overview.htm"
           },
           "kerf": {
-            "status": "partial",
-            "note": "Math complete; OCCT bindings not fully confirmed at build",
-            "evidence": "packages/kerf-cad-core/src/kerf_cad_core/surfacing.py"
+            "status": "yes",
+            "note": "blend/network/patch/match-srf + G3 blends + Class-A continuity harness wired",
+            "evidence": "packages/kerf-cad-core/src/kerf_cad_core/geom/network_srf.py"
           }
         },
         {
@@ -6569,9 +6580,9 @@
             "source": "https://cad.onshape.com/help/Content/sheetmetal.htm"
           },
           "kerf": {
-            "status": "partial",
-            "note": "Flange+unfold+flat DXF; no hem/relief/jog/multi-flange",
-            "evidence": "packages/kerf-cad-core/src/kerf_cad_core/surfacing.py"
+            "status": "yes",
+            "note": "Flange + hem + jog + multi-flange + unfold + flat DXF (K-factor); no auto corner-relief",
+            "evidence": "packages/kerf-cad-core/src/kerf_cad_core/construction_verbs_tools.py"
           }
         },
         {
@@ -6625,9 +6636,9 @@
             "source": "https://www.onshape.com/en/features/surfacing"
           },
           "kerf": {
-            "status": "partial",
-            "note": "Math complete; OCCT bindings unconfirmed at build",
-            "evidence": "packages/kerf-cad-core/src/kerf_cad_core/surfacing.py"
+            "status": "yes",
+            "note": "blend_srf, network_srf (Gordon), patch_srf_fit, match_srf, G3 blends wired",
+            "evidence": "packages/kerf-cad-core/src/kerf_cad_core/geom/network_srf.py"
           }
         },
         {
@@ -7378,9 +7389,9 @@
             "source": "https://help.autodesk.com/view/INVNTOR/2025/ENU/?guid=GUID-11AF0B14-A3D6-40B6-B4FD-E826FE2CE7BA"
           },
           "kerf": {
-            "status": "partial",
-            "note": "No guide-rail overload in OCCT binding",
-            "evidence": "packages/kerf-cad-core/src/kerf_cad_core"
+            "status": "yes",
+            "note": "Guide-rail overload wired (ThruSections.AddWire); ruled/closed/symmetric",
+            "evidence": "packages/kerf-cad-core/src/kerf_cad_core/feature_loft.py"
           }
         },
         {
@@ -7392,9 +7403,9 @@
             "source": "https://help.autodesk.com/view/INVNTOR/2025/ENU/?guid=GUID-E44E6EDD-6D9F-48DB-8826-72CCBA2F6588"
           },
           "kerf": {
-            "status": "partial",
-            "note": "Single flange + unfold + flat-pattern DXF; no hem/jog/multi-flange",
-            "evidence": "packages/kerf-cad-core/src/kerf_cad_core"
+            "status": "yes",
+            "note": "Flange + hem + jog + multi-flange + unfold + flat DXF (K-factor); no auto corner-relief/punch",
+            "evidence": "packages/kerf-cad-core/src/kerf_cad_core/construction_verbs_tools.py"
           }
         },
         {
@@ -7406,9 +7417,9 @@
             "source": "https://help.autodesk.com/view/INVNTOR/2025/ENU/?guid=GUID-F48B5A7E-5F85-4B64-B3E1-1B9CCFE11E2E"
           },
           "kerf": {
-            "status": "partial",
-            "note": "Math complete; OCCT bindings unconfirmed at build",
-            "evidence": "packages/kerf-cad-core/src/kerf_cad_core"
+            "status": "yes",
+            "note": "blend_srf, network_srf (Gordon), patch_srf_fit, match_srf, feature_to_solid (sew) wired",
+            "evidence": "packages/kerf-cad-core/src/kerf_cad_core/geom/network_srf.py"
           }
         },
         {
@@ -8300,8 +8311,8 @@
           },
           "kerf": {
             "status": "partial",
-            "note": "Crown design (placeholder cylinder), surgical guide, DICOM ingest (backend); crown is placeholder",
-            "evidence": "packages/kerf-dental/src/kerf_dental/crown.py"
+            "note": "Anatomic crown (swept margin polygon + cusp ridges, n_cusps=2-4), surgical guide, DICOM ingest, parametric full denture + RPD, binary/ASCII STL export (backend tools). No AI design proposals, no implant library, no virtual articulator.",
+            "evidence": "packages/kerf-dental/src/kerf_dental/crown.py, packages/kerf-dental/src/kerf_dental/denture.py, packages/kerf-dental/src/kerf_dental/stl_export.py"
           }
         },
         {
@@ -8314,8 +8325,8 @@
           },
           "kerf": {
             "status": "partial",
-            "note": "Crown geometry tool (backend); crown is a placeholder cylinder not a full restoration design tool",
-            "evidence": "packages/kerf-dental/src/kerf_dental/crown.py"
+            "note": "Anatomic crown (design_crown_anatomic): sweeps actual margin-line polygon with raised-cosine cusp ridges (n_cusps=2 premolar, n_cusps=4 molar); validate_body-clean B-rep; STL export via stl_export.py. No virtual articulator, no AI design proposal, no bridge pontic.",
+            "evidence": "packages/kerf-dental/src/kerf_dental/crown.py (design_crown_anatomic), packages/kerf-dental/src/kerf_dental/stl_export.py"
           }
         },
         {
@@ -8369,9 +8380,9 @@
             "source": "https://www.3shape.com/en/software/dental-system"
           },
           "kerf": {
-            "status": "no",
-            "note": "No removable denture design",
-            "evidence": ""
+            "status": "partial",
+            "note": "Parametric full denture base (horseshoe arch, buccal flange, tooth socket positions) and RPD major connector (lingual bar / palatal plate) via design_full_denture() / design_rpd(). Mesh-only; no occlusion-balanced base fit, no denture tooth library, no implant-retained denture.",
+            "evidence": "packages/kerf-dental/src/kerf_dental/denture.py"
           }
         },
         {
@@ -8398,7 +8409,8 @@
           },
           "kerf": {
             "status": "no",
-            "note": "No intraoral scanner integration",
+            "note": "No intraoral scanner integration.",
+            "kerf_note": "Epic gap: full IOS mesh registration pipeline (color-coded deviation map, multi-scan alignment, TRIOS/iTero/3M format parsers) is a multi-sprint feature. STL/PLY import for post-scan workflows is tractable but not yet wired.",
             "evidence": ""
           }
         },
@@ -8412,8 +8424,8 @@
           },
           "kerf": {
             "status": "partial",
-            "note": "STL export + FDM slicing for dental models; no dental mill post processor",
-            "evidence": "packages/kerf-dental/src/kerf_dental/tools.py"
+            "note": "Binary and ASCII STL export for dental meshes (crown, full denture, RPD) via stl_export.py; normal computation from vertex cross-product; dental_stl_export LLM tool. No dental mill post processor (G-code, Sirona/Roland CAM paths).",
+            "evidence": "packages/kerf-dental/src/kerf_dental/stl_export.py, packages/kerf-dental/src/kerf_dental/tools.py"
           }
         },
         {
@@ -8506,9 +8518,9 @@
             "source": "https://www.esko.com/en/lp/artioscad/structural-design-software-features-old"
           },
           "kerf": {
-            "status": "partial",
-            "note": "BCT estimation backend; no BCT UI panel yet",
-            "evidence": "packages/kerf-packaging/src/kerf_packaging/tools.py"
+            "status": "yes",
+            "note": "McKee BCT solver (simplified + full-formula) with humidity correction and stacking analysis; packaging_bct_estimate LLM tool",
+            "evidence": "packages/kerf-packaging/src/kerf_packaging/bct.py"
           }
         },
         {
@@ -8602,8 +8614,8 @@
           },
           "kerf": {
             "status": "partial",
-            "note": "Piping isometric/P&ID backend engine; no interactive 3D piping routing UI",
-            "evidence": "packages/kerf-piping/src/kerf_piping/isometric.py"
+            "note": "Spec-driven pipe class enforcement (ASME B36.10M/B31.3 Barlow wall check, material grade, pressure/temp limits); orthogonal isometric routing; no interactive 3D plant routing UI",
+            "evidence": "packages/kerf-piping/src/kerf_piping/pipe_spec.py"
           }
         },
         {
@@ -8616,7 +8628,7 @@
           },
           "kerf": {
             "status": "partial",
-            "note": "Piping symbols and P&ID component library (backend); no 3D component catalogue",
+            "note": "P&ID component library (vessels, pumps, HX, valves, instruments with ISA 5.1 symbols); ASME B36.10M pipe size/schedule catalogue; ASME B16.9 elbow radius table; no 3D parametric fitting catalogue",
             "evidence": "packages/kerf-piping/src/kerf_piping/symbols.py"
           }
         },
@@ -8797,13 +8809,13 @@
           "domain": "D1",
           "feature": "Loft",
           "competitor": "{ status: yes, note: \"Multi-section solid / loft in Part Design and GSD\", source: \"https://www.3ds.com/products/catia/part-design\" }",
-          "kerf": "{ status: partial, note: \"No guide-rail overload in binding\", evidence: \"packages/kerf-cad-core/src/kerf_cad_core/plugin.py\" }"
+          "kerf": "{ status: yes, note: \"Guide-rail overload wired (ThruSections.AddWire); ruled/closed/symmetric\", evidence: \"packages/kerf-cad-core/src/kerf_cad_core/feature_loft.py\" }"
         },
         {
           "domain": "D1",
           "feature": "NURBS surfacing (blend/network/patch)",
           "competitor": "{ status: yes, note: \"FreeStyle Shaper + GSD — Class-A surfaces, G2/G3 continuity, curvature combs, highlight analysis; industry gold standard\", source: \"https://www.3ds.com/products/catia/freestyle\" }",
-          "kerf": "{ status: partial, note: \"Math complete; OCCT bindings unconfirmed at build\", evidence: \"packages/kerf-cad-core/src/kerf_cad_core/plugin.py\" }"
+          "kerf": "{ status: partial, note: \"blend/network/patch/match-srf + G3 + Class-A harness wired; not FreeStyle/GSD class-A depth\", evidence: \"packages/kerf-cad-core/src/kerf_cad_core/geom/network_srf.py\" }"
         },
         {
           "domain": "D1",
@@ -8821,7 +8833,7 @@
           "domain": "D1",
           "feature": "2D drawings (views/dims/sections)",
           "competitor": "{ status: yes, note: \"Drafting workbench — view generation, dimensions, sections, GD&T callouts\", source: \"https://www.3ds.com/products/catia/drafting\" }",
-          "kerf": "{ status: partial, note: \"Template-based, not live B-rep projection; no UI panel\", evidence: \"packages/kerf-cad-core/src/kerf_cad_core/plugin.py\" }"
+          "kerf": "{ status: partial, note: \"Live HLR projection (make2d) + auto-dim; no GD&T-placement UI\", evidence: \"packages/kerf-cad-core/src/kerf_cad_core/geom/make2d.py\" }"
         },
         {
           "domain": "D1",
@@ -8833,7 +8845,7 @@
           "domain": "D1",
           "feature": "Sheet metal",
           "competitor": "{ status: yes, note: \"Generative Sheetmetal Design — flanges, rip, flat pattern, DXF\", source: \"https://www.3ds.com/products/catia/generative-sheetmetal-design\" }",
-          "kerf": "{ status: partial, note: \"Single flange + unfold + flat DXF; no hem/relief/jog/multi-flange\", evidence: \"packages/kerf-cad-core/src/kerf_cad_core/plugin.py\" }"
+          "kerf": "{ status: yes, note: \"Flange + hem + jog + multi-flange + unfold + flat DXF (K-factor); no auto corner-relief\", evidence: \"packages/kerf-cad-core/src/kerf_cad_core/construction_verbs_tools.py\" }"
         },
         {
           "domain": "D1",
@@ -9151,9 +9163,9 @@
             "source": "https://www.cimatron.com/en/cimatron-mold"
           },
           "kerf": {
-            "status": "no",
-            "note": "No parting line or cavity/core split tooling; mold package is a stub",
-            "evidence": ""
+            "status": "partial",
+            "note": "Parting line data model (closed 3-D loop); flat and ruled parting surface generation; draft-angle check; moldability validation; no interactive curve-extraction from NURBS solid",
+            "evidence": "packages/kerf-mold/src/kerf_mold/mold.py"
           }
         },
         {
@@ -9166,7 +9178,7 @@
           },
           "kerf": {
             "status": "no",
-            "note": "No mold base library",
+            "note": "No mold base library. A parametric DME/HASCO plate-dimension table with 3D parametric solid generation requires OCCT CAD kernel integration (kerf-cad-core wave 2) — not tractable in kerf-mold alone.",
             "evidence": ""
           }
         },
@@ -9179,9 +9191,9 @@
             "source": "https://www.cimatron.com/en/cimatron-mold"
           },
           "kerf": {
-            "status": "no",
-            "note": "No cooling channel tooling",
-            "evidence": ""
+            "status": "partial",
+            "note": "Cooling circuit thermal analysis: Re/Nu/HTC (Dittus-Boelter), pressure drop (Darcy-Weisbach), coolant temp rise, Janeschitz-Kriegl cooling time; series and parallel layouts; no 3D channel routing or conformal path tooling",
+            "evidence": "packages/kerf-mold/src/kerf_mold/cooling.py"
           }
         },
         {
@@ -9194,7 +9206,7 @@
           },
           "kerf": {
             "status": "no",
-            "note": "No electrode design",
+            "note": "No electrode design. EDM electrode solid modelling requires full parametric 3D CAD (OCCT kernel, kerf-cad-core wave 2). Spark-gap compensation can be handled as offset surface; electrode blanking needs full solid Boolean ops.",
             "evidence": ""
           }
         },
@@ -9222,7 +9234,7 @@
           },
           "kerf": {
             "status": "no",
-            "note": "No wire EDM programming",
+            "note": "No wire EDM programming. Wire EDM toolpath generation requires 2D profile extraction from 3D geometry and NC post-processing — needs kerf-cam + kerf-cad-core, not tractable in kerf-mold alone.",
             "evidence": ""
           }
         },
@@ -9235,9 +9247,9 @@
             "source": "https://www.cimatron.com/en/cimatron-mold"
           },
           "kerf": {
-            "status": "no",
-            "note": "No draft angle analysis tooling",
-            "evidence": ""
+            "status": "yes",
+            "note": "Draft angle per face: signed draft_deg = asin(n·pull_hat); undercut detection; wall-thickness uniformity check; parting-surface planarity check vs pull direction — all in check_moldability",
+            "evidence": "packages/kerf-mold/src/kerf_mold/mold.py"
           }
         },
         {
@@ -9565,8 +9577,8 @@
             "source": "https://support.ptc.com/help/creo/creo_pma/r9.0/usascii/index.html#page/part_modeling/part_modeling_intro.html"
           },
           "kerf": {
-            "status": "partial",
-            "note": "No guide-rail overload in OCCT binding",
+            "status": "yes",
+            "note": "Guide-rail overload wired (ThruSections.AddWire); ruled/closed/symmetric",
             "evidence": "packages/kerf-cad-core/src/kerf_cad_core/feature_loft.py"
           }
         },
@@ -9593,9 +9605,9 @@
             "source": "https://support.ptc.com/help/creo/creo_pma/r9.0/usascii/index.html#page/sheetmetal/sheetmetal_intro.html"
           },
           "kerf": {
-            "status": "partial",
-            "note": "Single flange + unfold + flat DXF; no hem/relief/jog/multi-flange",
-            "evidence": "packages/kerf-cad-core/src/kerf_cad_core/sheet_metal.py"
+            "status": "yes",
+            "note": "Flange + hem + jog + multi-flange + unfold + flat DXF (K-factor); no auto corner-relief",
+            "evidence": "packages/kerf-cad-core/src/kerf_cad_core/construction_verbs_tools.py"
           }
         },
         {
@@ -9608,8 +9620,8 @@
           },
           "kerf": {
             "status": "partial",
-            "note": "Math complete; OCCT bindings unconfirmed at build",
-            "evidence": "packages/kerf-cad-core/src/kerf_cad_core/surfacing.py"
+            "note": "blend/network/patch/match-srf + G3 + Class-A harness wired; not Creo Style ISDX depth",
+            "evidence": "packages/kerf-cad-core/src/kerf_cad_core/geom/network_srf.py"
           }
         },
         {
@@ -9650,8 +9662,8 @@
           },
           "kerf": {
             "status": "partial",
-            "note": "Template-based; not live B-rep projection; no UI panel",
-            "evidence": "src/components/DrawingView.jsx"
+            "note": "Live HLR projection (make2d) + auto-dim; no GD&T-placement UI",
+            "evidence": "packages/kerf-cad-core/src/kerf_cad_core/geom/make2d.py"
           }
         },
         {
@@ -10540,7 +10552,7 @@
           },
           "kerf": {
             "status": "partial",
-            "note": "Structural FEA backend (beam/plate); no class-rule marine scantling specific calculator",
+            "note": "Structural FEA backend (beam/plate); no class-rule marine scantling specific calculator. Full Lloyd's/DNV/BV/ABS rule implementation requires rule-tree encoding for each class society — significant scope; flagged for wave 2 (kerf-marine v2 + kerf-structural collaboration).",
             "evidence": "packages/kerf-structural/src/"
           }
         },
@@ -10553,9 +10565,9 @@
             "source": "https://www.bentley.com/software/maxsurf/"
           },
           "kerf": {
-            "status": "partial",
-            "note": "Aerodynamic/hydrodynamic force models exist; no integrated sailing VPP",
-            "evidence": "packages/kerf-aero/src/"
+            "status": "yes",
+            "note": "Full sailing VPP: ITTC 1957 friction + Delft-series residuary resistance; Dittus empirical sail polar (CL/CD vs AWA) for main+jib; apparent-wind calculation; equilibrium solver (drive=resistance, heel balance); polar generation across TWS/TWA sweep; VMG optimisation",
+            "evidence": "packages/kerf-marine/src/kerf_marine/vpp.py"
           }
         },
         {
@@ -10676,9 +10688,9 @@
             "source": "https://www.mozaiksoftware.com/mozaik-products"
           },
           "kerf": {
-            "status": "no",
-            "note": "No cabinet hardware boring automation",
-            "evidence": ""
+            "status": "yes",
+            "note": "32 mm System bore-pattern generator: hinge cups (35 mm Blum-compatible), shelf-pin rows, undermount/sidemount drawer runner pilots, Euro-screw (confirmat), handle holes — all parametric with CNC-ready coordinates",
+            "evidence": "packages/kerf-woodworking/src/kerf_woodworking/hardware_boring.py"
           }
         },
         {
@@ -10792,7 +10804,7 @@
           "nx": "NX Shape Studio — Class-A G2/G3 surfaces, reflection line analysis, curvature combs; automotive-grade",
           "nx_tier": "paid",
           "competitor": "source: https://plm.automation.siemens.com/global/en/products/nx/nx-design.html",
-          "kerf": "evidence: cloud/occt/nurbs/"
+          "kerf": "evidence: packages/kerf-cad-core/src/kerf_cad_core/geom/network_srf.py"
         },
         {
           "domain": "D1",
@@ -10800,7 +10812,7 @@
           "nx": "Synchronous Technology — history-free face move/resize/delete works on any B-rep regardless of origin",
           "nx_tier": "included",
           "competitor": "source: https://plm.automation.siemens.com/global/en/products/nx/synchronous-technology.html",
-          "kerf": "evidence: cloud/occt/direct_edit.py"
+          "kerf": "evidence: packages/kerf-cad-core/src/kerf_cad_core/geom/direct_edit.py"
         },
         {
           "domain": "D1",
@@ -10816,7 +10828,7 @@
           "nx": "NX Sheet Metal — flanges, hems, joggle, relief patterns, flat pattern, NC output",
           "nx_tier": "included",
           "competitor": "source: https://docs.sw.siemens.com/en-US/doc/288068776/PL20231017083816340.xid1428210/en-US",
-          "kerf": "evidence: cloud/occt/sheetmetal/unfold.py"
+          "kerf": "evidence: packages/kerf-cad-core/src/kerf_cad_core/construction_verbs_tools.py"
         },
         {
           "domain": "D1",
@@ -12059,8 +12071,8 @@
             "source": "https://gmat.atlassian.net/wiki/spaces/GW/pages/380273281"
           },
           "kerf": {
-            "status": "partial",
-            "note": "SRP modelled in orbital perturbations; no dual-cone shadow",
+            "status": "yes",
+            "note": "SRP with cylindrical Earth shadow; Cr / area / mass configurable; in_shadow flag",
             "evidence": "packages/kerf-aero/src/kerf_aero/orbital/perturbations.py"
           }
         },
@@ -12073,9 +12085,9 @@
             "source": "https://gmat.atlassian.net/wiki/spaces/GW/pages/380274219"
           },
           "kerf": {
-            "status": "no",
-            "note": "Lambert + Hohmann only; no B-plane solver",
-            "evidence": ""
+            "status": "yes",
+            "note": "B-plane frame (S/T/R triad), BdotT/BdotR from hyperbolic state, first-order ΔV differential correction",
+            "evidence": "packages/kerf-aero/src/kerf_aero/orbital/b_plane.py"
           }
         },
         {
@@ -12130,8 +12142,9 @@
           },
           "kerf": {
             "status": "no",
-            "note": "No orbit determination engine",
-            "evidence": ""
+            "note": "No orbit determination engine; out of scope for current version",
+            "evidence": "",
+            "kerf_note": "Batch OD + EKF require observations processing pipeline (range/Doppler); this is a large-scope addition. Not currently planned."
           }
         },
         {
@@ -12143,9 +12156,9 @@
             "source": "https://gmat.atlassian.net/wiki/spaces/GW/pages/380274219"
           },
           "kerf": {
-            "status": "no",
-            "note": "No MC orbit dispersion tool",
-            "evidence": ""
+            "status": "yes",
+            "note": "Monte Carlo trajectory dispersion: wind/Cd/Cl/ignition-delay scatter; landing ellipse stats; p5/p50/p95 apogee/range",
+            "evidence": "packages/kerf-aero/src/kerf_aero/monte_carlo.py"
           }
         },
         {
@@ -12157,9 +12170,9 @@
             "source": "https://gmat.atlassian.net/wiki/spaces/GW/pages/380273275"
           },
           "kerf": {
-            "status": "no",
-            "note": "No STM propagation",
-            "evidence": ""
+            "status": "yes",
+            "note": "Keplerian + J2 A-matrix; augmented RK4 STM (42-vector); P(t)=Φ P₀ Φᵀ covariance propagation; STM-based differential correction",
+            "evidence": "packages/kerf-aero/src/kerf_aero/orbital/stm.py"
           }
         },
         {
@@ -12171,9 +12184,9 @@
             "source": "https://gmat.atlassian.net/wiki/spaces/GW/pages/380274213"
           },
           "kerf": {
-            "status": "no",
-            "note": "No coverage or contact-interval engine",
-            "evidence": ""
+            "status": "yes",
+            "note": "Ground station contact intervals (rise/set bisection, ECI→ECEF→ENU, min elevation mask); multi-station coverage metrics",
+            "evidence": "packages/kerf-aero/src/kerf_aero/orbital/coverage.py"
           }
         },
         {
@@ -12200,8 +12213,9 @@
           },
           "kerf": {
             "status": "no",
-            "note": "No three-body / libration point propagator",
-            "evidence": ""
+            "note": "No CR3BP / libration point propagator",
+            "evidence": "",
+            "kerf_note": "Circular-restricted 3-body problem and halo orbit computation require dedicated differential corrector and continuation methods. This is large scope; not currently planned."
           }
         },
         {
@@ -12323,8 +12337,9 @@
           },
           "kerf": {
             "status": "no",
-            "note": "Combustion solvers not yet exposed in Kerf bridge",
-            "evidence": "packages/kerf-cfd/"
+            "note": "Combustion CFD (reactingFoam / fireFoam) not yet exposed in Kerf bridge",
+            "evidence": "packages/kerf-cfd/",
+            "kerf_note": "Reacting flow requires species transport, chemical mechanism files (Cantera/Chemkin), and reaction sub-models. Large scope; not currently planned for bridge exposure."
           }
         },
         {
@@ -12380,7 +12395,8 @@
           "kerf": {
             "status": "no",
             "note": "Lagrangian particle models not exposed in Kerf bridge",
-            "evidence": "packages/kerf-cfd/"
+            "evidence": "packages/kerf-cfd/",
+            "kerf_note": "DPM/spray/coal particle tracking requires coupled Eulerian-Lagrangian case templates and post-processing infrastructure. Large scope; not currently planned."
           }
         },
         {
@@ -12394,7 +12410,8 @@
           "kerf": {
             "status": "no",
             "note": "Dynamic mesh and FSI not yet exposed in Kerf bridge",
-            "evidence": "packages/kerf-cfd/"
+            "evidence": "packages/kerf-cfd/",
+            "kerf_note": "Moving-boundary FSI requires coupled solver orchestration (OpenFOAM + CalculiX via preCICE or native). Large scope; not currently planned."
           }
         },
         {
@@ -12725,8 +12742,8 @@
             "source": "https://openrocket.info/documentation.html"
           },
           "kerf": {
-            "status": "partial",
-            "note": "Parachute drag descent calc in aero tools; no full event sequencer",
+            "status": "yes",
+            "note": "Full dual-deploy event sequencer: drogue at apogee → main at trigger alt; USSA-76 density; streamer Cd·A; horizontal wind drift",
             "evidence": "packages/kerf-aero/src/kerf_aero/recovery.py"
           }
         },
@@ -12946,9 +12963,9 @@
             "source": "https://www.padtinc.com/2026/04/06/whats-new-in-ansys-zemax-opticstudio-2026-r1-practical-advances-for-real-optical-systems/"
           },
           "kerf": {
-            "status": "no",
-            "note": "No optical tolerance analysis",
-            "evidence": ""
+            "status": "partial",
+            "note": "Sensitivity (OAT: ±Δ per parameter, RSS budget) + Monte Carlo (uniform/normal, configurable n_trials, yield) via tolerancing.py; merit functions: EFL deviation, BFD deviation. No inverse sensitivity, no NEST compound tolerancing workflow.",
+            "evidence": "packages/kerf-optics/src/kerf_optics/tolerancing.py"
           }
         },
         {
@@ -12961,7 +12978,8 @@
           },
           "kerf": {
             "status": "no",
-            "note": "No structural-thermal-optical performance (STOP) multiphysics coupling",
+            "note": "No structural-thermal-optical performance (STOP) multiphysics coupling.",
+            "kerf_note": "Epic gap: STOP requires coupling kerf-fem (thermal/structural) deformation maps into the optical path as Zernike wavefront error inputs. Architecturally feasible (Kerf owns both FEM and optics modules) but multi-sprint integration work.",
             "evidence": ""
           }
         },
@@ -12974,9 +12992,10 @@
             "source": "https://www.ansys.com/products/optics/ansys-zemax-opticstudio"
           },
           "kerf": {
-            "status": "no",
-            "note": "No wave optics / diffraction / polarisation in Kerf optics package",
-            "evidence": ""
+            "status": "partial",
+            "note": "MTF (modulation transfer function) via diffraction-limited circular-aperture formula (Goodman §6.4) and geometric Gaussian-spot approximation; spatial frequency curves up to diffraction cut-off (ν_c = 1/(λ·f/#)). No wave-optics propagation (BPM/POP), no polarisation (Jones/Mueller matrices), no diffraction grating.",
+            "kerf_note": "Full physical optics propagation (POP / BPM) is an epic: requires scalar diffraction integral or beam-propagation method across the full aperture — distinct physics from the ABCD paraxial model.",
+            "evidence": "packages/kerf-optics/src/kerf_optics/mtf.py"
           }
         },
         {
@@ -12989,7 +13008,8 @@
           },
           "kerf": {
             "status": "no",
-            "note": "No metalens / diffractive optical element design",
+            "note": "No metalens / diffractive optical element design.",
+            "kerf_note": "Epic gap: metalens simulation requires scalar phase-profile representation of the nanostructured array and an efficient Fourier-optics or RCWA engine. Outside the ABCD paraxial scope.",
             "evidence": ""
           }
         },
@@ -13069,9 +13089,9 @@
             "source": "https://docs.blender.org/manual/en/latest/modeling/modifiers/generate/skin.html"
           },
           "kerf": {
-            "status": "partial",
-            "note": "No guide-rail overload in OCCT binding",
-            "evidence": "packages/kerf-cad-core/src/kerf_cad_core"
+            "status": "yes",
+            "note": "Guide-rail overload wired (ThruSections.AddWire); ruled/closed/symmetric",
+            "evidence": "packages/kerf-cad-core/src/kerf_cad_core/feature_loft.py"
           }
         },
         {
@@ -13097,9 +13117,9 @@
             "source": "https://docs.blender.org/manual/en/latest/modeling/curves/index.html"
           },
           "kerf": {
-            "status": "partial",
-            "note": "Math complete; OCCT bindings unconfirmed at build",
-            "evidence": "packages/kerf-cad-core/src/kerf_cad_core"
+            "status": "yes",
+            "note": "blend_srf, network_srf (Gordon), patch_srf_fit, match_srf, G3 blends wired",
+            "evidence": "packages/kerf-cad-core/src/kerf_cad_core/geom/network_srf.py"
           }
         },
         {
@@ -13126,8 +13146,8 @@
           },
           "kerf": {
             "status": "partial",
-            "note": "Template-based; not live B-rep projection; no UI panel",
-            "evidence": "src/components/DrawingView.jsx"
+            "note": "Live HLR projection (make2d) + auto-dim; no GD&T-placement UI",
+            "evidence": "packages/kerf-cad-core/src/kerf_cad_core/geom/make2d.py"
           }
         },
         {
@@ -13153,9 +13173,9 @@
             "source": "https://docs.blender.org/manual/en/latest/modeling/index.html"
           },
           "kerf": {
-            "status": "partial",
-            "note": "Single flange + unfold + flat DXF; no hem/jog/multi-flange",
-            "evidence": "packages/kerf-cad-core/src/kerf_cad_core"
+            "status": "yes",
+            "note": "Flange + hem + jog + multi-flange + unfold + flat DXF (K-factor)",
+            "evidence": "packages/kerf-cad-core/src/kerf_cad_core/construction_verbs_tools.py"
           }
         },
         {
@@ -13643,9 +13663,9 @@
             "source": "https://www.blender.org/features/sculpt-paint/"
           },
           "kerf": {
-            "status": "no",
-            "note": "No sculpt mode; mesh remesh tools only",
-            "evidence": "src/components/MeshView.jsx"
+            "status": "partial",
+            "note": "sculpt_brush (grab/smooth/inflate) + multires + isotropic remesh; no dyntopo/30+ brushes",
+            "evidence": "packages/kerf-cad-core/src/kerf_cad_core/subd_tools.py"
           }
         },
         {
@@ -13837,8 +13857,8 @@
           },
           "kerf": {
             "status": "partial",
-            "note": "Mesh tools + quad remesh; no Modifier Stack depth",
-            "evidence": "packages/kerf-mesh/"
+            "note": "SubD authoring + poke/extrude/subdivide/sculpt + quad/isotropic remesh; no Modifier Stack depth",
+            "evidence": "packages/kerf-cad-core/src/kerf_cad_core/subd_tools.py"
           }
         },
         {
@@ -14338,8 +14358,8 @@
           },
           "kerf": {
             "status": "partial",
-            "note": "Quad remesh backend; no interactive retopo tool",
-            "evidence": "packages/kerf-mesh/"
+            "note": "quad/isotropic remesh + retopo_snap + decimate ops (ZRemesher-class); no interactive brush UI",
+            "evidence": "packages/kerf-cad-core/src/kerf_cad_core/mesh_implicit_tools.py"
           }
         },
         {
@@ -14352,8 +14372,8 @@
           },
           "kerf": {
             "status": "partial",
-            "note": "Jewelry module exists (41 modules, parametric); not sculpting-grade for organic forms",
-            "evidence": "packages/kerf-jewelry/"
+            "note": "41 parametric modules + SubD authoring/sculpt_brush; not DynaMesh-grade for free organic forms",
+            "evidence": "packages/kerf-cad-core/src/kerf_cad_core/subd_tools.py"
           }
         },
         {
@@ -14502,9 +14522,9 @@
             "source": "https://help.autodesk.com/view/ACD/2025/ENU/?guid=GUID-PRESSPULL"
           },
           "kerf": {
-            "status": "partial",
-            "note": "Planar push-pull only; no move/delete-face",
-            "evidence": "packages/kerf-cad-core/src/kerf_cad_core"
+            "status": "yes",
+            "note": "push_pull (planar + curved), move_face, delete_face wired as ops",
+            "evidence": "packages/kerf-cad-core/src/kerf_cad_core/geom/direct_edit.py"
           }
         },
         {
@@ -14572,9 +14592,9 @@
             "source": "https://www.autodesk.com/products/autocad/included-toolsets/autocad-mechanical"
           },
           "kerf": {
-            "status": "partial",
-            "note": "Single flange + unfold + flat DXF; no hem/relief/jog/multi-flange",
-            "evidence": "packages/kerf-cad-core/src/kerf_cad_core"
+            "status": "yes",
+            "note": "Flange + hem + jog + multi-flange + unfold + flat DXF (K-factor); no auto corner-relief",
+            "evidence": "packages/kerf-cad-core/src/kerf_cad_core/construction_verbs_tools.py"
           }
         },
         {
@@ -14614,9 +14634,9 @@
             "source": "https://help.autodesk.com/view/ACD/2025/ENU/?guid=GUID-SURFACE-MODELING"
           },
           "kerf": {
-            "status": "partial",
-            "note": "Math complete; OCCT bindings unconfirmed at build",
-            "evidence": "packages/kerf-cad-core/src/kerf_cad_core"
+            "status": "yes",
+            "note": "blend_srf, network_srf (Gordon), patch_srf_fit, match_srf, G3 blends wired",
+            "evidence": "packages/kerf-cad-core/src/kerf_cad_core/geom/network_srf.py"
           }
         },
         {
@@ -15059,9 +15079,9 @@
             "source": "https://docs.mcneel.com/rhino/8/help/en-us/commands/blendsrf.htm"
           },
           "kerf": {
-            "status": "partial",
-            "note": "Math complete; OCCT bindings unconfirmed at build",
-            "evidence": "packages/kerf-cad-core/src/kerf_cad_core/surfacing.py"
+            "status": "yes",
+            "note": "blend_srf, network_srf (Gordon), patch_srf_fit all wired as feature ops",
+            "evidence": "packages/kerf-cad-core/src/kerf_cad_core/geom/network_srf.py"
           }
         },
         {
@@ -15073,9 +15093,9 @@
             "source": "https://docs.mcneel.com/rhino/8/help/en-us/commands/blendsrf.htm"
           },
           "kerf": {
-            "status": "partial",
-            "note": "G3 combs in NURBS Phase 4; no full MatchSrf equivalent",
-            "evidence": "packages/kerf-cad-core/src/kerf_cad_core/surfacing.py"
+            "status": "yes",
+            "note": "match_surface_edge_tool G0–G3 + blend_srf_g3 + continuity audit",
+            "evidence": "packages/kerf-cad-core/src/kerf_cad_core/geom/match_srf.py"
           }
         },
         {
@@ -15101,8 +15121,8 @@
             "source": "https://docs.mcneel.com/rhino/8/help/en-us/seealso/sak_surface.htm"
           },
           "kerf": {
-            "status": "partial",
-            "note": "Loft wired; no guide-rail overload in binding",
+            "status": "yes",
+            "note": "Loft + guide-rail overload (ThruSections.AddWire), ruled/closed/symmetric",
             "evidence": "packages/kerf-cad-core/src/kerf_cad_core/feature_loft.py"
           }
         },
@@ -15115,9 +15135,9 @@
             "source": "https://docs.mcneel.com/rhino/mac/help/en-us/commands/patch.htm"
           },
           "kerf": {
-            "status": "partial",
-            "note": "Surfacing bindings present; Patch not exposed in UI",
-            "evidence": "packages/kerf-cad-core/src/kerf_cad_core/surfacing.py"
+            "status": "yes",
+            "note": "patch_srf_fit — least-squares fit through curves/points; wired op",
+            "evidence": "packages/kerf-cad-core/src/kerf_cad_core/geom/patch_srf.py"
           }
         },
         {
@@ -15144,8 +15164,8 @@
           },
           "kerf": {
             "status": "partial",
-            "note": "Quad remesh + mesh decimate; no ShrinkWrap equivalent",
-            "evidence": "packages/kerf-cad-core/src/kerf_cad_core/mesh_decimate.py"
+            "note": "mesh_repair (fill_holes/manifold), retopo_snap, mesh_to_nurbs; no SDF-envelope ShrinkWrap",
+            "evidence": "packages/kerf-cad-core/src/kerf_cad_core/geom/mesh_repair.py"
           }
         },
         {
@@ -15241,9 +15261,9 @@
             "source": "https://www.food4rhino.com/en/browse?query=sheet+metal"
           },
           "kerf": {
-            "status": "partial",
-            "note": "Single flange + unfold + flat DXF; no hem/jog/multi-flange",
-            "evidence": "packages/kerf-cad-core/src/kerf_cad_core/sheet_metal.py"
+            "status": "yes",
+            "note": "Flange + hem + jog + multi-flange + unfold + flat DXF (K-factor)",
+            "evidence": "packages/kerf-cad-core/src/kerf_cad_core/construction_verbs_tools.py"
           }
         },
         {
@@ -15269,9 +15289,9 @@
             "source": "https://docs.mcneel.com/rhino/8/help/en-us/seealso/sak_subd.htm"
           },
           "kerf": {
-            "status": "partial",
-            "note": "Planar push-pull only; no move/delete-face",
-            "evidence": "packages/kerf-cad-core/src/kerf_cad_core/direct_edit.py"
+            "status": "yes",
+            "note": "push_pull (planar + curved), move_face, delete_face wired as ops",
+            "evidence": "packages/kerf-cad-core/src/kerf_cad_core/geom/direct_edit.py"
           }
         },
         {
@@ -15283,9 +15303,9 @@
             "source": "http://docs.mcneel.com/rhino/8/help/en-us/commands/zebra.htm"
           },
           "kerf": {
-            "status": "partial",
-            "note": "G3 continuity combs (NURBS Phase 4); no Zebra/EMap UI",
-            "evidence": "packages/kerf-cad-core/src/kerf_cad_core/surfacing.py"
+            "status": "yes",
+            "note": "zebra_analysis, isophote, curvature combs, Gauss/mean, draft-angle ops",
+            "evidence": "packages/kerf-cad-core/src/kerf_cad_core/geom/surface_analysis.py"
           }
         },
         {
@@ -16036,9 +16056,9 @@
             "source": "https://docs.mcneel.com/rhino/8/help/en-us/index.htm"
           },
           "kerf": {
-            "status": "partial",
-            "note": "OCCT surfacing wired; math complete but OCCT bindings unconfirmed at build",
-            "evidence": "packages/kerf-cad-core/nurbs/"
+            "status": "yes",
+            "note": "blend_srf, network_srf (Gordon), patch_srf_fit, match_srf, G3 blends wired",
+            "evidence": "packages/kerf-cad-core/src/kerf_cad_core/geom/network_srf.py"
           }
         },
         {
@@ -16050,9 +16070,9 @@
             "source": "https://docs.mcneel.com/rhino/8/help/en-us/index.htm"
           },
           "kerf": {
-            "status": "partial",
-            "note": "OCCT B-rep booleans functional; no graceful failure handling or fuzzy heal",
-            "evidence": "packages/kerf-cad-core/"
+            "status": "yes",
+            "note": "OCCT general booleans + robust retry layer (bbox-tol) + geometry heal",
+            "evidence": "packages/kerf-cad-core/src/kerf_cad_core/geom/surface_boolean_robust.py"
           }
         },
         {
@@ -16065,8 +16085,8 @@
           },
           "kerf": {
             "status": "yes",
-            "note": "BRepOffsetAPI_MakePipeShell; wired",
-            "evidence": "packages/kerf-cad-core/"
+            "note": "BRepOffsetAPI_MakePipeShell; sweep1 + sweep2 wired",
+            "evidence": "packages/kerf-cad-core/src/kerf_cad_core/geom/sweep1.py"
           }
         },
         {
@@ -16078,9 +16098,9 @@
             "source": "https://docs.mcneel.com/rhino/8/help/en-us/index.htm"
           },
           "kerf": {
-            "status": "partial",
-            "note": "Loft wired; no guide-rail overload in binding",
-            "evidence": "packages/kerf-cad-core/"
+            "status": "yes",
+            "note": "Loft + guide-rail overload (ThruSections.AddWire); ruled/closed/symmetric",
+            "evidence": "packages/kerf-cad-core/src/kerf_cad_core/feature_loft.py"
           }
         },
         {
@@ -16092,9 +16112,9 @@
             "source": "https://docs.mcneel.com/rhino/8/help/en-us/index.htm"
           },
           "kerf": {
-            "status": "partial",
-            "note": "Direct edit: planar push-pull only; no move/delete-face",
-            "evidence": "packages/kerf-cad-core/"
+            "status": "yes",
+            "note": "push_pull (planar + curved), move_face, delete_face wired as ops",
+            "evidence": "packages/kerf-cad-core/src/kerf_cad_core/geom/direct_edit.py"
           }
         }
       ]
