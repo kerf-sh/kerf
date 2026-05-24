@@ -15,8 +15,8 @@ features:
       source: "https://www.3shape.com/en/software/dental-system"
     kerf:
       status: partial
-      note: "Crown design (placeholder cylinder), surgical guide, DICOM ingest (backend); crown is placeholder"
-      evidence: "packages/kerf-dental/src/kerf_dental/crown.py"
+      note: "Anatomic crown (swept margin polygon + cusp ridges, n_cusps=2-4), surgical guide, DICOM ingest, parametric full denture + RPD, binary/ASCII STL export (backend tools). No AI design proposals, no implant library, no virtual articulator."
+      evidence: "packages/kerf-dental/src/kerf_dental/crown.py, packages/kerf-dental/src/kerf_dental/denture.py, packages/kerf-dental/src/kerf_dental/stl_export.py"
   - domain: D13
     feature: "Crown and bridge design"
     competitor:
@@ -25,8 +25,8 @@ features:
       source: "https://www.3shape.com/en/software/dental-system"
     kerf:
       status: partial
-      note: "Crown geometry tool (backend); crown is a placeholder cylinder not a full restoration design tool"
-      evidence: "packages/kerf-dental/src/kerf_dental/crown.py"
+      note: "Anatomic crown (design_crown_anatomic): sweeps actual margin-line polygon with raised-cosine cusp ridges (n_cusps=2 premolar, n_cusps=4 molar); validate_body-clean B-rep; STL export via stl_export.py. No virtual articulator, no AI design proposal, no bridge pontic."
+      evidence: "packages/kerf-dental/src/kerf_dental/crown.py (design_crown_anatomic), packages/kerf-dental/src/kerf_dental/stl_export.py"
   - domain: D13
     feature: "Implant planning"
     competitor:
@@ -64,9 +64,9 @@ features:
       note: "Full and partial denture design; denture on implants; Splint Studio for occlusal devices"
       source: "https://www.3shape.com/en/software/dental-system"
     kerf:
-      status: no
-      note: "No removable denture design"
-      evidence: ""
+      status: partial
+      note: "Parametric full denture base (horseshoe arch, buccal flange, tooth socket positions) and RPD major connector (lingual bar / palatal plate) via design_full_denture() / design_rpd(). Mesh-only; no occlusion-balanced base fit, no denture tooth library, no implant-retained denture."
+      evidence: "packages/kerf-dental/src/kerf_dental/denture.py"
   - domain: D13
     feature: "AI-powered design automation"
     competitor:
@@ -85,7 +85,8 @@ features:
       source: "https://www.3shape.com/en/software/trios-design-studio"
     kerf:
       status: no
-      note: "No intraoral scanner integration"
+      note: "No intraoral scanner integration."
+      kerf_note: "Epic gap: full IOS mesh registration pipeline (color-coded deviation map, multi-scan alignment, TRIOS/iTero/3M format parsers) is a multi-sprint feature. STL/PLY import for post-scan workflows is tractable but not yet wired."
       evidence: ""
   - domain: D13
     feature: "Lab management / manufacturing output"
@@ -95,8 +96,8 @@ features:
       source: "https://www.3shape.com/en/software/dental-system"
     kerf:
       status: partial
-      note: "STL export + FDM slicing for dental models; no dental mill post processor"
-      evidence: "packages/kerf-dental/src/kerf_dental/tools.py"
+      note: "Binary and ASCII STL export for dental meshes (crown, full denture, RPD) via stl_export.py; normal computation from vertex cross-product; dental_stl_export LLM tool. No dental mill post processor (G-code, Sirona/Roland CAM paths)."
+      evidence: "packages/kerf-dental/src/kerf_dental/stl_export.py, packages/kerf-dental/src/kerf_dental/tools.py"
   - domain: D1
     feature: "LLM / chat-native editing"
     competitor:
@@ -111,7 +112,7 @@ features:
 
 # Kerf vs 3Shape Dental System
 
-3Shape Dental System is the dominant dental CAD platform for dental laboratories worldwide. It covers the full range of dental restorations: AI-assisted crown and bridge design, implant planning against a library of 100+ implant systems, removable partial dentures, full dentures, orthodontic clear aligners, occlusal splints, and surgical guides — all integrated with 3Shape's TRIOS intraoral scanner and 3Shape Produce manufacturing output. It is a dedicated dental technology platform. Kerf's dental module covers DICOM ingest, surgical guide geometry, and crown tooling — but the crown is currently a placeholder and there is no denture, aligner, or RPD capability. Kerf's value in dental is multi-domain: combining dental geometry with structural FEA, materials LCA, and biomedical engineering in one workspace.
+3Shape Dental System is the dominant dental CAD platform for dental laboratories worldwide. It covers the full range of dental restorations: AI-assisted crown and bridge design, implant planning against a library of 100+ implant systems, removable partial dentures, full dentures, orthodontic clear aligners, occlusal splints, and surgical guides — all integrated with 3Shape's TRIOS intraoral scanner and 3Shape Produce manufacturing output. It is a dedicated dental technology platform. Kerf's dental module covers DICOM ingest, surgical guide geometry, anatomic crown design (swept margin polygon with cusp ridges), parametric full-denture and RPD connector geometry, and STL export for milling. Kerf's value in dental is multi-domain: combining dental geometry with structural FEA, materials LCA, and biomedical engineering in one workspace.
 
 ## Where 3Shape is strong
 
@@ -132,12 +133,12 @@ features:
 
 ## Honest gaps — where Kerf is behind today
 
-- **Crown is a placeholder.** Kerf's crown geometry tool generates a cylinder — not a clinically usable restoration. This is the most important gap for dental use.
-- **No denture or RPD.** Two major dental categories missing entirely.
+- **Crown anatomy is parametric, not AI-guided.** Kerf's anatomic crown sweeps the actual margin polygon with raised-cosine cusp ridges (2 cusps for premolars, 4 for molars) — a parameterically reasonable restoration form. It is not clinically tuned to patient occlusion, does not include a virtual articulator, and does not produce a bridge pontic.
+- **Denture is geometry, not fit-optimised.** The full denture and RPD connector are parametric arch meshes. There is no residual-ridge scan registration, no mucosal relief, and no occlusal balance.
 - **No implant library.** Without implant system geometry and connection data, implant planning is not clinically useful.
-- **No scanner integration.** No way to import an intraoral scan directly from a TRIOS or third-party IOS.
+- **No scanner integration.** No way to import an intraoral scan directly from a TRIOS or third-party IOS. Full IOS pipeline (multi-scan alignment, deviation map) is an epic.
 - **No dental-specific AI.** Kerf's general LLM is not trained on dental anatomy.
-- **No dental mill post processor.** Cannot drive a dental milling machine directly.
+- **No dental mill post processor.** Can export STL; cannot generate G-code for Sirona, Roland, or Datron dental mills.
 
 ## Side by side
 
@@ -145,14 +146,17 @@ features:
 |---|---|---|
 | License | MIT open-core | Proprietary (per seat/module) |
 | Primary focus | Multi-domain engineering CAD | Dental laboratory CAD |
-| Crown / bridge design | Placeholder only | Full AI-assisted |
+| Crown design | Anatomic (swept margin + n_cusps=2-4) | Full AI-assisted |
+| Bridge design | No pontic | Full AI-assisted |
 | Implant planning | Backend (no library) | 100+ implant libraries |
 | Surgical guide | Backend | Yes |
 | DICOM / CBCT ingest | Yes (backend) | Yes |
-| Denture / RPD | No | Yes |
-| Intraoral scanner | No | TRIOS native + IOS |
+| Full denture | Parametric arch mesh | Full fit-optimised design |
+| RPD / partial denture | Major connector mesh | Full RPD design |
+| Intraoral scanner | No (epic) | TRIOS native + IOS |
 | AI restoration proposals | No | 3Shape Automate (~90s) |
-| Manufacturing output | STL / FDM only | Direct mill/printer integration |
+| STL export | Yes (binary + ASCII) | Yes |
+| Dental mill post processor | No | Direct mill/printer integration |
 | Chat / LLM editing | Chat-native | None |
 | Open source | Yes (MIT) | No |
 
