@@ -50,8 +50,8 @@ features:
       source: "https://help.autodesk.com/view/CIV3D/2026/ENU/?guid=GUID-CF0B5B8A-8085-4768-92C6-E0BD5B8D37B5"
     kerf:
       status: partial
-      note: "Basic earthworks / site grading; no corridor-driven volumes"
-      evidence: "packages/kerf-civil/"
+      note: "TIN surface from point cloud + cut/fill volumes; contour extraction; no corridor-driven composite TINs"
+      evidence: "packages/kerf-civil/src/kerf_civil/tin.py"
 
   - domain: D8
     feature: "Gravity pipe networks (storm/sanitary)"
@@ -61,7 +61,8 @@ features:
       source: "https://help.autodesk.com/view/CIV3D/2026/ENU/?guid=GUID-4D3E2C98-E4A5-4F9D-9EFE-8A1F0BDCB5A1"
     kerf:
       status: no
-      evidence: "packages/kerf-civil/"
+      note: "TR-55 hydrology + D8 flow accumulation exist; no gravity pipe network design/sizing/plan workflow"
+      evidence: "packages/kerf-civil/src/kerf_civil/"
 
   - domain: D8
     feature: "Pressure pipe networks"
@@ -70,8 +71,9 @@ features:
       note: "Pressure pipe parts, fittings, and plan production"
       source: "https://help.autodesk.com/view/CIV3D/2026/ENU/?guid=GUID-A57BA96E-A2F5-4A4F-B0B3-2E3D8F6E1C9D"
     kerf:
-      status: no
-      evidence: "packages/kerf-civil/"
+      status: partial
+      note: "Hardy-Cross steady-state pressure pipe network solver (Darcy-Weisbach, Hazen-Williams) in kerf-cad-core; no plan-production or fittings layout"
+      evidence: "packages/kerf-cad-core/src/kerf_cad_core/civil/hydraulics.py"
 
   - domain: D8
     feature: "Survey / COGO"
@@ -147,7 +149,8 @@ features:
       source: "https://help.autodesk.com/view/CIV3D/2026/ENU/?guid=GUID-C7D8E9F0-1A2B-3C4D-5E6F-7A8B9C0D1E2F"
     kerf:
       status: no
-      evidence: "packages/kerf-civil/"
+      note: "Needs parcel/lot-layout epic; not in current civil module scope"
+      evidence: "packages/kerf-civil/src/kerf_civil/"
 
   - domain: D8
     feature: "Point cloud integration"
@@ -157,7 +160,8 @@ features:
       source: "https://help.autodesk.com/view/CIV3D/2026/ENU/?guid=GUID-D8E9F0A1-2B3C-4D5E-6F7A-8B9C0D1E2F3A"
     kerf:
       status: no
-      evidence: "packages/kerf-civil/"
+      note: "No scan / point-cloud ingestion; needs LiDAR/photogrammetry import pipeline"
+      evidence: "packages/kerf-civil/src/kerf_civil/"
 
   - domain: D8
     feature: "Plan and profile sheet production"
@@ -167,7 +171,8 @@ features:
       source: "https://help.autodesk.com/view/CIV3D/2026/ENU/?guid=GUID-E9F0A1B2-3C4D-5E6F-7A8B-9C0D1E2F3A4B"
     kerf:
       status: no
-      evidence: "packages/kerf-civil/"
+      note: "No automated civil plan/profile sheet generation; corridor DXF export exists but no sheet-set workflow"
+      evidence: "packages/kerf-civil/src/kerf_civil/"
 
   # D2 — Structural / FEA
   - domain: D2
@@ -201,8 +206,8 @@ features:
       source: "https://help.autodesk.com/view/CIV3D/2026/ENU/?guid=GUID-A57BA96E-A2F5-4A4F-B0B3-2E3D8F6E1C9D"
     kerf:
       status: yes
-      note: "Backend; Hardy-Cross clean-water pipe network"
-      evidence: "packages/kerf-civil/"
+      note: "Hardy-Cross steady-state pressure pipe network + Method-of-Characteristics transient solver"
+      evidence: "packages/kerf-cad-core/src/kerf_cad_core/civil/hydraulics.py"
 
   # D1 — Geometry & core CAD
   - domain: D1

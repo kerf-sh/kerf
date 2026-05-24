@@ -116,9 +116,9 @@ features:
       note: "Vectorworks Landmark: DTM-based grading, cut/fill volumes, grade limits; Landmark tier only"
       source: "https://app-help.vectorworks.net/2024/eng/index.htm#t=VW2024_Guide%2FSite_Model%2FCreating_Site_Models.htm"
     kerf:
-      status: no
-      note: "No site model or DTM grading; civil engines are backend only with no UI"
-      evidence: "packages/kerf-civil/"
+      status: yes
+      note: "Contour extraction (marching squares), cut/fill volumes (prismatic), planar grade application; landscape_contours + landscape_cut_fill tools"
+      evidence: "packages/kerf-landscape/src/kerf_landscape/grading.py"
 
   - domain: D8
     feature: "Contour manipulation and slope analysis"
@@ -127,9 +127,9 @@ features:
       note: "Landmark: contour editing, slope shading, and 2D/3D site model analysis"
       source: "https://app-help.vectorworks.net/2024/eng/index.htm#t=VW2024_Guide%2FSite_Model%2FAnalyzing_Site_Models.htm"
     kerf:
-      status: no
-      note: "Backend terrain algorithms exist; no UI route"
-      evidence: "packages/kerf-civil/terrain.py"
+      status: yes
+      note: "Marching-squares iso-contour extraction from DEM grid; grade_surface applies uniform planar grade; landscape_contours tool"
+      evidence: "packages/kerf-landscape/src/kerf_landscape/grading.py"
 
   - domain: D8
     feature: "Hardscape design and area calculation"
@@ -138,9 +138,9 @@ features:
       note: "Vectorworks Landmark: hardscape objects, surface area, material takeoffs"
       source: "https://app-help.vectorworks.net/2024/eng/index.htm#t=VW2024_Guide%2FHardscapes%2FHardscape_Objects.htm"
     kerf:
-      status: no
-      note: "Not implemented"
-      evidence: ""
+      status: yes
+      note: "Paver pattern generator (running-bond/stack-bond/herringbone-45/basketweave) + material takeoff; retaining wall (Rankine) sizing; landscape_paver_pattern + landscape_retaining_wall tools"
+      evidence: "packages/kerf-landscape/src/kerf_landscape/hardscape.py"
 
   - domain: D8
     feature: "Irrigation layout"
@@ -149,9 +149,9 @@ features:
       note: "Landmark: irrigation objects, head placement, zone scheduling"
       source: "https://app-help.vectorworks.net/2024/eng/index.htm#t=VW2024_Guide%2FIrrigation%2FIrrigation_Overview.htm"
     kerf:
-      status: no
-      note: "Not implemented"
-      evidence: ""
+      status: yes
+      note: "Irrigation zone scheduling (head spacing, zone flow demand, weekly run-time schedule, DU audit); ASABE/ICC 802-2014; landscape_irrigation_schedule tool"
+      evidence: "packages/kerf-landscape/src/kerf_landscape/irrigation.py"
 
   # ── D12 Optics / rendering / acoustics ───────────────────────────────────
   - domain: D12
@@ -250,9 +250,9 @@ features:
       note: "Vectorworks Architect: curtain wall tool with panel and mullion configuration; Architect tier"
       source: "https://app-help.vectorworks.net/2024/eng/index.htm#t=VW2024_Guide%2FCurtain_Walls%2FCurtain_Wall_Overview.htm"
     kerf:
-      status: partial
-      note: "BIM curtain wall pattern exists; limited parametric control"
-      evidence: "packages/kerf-bim/"
+      status: yes
+      note: "Parametric curtain wall: u/v panel grid (count/spacing/mixed), square/round mullion profiles, glass/solid/opening panels, B-rep mullion+panel solids"
+      evidence: "packages/kerf-bim/src/kerf_bim/tools/curtain_wall.py"
 
   - domain: D13
     feature: "Roof and ceiling modelling"
@@ -272,9 +272,9 @@ features:
       note: "Vectorworks Landmark: plant symbols, plant list schedule, botanical database; Landmark tier"
       source: "https://app-help.vectorworks.net/2024/eng/index.htm#t=VW2024_Guide%2FPlants%2FPlants_Overview.htm"
     kerf:
-      status: partial
-      note: "Landscape backend exists (drainage/grading/planting); no plant symbol library or scheduling UI"
-      evidence: "packages/kerf-verticals/landscape.py"
+      status: yes
+      note: "Xeriscape plant catalogue (USDA zone + WUCOLS water-use filtering); planting-grid spacing; annual water budget (WUCOLS ET factors); landscape_plants tool"
+      evidence: "packages/kerf-landscape/src/kerf_landscape/planting.py"
 
   - domain: D13
     feature: "Entertainment / theatrical lighting plot"
@@ -397,4 +397,4 @@ Both tools also have a Python scripting interface. Vectorworks exposes Vectorscr
 Vectorworks and Kerf both export AutoCAD DXF, which is the lingua franca for exchanging 2D geometry between design tools. A Vectorworks floor plan exported to DXF can be imported into Kerf for engineering dimensioning or integration with fabricated components — and a Kerf technical drawing can be exported to DXF for use in a Vectorworks construction document set.
 
 ---
-*Last reviewed: 2026-05-19. Competitor information sourced from public Vectorworks product pages. Kerf capabilities reflect the current shipped product.*
+*Last reviewed: 2026-05-24. Competitor information sourced from public Vectorworks product pages. Kerf capabilities reflect the current shipped product.*

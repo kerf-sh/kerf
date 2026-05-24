@@ -44,9 +44,9 @@ features:
       note: "Complex roof geometry: hip, gable, shed, barrel, mono-pitch — all parametric"
       source: "https://help.graphisoft.com/AC/27/INT/_AC27_Help/content/020_elemtools/020_elemtools-9.htm"
     kerf:
-      status: partial
-      note: "Basic roof slab; no hip/gable/barrel roof generator"
-      evidence: "packages/kerf-bim/src/bim.py"
+      status: yes
+      note: "Parametric hip / gable / shed / mono-pitch roof B-rep generator with IFC IfcRoof export"
+      evidence: "packages/kerf-bim/src/kerf_bim/roof_geometry.py"
   - domain: D13
     feature: "IFC 4 authoring and export"
     competitor:
@@ -55,8 +55,8 @@ features:
       source: "https://help.graphisoft.com/AC/27/INT/_AC27_Help/content/070_interoperability/070_interoperability-1.htm"
     kerf:
       status: partial
-      note: "IFC Tier 2 import; IFC export in progress, not yet certified"
-      evidence: "packages/kerf-bim/src/ifc_import.py"
+      note: "IFC4 export wired (walls/slabs/doors/windows/spaces/stairs/openings/site); Tier 2 import; not yet buildingSMART certified"
+      evidence: "packages/kerf-bim/src/kerf_bim/export_ifc/writer.py"
   - domain: D13
     feature: "GDL parametric object library"
     competitor:
@@ -75,8 +75,8 @@ features:
       source: "https://graphisoft.com/solutions/products/mep-modeler"
     kerf:
       status: partial
-      note: "Backend MEP routing calculator; no BIM MEP routing UI"
-      evidence: "packages/kerf-bim/src/mep.py"
+      note: "BIM MEP routing (duct/pipe/conduit segments, fittings, endpoints) via create_mep_route tool; no clash-aware auto-routing UI"
+      evidence: "packages/kerf-bim/src/kerf_bim/tools/mep.py"
   - domain: D13
     feature: "Teamwork BIMcloud multi-user worksharing"
     competitor:
@@ -94,9 +94,9 @@ features:
       note: "Interactive schedules for doors, windows, materials, zones — live-linked to 3D model"
       source: "https://help.graphisoft.com/AC/27/INT/_AC27_Help/content/060_documentation/060_documentation-5.htm"
     kerf:
-      status: partial
-      note: "BOM panel in assemblies; no BIM-element schedule generator"
-      evidence: "src/components/BOMPanel.jsx"
+      status: yes
+      note: "BIM element schedules (walls/doors/windows/spaces/slabs); area/volume/occupancy totals per level; bim_space_schedule tool"
+      evidence: "packages/kerf-bim/src/kerf_bim/tools/schedule.py"
   - domain: D13
     feature: "Curtain wall / curtain wall designer"
     competitor:
@@ -104,9 +104,9 @@ features:
       note: "Parametric curtain wall tool with panel, frame, and corner connection logic"
       source: "https://help.graphisoft.com/AC/27/INT/_AC27_Help/content/020_elemtools/020_elemtools-16.htm"
     kerf:
-      status: no
-      note: "No curtain wall tool"
-      evidence: ""
+      status: yes
+      note: "Parametric curtain wall: panel grid (u/v divisions, count/spacing), mullion profiles (square/round), glass/solid/opening panels, B-rep mullion + panel solids"
+      evidence: "packages/kerf-bim/src/kerf_bim/tools/curtain_wall.py"
   - domain: D13
     feature: "Zone / room / space objects"
     competitor:
@@ -114,9 +114,9 @@ features:
       note: "Zone tool defines spaces with area, volume, and occupancy data for energy and code compliance"
       source: "https://help.graphisoft.com/AC/27/INT/_AC27_Help/content/020_elemtools/020_elemtools-13.htm"
     kerf:
-      status: no
-      note: "No room/space/zone BIM object"
-      evidence: ""
+      status: yes
+      note: "IfcSpace-compliant space objects with area/volume/occupancy; bim_create_space + bim_space_schedule tools; IFC import + export of spaces wired"
+      evidence: "packages/kerf-bim/src/kerf_bim/spaces.py"
   - domain: D13
     feature: "Hotlinked modules (XRef / federated model)"
     competitor:
@@ -125,7 +125,7 @@ features:
       source: "https://help.graphisoft.com/AC/27/INT/_AC27_Help/content/050_teamwork/050_teamwork-7.htm"
     kerf:
       status: no
-      note: "No federated BIM hotlink mechanism"
+      note: "No federated BIM hotlink/XRef mechanism; cloud git provides file-level references but not BIM-level live linking"
       evidence: ""
   - domain: D8
     feature: "Site terrain / mesh modelling"
@@ -320,4 +320,4 @@ Both tools acknowledge that buildings include things other than architecture. Ar
 ArchiCAD and Kerf both work with IFC (Industry Foundation Classes, ISO 16739). An ArchiCAD project exported to IFC can be imported into Kerf for engineering coordination — fabricating facade panels, modelling MEP components with manufacturing tolerance, or integrating building-embedded electronics. IFC is the handshake between the architect's BIM and the engineer's CAD model.
 
 ---
-*Last reviewed: 2026-05-19. Competitor information sourced from public Graphisoft ArchiCAD product pages. Kerf capabilities reflect the current shipped product.*
+*Last reviewed: 2026-05-24. Competitor information sourced from public Graphisoft ArchiCAD product pages. Kerf capabilities reflect the current shipped product.*

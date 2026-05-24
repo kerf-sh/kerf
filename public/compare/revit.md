@@ -22,8 +22,9 @@ features:
     competitor:status: "✅ Full — curtain wall host, grid rules, panel families, mullion profiles"
     competitor:source: "https://help.autodesk.com/view/RVT/2025/ENU/?guid=GUID-7BB26F3A-E2BF-4A63-8A4E-3A726E7F33B5"
     competitor:paid: false
-    kerf:status: "[ ]"
-    kerf:evidence: "cloud/bim/"
+    kerf:status: "[x]"
+    kerf:note: "Parametric curtain wall: u/v panel grid (count/spacing), square/round mullion profiles, glass/solid/opening panels, B-rep mullion+panel solids"
+    kerf:evidence: "packages/kerf-bim/src/kerf_bim/tools/curtain_wall.py"
 
   - name: "Doors and windows (host-based, parametric families)"
     domain: D13
@@ -46,8 +47,9 @@ features:
     competitor:status: "✅ Full — footprint, extrusion, face-based, mass roof"
     competitor:source: "https://help.autodesk.com/view/RVT/2025/ENU/?guid=GUID-C4B2B05F-85D4-4D2A-8E6E-3A9F7E8E1B2C"
     competitor:paid: false
-    kerf:status: "[ ]"
-    kerf:evidence: "cloud/bim/"
+    kerf:status: "[x]"
+    kerf:note: "Hip / gable / shed / mono-pitch parametric roof generator with B-rep and IFC IfcRoof export; pitch/overhang params"
+    kerf:evidence: "packages/kerf-bim/src/kerf_bim/roof_geometry.py"
 
   - name: "Stairs (run/landing/railing, code check)"
     domain: D13
@@ -92,26 +94,29 @@ features:
   - name: "MEP — HVAC duct systems"
     domain: D13
     competitor:status: "✅ Full Revit MEP — duct layouts, fittings, air terminals, duct sizing"
-    competitor:source: "https://help.autodesk.com/view/RVT/2025/ENU/?guid=GUID-G7FA C968-3D4E-4C5F-1G7H-4E5F6G7H8I9J"
+    competitor:source: "https://help.autodesk.com/view/RVT/2025/ENU/?guid=GUID-G7FAC968-3D4E-4C5F-1G7H-4E5F6G7H8I9J"
     competitor:paid: false
-    kerf:status: "[ ]"
-    kerf:evidence: "cloud/bim/"
+    kerf:status: "[~]"
+    kerf:note: "BIM duct routing (segments, rectangular/round fittings, endpoints) via create_mep_route; no clash-aware auto-routing or air-terminal schedules"
+    kerf:evidence: "packages/kerf-bim/src/kerf_bim/tools/mep.py"
 
   - name: "MEP — plumbing (pipe systems, fixtures)"
     domain: D13
     competitor:status: "✅ Full — pipe systems, fixtures, flow calculation, slope enforcement"
-    competitor:source: "https://help.autodesk.com/view/RVT/2025/ENU/?guid=GUID-H8GB D079-4E5F-4D6G-2H8I-5F6G7H8I9J0K"
+    competitor:source: "https://help.autodesk.com/view/RVT/2025/ENU/?guid=GUID-H8GBD079-4E5F-4D6G-2H8I-5F6G7H8I9J0K"
     competitor:paid: false
-    kerf:status: "[ ]"
-    kerf:evidence: "cloud/bim/"
+    kerf:status: "[~]"
+    kerf:note: "BIM pipe routing (copper/PVC/HDPE/cast-iron segments and fittings) via create_mep_route; no fixture families or slope enforcement"
+    kerf:evidence: "packages/kerf-bim/src/kerf_bim/tools/mep.py"
 
   - name: "MEP — electrical (circuits, panels, lighting)"
     domain: D13
     competitor:status: "✅ Full — electrical circuits, panel schedules, switch systems, lighting fixtures"
-    competitor:source: "https://help.autodesk.com/view/RVT/2025/ENU/?guid=GUID-I9HC E180-5F6G-4E7H-3I9J-6G7H8I9J0K1L"
+    competitor:source: "https://help.autodesk.com/view/RVT/2025/ENU/?guid=GUID-I9HCE180-5F6G-4E7H-3I9J-6G7H8I9J0K1L"
     competitor:paid: false
-    kerf:status: "[ ]"
-    kerf:evidence: "cloud/bim/"
+    kerf:status: "[~]"
+    kerf:note: "BIM conduit routing via create_mep_route; NEC power distribution analysis in kerf-electrical; no Revit-style circuit/panel schedules or lighting fixture families"
+    kerf:evidence: "packages/kerf-bim/src/kerf_bim/tools/mep.py"
 
   - name: "Parametric family editor (nested families, type catalogue)"
     domain: D13
@@ -148,10 +153,11 @@ features:
   - name: "Rooms and spaces (area, occupancy, program)"
     domain: D13
     competitor:status: "✅ Full — room bounding, space objects for MEP loads, color-fill plans"
-    competitor:source: "https://help.autodesk.com/view/RVT/2025/ENU/?guid=GUID-N4MH J635-0K1L-4J2M-8N4O-1L2M3N4O5P6Q"
+    competitor:source: "https://help.autodesk.com/view/RVT/2025/ENU/?guid=GUID-N4MHJ635-0K1L-4J2M-8N4O-1L2M3N4O5P6Q"
     competitor:paid: false
-    kerf:status: "[~]"
-    kerf:evidence: "cloud/bim/spaces.go"
+    kerf:status: "[x]"
+    kerf:note: "IfcSpace-compliant spaces with area/volume/occupancy; bim_create_space + bim_space_schedule; import and export round-trip"
+    kerf:evidence: "packages/kerf-bim/src/kerf_bim/spaces.py"
 
   - name: "BIM views (plan, section, elevation, 3D, callout)"
     domain: D13
@@ -204,17 +210,19 @@ features:
   - name: "Worksharing / concurrent BIM editing"
     domain: D13
     competitor:status: "✅ Full — worksets, central model, cloud worksharing via Autodesk Construction Cloud"
-    competitor:source: "https://help.autodesk.com/view/RVT/2025/ENU/?guid=GUID-T0SN P291-6Q7R-4P8S-4T0U-7R8S9T0U1V2W"
+    competitor:source: "https://help.autodesk.com/view/RVT/2025/ENU/?guid=GUID-T0SNP291-6Q7R-4P8S-4T0U-7R8S9T0U1V2W"
     competitor:paid: true
     kerf:status: "[ ]"
+    kerf:note: "Needs BIM element-level locking epic; cloud git provides file-level workspace roles only"
     kerf:evidence: "cloud/projects/"
 
   - name: "Dynamo visual programming"
     domain: D13
     competitor:status: "✅ Full — Dynamo Studio + Dynamo Player; node-based scripting of BIM model"
-    competitor:source: "https://help.autodesk.com/view/RVT/2025/ENU/?guid=GUID-U1TO Q302-7R8S-4Q9T-5U1V-8S9T0U1V2W3X"
+    competitor:source: "https://help.autodesk.com/view/RVT/2025/ENU/?guid=GUID-U1TOQ302-7R8S-4Q9T-5U1V-8S9T0U1V2W3X"
     competitor:paid: false
     kerf:status: "[ ]"
+    kerf:note: "No node-based visual scripting; kerf-sdk Python API is the scripting surface — covers the automation use case but not the Dynamo visual-graph experience"
     kerf:evidence: "cloud/bim/"
 
   - name: "pyRevit / Revit API Python automation"
@@ -239,6 +247,7 @@ features:
     competitor:source: "https://www.autodesk.com/products/navisworks/features"
     competitor:paid: true
     kerf:status: "[ ]"
+    kerf:note: "Needs construction sequencing / schedule-linked model epic; out of current scope"
     kerf:evidence: "cloud/bim/"
 
   - name: "5D cost estimation integration"
@@ -247,6 +256,7 @@ features:
     competitor:source: "https://construction.autodesk.com/products/assemble/"
     competitor:paid: true
     kerf:status: "[ ]"
+    kerf:note: "BIM quantity takeoff (area/volume schedules) exists; no BIM-linked cost estimation integration with external tools"
     kerf:evidence: "cloud/bim/"
 
   # ── D2 Structural via BIM ─────────────────────────────────────────────────
