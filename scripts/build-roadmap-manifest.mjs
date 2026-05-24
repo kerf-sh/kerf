@@ -32,14 +32,15 @@ writeFileSync(join(PUBLIC_DIR, 'ROADMAP.md'), md)
 // Domain is inferred from the first capitalised word of the title fallback.
 // ---------------------------------------------------------------------------
 
-const DELTA_HEADER = /^###\s+Latest delta \((\d{4}-\d{2}-\d{2})\)\s*$/m
+// Accept both `### Latest delta (YYYY-MM-DD)` and `### Latest delta — YYYY-MM-DD`.
+const DELTA_HEADER = /^###\s+Latest delta[\s(—-]+(\d{4}-\d{2}-\d{2})\)?\s*$/m
 
 function findLatestDelta(text) {
   const lines = text.split(/\r?\n/)
   let startIdx = -1
   let date = null
   for (let i = 0; i < lines.length; i++) {
-    const m = lines[i].match(/^###\s+Latest delta \((\d{4}-\d{2}-\d{2})\)\s*$/)
+    const m = lines[i].match(/^###\s+Latest delta[\s(—-]+(\d{4}-\d{2}-\d{2})\)?\s*$/)
     if (m) { startIdx = i; date = m[1]; break }
   }
   if (startIdx < 0) return { date: null, body: '', items: [] }

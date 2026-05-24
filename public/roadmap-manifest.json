@@ -1,105 +1,80 @@
 {
   "version": 1,
-  "generatedAt": "2026-05-24T13:51:07.694Z",
+  "generatedAt": "2026-05-24T20:17:22.620Z",
   "source": "ROADMAP.md",
   "latestDelta": {
     "date": "2026-05-24",
-    "itemCount": 19,
+    "itemCount": 14,
     "items": [
       {
         "title": "Structural code design",
-        "body": "AISC 360-22 members (Ch. E compression + F LTB W/C/HSS/pipe/angle + H combined) + bolted/welded connections + base-plate (LRFD+ASD); ACI 318-19 flexure/shear/PM/development-length + punching-shear §22.6 + torsion §22.7; NDS 2018 timber (full adjustment factors); ASCE 7-22 LRFD+ASD load combos + ELF + RSA (SRSS+CQC) + Newmark time-history seismic (SDOF 0.07 % error). Full Eurocode coverage: EC2 (concrete flexure/shear/punching/deflection) + EC3 (steel members/connections) + EC5 (timber, NDS-parity) + EC8 (spectrum/LFM/RSA)",
+        "body": "AISC 360-22 (Ch. E/F/H members + connections + base-plate, LRFD+ASD); ACI 318-19 (flexure/shear/PM + punching §22.6 + torsion §22.7); NDS 2018 timber; ASCE 7-22 load combos + ELF + RSA/Newmark seismic. Full Eurocode: EC2, EC3, EC5, EC8",
         "domain": "Structural"
       },
       {
         "title": "Native FE",
-        "body": "MITC4 (Bathe-Dvorkin) plate/shell element with consistent mass matrix + modal analysis via inverse iteration (1.29 % error vs Timoshenko at 16×16); 2D/3D frame stiffness assembler with ASCE 7 LRFD/ASD combos + story drift (machine-precision validated); geotech liquefaction triggering (Seed-Idriss CSR + SPT/CPT CRR + Tokimatsu, Loma Prieta validated); multi-axial critical-plane fatigue — Findley, SWT-3D, Brown-Miller",
+        "body": "MITC4 plate/shell (Bathe-Dvorkin) + modal via inverse iteration; 2D/3D frame stiffness + story drift; multi-axial critical-plane fatigue (Findley, SWT-3D, Brown-Miller); geotech liquefaction triggering (Seed-Idriss/Tokimatsu)",
         "domain": "Structural"
       },
       {
         "title": "Machine elements depth",
-        "body": "ISO 6336 gear rating Method B (safety factors ZH=2.495, ZE=191 √MPa validated); ISO/TS 16281 bearing aISO modified life (Lnm, contamination + misalignment); planetary gearbox (3 Willis modes + compound, torque identity to 1e-10); multi-axial fatigue folded in",
-        "domain": "Structural"
+        "body": "ISO 6336 gear rating Method B; ISO/TS 16281 bearing modified life (aISO); planetary gearbox (3 Willis modes + compound); Taylor extended tool-life + Gilbert economics",
+        "domain": "Machine"
       },
       {
         "title": "Thermo-fluid depth",
-        "body": "IAPWS-IF97 steam properties Regions 1/2/4 validated to <1e-3 vs reference tables; Bell-Delaware shell-and-tube HX (full TEMA layout + 5 correction factors + ΔP both sides, Kern U≈504 validated); transient pipe-network (MOC waterhammer + quasi-steady + surge-tank); ASHRAE CLTD/RTS transient cooling loads (Sol-air + fenestration, ASHRAE Ch. 18)",
+        "body": "IAPWS-IF97 steam Regions 1/2/4; Bell-Delaware shell-and-tube HX (TEMA + 5 correction factors); transient pipe-network (MOC waterhammer + surge-tank); ASHRAE CLTD/RTS transient cooling loads",
         "domain": "Thermofluid"
       },
       {
         "title": "Electronics / power depth",
-        "body": "IBIS-AMI signal integrity (IBIS 5.1 parser + Bergeron channel + PRBS eye envelope); AC PDN impedance sweep + target-Z + decap optimiser; AC load-flow Newton-Raphson polar-form (3+5-bus validated); protection coordination IEC 60255 U1-U5 + IEEE C37.112 + IEEE 1584-2018 arc-flash incident energy; photonics fibre-optic link budget",
+        "body": "IBIS-AMI signal integrity (Bergeron + PRBS eye); AC PDN impedance + decap optimiser; Newton-Raphson AC load-flow; IEC 60255 + IEEE C37.112 protection coordination + IEEE 1584-2018 arc-flash; fibre-optic link budget",
         "domain": "Electronics"
       },
       {
         "title": "Aero / marine / space depth",
-        "body": "3D VLM with viscous strip drag + Prandtl-Glauert/Kármán-Tsien compressibility + Korn-Lock wave-drag (PG 1.401× exact); strip-theory seakeeping RAOs (Lewis-form STF + JONSWAP, Wigley validated); Holtrop-Mennen naval resistance + EHP; multi-revolution Lambert (Lancaster-Blanchard / Izzo 2015, sub-mm propagation residual N=1/N=2); 6-DOF flight dynamics + ADCS test stand",
+        "body": "3D VLM + viscous strip drag + Prandtl-Glauert/Kármán-Tsien + Korn-Lock wave-drag; strip-theory seakeeping RAOs (Lewis-form + JONSWAP); Holtrop-Mennen resistance + EHP; multi-revolution Lambert (Lancaster-Blanchard/Izzo 2015)",
         "domain": "Aerospace"
       },
       {
         "title": "Manufacturing depth",
-        "body": "adaptive/trochoidal CAM HSM (iterative offset + 50 % trochoid overlap, engagement on target) + rest machining (grid-based uncleared region); Taylor extended tool-life model (vcT^n·f^a·dp^b=C) + Gilbert economic speed; moldflow Hele-Shaw front tracking + weld-line detection + air-trap prediction; casting shrinkage table + Chvorinov solidification + riser sizing + gating design; NFP true-shape polygon nesting (Minkowski-sum + IFP + bottom-left fill, 57.6 % L-shape utilisation); sheet-metal bend table (K-factor/BD/spring-back per material/thickness)",
+        "body": "adaptive/trochoidal CAM HSM + rest machining; moldflow Hele-Shaw front tracking + weld-line + air-trap; casting Chvorinov + riser sizing + gating; NFP true-shape polygon nesting (57.6 % L-shape utilisation)",
+        "domain": "Manufacturing"
+      },
+      {
+        "title": "Verticals",
+        "body": "dental anatomic crown (multi-cusp fan, not placeholder); Swiss lever escapement + mainspring + balance-wheel; solar PV partial shading + bypass-diode + MPPT; analog PVT corner simulation (60 corners + Monte-Carlo mismatch)",
         "domain": "Machine"
       },
       {
-        "title": "Verticals depth",
-        "body": "dental anatomic crown (multi-cusp fan construction, not placeholder cylinder); horology Swiss lever escapement + mainspring barrel + balance-wheel oscillator (isochronism correction); solar PV partial shading + bypass-diode IV + global MPPT + mismatch loss (60-cell P=255 W validated); Bell-Delaware HX (D4 + D13 overlap)",
-        "domain": "Machine"
-      },
-      {
-        "title": "Tolerancing / QA depth",
-        "body": "3D vector-loop tolerance stackup (6-DOF Jacobian sensitivity, `tolstack/tol3d.py`); SPC control charts (Shewhart/CUSUM/EWMA + Nelson/WECO run rules, `spc/charts.py`); ISO 286 limits & fits consolidated",
+        "title": "Tolerancing / QA",
+        "body": "3D vector-loop tolerance stackup (6-DOF Jacobian); SPC control charts (Shewhart/CUSUM/EWMA + Nelson/WECO); ISO 286 limits & fits",
         "domain": "Aerospace"
       },
       {
-        "title": "Optics / acoustics depth",
-        "body": "Gaussian beam propagation (complex-q + ABCD + M² + fibre coupling, HeNe zR=4.96 m validated, ISO 11146-1); non-sequential ray tracing with Fresnel-split traversal + ghost detection (0.01 % ghost fraction validated); wave-domain room acoustics — image-source IR + Schroeder RT60 + modes + SEA (3.1 % error vs Sabine); Seidel S5 corrected (was zero)",
+        "title": "Optics / acoustics",
+        "body": "Gaussian beam (complex-q + ABCD + M² + fibre coupling); non-sequential ray tracing + ghost detection; wave-domain room acoustics (image-source IR + Schroeder RT60 + SEA); Seidel S5 corrected",
         "domain": "Structural"
       },
       {
         "title": "Implicit geometry",
-        "body": "extended TPMS / lattice library: FRep CSG ops (union/intersect/subtract/blend/shell) + implicit domain warps (twist/taper/wave) added to `kerf_cad_core.frep.csg`",
+        "body": "F-rep CSG (union/intersect/subtract/blend/shell) + domain warps (twist/taper/wave) in `kerf_cad_core.frep.csg`",
         "domain": "Platform"
-      },
-      {
-        "title": "Silicon",
-        "body": "analog PVT corner simulation: 60 corners (5 process × 3 voltage × 4 temperature) + Monte-Carlo mismatch per corner; bandgap ±31 mV, Pelgrom σ matched (`silicon/analog/pvt.py`)",
-        "domain": "Silicon"
       },
       {
         "title": "Materials + LCA",
-        "body": "Ashby database expanded to ~200 materials (14 families) with Pareto frontier multi-objective selection (`matsel/multi_objective.py`); full ISO 14040/44 LCA (4 phases: cradle/use/transport/EoL; impact categories: GWP/AP/EP/HTP/water/PM2.5 + Monte-Carlo uncertainty, `kerf-lca/phases.py`)",
+        "body": "Ashby database to ~200 materials (14 families) with Pareto-frontier multi-objective selection; full ISO 14040/44 LCA (4 phases, 6 impact categories, Monte-Carlo uncertainty)",
         "domain": "Cost"
       },
       {
-        "title": "Modelica / DAE",
-        "body": "system-simulation component library expanded to 16 components spanning mechanical / hydraulic / pneumatic / thermal / control",
-        "domain": "Platform"
-      },
-      {
         "title": "Compare matrices",
-        "body": "structured feature-matrix YAML added for 14 reference CADs: Fusion 360 (+55 rows), SolidWorks (+52), Onshape (+56), FreeCAD (+61), Rhino (+50), KiCad (+39), CATIA (+52), Creo (+54), NX (+54), Inventor (+53), AutoCAD (+41), Altium (+41), Revit (+41), Blender (+42) — 741 grounded rows total, sourced to vendor documentation",
+        "body": "feature-matrix YAML for 14 reference CADs: Fusion 360, SolidWorks, Onshape, FreeCAD, Rhino, KiCad, CATIA, Creo, NX, Inventor, AutoCAD, Altium, Revit, Blender — 741 grounded rows total",
         "domain": "Architecture"
       },
       {
-        "title": "Landing / SEO",
-        "body": "persona-led marketing funnel restructure (14 sections, all 25 illustrations rendered); SEO meta (title/description/OG/Twitter/JSON-LD SoftwareApplication schema)",
-        "domain": "Frontend"
-      },
-      {
-        "title": "Domain pages",
-        "body": "all 23 per-domain pages now have hero illustrations and capability illustrations wired in via `DomainPage` `heroIllustration` + `capabilityIllustrations` props (new vitest coverage)",
-        "domain": "Frontend"
-      },
-      {
         "title": "Security hardening",
-        "body": "`/run-topo` route now requires auth (`Depends(require_auth)`); NFP `grid_step` clamped to prevent resource exhaustion; PVT `n_mc` clamped; silicon synthesis blocks Yosys module-name injection",
+        "body": "`/run-topo` auth gate; NFP `grid_step` clamped; PVT `n_mc` clamped; Yosys module-name injection blocked; shared `_guard_*` helpers extracted across 68 files (−2009/+129 lines net)",
         "domain": "Silicon"
-      },
-      {
-        "title": "Infra refactor",
-        "body": "extracted shared `_guard_*` input-validation helpers into `kerf_cad_core._guards` module; applied across 68 files (−2009 / +129 lines net)",
-        "domain": "Platform"
       }
     ]
   }
