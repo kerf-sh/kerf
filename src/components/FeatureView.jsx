@@ -419,6 +419,41 @@ const FEATURE_KINDS = [
       { key: 'fuzzy_value', kind: 'number', label: 'Fuzzy value (optional)', min: 0, step: 1e-4 },
     ],
   },
+  // NURBS Phase 4 C2-T7/GK-P41 — trim_by_curve inspector entry.
+  //
+  // Projects a 3D cutter curve onto a NURBS face and splits it, keeping one
+  // side. surface-direct trim — no solid round-trip needed.
+  // Params: target feature body ref, face name (positional face-N), curve ref
+  // (.sketch path or feature id), keep_side (positive/negative), tolerance.
+  // WARNING: trim invalidates positional face-N IDs — re-identify faces in the
+  // inspector after a trim step.
+  {
+    op: 'trim_by_curve',
+    label: 'TrimByCurve',
+    icon: Crosshair,
+    caption: (
+      'Project a 3D curve onto a NURBS face and split it, keeping one side. ' +
+      'WARNING: trim invalidates positional face-N IDs — re-identify faces in ' +
+      'the inspector after trimming. Use keep_side to pick the half to retain.'
+    ),
+    defaults: {
+      target_feature_ref: '',
+      target_face_name: 'face-1',
+      trim_curve_ref: '',
+      keep_side: 'positive',
+      tolerance: 1e-3,
+    },
+    fields: [
+      { key: 'target_feature_ref', kind: 'feature_picker', label: 'Target body' },
+      { key: 'target_face_name',   kind: 'text',           label: 'Face name (e.g. face-1)' },
+      { key: 'trim_curve_ref',     kind: 'sketch_picker',  label: 'Trim curve (.sketch or feature id)' },
+      { key: 'keep_side', kind: 'select', label: 'Keep side', options: [
+        { value: 'positive', label: 'Positive (Left)' },
+        { value: 'negative', label: 'Negative (Right)' },
+      ] },
+      { key: 'tolerance', kind: 'number', label: 'Projection tolerance (mm)', min: 1e-9, step: 1e-4 },
+    ],
+  },
   // Slicing v0.2 — plane cross-section via BRepAlgoAPI_Section.
   // Returns a compound of intersection edges (1D outline, not a solid).
   // Inspector: target solid picker + plane point/normal xyz inputs.
@@ -1802,7 +1837,7 @@ const FEATURE_CATEGORIES = [
   { id: 'sketch',   label: 'Sketch-based',  ops: ['pad', 'boss_with_draft', 'pocket', 'cut_from_sketch', 'revolve', 'hole', 'hole_pattern'] },
   { id: 'modify',   label: 'Modify',        ops: ['fillet', 'chamfer', 'shell', 'push_pull', 'variable_radius_fillet', 'to_solid', 'boolean', 'section', 'quad_remesh'] },
   { id: 'pattern',  label: 'Pattern',       ops: ['linear_pattern', 'polar_pattern', 'mirror_pattern'] },
-  { id: 'surface',  label: 'Surfacing',     ops: ['sweep1', 'sweep2', 'loft', 'network_srf', 'blend_srf', 'surface_boolean', 'surface_curvature_combs'] },
+  { id: 'surface',  label: 'Surfacing',     ops: ['sweep1', 'sweep2', 'loft', 'network_srf', 'blend_srf', 'surface_boolean', 'trim_by_curve', 'surface_curvature_combs'] },
   { id: 'jewelry',  label: 'Jewelry',       ops: [
     // Gemstones
     'gemstone',
