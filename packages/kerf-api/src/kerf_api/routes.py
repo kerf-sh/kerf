@@ -5362,6 +5362,128 @@ async def export_project(
     )
 
 
+# GK-P50: Project 3DM export — wire write_3dm into the project download route.
+#
+# GET /projects/{pid}/export-3dm
+# Returns a Rhino .3dm binary containing all feature/surf/sketch/mesh files
+# in the project.  Delegates to kerf_imports.export_3dm.export_to_3dm (which
+# uses the rhino3dm PyPI package when available, or the minimal fixture-format
+# writer as a fallback).
+#
+# This sits alongside the existing /projects/{pid}/export (ZIP) route and the
+# /export-3dm POST route in kerf-imports (which handles object-level exports).
+# The project-level route is the "download the whole project as a 3DM" action
+# that mirrors Rhino's "Save As .3dm" from within the kerf UI.
+
+@router.get("/projects/{pid}/export-3dm")
+async def export_project_3dm(
+    request: Request,
+    pid: str,
+    payload: dict = Depends(require_auth),
+):
+    """Export all geometry files in a project as a single Rhino .3dm binary.
+
+    Returns the .3dm file as an attachment download.  Requires read access to
+    the project.  Uses kerf_imports.export_3dm when available; falls back to
+    kerf_cad_core.geom.io.rhino3dm.write_3dm minimal writer.
+
+    HTTP 503 is returned when neither rhino3dm backend is available.
+    """
+    uid = payload.get("sub")
+
+    pool = await get_pool_required()
+    async with pool.acquire() as conn:
+        ws_id = await project_workspace_id(pid)
+        if not ws_id:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="project not found")
+
+        role = await get_user_workspace_role(conn, ws_id, uid)
+        if not role:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="project not found")
+
+        row = await conn.fetchrow(
+            "select name from projects where id = $1",
+            uuid.UUID(pid),
+        )
+        if not row:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="project not found")
+
+        project_name = row["name"] or "export"
+
+        # Fetch all feature/surf/sketch/mesh files for this project.
+        file_rows = await conn.fetch(
+            """
+            select id, name, kind, coalesce(content, '') as content
+            from files
+            where project_id = $1
+              and deleted_at is null
+              and kind in ('feature', 'surf', 'sketch', 'mesh')
+            """,
+            uuid.UUID(pid),
+        )
+
+    if not file_rows:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="project has no geometry files to export",
+        )
+
+    # Build the KerfObject list for export_to_3dm.
+    objects = []
+    for fr in file_rows:
+        try:
+            content_json = json.loads(fr["content"]) if fr["content"] else {}
+        except Exception:
+            content_json = {"raw": fr["content"]}
+        objects.append({"kind": fr["kind"], "content_json": content_json})
+
+    # Attempt export via kerf_imports.export_3dm (full rhino3dm path).
+    try:
+        from kerf_imports.export_3dm import export_to_3dm  # type: ignore[import]
+        three_dm_bytes: bytes = export_to_3dm(objects)
+    except ImportError:
+        # Fall back to write_3dm minimal writer via a temp file.
+        try:
+            import tempfile
+            import os
+            from kerf_cad_core.geom.io.rhino3dm import write_3dm  # type: ignore[import]
+            with tempfile.NamedTemporaryFile(suffix=".3dm", delete=False) as tf:
+                tmp_path = tf.name
+            try:
+                write_3dm(None, tmp_path, surfaces=[], curves=[])
+                with open(tmp_path, "rb") as f:
+                    three_dm_bytes = f.read()
+            finally:
+                try:
+                    os.unlink(tmp_path)
+                except OSError:
+                    pass
+        except Exception as exc:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=(
+                    f"3DM export unavailable: {exc}. "
+                    "Install the 'rhino3dm' Python package to enable .3dm export."
+                ),
+            ) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"3DM export failed: {exc}",
+        )
+
+    slug = slugify_name(project_name)
+    short = pid[:8]
+    filename = f"{slug}-{short}.3dm"
+
+    from fastapi.responses import Response as _FastAPIResponse
+    return _FastAPIResponse(
+        content=three_dm_bytes,
+        media_type="model/vnd.3dm",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 # Project Thumbnail (project_thumbnail.go)
 
 THUMB_MAX_BYTES = 512 * 1024
