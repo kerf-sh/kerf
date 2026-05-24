@@ -28,6 +28,7 @@ import {
 } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import rehypeHighlight from 'rehype-highlight'
 import Layout from '../components/Layout.jsx'
 import Card from '../components/Card.jsx'
 import Button from '../components/Button.jsx'
@@ -272,6 +273,7 @@ function WorkshopReadmeBody({ markdown }) {
     >
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
+        rehypePlugins={[[rehypeHighlight, { detect: true, ignoreMissing: true }]]}
         allowedElements={ALLOWED_ELEMENTS}
         urlTransform={urlTransformer}
       >

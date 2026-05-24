@@ -4,25 +4,24 @@
  * Accepts a `meta` object (from parseCompareMd) and renders:
  *   1. Breadcrumb (← All comparisons)
  *   2. Hero (H1 title + hero_tagline + competitor info)
- *   3. Free-form markdown body via react-markdown + remark-gfm
+ *   3. Free-form markdown body via react-markdown + remark-gfm + rehype-highlight
  *      - Tables in the body become the feature-matrix style
  *      - H2/H3 headings get Section-style borders
  *   4. FairnessNote footer
  *   5. CTA strip
  *
- * Rule: Kerf is ALWAYS on the LEFT side of any 1v1 comparison.
- * The `meta.left` field is always 'kerf' (enforced by parseCompareMd), and the
- * table-column mapping in this renderer follows that invariant:
- *   col 0 = Feature, col 1 = competitor, col 2 = Kerf (left vendor).
- *
- * The renderer does NOT enforce column ordering in the raw markdown — the author
- * should write tables as | Feature | Competitor | Kerf |. The renderer's
- * data-testid attributes follow the left=Kerf invariant for testing.
+ * Column order invariant: Kerf is ALWAYS the leftmost data column.
+ * Raw .md files use | Feature | Competitor | Kerf | ordering in their source,
+ * but this renderer reorders columns so Kerf appears as column 2 (immediately
+ * after Feature) regardless of the source order. Detection is text-based on the
+ * "Kerf" header cell.
  */
 
+import React from 'react'
 import { Link } from 'react-router-dom'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import rehypeHighlight from 'rehype-highlight'
 import { ArrowLeft, ArrowRight } from 'lucide-react'
 import Button from './Button.jsx'
 import { ALLOWED_ELEMENTS, urlTransformer } from '../lib/markdownSanitize.js'
@@ -110,21 +109,12 @@ function BlockQuote({ children }) {
 /**
  * Feature-matrix table — renders GFM tables with the compare-page styling.
  *
- * Column convention (matching the _schema.md spec):
- *   col 0 = Feature name
- *   col 1 = Competitor
- *   col 2 = Kerf  ← always on the right in the raw md, but we mark it as
- *                    the "left vendor" in testid for test assertions.
+ * Raw .md source uses | Feature | Competitor | Kerf | column order.
+ * This renderer reorders to | Feature | Kerf | Competitor | so Kerf
+ * is always the leftmost data column in the visual output.
  *
- * The "Kerf always on the left" rule means Kerf gets the kerf-300 header
- * colour (accent) and the data-testid="left-vendor" on its header cell.
- * The competitor gets data-testid="right-vendor".
- *
- * Note: in the visual layout, Feature | Competitor | Kerf reads left-to-right.
- * "Kerf on the left" means Kerf is the primary/preferred side — not necessarily
- * the leftmost column — and is expressed via testid and accent colour.
- * The table columns follow the markdown source order; Kerf occupies the
- * designated accent column (last column in default schema).
+ * Kerf header gets data-testid="left-vendor" + kerf-300 accent.
+ * Competitor header gets data-testid="right-vendor".
  */
 function Table({ children }) {
   return (
@@ -158,11 +148,11 @@ function TR({ children, isHeader }) {
 }
 
 /**
- * TH — header cell. The last column (Kerf) gets the accent colour + testid.
- * We detect position by checking if this is a kerf-related column.
+ * TH — header cell.
+ * variant: 'feature' | 'kerf' | 'competitor'
  */
-function TH({ children, isKerf, isCompetitor }) {
-  if (isKerf) {
+function TH({ children, variant }) {
+  if (variant === 'kerf') {
     return (
       <th
         className="text-left px-4 py-3 font-mono text-xs uppercase tracking-wider text-kerf-300 w-1/3"
@@ -172,7 +162,7 @@ function TH({ children, isKerf, isCompetitor }) {
       </th>
     )
   }
-  if (isCompetitor) {
+  if (variant === 'competitor') {
     return (
       <th
         className="text-left px-4 py-3 font-mono text-xs uppercase tracking-wider text-ink-400 w-1/3"
@@ -182,6 +172,7 @@ function TH({ children, isKerf, isCompetitor }) {
       </th>
     )
   }
+  // 'feature' or default
   return (
     <th className="text-left px-4 py-3 font-mono text-xs uppercase tracking-wider text-ink-400 w-1/3">
       {children}
@@ -189,23 +180,61 @@ function TH({ children, isKerf, isCompetitor }) {
   )
 }
 
-function TD({ children, isFirst }) {
+function TD({ children, isFeature }) {
   return (
-    <td className={`px-4 py-3 align-top ${isFirst ? 'text-ink-200 font-medium' : 'text-ink-300'}`}>
+    <td className={`px-4 py-3 align-top ${isFeature ? 'text-ink-200 font-medium' : 'text-ink-300'}`}>
       {children}
     </td>
   )
 }
 
 /**
- * Build the custom components map, injecting competitor name so we can
- * detect which column is Kerf vs competitor.
+ * Build the custom components map.
+ *
+ * Column reordering: raw .md tables use | Feature | Competitor | Kerf | order.
+ * We detect the Kerf column index from the header row (via node inspection),
+ * then reorder every row so the visual output is always:
+ *   Feature | Kerf | Competitor
+ *
+ * Implementation: react-markdown passes `node` (mdast/hast node) to each
+ * component. For `table`, we scan the first header row to find the Kerf column
+ * index, then pass that index down to `tr` via a closure-captured ref.
+ *
+ * The `tr` component receives `children` as already-keyed React elements; we
+ * call React.Children.toArray() and reorder the array before rendering.
  */
-function makeComponents(competitor) {
-  // Track table column state across cells
-  let colIndex = 0
-  let isInHead = false
-  let headerCells = []   // header text values, indexed
+function makeComponents() {
+  // Per-table mutable state, reset on each new <table>.
+  const tableState = {
+    kerfColIdx: -1,
+    isInHead: false,
+  }
+
+  /**
+   * Extract plain text from a react-markdown mdast node's children.
+   * Handles text nodes nested under inline elements.
+   */
+  function nodeText(node) {
+    if (!node) return ''
+    if (node.type === 'text') return node.value || ''
+    if (Array.isArray(node.children)) {
+      return node.children.map(nodeText).join('')
+    }
+    return ''
+  }
+
+  /**
+   * Reorder a cells array so Kerf (at kerfColIdx) is at index 1 (after Feature).
+   * Only operates on 3-column tables where kerfColIdx > 1.
+   */
+  function reorderCells(cells, kerfColIdx) {
+    if (kerfColIdx <= 1 || cells.length < 3) return cells
+    const result = [cells[0], cells[kerfColIdx]]
+    for (let i = 1; i < cells.length; i++) {
+      if (i !== kerfColIdx) result.push(cells[i])
+    }
+    return result
+  }
 
   return {
     h1: ({ children }) => (
@@ -236,40 +265,61 @@ function makeComponents(competitor) {
         {children}
       </a>
     ),
-    table: ({ children }) => <Table>{children}</Table>,
+    table: ({ children, node }) => {
+      // Scan first header row to find Kerf column index before rendering.
+      tableState.kerfColIdx = -1
+      const thead = node?.children?.find((n) => n.tagName === 'thead')
+      const headerRow = thead?.children?.find((n) => n.tagName === 'tr')
+      if (headerRow?.children) {
+        const thCells = headerRow.children.filter((n) => n.tagName === 'th')
+        thCells.forEach((cell, idx) => {
+          const text = nodeText(cell).trim().toLowerCase()
+          if (text === 'kerf' || (idx > 0 && text.includes('kerf'))) {
+            tableState.kerfColIdx = idx
+          }
+        })
+      }
+      return <Table>{children}</Table>
+    },
     thead: ({ children }) => {
-      isInHead = true
-      headerCells = []
+      tableState.isInHead = true
       return <THead>{children}</THead>
     },
     tbody: ({ children }) => {
-      isInHead = false
+      tableState.isInHead = false
       return <TBody>{children}</TBody>
     },
-    tr: ({ children }) => <TR isHeader={isInHead}>{children}</TR>,
-    th: ({ children }) => {
-      const text = String(children || '').trim()
-      headerCells.push(text)
-      const idx = headerCells.length - 1
-      // Column 0: Feature — neutral
-      // Column 1: Competitor — right-vendor
-      // Column 2: Kerf — left-vendor (accent)
-      // We detect by index; if only 2 cols, col 1 is Kerf.
-      // Use text-based detection: if text matches "Kerf" it's the kerf col.
-      const lowerText = text.toLowerCase()
-      const isKerf = lowerText === 'kerf' || (idx > 0 && lowerText.includes('kerf'))
-      // competitor col: not kerf, not feature (idx > 0)
-      const isCompetitor = !isKerf && idx > 0
-      return (
-        <TH isKerf={isKerf} isCompetitor={isCompetitor}>
-          {children}
-        </TH>
-      )
+    tr: ({ children }) => {
+      // Reorder cells so Kerf is the first data column (index 1, after Feature).
+      const kerfColIdx = tableState.kerfColIdx
+      if (kerfColIdx > 1) {
+        const cells = Array.isArray(children)
+          ? children
+          : React.Children.toArray(children)
+        const reordered = reorderCells(cells, kerfColIdx)
+        return <TR isHeader={tableState.isInHead}>{reordered}</TR>
+      }
+      return <TR isHeader={tableState.isInHead}>{children}</TR>
+    },
+    th: ({ children, node }) => {
+      // Determine which column this cell represents.
+      // kerfColIdx was set in `table` by scanning the hast node.
+      const kerfColIdx = tableState.kerfColIdx
+      // Find this cell's index in the parent row via node position.
+      // We use a simple text match: if text is "Kerf", it's the kerf column.
+      const text = nodeText(node).trim().toLowerCase()
+      const isKerfCell = text === 'kerf' || (text.includes('kerf') && text.length < 20)
+      let variant = 'feature'
+      if (isKerfCell) variant = 'kerf'
+      else if (kerfColIdx >= 0) {
+        // Non-kerf, non-feature: competitor
+        // Feature column is always col 0 in source (text = "Feature" or similar)
+        const isFeatureCol = text === 'feature' || text === ''
+        if (!isFeatureCol) variant = 'competitor'
+      }
+      return <TH variant={variant}>{children}</TH>
     },
     td: ({ children }) => {
-      // First column = feature name (bold), others = data
-      // We can't easily track index here without deep surgery.
-      // Use a simpler approach: wrap everything in TD; first child of each TR is feature.
       return <TD>{children}</TD>
     },
   }
@@ -398,7 +448,7 @@ export default function CompareMd({ meta, loading, error }) {
   const leftVendor = 'Kerf'
   const rightVendor = meta.competitor || meta.right || meta.slug || 'Competitor'
 
-  const components = makeComponents(rightVendor)
+  const components = makeComponents()
 
   return (
     <div className="min-h-screen bg-ink-950 text-ink-100">
@@ -451,6 +501,7 @@ export default function CompareMd({ meta, loading, error }) {
         <div className="compare-md-body">
           <ReactMarkdown
             remarkPlugins={[remarkGfm]}
+            rehypePlugins={[[rehypeHighlight, { detect: true, ignoreMissing: true }]]}
             components={components}
             allowedElements={ALLOWED_ELEMENTS}
             urlTransform={urlTransformer}
