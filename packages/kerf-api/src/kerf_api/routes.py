@@ -6177,11 +6177,17 @@ async def _generate_project_cover(
     project: dict,
     project_id: uuid.UUID,
     storage,
+    *,
+    user_id: Optional[str] = None,
 ) -> Optional[str]:
     """Attempt to auto-render a hero cover for the project.
 
     Uses kerf-render if Blender is available; falls back to the existing
     thumbnail_storage_key gracefully (no exception raised).
+
+    ``user_id`` is required in cloud mode (usage_enabled=True): the billing
+    gate is checked BEFORE the HTTP call so the publisher's account is charged
+    rather than the platform absorbing an unmetered GPU render (R6 fix).
 
     Returns the storage key of the generated cover, or None on failure.
     """
@@ -6214,6 +6220,16 @@ async def _generate_project_cover(
         render_url = getattr(settings, "render_service_url", None) or os.environ.get("KERF_RENDER_URL", "")
         if not render_url:
             return None
+
+        # ── R6: pre-gate billing BEFORE dispatching the HTTP render call ──────
+        # Estimate GPU-seconds for 64 samples at 1280×960 (matches the payload
+        # below).  This uses the same formula as run_render so the gate sees a
+        # consistent estimate.
+        _pixels_ratio = (1280 * 960) / (1920 * 1080)
+        _est_gpu_seconds = max(5.0, 64 * _pixels_ratio * 0.1)
+        from kerf_render.routes import _run_billing_gate  # type: ignore[import]
+        await _run_billing_gate(user_id, _est_gpu_seconds)
+        # ─────────────────────────────────────────────────────────────────────
 
         # Build a minimal render request; mesh_b64 empty means Blender uses a
         # default cube as placeholder — good enough for a cover thumbnail.
@@ -6347,10 +6363,14 @@ async def workshop_publish(
             updates["readme"] = readme_text
 
         # ---- Hero cover generation (T-42) ----
+        # Pass user_id so _generate_project_cover can pre-gate billing before
+        # dispatching the HTTP render call (R6 fix — prevents unmetered renders).
         cover_key: Optional[str] = None
         try:
             storage = get_storage_required()
-            cover_key = await _generate_project_cover(conn, project, project_id, storage)
+            cover_key = await _generate_project_cover(
+                conn, project, project_id, storage, user_id=user_id
+            )
         except Exception as exc:
             logging.getLogger(__name__).debug("cover storage unavailable: %s", exc)
 

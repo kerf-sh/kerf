@@ -106,6 +106,9 @@ class FakeRequest:
 # ---------------------------------------------------------------------------
 
 
+_FAKE_AUTH = {"sub": "test-user-id"}
+
+
 def test_run_render_enqueues_job():
     from kerf_render.routes import run_render, RenderRequest
 
@@ -117,7 +120,7 @@ def test_run_render_enqueues_job():
     )
     fake_request = FakeRequest(pool=pool)
 
-    result = run(run_render(req, fake_request))
+    result = run(run_render(req, fake_request, _auth=_FAKE_AUTH))
 
     assert result["status"] == "queued", result
     job_id = result["job_id"]
@@ -132,7 +135,7 @@ def test_run_render_returns_job_id():
     req = RenderRequest(scene_file_id="f2", mesh_b64="")
     fake_request = FakeRequest(pool=pool)
 
-    result = run(run_render(req, fake_request))
+    result = run(run_render(req, fake_request, _auth=_FAKE_AUTH))
     assert "job_id" in result
     # job_id should be a valid UUID
     uuid.UUID(result["job_id"])  # raises if invalid
@@ -149,7 +152,7 @@ def test_run_render_stores_payload_json():
         render_settings={"samples": 1024, "output_format": "png"},
     )
     fake_request = FakeRequest(pool=pool)
-    result = run(run_render(req, fake_request))
+    result = run(run_render(req, fake_request, _auth=_FAKE_AUTH))
     row = pool.rows[result["job_id"]]
     payload = json.loads(row["payload_json"])
     assert "scene_file_id" in payload
@@ -167,7 +170,7 @@ def test_get_render_status_queued():
     pool = FakeRenderPool()
     req = RenderRequest(scene_file_id="f4", mesh_b64="")
     fake_request = FakeRequest(pool=pool)
-    enqueue = run(run_render(req, fake_request))
+    enqueue = run(run_render(req, fake_request, _auth=_FAKE_AUTH))
     job_id = enqueue["job_id"]
 
     status = run(get_render_status(job_id, fake_request))

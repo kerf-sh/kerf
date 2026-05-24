@@ -90,17 +90,25 @@ async def _run_billing_gate(user_id: Optional[str], est_gpu_seconds: float) -> N
     Skips silently when:
     - KERF_RENDER_BILLING_DISABLED=1  (self-host kill-switch)
     - usage_enabled=False in settings (local / OSS mode)
-    - user_id is None (unauthenticated local request)
 
-    Raises HTTP 402 on denial.
+    In cloud mode (usage_enabled=True) a missing user_id is a hard 401 —
+    unauthenticated callers must NEVER bypass the billing gate.
+
+    Raises HTTP 401 when user_id is None in cloud mode.
+    Raises HTTP 402 on billing denial.
     """
     settings = _get_settings()
     if not settings.usage_enabled:
-        return  # local / OSS — no billing gate
+        return  # local / OSS — no billing gate (self-host owns its own GPU)
     if user_id is None:
-        # No auth token: could be a local-only deploy.  Gate only when
-        # usage is enabled AND we have a user identity; otherwise allow.
-        return
+        # Cloud mode + no authenticated identity: hard-fail.
+        # require_auth on the route handler should have already caught this,
+        # but _run_billing_gate is also called from internal paths (e.g.
+        # _generate_project_cover) so we enforce it here too.
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required for GPU renders.",
+        )
 
     try:
         from kerf_billing.render_meter import gate_render_job, RenderGateDenied
@@ -375,7 +383,10 @@ async def run_render(req: RenderRequest, request: Request, _auth: dict = Depends
     rs = req.render_settings
     pixels = (rs.resolution[0] * rs.resolution[1]) / (1920 * 1080)
     est_gpu_seconds = max(5.0, rs.samples * pixels * 0.1)
-    user_id = await _optional_user_id(request)
+    # Use the already-verified identity from require_auth — do NOT re-read
+    # the header via _optional_user_id which can silently return None and
+    # bypass the billing gate (R5 fix).
+    user_id: Optional[str] = _auth.get("sub") if _auth else None
     await _run_billing_gate(user_id, est_gpu_seconds)
 
     # --- Attempt async job-queue path ------------------------------------
