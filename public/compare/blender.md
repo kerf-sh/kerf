@@ -38,9 +38,9 @@ features:
       note: "Skinning via Skin modifier is mesh-only, no B-rep loft"
       source: "https://docs.blender.org/manual/en/latest/modeling/modifiers/generate/skin.html"
     kerf:
-      status: partial
-      note: "No guide-rail overload in OCCT binding"
-      evidence: "packages/kerf-cad-core/src/kerf_cad_core"
+      status: yes
+      note: "Guide-rail overload wired (ThruSections.AddWire); ruled/closed/symmetric"
+      evidence: "packages/kerf-cad-core/src/kerf_cad_core/feature_loft.py"
 
   - domain: D1
     feature: "B-rep booleans (general NURBS)"
@@ -60,9 +60,9 @@ features:
       note: "NURBS curve objects only; no NURBS solid surfacing"
       source: "https://docs.blender.org/manual/en/latest/modeling/curves/index.html"
     kerf:
-      status: partial
-      note: "Math complete; OCCT bindings unconfirmed at build"
-      evidence: "packages/kerf-cad-core/src/kerf_cad_core"
+      status: yes
+      note: "blend_srf, network_srf (Gordon), patch_srf_fit, match_srf, G3 blends wired"
+      evidence: "packages/kerf-cad-core/src/kerf_cad_core/geom/network_srf.py"
 
   - domain: D1
     feature: "Assemblies — mates"
@@ -83,8 +83,8 @@ features:
       source: "https://docs.blender.org/manual/en/latest/render/index.html"
     kerf:
       status: partial
-      note: "Template-based; not live B-rep projection; no UI panel"
-      evidence: "src/components/DrawingView.jsx"
+      note: "Live HLR projection (make2d) + auto-dim; no GD&T-placement UI"
+      evidence: "packages/kerf-cad-core/src/kerf_cad_core/geom/make2d.py"
 
   - domain: D1
     feature: "GD&T on drawings / MBD / PMI"
@@ -104,9 +104,9 @@ features:
       note: "No sheet-metal tooling"
       source: "https://docs.blender.org/manual/en/latest/modeling/index.html"
     kerf:
-      status: partial
-      note: "Single flange + unfold + flat DXF; no hem/jog/multi-flange"
-      evidence: "packages/kerf-cad-core/src/kerf_cad_core"
+      status: yes
+      note: "Flange + hem + jog + multi-flange + unfold + flat DXF (K-factor)"
+      evidence: "packages/kerf-cad-core/src/kerf_cad_core/construction_verbs_tools.py"
 
   - domain: D1
     feature: "STEP / IGES B-rep interop"
@@ -501,9 +501,9 @@ features:
       note: "Full sculpt mode — Dyntopo, Multires, 30+ brushes (benchmark)"
       source: "https://www.blender.org/features/sculpt-paint/"
     kerf:
-      status: no
-      note: "No sculpt mode; mesh remesh tools only"
-      evidence: "src/components/MeshView.jsx"
+      status: partial
+      note: "sculpt_brush (grab/smooth/inflate) + multires + isotropic remesh; no dyntopo/30+ brushes"
+      evidence: "packages/kerf-cad-core/src/kerf_cad_core/subd_tools.py"
 
   - domain: D13
     feature: "Animation / rigging"
@@ -650,8 +650,8 @@ Blender is a world-class, GPL-licensed DCC tool: mesh-first modelling, sculpting
 | Constraint sketcher | ❌ None | ✅ Sketcher v2 — geometric + dimensional constraints |
 | STEP / IGES B-rep interop | ❌ Mesh export only (glTF/FBX/OBJ) | ✅ STEP / IGES / 3DM B-rep round-trip |
 | Visual node DAG | ✅ Geometry Nodes (mesh-centric) | ⚠️ Parametric DAG landed; visual UI to come |
-| Sculpting + dyntopo | ✅ Full sculpt mode — dyntopo, multires, 30+ brushes | ⚠️ Mesh tools + quad remesh; no sculpt mode |
-| SubD authoring | ✅ Subdivision Surface modifier + creases | ⚠️ Quad remesh + surfacing; no SubD authoring |
+| Sculpting + dyntopo | ✅ Full sculpt mode — dyntopo, multires, 30+ brushes | ⚠️ sculpt_brush (grab/smooth/inflate) + multires; no dyntopo/30+ brushes |
+| SubD authoring | ✅ Subdivision Surface modifier + creases | ✅ SubD authoring + creases, poke/extrude, subdivide, SubD→NURBS |
 | Path-traced renderer | ✅ Cycles + Eevee (benchmark) | ⚠️ HDRI + ACES + bloom (heroShot.js); no full path tracer |
 | Animation / rigging | ✅ Full skeletal, NLA, cloth sim | ❌ No animation or rigging |
 | GD&T / tolerances | ❌ None | ✅ ASME Y14.5 datum + tolerance framework |
