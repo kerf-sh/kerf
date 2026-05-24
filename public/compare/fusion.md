@@ -38,9 +38,9 @@ features:
       note: "Guide-rail overloads supported"
       source: "https://help.autodesk.com/view/fusion360/ENU/?guid=GUID-584BEC15-41E6-4466-9705-5464748227BF"
     kerf:
-      status: partial
-      note: "No guide-rail overload in OCCT binding"
-      evidence: "packages/kerf-cad-core/src/kerf_cad_core"
+      status: yes
+      note: "Guide-rail overload wired (ThruSections.AddWire); ruled/closed/symmetric"
+      evidence: "packages/kerf-cad-core/src/kerf_cad_core/feature_loft.py"
 
   - domain: D1
     feature: "Sheet metal"
@@ -49,9 +49,9 @@ features:
       note: "Full sheet-metal workspace (flanges, hem, relief, jog)"
       source: "https://autocadeverything.com/what-is-fusion-360/"
     kerf:
-      status: partial
-      note: "Single flange + unfold + flat DXF; no hem/jog/multi-flange"
-      evidence: "packages/kerf-cad-core/src/kerf_cad_core"
+      status: yes
+      note: "Flange + hem + jog + multi-flange + unfold + flat DXF (K-factor); no auto corner-relief"
+      evidence: "packages/kerf-cad-core/src/kerf_cad_core/construction_verbs_tools.py"
 
   - domain: D1
     feature: "NURBS surfacing (blend/network/patch)"
@@ -60,9 +60,9 @@ features:
       note: "T-spline Sculpt workspace; industry-quality freeform"
       source: "https://www.autodesk.com/products/fusion-360/blog/surface-modeling-overview/"
     kerf:
-      status: partial
-      note: "Math complete; OCCT bindings unconfirmed at build"
-      evidence: "packages/kerf-cad-core/src/kerf_cad_core"
+      status: yes
+      note: "blend_srf, network_srf (Gordon), patch_srf_fit, match_srf wired as ops"
+      evidence: "packages/kerf-cad-core/src/kerf_cad_core/geom/network_srf.py"
 
   - domain: D1
     feature: "Assemblies — mates"
@@ -126,9 +126,9 @@ features:
       note: "History-free direct editing intermixed with timeline"
       source: "https://autocadeverything.com/fusion-360-parametric-modeling/"
     kerf:
-      status: partial
-      note: "Planar push-pull only; no move/delete-face"
-      evidence: "packages/kerf-cad-core/src/kerf_cad_core"
+      status: yes
+      note: "push_pull (planar + curved), move_face, delete_face wired as ops"
+      evidence: "packages/kerf-cad-core/src/kerf_cad_core/geom/direct_edit.py"
 
   # D2 — Structural / FEA
   - domain: D2
@@ -952,7 +952,7 @@ Fusion 360 pioneered the idea of integrated CAD / CAM / CAE / PCB in a single cl
 | OS support | ✅ Windows + macOS | ✅ Browser + Win/macOS/Linux binary |
 | Parametric B-rep | ✅ Timeline-based modelling (mature) | ✅ OCCT feature tree |
 | Constraint sketcher | ✅ Full parametric sketcher | ✅ Sketcher v2 — all major constraints |
-| Sheet metal | ✅ Full sheet-metal workspace | ✅ Flange + unfold + flat-pattern DXF |
+| Sheet metal | ✅ Full sheet-metal workspace | ✅ Flange + hem + jog + multi-flange + unfold + flat DXF |
 | Freeform / T-spline sculpt | ✅ Sculpt workspace (industry-quality) | ⚠️ NURBS Phase 4 (early) |
 | Assembly joints | ✅ Full joint system | ✅ Full joint system — rigid/revolute/slider/cam/gear/pin-slot |
 | Motion study | ✅ Motion + contact sets + interference | ❌ Not yet |
