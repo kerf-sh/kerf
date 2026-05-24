@@ -59,7 +59,7 @@ import {
   Cog,
   Scissors,
 } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Header from '../components/Header.jsx'
 import Footer from '../components/Footer.jsx'
 import { useAuth } from '../store/auth.js'
@@ -1616,10 +1616,84 @@ function Compare() {
 /* § 14 — Page root                                                            */
 /* -------------------------------------------------------------------------- */
 
+/* ────────────────────────────────────────────────────────────────────────── */
+/* SEO meta — title, description, OG/Twitter, JSON-LD                         */
+/* Imperative injection (same pattern DomainPage uses; no Helmet dep).        */
+/* ────────────────────────────────────────────────────────────────────────── */
+
+const META_TITLE = 'Kerf — multi-discipline open-source CAD, chat-driven'
+const META_DESCRIPTION =
+  'Parametric mechanical, electronics, BIM, jewelry CAD in one MIT open-core ' +
+  'workspace. Chat-driven feature tree, OCCT B-rep, in-box CAM + FEA + ' +
+  'schematic + PCB + SI/EMC, IFC4, kerf-sdk on PyPI. Free local, hosted credits.'
+const META_OG_IMAGE = 'https://kerf.sh/og/landing.png'
+const META_URL = 'https://kerf.sh/'
+
+function LandingHead() {
+  useEffect(() => {
+    const prev = document.title
+    document.title = META_TITLE
+    const tags = []
+    function addMeta(attrs) {
+      const el = document.createElement('meta')
+      Object.entries(attrs).forEach(([k, v]) => el.setAttribute(k, v))
+      document.head.appendChild(el)
+      tags.push(el)
+    }
+    addMeta({ name: 'description', content: META_DESCRIPTION })
+    addMeta({ property: 'og:type', content: 'website' })
+    addMeta({ property: 'og:url', content: META_URL })
+    addMeta({ property: 'og:title', content: META_TITLE })
+    addMeta({ property: 'og:description', content: META_DESCRIPTION })
+    addMeta({ property: 'og:image', content: META_OG_IMAGE })
+    addMeta({ name: 'twitter:card', content: 'summary_large_image' })
+    addMeta({ name: 'twitter:title', content: META_TITLE })
+    addMeta({ name: 'twitter:description', content: META_DESCRIPTION })
+    addMeta({ name: 'twitter:image', content: META_OG_IMAGE })
+
+    const link = document.createElement('link')
+    link.setAttribute('rel', 'canonical')
+    link.setAttribute('href', META_URL)
+    document.head.appendChild(link)
+    tags.push(link)
+
+    const ld = document.createElement('script')
+    ld.type = 'application/ld+json'
+    ld.textContent = JSON.stringify({
+      '@context': 'https://schema.org',
+      '@type': 'SoftwareApplication',
+      name: 'Kerf',
+      url: META_URL,
+      applicationCategory: 'DesignApplication',
+      operatingSystem: 'Web, Windows, macOS, Linux',
+      description: META_DESCRIPTION,
+      offers: {
+        '@type': 'Offer',
+        price: '0',
+        priceCurrency: 'USD',
+      },
+      publisher: {
+        '@type': 'Organization',
+        name: 'Kerf',
+        url: META_URL,
+      },
+    })
+    document.head.appendChild(ld)
+    tags.push(ld)
+
+    return () => {
+      document.title = prev
+      tags.forEach((t) => t.parentNode && t.parentNode.removeChild(t))
+    }
+  }, [])
+  return null
+}
+
 export default function Landing() {
   const { cloudEnabled } = useCloudConfig()
   return (
     <div className="min-h-screen bg-ink-950 text-ink-100">
+      <LandingHead />
       <Header />
 
       {/* 1. Hero */}
