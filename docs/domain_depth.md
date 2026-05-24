@@ -80,7 +80,7 @@ Solid per-code calculators + real FEM via solver bridges. Almost no UI.
 
 | Feature | Kerf | Notes |
 |---|---|---|
-| AISC 360-22 steel (members) | [~] (backend) | connections deep; member E/F/H only single-W LTB |
+| AISC 360-22 steel (members) | [x] (backend) | full Ch. E (compression) + F (LTB W/C/HSS/pipe/angle) + H (combined) + 50-section catalog (kerf-structural/aisc_member.py) |
 | AISC steel connections | [x] (backend) | bolts/welds/base-plate, LRFD+ASD |
 | ACI 318-19 concrete | [x] (backend) | flexure/shear/PM/dev-length; no punching shear, no torsion |
 | NDS 2018 timber | [x] (backend) | full adjustment factors |
@@ -96,7 +96,7 @@ Solid per-code calculators + real FEM via solver bridges. Almost no UI.
 | Frame stiffness assembly (2D/3D) | [x] (backend) | 2D+3D beam-column + ASCE 7 LRFD/ASD combos + story drift (struct/frame.py); machine-precision validated |
 | P-delta / 2nd-order | [ ] | θ checked, not amplified |
 | Section database | [~] (backend) | only ~12 sections vs 300+ |
-| Eurocode design (EC2/3/5/8) | [ ] | AISC/ACI/NDS only |
+| Eurocode design (EC2/3/5/8) | [~] (backend) | EC2 (concrete) + EC3 (steel Class 1-4 + Nb,Rd + LTB + H1) done; EC5 in progress; EC8 next |
 | Any structural UI panel | [~] | only `femDisplacement.js` displacement render |
 
 ## D3 — Machine elements  · engine ~75% · UI ~0%
@@ -108,7 +108,7 @@ Shigley/AGMA/ISO/VDI textbook grade. Entirely backend.
 | Spur/helical gear rating (AGMA 2001-D04) | [x] (backend) | |
 | Gear rating (ISO 6336) | [x] (backend) | Method B + safety factors (gearstrength/iso6336.py); ZH=2.495, ZE=191 √MPa validated |
 | Worm / bevel gears | [x] (backend) | AGMA 6022/2003 |
-| Planetary / epicyclic gearbox | [ ] | only simple trains |
+| Planetary / epicyclic gearbox | [x] (backend) | 3 Willis modes + compound + module-select (gearbox/planetary.py); torque identity to 1e-10 |
 | Bearings — ISO 281 L10 | [x] (backend) | |
 | Bearings — ISO/TS 16281 (misalign/contam) | [x] (backend) | aISO + Lnm modified life (bearings/select.py) |
 | Fasteners — VDI 2230 | [x] (backend) | |
@@ -129,7 +129,7 @@ Calculators solid; fluid-property fidelity is the weak point.
 | Psychrometrics (moist air) | [x] (backend) | ASHRAE-grade |
 | Heat exchangers (LMTD + ε-NTU) | [x] (backend) | no Bell-Delaware/Kern bundle sizing |
 | HVAC duct sizing (SMACNA) | [x] (backend) | + flat-pattern |
-| Building loads | [~] (backend) | degree-day only; no CLTD/RTS transient/solar gain |
+| Building loads | [x] (backend) | degree-day + CLTD/RTS transient (ASHRAE Ch.18) + Sol-air + fenestration (buildingenergy/transient.py) |
 | Pipe network (Hardy-Cross) | [x] (backend) | clean-water |
 | Steam/water properties | [~] (backend) | Antoine fit ±0.3K, **not IAPWS-IF97**; no superheated |
 | Refrigerant properties | [~] (backend) | 2-point Antoine; no subcooled/superheated, no glide |
@@ -171,9 +171,9 @@ ECAD viewers + SPICE wired; analysis suites + silicon are backend-only.
 | Interactive PCB editing (route/place) | [ ] | view-only; no cursor editing |
 | Autoroute (FreeRouting) | [~] | JAR **SHA unpinned → blocked** until set |
 | SPICE | [x] | **real ngspice**, wired; binary `.raw` not parsed |
-| Signal integrity (Z0/crosstalk/eye) | [x] (backend) | no IBIS-AMI, no S-param channel |
+| Signal integrity (Z0/crosstalk/eye/IBIS) | [x] (backend) | + IBIS 5.1 parser + Bergeron channel + PRBS eye envelope (si/ibis_*.py) |
 | EMC (radiated/shielding/limits) | [x] (backend) | closed-form; no full-wave |
-| PDN (DC IR-drop) | [x] (backend) | no AC impedance sweep |
+| PDN (DC IR-drop + AC sweep) | [x] (backend) | + frequency-domain Z(ω) + target-Z + decap optimiser (pdn/ac_impedance.py) |
 | PCB thermal | [~] (backend) | lumped Rθ |
 | Antenna / link budget | [x] (backend) | |
 | DRC / ERC | [x] | DRC overlay wired |
@@ -190,8 +190,8 @@ Real toolpaths via opencamlib; CAMView wired for common ops.
 |---|---|---|
 | 3-axis CAM (profile/contour/pocket/face) | [x] | CAMView wired |
 | 3D parallel / waterline | [~] | backend; not in UI |
-| Adaptive / trochoidal clearing | [ ] | #1 CAM gap vs Fusion/Mastercam |
-| Rest machining | [ ] | |
+| Adaptive / trochoidal clearing | [x] (backend) | iterative offset + 50% trochoid overlap; engagement on target (kerf-cam/adaptive.py) |
+| Rest machining | [x] (backend) | grid-based uncleared-region detection (kerf-cam/adaptive.py) |
 | 5-axis (kinematics + posts) | [~] (backend) | engine solid; no UI |
 | Turning cycles (G71/G70/threading) | [x] (backend) | |
 | G-code post (Fanuc/GRBL/LinuxCNC/Mach3) | [x] | no G41/42 cutter-comp |
@@ -239,7 +239,7 @@ Classical foundations solid; modern/3D pieces missing.
 | Controls — classical (Routh/Bode/RL/PID tune) | [x] (backend) | |
 | Controls — state-space / LQR / Kalman | [x] (backend) | Ackermann + LQR (CARE) + Luenberger (controls/statespace.py) |
 | Controls — discrete / digital | [x] (backend) | c2d ZOH + digital PID |
-| System sim (Modelica DAE) | [x] (backend) | thin component library |
+| System sim (Modelica DAE) | [x] (backend) | 16 extended components (mech/hyd/pneu/thermal/control); MSD + pump-tank + ε-NTU validated |
 | Any dynamics UI | [ ] | landing page only |
 
 ## D10 — Electrical / energy / PLC / firmware  · engine ~75% · UI ~50%
@@ -279,11 +279,11 @@ PLC + firmware + wiring genuinely usable; power/solar backend-only.
 | Seidel aberrations | [x] (backend) | corrected S5 = p³(n+1)/(2n·f) (2026-05-24) |
 | Lensmaker / thick lens / Airy / Snell | [x] (backend) | |
 | Non-sequential ray tracing (stray light) | [ ] | Zemax-class gap |
-| Gaussian beam propagation (M², q-param) | [ ] | |
+| Gaussian beam propagation (M², q-param) | [x] (backend) | complex-q + ABCD + M² + fibre coupling (kerf-optics/gaussian.py); HeNe zR=4.96m validated |
 | Wave optics / diffraction / polarisation | [ ] | |
 | Photonics (LED/photodiode/TIA/fibre) | [x] (backend) | |
 | Acoustics (ISO 9613, RT60, weighting, mass-law TL) | [x] (backend) | TL clamped ≥0 (2026-05-24 fix) |
-| Wave-domain room acoustics / SEA | [ ] | |
+| Wave-domain room acoustics / SEA | [x] (backend) | image-source IR + Schroeder RT60 + modes + SEA (acoustics/wave.py); 3.1% error vs Sabine |
 
 ## D13 — Verticals  · engine ~60% · UI ~40%
 
@@ -307,7 +307,7 @@ PLC + firmware + wiring genuinely usable; power/solar backend-only.
 | Should-cost (6 processes, Boothroyd-Dewhurst) | [x] (backend) | |
 | RFQ quoting (geometry-driven) | [x] (backend) | |
 | Process simulation (moldflow/weld/AM/forming) | [x] (backend) | deep |
-| Material selection (Ashby) | [~] (backend) | ~40 hand-authored materials |
+| Material selection (Ashby) | [x] (backend) | 200 materials (14 families) + Pareto frontier + weighted-score (matsel/multi_objective.py) |
 | LCA (full ISO 14040/44 4 phases) | [x] (backend) | use+transport+EoL + multi-impact (acid/eutroph/CTUh/water/PM2.5) + uncertainty (kerf-lca/phases.py) |
 | Ergonomics (RULA/REBA) | [x] (backend) | |
 | Any cost/materials UI | [ ] | agent tools only |
