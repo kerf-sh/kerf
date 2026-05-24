@@ -181,13 +181,13 @@ directly.
 
 Community and first-party SDKs in other languages are available:
 
-| Language | Package | Source |
-|----------|---------|--------|
-| Python | `kerf-sdk` on PyPI | `packages/kerf-sdk/` in this repo |
-| Rust | `kerf-sdk-rs` on crates.io | separate repo |
-| Go | `kerf-sdk-go` on pkg.go.dev | separate repo |
-| Lua | `kerf-sdk-lua` on LuaRocks | separate repo |
-| TypeScript | _(planned)_ | — |
+| Kerf SDK | Language | Source |
+|----------|----------|--------|
+| `kerf-sdk` on PyPI | Python | `packages/kerf-sdk/` in this repo |
+| `kerf-sdk-rs` on crates.io | Rust | separate repo |
+| `kerf-sdk-go` on pkg.go.dev | Go | separate repo |
+| `kerf-sdk-lua` on LuaRocks | Lua | separate repo |
+| _(planned)_ | TypeScript | — |
 
 All language SDKs target the same `/v1/rpc` JSON-RPC surface. The wire
 protocol is identical; see [v1-rpc.md](./v1-rpc.md) for the full spec.

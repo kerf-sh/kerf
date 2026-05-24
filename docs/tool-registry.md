@@ -1,196 +1,172 @@
-# Tool registry
+# The AI workflow and tool system
 
-The LLM tool system is built around a shared `ToolRegistry` that every plugin
-contributes to at boot. This document explains how the registry works, how to
-add a tool, and how `search_kerf_docs` fits into the overall pattern.
+Kerf's chat panel is an AI loop that can read, edit, and create any file in
+your project through natural language. This page explains what happens when you
+type a prompt, what tools are available, and how to extend the system.
 
-## The registry contract
+---
 
-The registry is defined in `packages/kerf-chat/src/kerf_chat/tools/registry.py`:
+## How a chat message becomes a model change
+
+When you send a message in the Kerf chat panel:
+
+1. Your message is appended to the thread; the server builds the LLM history.
+2. The LLM receives the full tool registry, filtered to your role (viewers get
+   read-only tools).
+3. The LLM calls tools — `read_file`, `edit_file`, `search_kerf_docs`, etc.
+4. Each tool result is streamed back into the chat as a result row.
+5. Steps 2–4 repeat up to 10 times until the LLM has no more tool calls.
+6. Any changed files are re-rendered and the viewport updates via SSE.
+
+A single "make this 6 mm thick" request can chain
+`search_kerf_docs → read_file → edit_file → validate_jscad` — all visible as
+individual rows in the chat.
+
+---
+
+## OSS vs Cloud
+
+The tool system is fully available in the OSS self-hosted build. Every one of
+the ~150 tools across 19 plugins is present when you install the matching
+persona.
+
+On Kerf Cloud the same tools run on the hosted server; LLM tokens are metered
+against your credits. On a self-hosted install you configure your own LLM API
+key and no usage is metered.
+
+---
+
+## Core tools you use every day
+
+These tools are always present regardless of persona:
+
+| Kerf tool | What it does |
+|-----------|--------------|
+| `search_kerf_docs` | Full-text search across the embedded LLM docs corpus — always call this first for unfamiliar file kinds |
+| `read_file` | Read any file in the project (or a corpus doc under `/docs/llm/`) |
+| `write_file` | Overwrite a file's content |
+| `edit_file` | Atomic find-and-replace inside a file — preferred over `write_file` for targeted edits |
+| `create_file` | Create a new file or folder |
+| `delete_file` | Soft-delete a file (revision history preserved) |
+| `search_code` | Search text across all files in the project |
+| `list_files` | List all files and folders in a project |
+| `validate_jscad` | Check a JSCAD script for errors before save |
+
+---
+
+## The doc-search-first pattern
+
+The ~150 tools are intentionally low-level (file read/write, feature node
+append, BIM element mutation). Before touching an unfamiliar file kind, the AI
+consults the authoring corpus:
 
 ```python
-@dataclass
-class ToolSpec:
-    name: str
-    description: str
-    input_schema: dict   # JSON Schema for the tool's parameters
-
-@dataclass
-class Tool:
-    spec: ToolSpec
-    write: bool = False  # True → requires editor role; False → viewer-readable
-    run: Callable = None
-
-Registry: list[Tool] = []
+# What the AI does internally:
+search_kerf_docs("fillet")                  # → [{path, title, excerpt, score}]
+read_file("/docs/llm/feature.md")           # → authoring conventions for .feature files
+# Then, armed with the right schema:
+edit_file(path="part.feature", old="…", new="…")
 ```
 
-Plugins register by decorating a handler function:
+Paths under `/docs/llm/` resolve to the in-memory corpus loaded at boot from
+every plugin's `llm_docs/` folder — not the project tree. Adding support for a
+new file kind means writing a corpus doc, not new tool functions.
 
-```python
-from kerf_chat.tools.registry import register, ToolSpec
+---
 
-@register(ToolSpec(
-    name="feature_fillet",
-    description="Add a rolling-ball fillet to specified B-rep edges.",
-    input_schema={
-        "type": "object",
-        "properties": {
-            "part_path": {"type": "string"},
-            "edge_ids":  {"type": "array", "items": {"type": "string"}},
-            "radius":    {"type": "number"},
-        },
-        "required": ["part_path", "edge_ids", "radius"],
-    },
-), write=True)
-async def run_feature_fillet(part_path: str, edge_ids: list, radius: float):
-    …
-```
+## Tool categories by domain
 
-Inside a plugin's `register(app, ctx)` function, tools can also be registered
-directly on the `PluginContext`:
+Which tools are active depends on which persona is installed. Check live tools
+at `GET /health/capabilities`.
+
+| Kerf tool group | Plugin | Persona |
+|-----------------|--------|---------|
+| File ops, scaffold, revisions, equations | `kerf-api` | all |
+| Doc search | `kerf-chat` | all |
+| Sketch (create / edit constraint geometry) | `kerf-cad-core` | `mech`, `full` |
+| Feature tree (pad, pocket, fillet, chamfer, shell, draft, holes) | `kerf-cad-core` | `mech`, `full` |
+| Mesh, SubD, 3DM, curve ops | `kerf-imports` | `mech`, `full` |
+| Drawings (hatches, leaders, dimensions) | `kerf-imports` | `mech`, `full` |
+| Assembly + mates, tolerance stack | `kerf-mates` | `mech`, `full` |
+| BIM elements, families, schedules, stairs, MEP, curtain walls | `kerf-bim` | `bim`, `full` |
+| Electronics — schematic (ERC, buses, diff-pairs, hierarchy) | `kerf-electronics` | `electronics`, `full` |
+| Electronics — PCB (routing, DRC, pours, net classes, via stitching) | `kerf-electronics` | `electronics`, `full` |
+| FEA + simulation | `kerf-fem` | `mech`, `full` |
+| CAM toolpaths | `kerf-cam` | `mech`, `full` |
+| Topology optimisation | `kerf-topo` | `mech`, `full` |
+| Render scene | `kerf-render` | `full` |
+| Materials (cloud-hosted catalog) | `kerf-cloud` | cloud only |
+
+---
+
+## Access control: read vs write tools
+
+Every tool is classified as **read** or **write**:
+
+- **Read** (default): any project member including viewers.
+- **Write**: requires `editor` role or higher. Viewers receive
+  `{"error": "…", "code": "FORBIDDEN"}`.
+
+Write tools are those whose names start with `set_`, `add_`, `create_`,
+`delete_`, `run_`, `write_`, `edit_`, or that carry an explicit `write=True`
+flag.
+
+---
+
+## Extending the AI: adding corpus docs
+
+Drop a `.md` file in `packages/kerf-<name>/src/kerf_<name>/llm_docs/` and
+restart the server. It will be picked up automatically and become searchable via
+`search_kerf_docs`. File names become the corpus path (`/docs/llm/<filename>`).
+
+This is the primary way to teach the AI about a new file format, workflow, or
+convention — no new tool functions needed.
+
+---
+
+## Extending the AI: adding a tool
+
+1. Pick the plugin that owns the domain.
+2. Create `packages/kerf-<name>/src/kerf_<name>/tools/my_tool.py`.
+3. Register it in the plugin's `register(app, ctx)`:
 
 ```python
 from kerf_core.plugin import ToolSpec
 
 ctx.tools.register(
     name="my_tool",
-    spec=ToolSpec(name="my_tool", description="…", parameters={…}),
-    handler=my_handler,
+    spec=ToolSpec(
+        name="my_tool",
+        description="What this does.",
+        parameters={"type": "object", "properties": {…}, "required": […]},
+    ),
+    handler=my_async_handler,
+    write=True,   # omit for read-only tools
 )
 ```
 
----
-
-## Write vs. read filtering
-
-Every tool is classified as either **read** or **write**. The classification
-controls which users can invoke the tool:
-
-- `write=False` (default): any member, including viewers, can call the tool.
-- `write=True`: requires `editor` or higher role. Viewers receive
-  `{"error": "…", "code": "FORBIDDEN"}`.
-
-The executor in `packages/kerf-chat/src/kerf_chat/tools/executor.py` enforces
-this before dispatching. Write classification is determined either by an
-explicit `write=True` flag on the spec or by name convention (`set_`, `add_`,
-`create_`, `delete_`, `run_`, `write_`, `edit_`, …).
+4. Write a test covering the happy path and at least one error path.
+5. If the tool touches a new file kind, add a doc in `llm_docs/`.
 
 ---
 
 ## Tool error shape
 
-Every tool returns a JSON-serialisable value. Errors are returned as:
+Tools return a JSON-serialisable dict. Errors always use:
 
 ```json
 {"error": "human-readable message", "code": "SNAKE_CASE_CODE"}
 ```
 
-Never as exceptions or 500 responses. The LLM reads the `error` and `code`
-fields to decide how to recover. Common codes: `NOT_FOUND`, `BAD_ARGS`,
-`FORBIDDEN`, `TIMEOUT`.
+Common codes: `NOT_FOUND`, `BAD_ARGS`, `FORBIDDEN`, `TIMEOUT`. The LLM reads
+`error` and `code` to decide how to recover — never throw Python exceptions
+from a tool handler.
 
 ---
 
-## The doc-search-first pattern
+## See also
 
-The ~150 tools are deliberately low-level (file read/write/edit, feature node
-append, BIM element mutation). Before touching a non-`.jscad` file, the LLM
-is expected to consult the authoring corpus:
-
-1. `search_kerf_docs("fillet")` — full-text search across all loaded corpus
-   docs. Returns `[{path, title, excerpt, score}]`.
-2. `read_file("/docs/llm/feature.md")` — paths under `/docs/llm/` are routed
-   to the in-memory corpus, not the project tree. Returns the doc content.
-3. Armed with the right JSON schema and conventions, call `edit_file` to mutate
-   the file directly.
-
-This keeps the tool count stable: adding support for a new file kind means
-writing a corpus doc in `llm_docs/`, not new tool functions.
-
-### `search_kerf_docs`
-
-```
-search_kerf_docs(query: str) -> list[{path, title, excerpt, score}]
-```
-
-- Lives in `packages/kerf-chat/src/kerf_chat/tools/docs.py`
-- Corpus is loaded at boot from every plugin that ships an `llm_docs/` folder
-- Scoring is TF-IDF-style substring match; returns up to 8 results
-- Called by the LLM before every unfamiliar file kind or feature type
-
-**Plugins contributing to the corpus**
-
-| Plugin | Corpus folder |
-|--------|---------------|
-| `kerf-chat` | `packages/kerf-chat/src/kerf_chat/llm_docs/` |
-| `kerf-imports` | `packages/kerf-imports/src/kerf_imports/llm_docs/` |
-| `kerf-bim` | `packages/kerf-bim/src/kerf_bim/llm_docs/` |
-| `kerf-electronics` | `packages/kerf-electronics/src/kerf_electronics/llm_docs/` |
-| `kerf-render` | `packages/kerf-render/src/kerf_render/llm_docs/` |
-
----
-
-## Tool categories
-
-Tools are grouped by domain. What follows is a map of which plugin module
-contributes which tool surface. See [llm-tools.md](./llm-tools.md) for the
-complete per-tool reference.
-
-| Category | Plugin | Tool module |
-|----------|--------|-------------|
-| File ops | `kerf-api` | `tools/file_ops.py` |
-| Object ops (duplicate, delete) | `kerf-api` | `tools/object_ops.py` |
-| Scaffold (seed new file JSON) | `kerf-api` | `tools/scaffold.py` |
-| Revisions (list, restore) | `kerf-api` | `tools/revisions.py` |
-| Equations + configurations | `kerf-api` | `tools/equations.py`, `tools/configurations.py` |
-| Validation | `kerf-api` | `tools/validation.py` |
-| Layers + canvas | `kerf-api` | `tools/layers.py`, `tools/project_layers.py` |
-| Doc search | `kerf-chat` | `tools/docs.py` |
-| Sketch | `kerf-cad-core` | (registered from plugin) |
-| Feature tree (pad, pocket, fillet, …) | `kerf-cad-core` | (registered from plugin) |
-| Mesh + SubD + 3DM | `kerf-imports` | `tools/subd.py`, `tools/mesh.py`, `tools/import_3dm.py` |
-| Curve ops | `kerf-imports` | `tools/curve_ops.py` |
-| Drawings (hatches, leaders, dims) | `kerf-imports` | `tools/drawings.py` |
-| Draft (2D entities + DXF export) | `kerf-imports` | `tools/draft.py` |
-| Inspection + compare | `kerf-imports` | `tools/inspection.py` |
-| Assembly + mates | `kerf-mates` | `tools/assembly.py`, `tools/mates.py` |
-| Tolerance stack | `kerf-mates` | `tools/tolerance.py` |
-| BIM (elements, families, schedules, views, sheets, stairs, railings, MEP, curtain walls) | `kerf-bim` | `tools/bim.py`, …10 modules |
-| Electronics — schematic (ERC, buses, diff-pairs, hierarchy) | `kerf-electronics` | `tools/erc.py`, `tools/buses.py`, `tools/hier_schematic.py` |
-| Electronics — PCB (routing, DRC, pours, net classes, length tuning, via stitching, shove router) | `kerf-electronics` | `tools/routing.py`, `tools/pcb_drc.py`, `tools/pcb_layer_tools.py`, … |
-| FEA | `kerf-fem` | `tools/fem.py` |
-| Simulation | `kerf-fem` | `tools/sim.py` |
-| CAM | `kerf-cam` | `tools/cam.py` |
-| Topology optimisation | `kerf-topo` | `tools/topo.py` |
-| Render | `kerf-render` | `tools/render.py` |
-| Materials | `kerf-cloud` | `tools/material.py` (cloud) |
-
----
-
-## Adding a tool
-
-1. Pick the plugin that owns the domain (or create one if adding a new plugin).
-2. Create `packages/kerf-<name>/src/kerf_<name>/tools/my_tool.py`.
-3. Decorate the async handler with `@register(ToolSpec(…), write=True/False)`.
-4. Import and call `register(...)` from the plugin's `register(app, ctx)` in
-   `plugin.py`, or use `ctx.tools.register(...)` directly.
-5. Write a test that exercises the happy path and at least one error path.
-6. If the tool touches a new file kind, add a doc in `llm_docs/` describing
-   the JSON schema so `search_kerf_docs` returns useful guidance.
-
-Plugin contract: `PluginContext.tools` is a `ToolRegistry` instance. See
-`packages/kerf-core/src/kerf_core/plugin.py` for the full `PluginContext`
-dataclass.
-
----
-
-## Adding authoring docs
-
-Drop a `.md` file in `packages/kerf-<name>/src/kerf_<name>/llm_docs/` and
-restart the server. The boot sequence automatically discovers and loads all
-`llm_docs/` folders from installed plugins. File names are used as the corpus
-path (`/docs/llm/<filename>`).
-
----
-
-See also: [llm-tools.md](./llm-tools.md) · [architecture.md § Tool registry](./architecture.md) · [contributing.md](./contributing.md)
+- [llm-tools.md](./llm-tools.md) — full per-tool reference
+- [architecture.md](./architecture.md) — plugin system and boot sequence
+- [contributing.md](./contributing.md) — plugin development guide
+- [sdk.md](./sdk.md) — scripting Kerf from Python
