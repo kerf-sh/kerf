@@ -5640,9 +5640,9 @@ verified but not reachable. Each task = export from `geom/__init__.py`
 - **GK-P09** ✅ **(Opus candidate)** General pure-Python solid boolean. `geom/boolean.py` only handles axis-aligned box/cyl/sphere; raises `BuildError("unsupported-input")` otherwise. Extend to arbitrary coplanar/near-coplanar trimmed-plane face pairs (covers wall-meets-wall, wall-meets-roof, general planar CSG) using existing SSI (`intersection.py`) + imprint (`imprint.py`). Size **L**. DoD: union/diff/intersect on two non-axis-aligned prismatic solids returns a `validate_body`-clean result; OCCT-worker parity test on a fixture set.
 - **GK-P10** ✅ MatchSrf G3. `match_srf.py:110 _VALID_CONTINUITY` is frozen at G0/G1/G2. Add `continuity="G3"` via fourth-CP-row curvature-rate adjustment using the `curvature_rate_continuity_residual` oracle. Size M. DoD: matched edge passes the G3 residual gate.
 - **GK-P11** ✅ Isophote / environment-map (EMap) analyser — the third class-A visual-inspection pillar (CATIA FreeStyle, Rhino EMap), genuinely absent. Implement `isophote_analysis(surf, uv_grid, sphere_map_res)` in `surface_analysis.py` with a stripe-continuity oracle analogous to GK-38. Size M. DoD: detects an isophote break across a G1 discontinuity.
-- **GK-P12** 🔴 Stam exact limit-tangents at extraordinary SubD vertices. `subd_to_nurbs.py:_quad_tangents` uses chord-based tangents; extraordinary-vertex (valence≠4) tangent frames unimplemented. Implement ∂P_lim/∂u, ∂P_lim/∂v for arbitrary valence → NURBS deviation < 1e-5 everywhere. Size M. DoD: deviation gate passes at extraordinary points, not just corners.
-- **GK-P13** 🔴 G1 continuity at extraordinary-vertex SubD→NURBS patches (currently C0 only — bilinear interior blend). Stam eigenvector tangent-blend along shared boundaries. Size L. DoD: G1 residual gate passes across extraordinary patches.
-- **GK-P14** 🔴 Semi-sharp fractional crease multi-level decay. `subd_authoring.py:206 to_subd_mesh()` clamps sharpness to [0,1], discarding fractional multi-level semantics. Remove clamp; propagate fractional sharpness through N CC levels (OpenSubdiv decay). Size S. DoD: fractional crease produces correct intermediate sharpness across levels.
+- **GK-P12** ✅ Stam exact limit-tangents at extraordinary SubD vertices. `subd_to_nurbs.py:_quad_tangents` uses chord-based tangents; extraordinary-vertex (valence≠4) tangent frames unimplemented. Implement ∂P_lim/∂u, ∂P_lim/∂v for arbitrary valence → NURBS deviation < 1e-5 everywhere. Size M. DoD: deviation gate passes at extraordinary points, not just corners.
+- **GK-P13** ✅ G1 continuity at extraordinary-vertex SubD→NURBS patches (currently C0 only — bilinear interior blend). Stam eigenvector tangent-blend along shared boundaries. Size L. DoD: G1 residual gate passes across extraordinary patches.
+- **GK-P14** ✅ Semi-sharp fractional crease multi-level decay. `subd_authoring.py:206 to_subd_mesh()` clamps sharpness to [0,1], discarding fractional multi-level semantics. Remove clamp; propagate fractional sharpness through N CC levels (OpenSubdiv decay). Size S. DoD: fractional crease produces correct intermediate sharpness across levels.
 - **GK-P15** ✅ Analytic surface derivatives + robust SSI. `surface_derivative` is finite-difference (`h=1e-5`); `surface_surface_intersect` is grid-seed + tangent-march. Add analytic first/second derivatives on `NurbsSurface` and a robustness pass (multi-seed + boundary handling) for SSI. Size M. DoD: analytic vs FD agreement < 1e-9; SSI passes a hardened fixture set.
 
 ### Group V — Construction verbs
@@ -5654,14 +5654,14 @@ verified but not reachable. Each task = export from `geom/__init__.py`
 
 ### Group S — SubD / mesh / sculpt
 
-- **GK-P20** 🔴 Poke face — `subd_poke(cage, face_id)` (centroid fan). Size S.
-- **GK-P21** 🔴 Extrude-along-curve for SubD cages — `subd_extrude_along(cage, face_id, curve_pts)`. Size M.
-- **GK-P22** 🔴 SDF CSG + marching-cubes — `geom/sdf_csg.py`: smooth-union/subtract/intersect on SDF fields + marching-cubes extraction (closes implicit-modeling loop; ZBrush DynaMesh, Blender geometry-nodes SDF). Size M.
-- **GK-P23** 🔴 In-process isotropic remesh fallback — `geom/isotropic_remesh.py` (edge-flip/split/collapse) so `quad_remesh` degrades to a valid result without the `instant-meshes` binary. Size M.
-- **GK-P24** 🔴 LSCM UV unwrap — `geom/uv_unwrap.py` conformal unwrap for mesh→SubD pipelines (Blender UV, 3ds Max Unwrap UVW). Size M.
-- **GK-P25** 🔴 Surface-snap retopo backend — `retopo_snap(source_body, retopo_mesh)` projects cage verts onto source surface. Size M.
-- **GK-P26** 🔴 Multi-resolution displacement stack — `MultiresStack` (base cage + per-level displacement, up to 6 levels). Size L.
-- **GK-P27** 🔴 Sculpt brush engine — `sculpt_brush(cage, center, radius, falloff, strength, mode)` (Grab/Smooth/Inflate) with soft-selection + resample to cage. Size L. Unblocks anatomic dental crown sculpting.
+- **GK-P20** ✅ Poke face — `subd_poke(cage, face_id)` (centroid fan). Size S.
+- **GK-P21** ✅ Extrude-along-curve for SubD cages — `subd_extrude_along(cage, face_id, curve_pts)`. Size M.
+- **GK-P22** ✅ SDF CSG + marching-cubes — `geom/sdf_csg.py`: smooth-union/subtract/intersect on SDF fields + marching-cubes extraction (closes implicit-modeling loop; ZBrush DynaMesh, Blender geometry-nodes SDF). Size M.
+- **GK-P23** ✅ In-process isotropic remesh fallback — `geom/isotropic_remesh.py` (edge-flip/split/collapse) so `quad_remesh` degrades to a valid result without the `instant-meshes` binary. Size M.
+- **GK-P24** ✅ LSCM UV unwrap — `geom/uv_unwrap.py` conformal unwrap for mesh→SubD pipelines (Blender UV, 3ds Max Unwrap UVW). Size M.
+- **GK-P25** ✅ Surface-snap retopo backend — `retopo_snap(source_body, retopo_mesh)` projects cage verts onto source surface. Size M.
+- **GK-P26** ✅ Multi-resolution displacement stack — `MultiresStack` (base cage + per-level displacement, up to 6 levels). Size L.
+- **GK-P27** ✅ Sculpt brush engine — `sculpt_brush(cage, center, radius, falloff, strength, mode)` (Grab/Smooth/Inflate) with soft-selection + resample to cage. Size L. Unblocks anatomic dental crown sculpting.
 
 ### Group A — Architectural geometry
 
