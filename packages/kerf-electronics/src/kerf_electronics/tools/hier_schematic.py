@@ -569,3 +569,184 @@ async def validate_hierarchy(ctx: Any, args: bytes) -> str:
 
     result = _validate_hierarchy(top_circuit_json, children)
     return ok_payload(result)
+
+
+# ── Multi-channel replication ─────────────────────────────────────────────────
+
+
+def _replicate_channel_block(
+    channel_circuit: dict,
+    count: int,
+    channel_prefix: str,
+    x_spacing: float,
+    y_spacing: float,
+) -> dict:
+    """
+    Replicate a hierarchical sheet block N times (Altium-style multi-channel).
+
+    For each channel index i (1-based) every internal net ID is renamed:
+        <net_id>  →  <channel_prefix>_<i>_<net_id>
+
+    Global-label nets (GND, VCC, VBUS etc.) are NOT renamed — they stay shared.
+    Sheet positions are offset by (i - 1) * (x_spacing, y_spacing).
+
+    Returns a merged top-level circuit containing N independent channel
+    sub-sheets with fully separated nets.
+
+    Parameters
+    ----------
+    channel_circuit : dict
+        CircuitJSON of the block to replicate (the single-channel template).
+    count : int
+        Number of channels to produce (>= 2).
+    channel_prefix : str
+        Short identifier used as the net-name prefix, e.g. ``"CH"``.
+    x_spacing : float
+        Horizontal offset (mm) between successive channel instances.
+    y_spacing : float
+        Vertical offset (mm) between successive channel instances.
+    """
+    if count < 2:
+        raise ValueError("count must be >= 2 for multi-channel replication")
+    if not channel_prefix or not channel_prefix.isidentifier():
+        raise ValueError(f"channel_prefix must be a valid identifier, got {channel_prefix!r}")
+
+    # Identify global-label nets that should NOT be renamed.
+    global_labels: set[str] = set()
+    board = _get_board(channel_circuit)
+    if board is not None:
+        for gl in board.get("global_labels") or []:
+            if isinstance(gl, dict) and gl.get("net_id"):
+                global_labels.add(gl["net_id"])
+        # Treat common power net names as global even if not listed.
+        for well_known in ("GND", "VCC", "VDD", "VBUS", "3V3", "5V", "12V"):
+            global_labels.add(well_known)
+
+    def _rename_nets(obj: Any, prefix: str) -> Any:
+        """Recursively rename net_id and net fields unless they're global."""
+        if isinstance(obj, dict):
+            result: dict = {}
+            for k, v in obj.items():
+                if k in ("net_id", "net") and isinstance(v, str):
+                    result[k] = v if v in global_labels else f"{prefix}_{v}"
+                elif k == "id" and isinstance(v, str):
+                    # Rename element IDs to avoid collisions across channels.
+                    result[k] = f"{prefix}_{v}"
+                elif k == "position" and isinstance(v, list) and len(v) == 2:
+                    # Leave positions; caller offsets them.
+                    result[k] = v
+                else:
+                    result[k] = _rename_nets(v, prefix)
+            return result
+        if isinstance(obj, list):
+            return [_rename_nets(item, prefix) for item in obj]
+        return obj
+
+    merged_elements: list = []
+
+    for i in range(1, count + 1):
+        prefix = f"{channel_prefix}_{i}"
+        channel_copy = deepcopy(channel_circuit)
+        channel_copy = _rename_nets(channel_copy, prefix)
+
+        # Offset positions of all elements.
+        dx = (i - 1) * x_spacing
+        dy = (i - 1) * y_spacing
+        if dx != 0.0 or dy != 0.0:
+            elements = channel_copy if isinstance(channel_copy, list) else [channel_copy]
+            for el in elements:
+                if isinstance(el, dict) and "x" in el and "y" in el:
+                    el["x"] = el["x"] + dx
+                    el["y"] = el["y"] + dy
+
+        elements = channel_copy if isinstance(channel_copy, list) else [channel_copy]
+        merged_elements.extend(elements)
+
+    return merged_elements
+
+
+replicate_channel_spec = ToolSpec(
+    name="replicate_channel",
+    description=(
+        "Replicate a schematic block N times (Altium-style multi-channel design). "
+        "Each channel gets a unique prefix so its internal nets are independent. "
+        "Global nets (GND, VCC, VDD, VBUS) are shared across all channels. "
+        "Returns an array of merged circuit elements with offset positions."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "channel_circuit_json": {
+                "type": ["object", "array"],
+                "description": "The single-channel template CircuitJSON (block to replicate).",
+            },
+            "count": {
+                "type": "integer",
+                "minimum": 2,
+                "maximum": 64,
+                "description": "Number of channels to produce (2–64).",
+            },
+            "channel_prefix": {
+                "type": "string",
+                "description": "Short identifier used as the net-name prefix, e.g. 'CH' or 'AMP'.",
+            },
+            "x_spacing_mm": {
+                "type": "number",
+                "description": "Horizontal offset in mm between channel instances (default 50).",
+            },
+            "y_spacing_mm": {
+                "type": "number",
+                "description": "Vertical offset in mm between channel instances (default 0).",
+            },
+        },
+        "required": ["channel_circuit_json", "count", "channel_prefix"],
+    },
+)
+
+
+@register(replicate_channel_spec, write=True)
+async def replicate_channel(ctx: Any, args: bytes) -> str:
+    """Replicate a schematic block N times (Altium-style multi-channel)."""
+    try:
+        a = json.loads(args)
+    except Exception as e:
+        return err_payload(f"invalid args: {e}", "BAD_ARGS")
+
+    channel_circuit_json = a.get("channel_circuit_json")
+    if not channel_circuit_json:
+        return err_payload("channel_circuit_json is required", "BAD_ARGS")
+
+    count = a.get("count")
+    if not isinstance(count, int) or count < 2 or count > 64:
+        return err_payload("count must be an integer 2–64", "BAD_ARGS")
+
+    channel_prefix = a.get("channel_prefix", "CH")
+    if not isinstance(channel_prefix, str) or not channel_prefix:
+        return err_payload("channel_prefix must be a non-empty string", "BAD_ARGS")
+
+    x_spacing = float(a.get("x_spacing_mm") or 50.0)
+    y_spacing = float(a.get("y_spacing_mm") or 0.0)
+
+    try:
+        merged = _replicate_channel_block(
+            channel_circuit=channel_circuit_json,
+            count=count,
+            channel_prefix=channel_prefix,
+            x_spacing=x_spacing,
+            y_spacing=y_spacing,
+        )
+    except ValueError as e:
+        return err_payload(str(e), "BAD_ARGS")
+    except Exception as e:  # noqa: BLE001
+        return err_payload(f"replication failed: {e}", "ERROR")
+
+    return ok_payload({
+        "channel_count": count,
+        "channel_prefix": channel_prefix,
+        "elements": merged,
+        "note": (
+            f"Produced {count} channels with prefix '{channel_prefix}_1' .. "
+            f"'{channel_prefix}_{count}'. Global nets (GND, VCC, VDD, VBUS etc.) "
+            "are shared. Internal nets are prefixed per channel."
+        ),
+    })

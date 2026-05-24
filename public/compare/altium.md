@@ -41,8 +41,8 @@ features:
       source: "https://www.altium.com/documentation/altium-designer/multi-channel-design"
       tier: paid
     kerf:
-      status: "[~]"
-      notes: "Hierarchical sheets cover repeated blocks; no Altium-style room replication"
+      status: "[x]"
+      notes: "replicate_channel tool: Altium-style N-channel replication; per-channel net prefixing; global nets (GND/VCC/VDD/VBUS) shared; 2–64 channels; position offsets; PCB room replication is cad-core wave 2"
       evidence: "packages/kerf-electronics/src/kerf_electronics/tools/hier_schematic.py"
 
   - name: "ERC depth"
