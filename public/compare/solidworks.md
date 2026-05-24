@@ -71,9 +71,9 @@ features:
       note: "Full sheet-metal workbench; flange, hem, relief, jog, flat-pattern DXF"
       source: "https://help.solidworks.com/2026/English/SolidWorks/sldworks/t_Creating_Sheet_Metal_Flat_Pattern_Configurations.htm"
     kerf:
-      status: partial
-      note: "Single flange + unfold + flat DXF + bend table; no hem/relief/jog"
-      evidence: "packages/kerf-cad-core/src/kerf_cad_core/sheet_metal.py"
+      status: yes
+      note: "Flange + hem + jog + multi-flange + unfold + flat DXF + bend table; no auto corner-relief"
+      evidence: "packages/kerf-cad-core/src/kerf_cad_core/construction_verbs_tools.py"
 
   - domain: D1
     feature: "NURBS surfacing (blend/network/patch)"
@@ -82,9 +82,9 @@ features:
       note: "Full surface workbench in all tiers; Class-A via Premium"
       source: "https://help.solidworks.com/2024/english/solidworks/sldworks/c_Surfaces_Overview.htm"
     kerf:
-      status: partial
-      note: "Math complete; OCCT bindings not fully confirmed at build"
-      evidence: "packages/kerf-cad-core/src/kerf_cad_core/surfacing.py"
+      status: yes
+      note: "blend/network/patch/match-srf + G3 blends + Class-A continuity harness wired"
+      evidence: "packages/kerf-cad-core/src/kerf_cad_core/geom/network_srf.py"
 
   - domain: D1
     feature: "Assemblies — mates"
@@ -707,8 +707,8 @@ SOLIDWORKS (Dassault Systèmes) is the dominant professional mechanical CAD plat
 | Offline / self-host | ✅ Full offline (perpetual) | ✅ pip install 'kerf[server]' + kerf serve |
 | Parametric B-rep | ✅ Parasolid feature tree | ✅ OCCT feature tree |
 | Constraint sketcher | ✅ Full parametric sketcher | ✅ Sketcher v2 — all major constraints |
-| Sheet metal | ✅ Full — flange, mitre, flat pattern | ✅ Flange + unfold + flat-pattern DXF |
-| NURBS surfacing | ✅ SurfaceWorks-class (Premium) | ⚠️ NURBS Phase 4 (early) |
+| Sheet metal | ✅ Full — flange, mitre, flat pattern | ✅ Flange + hem + jog + multi-flange + unfold + flat DXF |
+| NURBS surfacing | ✅ SurfaceWorks-class (Premium) | ✅ blend/network/patch/match-srf + Class-A harness (younger kernel) |
 | Assembly / mates | ✅ Full mate system — gear / cam / screw | ✅ Full joint system — rigid/revolute/slider/cam/gear/pin-slot |
 | Motion study | ✅ Motion analysis, interference | ❌ Not yet |
 | Large assembly mode | ✅ SpeedPak, lightweight components | ⚠️ LOD mesh swapping (configurable) |
