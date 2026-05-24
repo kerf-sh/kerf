@@ -50,7 +50,8 @@ import {
   Move, Crosshair, GitBranch, Repeat, FlipHorizontal,
   PencilLine, Pointer, Waves, Layers3, Aperture, Plus,
   X, ChevronRight, LayoutGrid, Combine, Scissors, Grid3x3,
-  MoreHorizontal, SlidersHorizontal,
+  MoreHorizontal, SlidersHorizontal, Zap, Eye, Shield,
+  Wrench, AlignLeft, Activity,
 } from 'lucide-react'
 import FeatureRenderer from './FeatureRenderer.jsx'
 import {
@@ -2149,15 +2150,253 @@ const FEATURE_KINDS = [
       { key: 'notch_angle_deg', kind: 'number', label: 'V-notch angle (°)', min: 5, max: 170, step: 5, showWhen: (n) => n.notch_style === 'angle' },
     ],
   },
+
+  // ── Construction helpers ──────────────────────────────────────────────────
+
+  // rib — parametric reinforcement rib wall (feature_rib, kerf-imports)
+  {
+    op: 'rib',
+    label: 'Rib',
+    icon: AlignLeft,
+    caption: (
+      'Parametric reinforcement rib wall. Offsets a closed sketch profile and sweeps ' +
+      'it into a solid wall for mold release or structural reinforcement. ' +
+      'both_sides extrudes symmetrically; midplane centres on sketch plane.'
+    ),
+    defaults: {
+      sketch_path: '',
+      thickness_mm: 3.0,
+      both_sides: false,
+      midplane: false,
+      draft_angle_deg: 0,
+    },
+    fields: [
+      { key: 'sketch_path',     kind: 'sketch_picker', label: 'Closed profile sketch' },
+      { key: 'thickness_mm',    kind: 'number', label: 'Wall thickness (mm)', min: 0.1, step: 0.5 },
+      { key: 'both_sides',      kind: 'boolean', label: 'Both sides (symmetric extrude)' },
+      { key: 'midplane',        kind: 'boolean', label: 'Midplane (centred on sketch)', showWhen: (n) => !n.both_sides },
+      { key: 'draft_angle_deg', kind: 'number', label: 'Draft angle (°)', min: 0, max: 30, step: 0.5 },
+    ],
+  },
+
+  // helix — parametric helix curve node (feature_helix, kerf-imports)
+  {
+    op: 'helix',
+    label: 'Helix',
+    icon: Activity,
+    caption: (
+      'Parametric helix / coil curve. Returns a polyline tracing a cylindrical or ' +
+      'conical helix. Use as path_sketch for Sweep1 to produce springs, threads, ' +
+      'or coiled tubing. direction: right (CCW, standard) / left (CW).'
+    ),
+    defaults: {
+      pitch: 5.0,
+      height: 30.0,
+      radius: 10.0,
+      direction: 'right',
+      cone_angle: 0,
+      segments: 64,
+    },
+    fields: [
+      { key: 'pitch',       kind: 'number', label: 'Pitch — axial/turn (mm)', min: 0.01, step: 0.5 },
+      { key: 'height',      kind: 'number', label: 'Total height (mm)',        min: 0.01, step: 1 },
+      { key: 'radius',      kind: 'number', label: 'Base radius (mm)',          min: 0.01, step: 0.5 },
+      { key: 'direction', kind: 'select', label: 'Handedness', options: [
+        { value: 'right', label: 'Right-hand (CCW from above)' },
+        { value: 'left',  label: 'Left-hand (CW from above)' },
+      ] },
+      { key: 'cone_angle',  kind: 'number', label: 'Cone half-angle (°, 0=cylindrical)', min: 0, max: 89, step: 0.5 },
+      { key: 'segments',    kind: 'number', label: 'Segments / turn',  min: 8, max: 256, step: 8 },
+    ],
+  },
+
+  // multi_transform — composited pattern (linear × polar × mirror) (kerf-imports)
+  {
+    op: 'multi_transform',
+    label: 'Multi-Transform',
+    icon: Repeat,
+    caption: (
+      'Compose up to 4 pattern operations (linear, polar, mirror) on one feature. ' +
+      'Transforms are applied in order; the result is the Cartesian product of all instances. ' +
+      'Useful for bolt circles combined with a mirror, or a polar array of a ribbed pattern.'
+    ),
+    defaults: {
+      source_feature_id: '',
+      transforms: [
+        { kind: 'linear', direction: 'x', count: 3, spacing: 10 },
+      ],
+    },
+    fields: [
+      { key: 'source_feature_id', kind: 'feature_picker', label: 'Source feature' },
+      // transforms is a complex nested list; LLM drives via JSON; inspector shows count only
+    ],
+  },
+
+  // ── Surface quality analysis (read-only analysis nodes) ─────────────────
+
+  // zebra_analysis — G0/G1/G2 stripe-break analysis (surfacing.py GK-38)
+  {
+    op: 'zebra_analysis',
+    label: 'Zebra Analysis',
+    icon: Eye,
+    caption: (
+      'Read-only zebra / reflection-line continuity analysis on the shared edge between ' +
+      'two NURBS surfaces. Returns G0/G1/G2 stripe-break flags and reflection-line data. ' +
+      'Use after blend_srf or blend_srf_g3 to verify join quality. Does NOT modify geometry.'
+    ),
+    defaults: {
+      surface_a_ref: '',
+      surface_b_ref: '',
+      shared_edge_pts: [[0,0,0],[1,0,0]],
+      num_samples: 32,
+      stripe_width: 0.05,
+    },
+    fields: [
+      { key: 'surface_a_ref',  kind: 'feature_picker', label: 'Surface A' },
+      { key: 'surface_b_ref',  kind: 'feature_picker', label: 'Surface B' },
+      { key: 'num_samples',    kind: 'number', label: 'Sample count', min: 4, max: 256, step: 4 },
+      { key: 'stripe_width',   kind: 'number', label: 'Stripe width (fraction)', min: 0.01, max: 0.5, step: 0.01 },
+    ],
+  },
+
+  // class_a_check — Class-A acceptance harness (surfacing.py GK-64)
+  {
+    op: 'class_a_check',
+    label: 'Class-A Check',
+    icon: Shield,
+    caption: (
+      'Class-A acceptance harness on the shared edge between two NURBS surfaces. ' +
+      'Runs three passes: (1) curvature combs, (2) zebra/reflection-line, ' +
+      '(3) G0/G1/G2/G3 gate. Optionally runs leading hot-spot detection on each surface. ' +
+      'Read-only analysis node — does not modify geometry.'
+    ),
+    defaults: {
+      surface_a_ref: '',
+      surface_b_ref: '',
+      shared_edge_pts: [[0,0,0],[1,0,0]],
+      target_grade: 'G2',
+      run_leading: false,
+    },
+    fields: [
+      { key: 'surface_a_ref',  kind: 'feature_picker', label: 'Surface A' },
+      { key: 'surface_b_ref',  kind: 'feature_picker', label: 'Surface B' },
+      { key: 'target_grade', kind: 'select', label: 'Target grade', options: [
+        { value: 'G0', label: 'G0 (positional)' },
+        { value: 'G1', label: 'G1 (tangent)' },
+        { value: 'G2', label: 'G2 (curvature)' },
+        { value: 'G3', label: 'G3 (curvature-rate)' },
+      ] },
+      { key: 'run_leading', kind: 'boolean', label: 'Run leading hot-spot detection' },
+    ],
+  },
+
+  // global_continuity_audit — walk every shared edge in a body (surfacing.py GK-138)
+  {
+    op: 'global_continuity_audit',
+    label: 'Global Continuity Audit',
+    icon: Shield,
+    caption: (
+      'Walk every shared edge in a feature body and classify each as G0/G1/G2/G3 or ' +
+      'below_G0 for positional gaps. Returns a per-edge continuity report + summary ' +
+      'count by grade. Read-only analysis node — does not modify geometry.'
+    ),
+    defaults: { target_id: '', tolerance: 1e-4 },
+    fields: [
+      { key: 'target_id',  kind: 'feature_picker', label: 'Surface body to audit' },
+      { key: 'tolerance',  kind: 'number', label: 'Positional tolerance (mm)', min: 1e-9, step: 1e-4 },
+    ],
+  },
+
+  // blend_srf_g3 — G3 degree-7 Bézier blend strip (surfacing.py GK-62)
+  {
+    op: 'blend_srf_g3',
+    label: 'BlendSrf G3',
+    icon: Waves,
+    caption: (
+      'G3 (curvature-rate-continuous) degree-7 Bézier blend strip between two NURBS surfaces. ' +
+      'Highest analytic continuity class (G3); required for automotive Class-A and fine jewellery. ' +
+      'Set trim_and_sew=true to also trim support surfaces and sew all three into a closed Body.'
+    ),
+    defaults: {
+      target_id: '',
+      edge1_id: -1,
+      edge2_id: -1,
+      blend_dist: 2.0,
+      samples: 24,
+      trim_and_sew: false,
+    },
+    fields: [
+      { key: 'target_id',    kind: 'feature_picker', label: 'Host body' },
+      { key: 'edge1_id',     kind: 'number', label: 'Edge 1 id', step: 1 },
+      { key: 'edge2_id',     kind: 'number', label: 'Edge 2 id', step: 1 },
+      { key: 'blend_dist',   kind: 'number', label: 'Blend distance (mm)', min: 0.001 },
+      { key: 'samples',      kind: 'number', label: 'Seam sample count', min: 8, max: 128, step: 4 },
+      { key: 'trim_and_sew', kind: 'boolean', label: 'Trim + sew into closed Body' },
+    ],
+  },
+
+  // g3_chain_blend — multi-edge G3 chain blend (surfacing.py GK-P50)
+  {
+    op: 'g3_chain_blend',
+    label: 'G3 Chain Blend',
+    icon: Waves,
+    caption: (
+      'Multi-edge G3 chain blend: propagates a G3 continuity constraint along a ' +
+      'chain of surface edges. Produces a single blend strip covering all edges in the chain.'
+    ),
+    defaults: {
+      target_id: '',
+      edge_chain: [],
+      blend_dist: 2.0,
+      samples: 24,
+    },
+    fields: [
+      { key: 'target_id',  kind: 'feature_picker', label: 'Host body' },
+      { key: 'blend_dist', kind: 'number', label: 'Blend distance (mm)', min: 0.001 },
+      { key: 'samples',    kind: 'number', label: 'Sample count', min: 8, max: 256, step: 4 },
+    ],
+  },
+
+  // fit_surface — fit NURBS surface to point cloud or mesh (surfacing.py)
+  {
+    op: 'fit_surface',
+    label: 'Fit Surface',
+    icon: Zap,
+    caption: (
+      'Fit a NURBS surface to a point cloud, mesh, or scan data. ' +
+      'degree_u/v controls the polynomial degree; u_knots/v_knots controls knot count. ' +
+      'Useful for reverse-engineering scanned geometry.'
+    ),
+    defaults: {
+      source_ref: '',
+      degree_u: 3,
+      degree_v: 3,
+      u_knots: 8,
+      v_knots: 8,
+      tolerance: 0.01,
+    },
+    fields: [
+      { key: 'source_ref', kind: 'feature_picker', label: 'Source mesh / point cloud' },
+      { key: 'degree_u',   kind: 'number', label: 'Degree U', min: 1, max: 9, step: 1 },
+      { key: 'degree_v',   kind: 'number', label: 'Degree V', min: 1, max: 9, step: 1 },
+      { key: 'u_knots',    kind: 'number', label: 'U knot count', min: 2, max: 50, step: 1 },
+      { key: 'v_knots',    kind: 'number', label: 'V knot count', min: 2, max: 50, step: 1 },
+      { key: 'tolerance',  kind: 'number', label: 'Fit tolerance (mm)', min: 1e-6, step: 0.001 },
+    ],
+  },
 ]
 
 const KIND_BY_OP = Object.fromEntries(FEATURE_KINDS.map((k) => [k.op, k]))
 
+// Named exports for unit tests and external consumers.
+export { FEATURE_KINDS, FEATURE_CATEGORIES }
+
 const FEATURE_CATEGORIES = [
-  { id: 'sketch',   label: 'Sketch-based',  ops: ['pad', 'boss_with_draft', 'pocket', 'cut_from_sketch', 'revolve', 'hole', 'hole_pattern'] },
+  { id: 'sketch',   label: 'Sketch-based',  ops: ['pad', 'boss_with_draft', 'pocket', 'cut_from_sketch', 'revolve', 'hole', 'hole_pattern', 'rib', 'helix'] },
   { id: 'modify',   label: 'Modify',        ops: ['fillet', 'chamfer', 'shell', 'push_pull', 'variable_radius_fillet', 'to_solid', 'boolean', 'section', 'quad_remesh', 'delete_face', 'isotropic_remesh'] },
-  { id: 'pattern',  label: 'Pattern',       ops: ['linear_pattern', 'polar_pattern', 'mirror_pattern'] },
-  { id: 'surface',  label: 'Surfacing',     ops: ['sweep1', 'sweep2', 'loft', 'network_srf', 'blend_srf', 'surface_boolean', 'trim_by_curve', 'surface_curvature_combs', 'isophote_analysis', 'uv_unwrap'] },
+  { id: 'pattern',  label: 'Pattern',       ops: ['linear_pattern', 'polar_pattern', 'mirror_pattern', 'multi_transform'] },
+  { id: 'surface',  label: 'Surfacing',     ops: ['sweep1', 'sweep2', 'loft', 'network_srf', 'blend_srf', 'blend_srf_g3', 'g3_chain_blend', 'fit_surface', 'surface_boolean', 'trim_by_curve', 'surface_curvature_combs', 'isophote_analysis', 'uv_unwrap'] },
+  { id: 'analysis', label: 'Analysis',      ops: ['zebra_analysis', 'class_a_check', 'global_continuity_audit'] },
   { id: 'jewelry',  label: 'Jewelry',       ops: [
     // Gemstones
     'gemstone',

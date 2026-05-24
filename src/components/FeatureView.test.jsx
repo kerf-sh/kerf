@@ -52,6 +52,13 @@ vi.mock('lucide-react', () => {
     Grid3x3: stub('Grid3x3'),
     MoreHorizontal: stub('MoreHorizontal'),
     SlidersHorizontal: stub('SlidersHorizontal'),
+    // Wave 3 additions
+    Zap: stub('Zap'),
+    Eye: stub('Eye'),
+    Shield: stub('Shield'),
+    Wrench: stub('Wrench'),
+    AlignLeft: stub('AlignLeft'),
+    Activity: stub('Activity'),
   }
 })
 
