@@ -93,6 +93,7 @@ export default function Mold() {
       heroTags={['MIT licensed', 'DME / Hasco / Meusburger catalogues', 'ASME B16 fittings', 'STEP export']}
       bullets={BULLETS}
       comparison={COMPARISON}
+      compareLinks={[{ slug: 'cimatron', label: 'Cimatron' }]}
     />
   )
 }

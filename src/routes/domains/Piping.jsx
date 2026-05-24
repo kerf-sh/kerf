@@ -89,6 +89,7 @@ export default function Piping() {
       heroTags={['MIT licensed', 'ISO 10628 / ISA 5.1 symbols', 'ASME B31.3', 'DXF / STEP export']}
       bullets={BULLETS}
       comparison={COMPARISON}
+      compareLinks={[{ slug: 'aveva-e3d', label: 'AVEVA E3D Design' }]}
     />
   )
 }
