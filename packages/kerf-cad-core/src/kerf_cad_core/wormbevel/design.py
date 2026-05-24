@@ -61,6 +61,11 @@ from __future__ import annotations
 import math
 from typing import Any
 
+from kerf_cad_core.gearstrength.rating import (
+    agma_bending_stress as _gs_bending_stress,
+    agma_contact_stress as _gs_contact_stress,
+)
+
 
 # ---------------------------------------------------------------------------
 # Internal helpers
@@ -929,72 +934,46 @@ def bevel_agma_stress(
     accepts any externally computed J and I and is therefore applicable to
     both straight and spiral bevel gears.
     """
-    err = _guard_positive("Wt", Wt)
-    if err:
-        return _err(err)
-    err = _guard_positive("Ko", Ko)
-    if err:
-        return _err(err)
-    err = _guard_positive("Kv", Kv)
-    if err:
-        return _err(err)
-    err = _guard_positive("Ks", Ks)
-    if err:
-        return _err(err)
-    err = _guard_positive("Km", Km)
-    if err:
-        return _err(err)
-    err = _guard_positive("b", b)
-    if err:
-        return _err(err)
-    err = _guard_positive("m_m", m_m)
-    if err:
-        return _err(err)
-    err = _guard_positive("J", J)
-    if err:
-        return _err(err)
-    err = _guard_positive("I", I)
-    if err:
-        return _err(err)
-    err = _guard_positive("Cp", Cp)
-    if err:
-        return _err(err)
-    err = _guard_positive("d_m_p", d_m_p)
-    if err:
-        return _err(err)
+    # Input validation — same guards as before; gearstrength functions also
+    # validate but we want early bevel-specific error messages.
+    for name, val in (
+        ("Wt", Wt), ("Ko", Ko), ("Kv", Kv), ("Ks", Ks), ("Km", Km),
+        ("b", b), ("m_m", m_m), ("J", J), ("I", I), ("Cp", Cp), ("d_m_p", d_m_p),
+    ):
+        err = _guard_positive(name, val)
+        if err:
+            return _err(err)
 
     warnings: list[str] = []
 
-    Wt_f = float(Wt)
-    Ko_f = float(Ko)
-    Kv_f = float(Kv)
-    Ks_f = float(Ks)
-    Km_f = float(Km)
-    b_f = float(b)
-    mm_f = float(m_m)
-    J_f = float(J)
-    I_f = float(I)
-    Cp_f = float(Cp)
-    dm_f = float(d_m_p)
+    # Delegate bending stress to gearstrength.rating.agma_bending_stress.
+    # Bevel gears use solid blanks → KB = 1.0.  Mean module m_m maps directly
+    # to m_or_Pd; mean pitch diameter is handled externally (not needed here).
+    bend_res = _gs_bending_stress(
+        Wt, Ko, Kv, Ks, Km, KB=1.0,
+        b=b, m_or_Pd=m_m, J=J,
+        metric=metric,
+    )
+    if not bend_res["ok"]:
+        return _err(bend_res["reason"])
+    sigma_t = bend_res["sigma_t"]
+    unit = bend_res["unit"]
 
-    # Bending stress
-    if metric:
-        sigma_t = Wt_f * Ko_f * Kv_f * Ks_f * Km_f / (b_f * mm_f * J_f)
-        unit = "MPa"
-        bending_limit = 700.0   # MPa conservative upper reference
-        contact_limit = 2000.0  # MPa
-    else:
-        # English: σ_t = Wt · Ko · Kv · Ks · Pd · Km / (b · J)
-        # where Pd = 1/m_m in teeth/inch when metric=False, m_m passed as Pd
-        Pd = mm_f
-        sigma_t = Wt_f * Ko_f * Kv_f * Ks_f * Pd * Km_f / (b_f * J_f)
-        unit = "psi"
-        bending_limit = 100_000.0
-        contact_limit = 300_000.0
+    # Delegate contact stress to gearstrength.rating.agma_contact_stress.
+    # d_m_p (mean pitch diameter) is the bevel equivalent of d_p in the formula.
+    cont_res = _gs_contact_stress(
+        Wt, Ko, Kv, Ks, Km, Cp,
+        d_p=d_m_p, b=b, I=I,
+        metric=metric,
+    )
+    if not cont_res["ok"]:
+        return _err(cont_res["reason"])
+    sigma_c = cont_res["sigma_c"]
+    radicand = cont_res["radicand"]
 
-    # Contact stress
-    radicand = Wt_f * Ko_f * Kv_f * Ks_f * Km_f / (dm_f * b_f * I_f)
-    sigma_c = Cp_f * math.sqrt(radicand)
+    # Bevel-specific overstress thresholds (wider contact limit than spur/helical).
+    bending_limit = 700.0 if metric else 100_000.0
+    contact_limit = 2000.0 if metric else 300_000.0
 
     if sigma_t > bending_limit:
         warnings.append(

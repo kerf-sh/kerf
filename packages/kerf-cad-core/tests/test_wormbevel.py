@@ -692,6 +692,10 @@ from kerf_cad_core.wormbevel.design import (  # noqa: E402
     bevel_geometry as _ref_bevel_geo,
     bevel_forces as _ref_bevel_forces,
 )
+from kerf_cad_core.gearstrength.rating import (  # noqa: E402
+    agma_bending_stress as _gs_bending,
+    agma_contact_stress as _gs_contact,
+)
 
 
 class TestWormBevelExternalReferences:
@@ -761,3 +765,95 @@ class TestWormBevelExternalReferences:
         assert r["W_t_N"] == pytest.approx(Wt, rel=1e-9)
         assert r["W_r_N"] == pytest.approx(Wt * math.tan(phi) * math.cos(G), rel=1e-9)
         assert r["W_a_N"] == pytest.approx(Wt * math.tan(phi) * math.sin(G), rel=1e-9)
+
+
+# ===========================================================================
+# Parity / regression: bevel_agma_stress delegates to gearstrength functions
+# ===========================================================================
+
+class TestBevelAgmaStressParity:
+    """
+    Verify that bevel_agma_stress output is numerically identical to calling
+    gearstrength.agma_bending_stress / agma_contact_stress with bevel inputs.
+
+    Inputs chosen from a representative AGMA 2003 straight-bevel example:
+      N_p=20, N_g=40, m=4 mm → m_m ≈ 3.36 mm (b_fraction=1/3), d_m_p ≈ 67.2 mm.
+      Service factors: Ko=1.25, Kv=1.4, Ks=1.0, Km=1.3.
+      Bevel geometry factors: J=0.23, I=0.07; Cp=191 √MPa (steel).
+      Wt = 4500 N (tangential load at mean pitch circle).
+    """
+
+    _P = dict(
+        Wt=4500.0, Ko=1.25, Kv=1.4, Ks=1.0, Km=1.3,
+        b=33.6, m_m=3.36, J=0.23, I=0.07,
+        Cp=191.0, d_m_p=67.2, metric=True,
+    )
+
+    def test_parity_metric_bending(self):
+        """bevel σ_t matches gearstrength σ_t (KB=1.0, m_or_Pd=m_m)."""
+        p = self._P
+        r_bevel = bevel_agma_stress(**p)
+        r_gs = _gs_bending(
+            p["Wt"], p["Ko"], p["Kv"], p["Ks"], p["Km"], KB=1.0,
+            b=p["b"], m_or_Pd=p["m_m"], J=p["J"], metric=True,
+        )
+        assert r_bevel["ok"] is True
+        assert r_gs["ok"] is True
+        assert r_bevel["sigma_t"] == pytest.approx(r_gs["sigma_t"], rel=1e-12)
+
+    def test_parity_metric_contact(self):
+        """bevel σ_c matches gearstrength σ_c (d_p=d_m_p)."""
+        p = self._P
+        r_bevel = bevel_agma_stress(**p)
+        r_gs = _gs_contact(
+            p["Wt"], p["Ko"], p["Kv"], p["Ks"], p["Km"], p["Cp"],
+            d_p=p["d_m_p"], b=p["b"], I=p["I"], metric=True,
+        )
+        assert r_bevel["ok"] is True
+        assert r_gs["ok"] is True
+        assert r_bevel["sigma_c"] == pytest.approx(r_gs["sigma_c"], rel=1e-12)
+
+    def test_parity_radicand(self):
+        """radicand_contact key equals the gearstrength radicand."""
+        p = self._P
+        r_bevel = bevel_agma_stress(**p)
+        r_gs = _gs_contact(
+            p["Wt"], p["Ko"], p["Kv"], p["Ks"], p["Km"], p["Cp"],
+            d_p=p["d_m_p"], b=p["b"], I=p["I"], metric=True,
+        )
+        assert r_bevel["radicand_contact"] == pytest.approx(r_gs["radicand"], rel=1e-12)
+
+    def test_parity_english_bending(self):
+        """English-unit bevel σ_t matches gearstrength σ_t (Pd = m_m)."""
+        p_eng = dict(
+            Wt=1100.0, Ko=1.25, Kv=1.4, Ks=1.0, Km=1.3,
+            b=1.35, m_m=8.0, J=0.23, I=0.07,
+            Cp=2300.0, d_m_p=2.7, metric=False,
+        )
+        r_bevel = bevel_agma_stress(**p_eng)
+        r_gs = _gs_bending(
+            p_eng["Wt"], p_eng["Ko"], p_eng["Kv"], p_eng["Ks"], p_eng["Km"], KB=1.0,
+            b=p_eng["b"], m_or_Pd=p_eng["m_m"], J=p_eng["J"], metric=False,
+        )
+        assert r_bevel["ok"] is True
+        assert r_bevel["unit"] == "psi"
+        assert r_bevel["sigma_t"] == pytest.approx(r_gs["sigma_t"], rel=1e-12)
+
+    def test_parity_absolute_values(self):
+        """
+        Hard-coded expected values from the AGMA formulas applied to _P inputs.
+        Ensures no silent numerical drift in future refactors.
+
+        σ_t = 4500·1.25·1.4·1.0·1.3 / (33.6·3.36·0.23) = 4500·2.275 / 25.976... MPa
+        σ_c = 191·√(4500·1.25·1.4·1.0·1.3 / (67.2·33.6·0.07))
+        """
+        p = self._P
+        Wt, Ko, Kv, Ks, Km = p["Wt"], p["Ko"], p["Kv"], p["Ks"], p["Km"]
+        numerator = Wt * Ko * Kv * Ks * Km
+        exp_sigma_t = numerator / (p["b"] * p["m_m"] * p["J"])
+        exp_radicand = numerator / (p["d_m_p"] * p["b"] * p["I"])
+        exp_sigma_c = p["Cp"] * math.sqrt(exp_radicand)
+
+        r = bevel_agma_stress(**p)
+        assert r["sigma_t"] == pytest.approx(exp_sigma_t, rel=1e-9)
+        assert r["sigma_c"] == pytest.approx(exp_sigma_c, rel=1e-9)
