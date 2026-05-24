@@ -411,6 +411,58 @@ class TestPEMPersistence:
         assert s1.public_key_bytes != s2.public_key_bytes
 
 
+# ── New API: to_dict / from_pem_string / private_key_pem ────────────────────
+
+class TestNewAPIHelpers:
+    """Oracles for OTAManifest.to_dict(), OTASigner.from_pem_string(),
+    and OTASigner.private_key_pem() added for the OTA server endpoint."""
+
+    def test_manifest_to_dict_matches_asdict(self):
+        signer, _ = _make_signer_and_verifier()
+        payload = _random_payload(32)
+        manifest = signer.sign_bytes(payload, version="1.0.0", device_type="esp32")
+        d = manifest.to_dict()
+        assert isinstance(d, dict)
+        assert d["version"] == "1.0.0"
+        assert d["device_type"] == "esp32"
+        assert d["sha256"] == manifest.sha256
+        assert d["image_size"] == 32
+
+    def test_manifest_to_dict_from_dict_roundtrip(self):
+        signer, verifier = _make_signer_and_verifier()
+        payload = _random_payload(64)
+        manifest = signer.sign_bytes(payload, version="2.1.0", device_type="stm32")
+        d = manifest.to_dict()
+        recovered = OTAManifest.from_dict(d)
+        # Verify the recovered manifest still validates.
+        verifier.verify(recovered, payload)
+
+    def test_private_key_pem_returns_string(self):
+        signer = OTASigner.from_new_keypair()
+        pem = signer.private_key_pem()
+        assert isinstance(pem, str)
+        assert len(pem) > 0
+
+    def test_from_pem_string_roundtrip(self):
+        """OTASigner.from_pem_string() should reconstruct the same keypair."""
+        signer1 = OTASigner.from_new_keypair()
+        pem_str = signer1.private_key_pem()
+        signer2 = OTASigner.from_pem_string(pem_str)
+        assert signer1.public_key_bytes == signer2.public_key_bytes
+
+    def test_from_pem_string_produces_valid_signatures(self):
+        """Signatures from a from_pem_string signer verify correctly."""
+        signer1 = OTASigner.from_new_keypair()
+        pem_str = signer1.private_key_pem()
+        signer2 = OTASigner.from_pem_string(pem_str)
+
+        payload = _random_payload(128)
+        manifest = signer2.sign_bytes(payload, version="1.0.0", device_type="esp32")
+
+        verifier = OTAVerifier(signer1.public_key_bytes)
+        verifier.verify(manifest, payload)  # must not raise
+
+
 # ── Version int helpers ───────────────────────────────────────────────────────
 
 class TestVersionHelpers:

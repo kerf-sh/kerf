@@ -140,6 +140,23 @@ class POU:
     var_blocks: list[VarBlock] = field(default_factory=list)
     body: Optional[Body] = None
 
+    # -- Convenience properties ----------------------------------------------
+
+    @property
+    def rungs(self) -> "list[Rung]":
+        """Return the rungs of the LD body, or [] for non-LD bodies."""
+        if isinstance(self.body, LDBody):
+            return self.body.rungs
+        return []
+
+    @property
+    def variables(self) -> "list[Variable]":
+        """Flat list of all variables across all var blocks."""
+        result: list[Variable] = []
+        for block in self.var_blocks:
+            result.extend(block.variables)
+        return result
+
 
 # ---------------------------------------------------------------------------
 # Types section
@@ -215,3 +232,15 @@ class Project:
     content_header: ContentHeader = field(default_factory=ContentHeader)
     types: Types = field(default_factory=Types)
     instances: Instances = field(default_factory=Instances)
+
+    # -- Convenience properties for ergonomic access -------------------------
+
+    @property
+    def name(self) -> str:
+        """Shorthand for ``content_header.name``."""
+        return self.content_header.name
+
+    @property
+    def pous(self) -> "list[POU]":
+        """Shorthand for ``types.pous``."""
+        return self.types.pous

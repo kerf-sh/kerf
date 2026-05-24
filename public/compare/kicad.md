@@ -60,8 +60,8 @@ features:
       note: "FreeRouting plugin ships with KiCad; DSN→SES round-trip"
       source: "https://www.kicad.org/discover/pcb-design/"
     kerf:
-      status: partial
-      note: "FreeRouting integrated; SHA unpinned — blocked until pinned"
+      status: yes
+      note: "FreeRouting v1.9.0 JAR integrated; SHA-256 pinned (9084a48…); DSN→SES round-trip"
       evidence: "packages/kerf-electronics/src/kerf_electronics/freerouting/freerouting.py"
 
   - domain: D6

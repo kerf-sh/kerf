@@ -196,6 +196,10 @@ class OTAManifest:
     def to_json(self) -> str:
         return json.dumps(asdict(self), indent=2)
 
+    def to_dict(self) -> dict:
+        """Return manifest as a plain dict (alias for dataclasses.asdict)."""
+        return asdict(self)
+
     @classmethod
     def from_json(cls, text: str) -> "OTAManifest":
         return cls(**json.loads(text))
@@ -234,13 +238,29 @@ class OTASigner:
 
     @classmethod
     def from_pem(cls, pem_path: str) -> "OTASigner":
-        """Load private key from a PEM file (as written by save_pem)."""
+        """Load private key from a PEM file path (as written by save_pem)."""
         ops = _load_crypto()
         generate, sign, verify, ser_priv, deser_priv, ser_pub, deser_pub, backend = ops
         pem_bytes = Path(pem_path).read_bytes()
         private_key = deser_priv(pem_bytes)
         pub_raw = ser_pub(private_key)
         return cls(private_key, pub_raw, backend)
+
+    @classmethod
+    def from_pem_string(cls, pem_str: str) -> "OTASigner":
+        """Load private key from a PEM string (for API use — avoids writing key to disk)."""
+        ops = _load_crypto()
+        generate, sign, verify, ser_priv, deser_priv, ser_pub, deser_pub, backend = ops
+        pem_bytes = pem_str.encode() if isinstance(pem_str, str) else pem_str
+        private_key = deser_priv(pem_bytes)
+        pub_raw = ser_pub(private_key)
+        return cls(private_key, pub_raw, backend)
+
+    def private_key_pem(self) -> str:
+        """Return the private key as a PEM string (for secure transmission over local API)."""
+        ops = _load_crypto()
+        pem_bytes = ops[3](self._private_key)  # serialize_privkey
+        return pem_bytes.decode() if isinstance(pem_bytes, bytes) else pem_bytes
 
     def save_pem(self, path: str) -> None:
         """Persist the private key to a PEM file (chmod 600)."""

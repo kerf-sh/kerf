@@ -212,6 +212,135 @@ async def firmware_debug_snapshot_route(_auth: dict = Depends(require_auth)) -> 
     return _debug_sentinel()
 
 
+# ── OTA endpoints ─────────────────────────────────────────────────────────────
+
+@router.post("/firmware/ota/release")
+async def firmware_ota_release_route(
+    req: dict,
+    _auth: dict = Depends(require_auth),
+) -> dict:
+    """
+    Package and register a signed OTA firmware release.
+
+    Body
+    ----
+    ``firmware_path`` : str
+        Absolute path to the compiled ``.bin`` image (within storage root).
+    ``version``       : str
+        Semantic version string, e.g. ``"1.2.3"``.
+    ``device_type``   : str
+        One of ``"esp32"``, ``"stm32"``, ``"samd"``.
+    ``private_key_pem`` : str | None
+        PEM-encoded Ed25519 private key.  If omitted a new ephemeral key is
+        generated (test/dev mode — key is returned in the response so the
+        caller can save it).  **Do not pass production keys over the network**;
+        use the local CLI for production signing.
+
+    Returns
+    -------
+    ``ok``      : bool
+    ``manifest``  : OTAManifest dict (version, device_type, sha256, size, sig_hex, pubkey_hex)
+    ``image_b64`` : base64-encoded firmware image ready for device download.
+    ``warnings``  : list[str]
+    """
+    import base64
+    import os
+
+    firmware_path = req.get("firmware_path", "")
+    version = req.get("version", "")
+    device_type = req.get("device_type", "esp32")
+    private_key_pem: str | None = req.get("private_key_pem")
+
+    if not firmware_path or not version:
+        return {"ok": False, "error": "BAD_ARGS",
+                "message": "'firmware_path' and 'version' are required"}
+
+    # Path confinement — reject path traversal
+    fw_path = _assert_within_storage(firmware_path, "firmware_path")
+
+    if not fw_path.exists():
+        return {"ok": False, "error": "FILE_NOT_FOUND",
+                "message": f"Firmware binary not found: {firmware_path}"}
+
+    try:
+        from kerf_firmware.ota import OTASigner, OTAManifest  # noqa: F401
+
+        if private_key_pem:
+            signer = OTASigner.from_pem_string(private_key_pem)
+        else:
+            signer = OTASigner.from_new_keypair()
+
+        manifest = signer.sign_image(
+            fw_path=str(fw_path),
+            version=version,
+            device_type=device_type,
+        )
+
+        image_bytes = fw_path.read_bytes()
+        image_b64 = base64.b64encode(image_bytes).decode()
+        warnings = []
+        if not private_key_pem:
+            warnings.append(
+                "Ephemeral key generated — save 'pubkey_hex' and 'private_key_pem' "
+                "from this response; the private key will not be stored."
+            )
+
+        return {
+            "ok": True,
+            "manifest": manifest.to_dict(),
+            "image_b64": image_b64,
+            "private_key_pem": signer.private_key_pem() if not private_key_pem else None,
+            "warnings": warnings,
+        }
+    except ImportError:
+        return {
+            "ok": False,
+            "error": "CRYPTO_NOT_INSTALLED",
+            "message": "OTA signing requires 'cryptography' or 'PyNaCl'. "
+                       "Run: pip install cryptography",
+            "warnings": [],
+        }
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "error": "OTA_ERROR", "message": str(exc), "warnings": []}
+
+
+@router.get("/firmware/ota/check")
+async def firmware_ota_check_route(
+    device_type: str,
+    current_version: str,
+    _auth: dict = Depends(require_auth),
+) -> dict:
+    """
+    Check whether a newer OTA release is available for a device.
+
+    Query params
+    ------------
+    ``device_type``     : str — device type, e.g. ``"esp32"``
+    ``current_version`` : str — semver string currently running on device
+
+    Returns
+    -------
+    ``update_available`` : bool
+    ``latest_version``   : str | None
+    ``manifest``         : dict | None — OTAManifest if update available
+    ``download_path``    : str | None — relative download path
+
+    Note: This endpoint queries the local OTA release store only.  For
+    production multi-device fleet management, use the cloud OTA service.
+    """
+    # Placeholder: in a full implementation this queries a persistent release
+    # store (DB or on-disk registry).  The stub returns a well-formed "no update"
+    # response so clients can safely integrate against this endpoint today.
+    return {
+        "ok": True,
+        "update_available": False,
+        "latest_version": current_version,
+        "manifest": None,
+        "download_path": None,
+        "message": "OTA release store empty — publish a release via POST /firmware/ota/release first.",
+    }
+
+
 # ── helpers ───────────────────────────────────────────────────────────────────
 
 def _err(message: str, code: str) -> dict:

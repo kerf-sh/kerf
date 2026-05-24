@@ -48,8 +48,8 @@ features:
       source: "https://docs.easyeda.com/en/PCB/PCB-Tools/index.html"
     kerf:
       status: yes
-      note: "FreeRouting integrated (JAR SHA must be pinned)"
-      evidence: "packages/kerf-electronics/autoroute/"
+      note: "FreeRouting v1.9.0 integrated; SHA-256 pinned; DSN→SES round-trip"
+      evidence: "packages/kerf-electronics/src/kerf_electronics/freerouting/freerouting.py"
 
   - domain: D6
     feature: "SPICE"

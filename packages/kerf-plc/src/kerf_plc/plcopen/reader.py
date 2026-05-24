@@ -118,19 +118,37 @@ def _parse_var_block(el: ET.Element) -> VarBlock:
     }
     kind = kind_map.get(local, "local")
     variables: list[Variable] = []
-    for var_el in _findall(el, "variable"):
+    # Accept both direct <variable> children and a wrapping <varList> element.
+    var_list_el = _find(el, "varList")
+    container = var_list_el if var_list_el is not None else el
+    for var_el in _findall(container, "variable"):
         variables.append(_parse_variable(var_el))
     return VarBlock(kind=kind, variables=variables)
+
+
+def _parse_variable_text(el: ET.Element) -> str:
+    """
+    Extract the variable name from a contact or coil element.
+
+    PLCopen schema variants use either:
+      - ``<expression>var_name</expression>``  (schema v2.01 formal)
+      - ``<variable>var_name</variable>``       (common tool output)
+    Both are accepted; ``<expression>`` takes precedence.
+    """
+    exp_el = _find(el, "expression")
+    if exp_el is not None and exp_el.text:
+        return exp_el.text.strip()
+    var_el = _find(el, "variable")
+    if var_el is not None and var_el.text:
+        return var_el.text.strip()
+    return ""
 
 
 def _parse_contact(el: ET.Element) -> Contact:
     local_id = _attr_int(el, "localId")
     neg_str = el.get("negated", "false").lower()
     negated = neg_str in ("true", "1", "yes")
-    variable = ""
-    exp_el = _find(el, "expression")
-    if exp_el is not None and exp_el.text:
-        variable = exp_el.text.strip()
+    variable = _parse_variable_text(el)
     pos = _parse_position(el)
     return Contact(local_id=local_id, variable=variable, negated=negated, position=pos)
 
@@ -139,10 +157,7 @@ def _parse_coil(el: ET.Element) -> Coil:
     local_id = _attr_int(el, "localId")
     neg_str = el.get("negated", "false").lower()
     negated = neg_str in ("true", "1", "yes")
-    variable = ""
-    exp_el = _find(el, "expression")
-    if exp_el is not None and exp_el.text:
-        variable = exp_el.text.strip()
+    variable = _parse_variable_text(el)
     pos = _parse_position(el)
     return Coil(local_id=local_id, variable=variable, negated=negated, position=pos)
 

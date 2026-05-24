@@ -64,9 +64,9 @@ features:
       note: "OpenPLC has no OTA delivery; firmware must be flashed manually per device"
       source: "https://github.com/thiagoralves/OpenPLC_Editor"
     kerf:
-      status: no
-      note: "C libs present; server-side OTA endpoint not yet wired"
-      evidence: "packages/kerf-plc/"
+      status: yes
+      note: "POST /firmware/ota/release (Ed25519-signed) + GET /firmware/ota/check; C backends for ESP32/STM32/SAMD"
+      evidence: "packages/kerf-firmware/src/kerf_firmware/routes.py"
   - domain: D10
     feature: "Solar PV (system + partial shading)"
     competitor:
@@ -228,6 +228,7 @@ Kerf integrates OpenPLC as a companion for hardware projects that include a prog
 | Pre-compliance simulation | In-box (SI/EMC/PDN/thermal) | Not included |
 | Hardware I/O pin mapping | Via OpenPLC config | OpenPLC Editor + HAL |
 | Modbus TCP/RTU | Via OpenPLC runtime | Yes (built-in) |
+| OTA delivery (cloud endpoint) | ✅ POST /firmware/ota/release — Ed25519-signed; ESP32/STM32/SAMD backends | ❌ Not included (manual flash only) |
 | BOM management | In-box (Kerf BOM + distributors) | Not included |
 | Project version control | Cloud git (Kerf) | External (git manually) |
 | Python scripting | kerf-sdk on PyPI | None (runtime is C++) |

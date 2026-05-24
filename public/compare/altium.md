@@ -92,6 +92,7 @@ features:
     kerf:
       status: "[ ]"
       notes: "View-only; no cursor interactive editing today"
+      kerf_note: "Requires frontend canvas PCB editor (cad-core UI work). Backend router is ready; UI layer is the gap."
       evidence: "packages/kerf-electronics/src/kerf_electronics/routing/push_shove.py"
 
   - name: "Push-and-shove router (Situs engine)"
@@ -114,8 +115,8 @@ features:
       source: "https://www.altium.com/documentation/altium-designer/autorouting-with-activeroute"
       tier: paid
     kerf:
-      status: "[~]"
-      notes: "FreeRouting JAR integrated; SHA unpinned — blocked until set"
+      status: "[x]"
+      notes: "FreeRouting v1.9.0 integrated; SHA-256 pinned; DSN→SES round-trip via autoroute_circuit tool"
       evidence: "packages/kerf-electronics/src/kerf_electronics/tools/autoroute.py"
 
   - name: "Differential pairs routing + length tuning"

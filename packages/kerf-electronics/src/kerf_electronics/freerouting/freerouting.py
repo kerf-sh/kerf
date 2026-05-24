@@ -19,19 +19,16 @@ from pathlib import Path
 
 _JAR_URL = (
     "https://github.com/freerouting/freerouting/releases/download/"
-    "v1.9.0/freerouting-1.9.0-executable.jar"
+    "v1.9.0/freerouting-1.9.0.jar"
 )
 _JAR_CACHE_DIR = Path.home() / ".cache" / "kerf" / "freerouting"
-_JAR_CACHE_PATH = _JAR_CACHE_DIR / "FreeRouting.jar"
+_JAR_CACHE_PATH = _JAR_CACHE_DIR / "freerouting-1.9.0.jar"
 
-# TODO(supply-chain): Pin the SHA-256 of freerouting-1.9.0-executable.jar.
-# Obtain it by running:
-#   sha256sum freerouting-1.9.0-executable.jar
-# or (on macOS):
-#   shasum -a 256 freerouting-1.9.0-executable.jar
-# then replace the empty string below with the hex digest.
-# Version: freerouting-1.9.0
-EXPECTED_SHA256: str = ""  # TODO: fill with official hash for v1.9.0
+# SHA-256 of freerouting-1.9.0.jar (pinned 2026-05-24).
+# Verified against the release asset at:
+#   https://github.com/freerouting/freerouting/releases/tag/v1.9.0
+# Recompute locally: shasum -a 256 freerouting-1.9.0.jar
+EXPECTED_SHA256: str = "9084a4888937a7f31f857ecc12aa7a37407f51160e4d2892dff9c9bb47ae3102"
 
 
 def _verify_jar_sha256(path: Path) -> None:

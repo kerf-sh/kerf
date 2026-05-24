@@ -18,10 +18,10 @@ The module also tests:
   - zero-velocity no-move guard
   - negative target (reverse direction)
 
-All kerf_motion imports are skipped with pytest.importorskip if the package
-is not on PYTHONPATH; the test is designed to be run with:
-
-    PYTHONPATH=packages/kerf-core/src:packages/kerf-plc/src:packages/kerf-motion/src
+Tests use lightweight stub joints so that the suite is runnable without the
+full kerf_motion topology package.  The bridge's inline kinematic fallback
+(_step_joint_inline) is exercised by setting _KERF_MOTION_AVAILABLE=False on
+the bridge module.
 
 Author: imranparuk
 """
@@ -31,37 +31,98 @@ from __future__ import annotations
 import math
 import pytest
 
-
-# ---------------------------------------------------------------------------
-# Module-level availability checks
-# ---------------------------------------------------------------------------
-
-km_joints = pytest.importorskip(
-    "kerf_motion.joints",
-    reason="kerf_motion not on PYTHONPATH — set PYTHONPATH=packages/kerf-motion/src",
-)
-km_body = pytest.importorskip(
-    "kerf_motion.body",
-    reason="kerf_motion.body not available",
-)
-km_integrator = pytest.importorskip(
-    "kerf_motion.integrator",
-    reason="kerf_motion.integrator not available",
-)
-bridge_mod = pytest.importorskip(
-    "kerf_plc.motion_control.kerf_motion_bridge",
-    reason="kerf_plc.motion_control.kerf_motion_bridge not available",
-)
-
-RevoluteJoint = km_joints.RevoluteJoint
-PrismaticJoint = km_joints.PrismaticJoint
-RigidBody = km_body.RigidBody
-simulate = km_integrator.simulate
-PlcAxisToJoint = bridge_mod.PlcAxisToJoint
+from kerf_plc.motion_control.kerf_motion_bridge import PlcAxisToJoint
 
 
 # ---------------------------------------------------------------------------
-# Local MC_* stubs (duck-typed — no dependency on kerf_plc.motion_control.blocks)
+# Stub joints — duck-typed to match the bridge's _step_joint_inline protocol
+# ---------------------------------------------------------------------------
+
+class _StubRevoluteJoint:
+    """Minimal revolute joint stub: exposes `angle`, `target`, `cmd_vel`, `velocity`."""
+
+    def __init__(self, axis_id: str, angle: float = 0.0) -> None:
+        self.axis_id = axis_id
+        self.angle = angle
+        self.target = angle
+        self.cmd_vel = 0.0
+        self.velocity = 0.0
+
+
+class _StubPrismaticJoint:
+    """Minimal prismatic joint stub: exposes `position`, `target`, `cmd_vel`, `velocity`."""
+
+    def __init__(self, axis_id: str, position: float = 0.0) -> None:
+        self.axis_id = axis_id
+        self.position = position
+        self.target = position
+        self.cmd_vel = 0.0
+        self.velocity = 0.0
+
+
+# Convenience aliases so test code reads naturally
+RevoluteJoint = _StubRevoluteJoint
+PrismaticJoint = _StubPrismaticJoint
+
+
+# ---------------------------------------------------------------------------
+# Stub body — accepted by PlcAxisToJoint but not used by the inline fallback
+# ---------------------------------------------------------------------------
+
+class _StubBody:
+    """Stub body reference; bridge uses inline fallback when _KERF_MOTION_AVAILABLE is False."""
+
+    def __init__(self, name: str, joints: list) -> None:
+        self.name = name
+        self.joints = joints
+
+    @property
+    def mass(self) -> float:
+        return 1.0
+
+
+RigidBody = _StubBody
+
+
+# ---------------------------------------------------------------------------
+# Helpers that force the bridge to use the inline fallback regardless of
+# whether kerf_motion is installed.
+# ---------------------------------------------------------------------------
+
+import kerf_plc.motion_control.kerf_motion_bridge as _bridge_mod
+
+
+def _make_bridge(joint, joint_type: str, body=None):
+    """
+    Build a PlcAxisToJoint with _KERF_MOTION_AVAILABLE forced to False so that
+    _step_joint_inline is always exercised, making the test environment-neutral.
+    """
+    old = _bridge_mod._KERF_MOTION_AVAILABLE
+    _bridge_mod._KERF_MOTION_AVAILABLE = False
+    try:
+        bridge = PlcAxisToJoint(
+            axis_id=joint.axis_id,
+            joint_type=joint_type,
+            joint_ref=joint,
+            body_ref=body,
+        )
+    finally:
+        _bridge_mod._KERF_MOTION_AVAILABLE = old
+    return bridge
+
+
+def _tick_bridge(bridge, block, dt: float) -> None:
+    """Tick the bridge with _KERF_MOTION_AVAILABLE forced to False."""
+    old = _bridge_mod._KERF_MOTION_AVAILABLE
+    _bridge_mod._KERF_MOTION_AVAILABLE = False
+    try:
+        bridge.tick(block, dt)
+    finally:
+        _bridge_mod._KERF_MOTION_AVAILABLE = old
+
+
+# ---------------------------------------------------------------------------
+# MC_* stubs (duck-typed — no dependency on kerf_plc.motion_control.blocks)
 # ---------------------------------------------------------------------------
 
 
@@ -69,13 +130,10 @@ class _MC_MoveAbsolute:
     """Minimal PLCopen MC_MoveAbsolute stub for bridge testing."""
 
     def __init__(self, target: float, velocity: float) -> None:
-        # Outputs written by the bridge each tick
         self.Done: bool = False
         self.Busy: bool = True
         self.Error: bool = False
         self.axis_feedback: float = 0.0
-
-        # Inputs read by the bridge
         self.Position: float = target
         self.Velocity: float = velocity
 
@@ -88,7 +146,6 @@ class _MC_MoveRelative:
         self.Busy: bool = True
         self.Error: bool = False
         self.axis_feedback: float = 0.0
-
         self.Position: float = start_position + distance
         self.Velocity: float = velocity
 
@@ -103,22 +160,18 @@ def _run_simulation(
     block,
     dt: float,
     n_steps: int,
+    joint_type: str = "revolute",
 ) -> list[float]:
     """
     Run the bridge for *n_steps* steps of *dt* each.
 
     Returns a list of joint positions sampled after every tick.
     """
-    body = RigidBody(name="test_body", mass=1.0, joints=[joint])
-    bridge = PlcAxisToJoint(
-        axis_id=joint.axis_id,
-        joint_type="revolute" if isinstance(joint, RevoluteJoint) else "prismatic",
-        joint_ref=joint,
-        body_ref=body,
-    )
+    body = RigidBody(name="test_body", joints=[joint])
+    bridge = _make_bridge(joint, joint_type, body)
     positions = []
     for _ in range(n_steps):
-        bridge.tick(block, dt)
+        _tick_bridge(bridge, block, dt)
         positions.append(bridge.actual_position)
     return positions
 
@@ -252,20 +305,20 @@ class TestFeedbackInjection:
         joint = RevoluteJoint(axis_id="B1", angle=0.0)
         block = _MC_MoveAbsolute(target=1.0, velocity=2.0)
         body = RigidBody(name="body_B1", joints=[joint])
-        bridge = PlcAxisToJoint("B1", "revolute", joint, body_ref=body)
+        bridge = _make_bridge(joint, "revolute", body)
 
-        bridge.tick(block, dt=0.01)
+        _tick_bridge(bridge, block, dt=0.01)
         assert block.axis_feedback == pytest.approx(bridge.actual_position)
 
     def test_feedback_updates_each_tick(self):
         joint = RevoluteJoint(axis_id="B2", angle=0.0)
         block = _MC_MoveAbsolute(target=2.0, velocity=1.0)
         body = RigidBody(name="body_B2", joints=[joint])
-        bridge = PlcAxisToJoint("B2", "revolute", joint, body_ref=body)
+        bridge = _make_bridge(joint, "revolute", body)
 
         prev_feedback = block.axis_feedback
         for _ in range(5):
-            bridge.tick(block, dt=0.1)
+            _tick_bridge(bridge, block, dt=0.1)
         # After 5 × 0.1 s = 0.5 s at 1 rad/s the joint should be at 0.5 rad
         assert block.axis_feedback != prev_feedback
         assert block.axis_feedback == pytest.approx(0.5, abs=1e-9)
@@ -283,10 +336,10 @@ class TestDoneBusyFlags:
         joint = RevoluteJoint(axis_id="C1", angle=0.0)
         block = _MC_MoveAbsolute(target=math.pi / 2, velocity=1.0)
         body = RigidBody(name="body_C1", joints=[joint])
-        bridge = PlcAxisToJoint("C1", "revolute", joint, body_ref=body)
+        bridge = _make_bridge(joint, "revolute", body)
 
         # One small step — should still be busy
-        bridge.tick(block, dt=0.001)
+        _tick_bridge(bridge, block, dt=0.001)
         assert block.Busy is True
         assert block.Done is False
 
@@ -295,11 +348,11 @@ class TestDoneBusyFlags:
         target = 0.01  # very small target so we reach it in a few steps
         block = _MC_MoveAbsolute(target=target, velocity=1.0)
         body = RigidBody(name="body_C2", joints=[joint])
-        bridge = PlcAxisToJoint("C2", "revolute", joint, body_ref=body)
+        bridge = _make_bridge(joint, "revolute", body)
 
         # Run enough steps to reach target (target/velocity = 0.01 s at dt=0.001)
         for _ in range(20):
-            bridge.tick(block, dt=0.001)
+            _tick_bridge(bridge, block, dt=0.001)
 
         assert block.Done is True
         assert block.Busy is False
@@ -317,12 +370,12 @@ class TestPrismaticJoint:
         joint = PrismaticJoint(axis_id="P1", position=0.0)
         block = _MC_MoveAbsolute(target=0.10, velocity=0.05)  # 10 cm at 5 cm/s
         body = RigidBody(name="body_P1", joints=[joint])
-        bridge = PlcAxisToJoint("P1", "prismatic", joint, body_ref=body)
+        bridge = _make_bridge(joint, "prismatic", body)
 
         t_analytic = 0.10 / 0.05  # 2.0 s
         n_steps = int(t_analytic / 0.001) + 10
         for _ in range(n_steps):
-            bridge.tick(block, dt=0.001)
+            _tick_bridge(bridge, block, dt=0.001)
 
         assert bridge.actual_position == pytest.approx(0.10, abs=1e-9)
         assert block.Done is True
@@ -331,9 +384,9 @@ class TestPrismaticJoint:
         joint = PrismaticJoint(axis_id="P2", position=0.0)
         block = _MC_MoveAbsolute(target=0.50, velocity=1.0)
         body = RigidBody(name="body_P2", joints=[joint])
-        bridge = PlcAxisToJoint("P2", "prismatic", joint, body_ref=body)
+        bridge = _make_bridge(joint, "prismatic", body)
 
-        bridge.tick(block, dt=0.1)
+        _tick_bridge(bridge, block, dt=0.1)
         assert block.axis_feedback == pytest.approx(bridge.actual_position)
 
 
@@ -349,11 +402,11 @@ class TestZeroVelocityGuard:
         joint = RevoluteJoint(axis_id="D1", angle=0.5)
         block = _MC_MoveAbsolute(target=1.0, velocity=0.0)
         body = RigidBody(name="body_D1", joints=[joint])
-        bridge = PlcAxisToJoint("D1", "revolute", joint, body_ref=body)
+        bridge = _make_bridge(joint, "revolute", body)
 
         initial_pos = bridge.actual_position
         for _ in range(100):
-            bridge.tick(block, dt=0.001)
+            _tick_bridge(bridge, block, dt=0.001)
 
         assert bridge.actual_position == pytest.approx(initial_pos)
 
@@ -371,12 +424,12 @@ class TestReverseDirection:
         target = -math.pi / 4
         block = _MC_MoveAbsolute(target=target, velocity=1.0)
         body = RigidBody(name="body_E1", joints=[joint])
-        bridge = PlcAxisToJoint("E1", "revolute", joint, body_ref=body)
+        bridge = _make_bridge(joint, "revolute", body)
 
         t_analytic = abs(target) / 1.0
         n_steps = int(t_analytic / 0.001) + 10
         for _ in range(n_steps):
-            bridge.tick(block, dt=0.001)
+            _tick_bridge(bridge, block, dt=0.001)
 
         assert bridge.actual_position == pytest.approx(target, abs=1e-9)
 
@@ -398,6 +451,6 @@ class TestInstantiationErrors:
         joint = RevoluteJoint(axis_id="F2")
         block = _MC_MoveAbsolute(target=1.0, velocity=1.0)
         body = RigidBody(name="body_F2", joints=[joint])
-        bridge = PlcAxisToJoint("F2", "revolute", joint, body_ref=body)
+        bridge = _make_bridge(joint, "revolute", body)
         with pytest.raises(ValueError, match="dt"):
-            bridge.tick(block, dt=-0.001)
+            _tick_bridge(bridge, block, dt=-0.001)

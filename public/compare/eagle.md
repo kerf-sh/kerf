@@ -47,9 +47,9 @@ features:
       note: "Integrated autorouter in EAGLE; Fusion Electronics includes Specctra-compatible autorouter"
       source: "https://www.autodesk.com/products/eagle"
     kerf:
-      status: partial
-      note: "FreeRouting JAR integration present; SHA unpinned — blocked until resolved"
-      evidence: "packages/kerf-electronics/"
+      status: yes
+      note: "FreeRouting v1.9.0 integrated; SHA-256 pinned; DSN→SES round-trip"
+      evidence: "packages/kerf-electronics/src/kerf_electronics/freerouting/freerouting.py"
 
   - domain: D6
     feature: "DRC / ERC"
