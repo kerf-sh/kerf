@@ -19,6 +19,7 @@ import { useWorkspace } from '../store/workspace.js'
 import {
   parseMaterial, serializeMaterial, MATERIAL_FIELD_META,
 } from '../lib/material.js'
+import MaterialPbrEditor from './MaterialPbrEditor.jsx'
 
 export default function MaterialEditor() {
   const currentFile = useWorkspace((s) => s.currentFile)
@@ -50,11 +51,23 @@ export default function MaterialEditor() {
     }
   }
 
+  const [pbrOpen, setPbrOpen] = useState(false)
+
   function setTopField(key, value) {
     commit({ ...doc, [key]: value })
   }
   function setGroupField(group, key, value) {
     commit({ ...doc, [group]: { ...(doc[group] || {}), [key]: value } })
+  }
+
+  // PBR sub-panel: when the user "saves" a forked material from the PBR editor
+  // we fold the returned pbr object back into the current doc so the normal
+  // autosave loop picks it up. We do NOT navigate — the fork just enriches the
+  // current file with explicit PBR values.
+  function handlePbrSave(forked) {
+    if (forked && forked.pbr) {
+      commit({ ...doc, pbr: forked.pbr })
+    }
   }
 
   return (
@@ -147,8 +160,33 @@ export default function MaterialEditor() {
               rows={5}
             />
           </section>
+
+          {/* PBR sub-panel toggle */}
+          <section>
+            <button
+              type="button"
+              onClick={() => setPbrOpen((v) => !v)}
+              className="flex items-center gap-2 text-[10px] uppercase tracking-wider text-ink-500 font-medium hover:text-ink-300 transition-colors"
+              aria-expanded={pbrOpen}
+              data-testid="pbr-panel-toggle"
+            >
+              <span>{pbrOpen ? '▾' : '▸'}</span>
+              PBR Material Properties
+            </button>
+          </section>
         </div>
       </div>
+
+      {/* PBR sub-panel — rendered outside the scrollable content area so it
+          can be full-bleed at the bottom of the editor */}
+      {pbrOpen && (
+        <MaterialPbrEditor
+          material={doc}
+          onSave={handlePbrSave}
+          onClose={() => setPbrOpen(false)}
+          className="border-t border-ink-800 flex-shrink-0"
+        />
+      )}
     </div>
   )
 }

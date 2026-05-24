@@ -11,6 +11,9 @@ import remarkGfm from 'remark-gfm'
 import rehypeHighlight from 'rehype-highlight'
 import { ALLOWED_ELEMENTS, urlTransformer } from '../lib/markdownSanitize.js'
 import PartChip from './PartChip.jsx'
+import AtopilePreview from './Chat/AtopilePreview.jsx'
+import CircuitJsonPreview from './Chat/CircuitJsonPreview.jsx'
+import { detectAtopile } from '../lib/detectAtopile.js'
 import { api } from '../lib/api.js'
 import { useWorkspace } from '../store/workspace.js'
 import usePrefersReducedMotion from '../lib/usePrefersReducedMotion.js'
@@ -249,7 +252,32 @@ export function childrenToText(node) {
   return ''
 }
 
-const MD_COMPONENTS = {
+// Guard: is this JSON blob a Circuit JSON payload?
+// Circuit JSON arrays contain objects with a `type` field matching known
+// circuit primitive names.  We check the first element only to stay O(1) and
+// avoid parsing multi-megabyte blobs more than necessary.
+const CIRCUIT_JSON_TYPES = new Set([
+  'source_component', 'source_port', 'source_net', 'source_trace',
+  'pcb_component', 'pcb_port', 'pcb_trace', 'pcb_pad', 'pcb_via',
+  'schematic_component', 'schematic_port', 'schematic_trace', 'schematic_net_label',
+])
+
+function isCircuitJson(text) {
+  if (typeof text !== 'string' || !text.trim().startsWith('[')) return false
+  try {
+    const parsed = JSON.parse(text)
+    if (!Array.isArray(parsed) || parsed.length === 0) return false
+    const first = parsed[0]
+    return first !== null && typeof first === 'object' && CIRCUIT_JSON_TYPES.has(first.type)
+  } catch {
+    return false
+  }
+}
+
+// Build the ReactMarkdown components map.  projectId is threaded in so that
+// AtopilePreview / CircuitJsonPreview can offer "Open in editor" without hooks.
+function makeMdComponents(projectId) {
+  return {
   // ReactMarkdown 9+ tells us inline vs block by checking children for newlines
   // / className. We detect block-ness by the presence of a `language-*` class.
   code({ inline, className, children, node: _node, ...rest }) {  // eslint-disable-line no-unused-vars
@@ -278,6 +306,26 @@ const MD_COMPONENTS = {
         </code>
       )
     }
+
+    // ── Atopile fence interception ─────────────────────────────────────────
+    // lang === 'ato' is the primary signal; as a fallback also heuristic-
+    // detect atopile content in unlabelled blocks.  Safety: AtopilePreview
+    // renders structured React — no dangerouslySetInnerHTML of user content.
+    if (lang === 'ato' || lang === 'atopile' || detectAtopile(flatText)) {
+      return <AtopilePreview source={flatText} projectId={projectId} />
+    }
+
+    // ── Circuit JSON fence interception ────────────────────────────────────
+    // Only when lang is explicitly 'json' AND the content parses as a
+    // circuit-json array.  Plain JSON blocks fall through to the normal
+    // code-block renderer.  Safety: CircuitJsonPreview renders structured
+    // React from the parsed object — no raw HTML injection.
+    if (lang === 'json' && isCircuitJson(flatText)) {
+      let parsed = null
+      try { parsed = JSON.parse(flatText) } catch { /* fall through */ }
+      if (parsed) return <CircuitJsonPreview circuitJson={parsed} projectId={projectId} />
+    }
+
     return (
       <div className="my-2 first:mt-0 last:mb-0 -mx-1 rounded-md overflow-hidden border border-ink-700 bg-ink-950">
         <div className="flex items-center justify-between px-2 py-1 bg-ink-900 border-b border-ink-700 text-[10px] uppercase tracking-wider text-ink-400">
@@ -349,15 +397,17 @@ const MD_COMPONENTS = {
   th({ children }) { return <th className="text-left px-2 py-1 font-semibold">{children}</th> },
   td({ children }) { return <td className="px-2 py-1 align-top">{children}</td> },
   hr() { return <hr className="my-3 border-ink-700" /> },
-}
+  }  // end of components object
+} // end of makeMdComponents
 
-export function Markdown({ text }) {
+export function Markdown({ text, projectId }) {
+  const components = useMemo(() => makeMdComponents(projectId), [projectId])
   if (!text) return null
   return (
     <ReactMarkdown
       remarkPlugins={[remarkGfm]}
       rehypePlugins={[[rehypeHighlight, { detect: true, ignoreMissing: true }]]}
-      components={MD_COMPONENTS}
+      components={components}
       allowedElements={ALLOWED_ELEMENTS}
       urlTransform={urlTransformer}
     >
@@ -660,6 +710,7 @@ function ToolChipList({ chips }) {
 // ---------- message bubble ----------
 
 function MessageBlock({ message, modelLookup, isLatestAssistant, onRetry }) {
+  const projectId = useWorkspace((s) => s.projectId)
   const isUser = message.role === 'user'
   const showBadge = !isUser && message.model && message.model !== 'none'
   const badgeProvider = showBadge ? (modelLookup?.[message.model]?.provider || '') : ''
@@ -702,7 +753,7 @@ function MessageBlock({ message, modelLookup, isLatestAssistant, onRetry }) {
         ) : (
           <>
             {(message.content || message._streaming) && (
-              <Markdown text={message.content || ''} />
+              <Markdown text={message.content || ''} projectId={projectId} />
             )}
             {message._streaming && !message.content && (
               <span className="text-ink-500 animate-pulse text-xs">…</span>
