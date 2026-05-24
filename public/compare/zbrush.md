@@ -136,8 +136,8 @@ features:
       source: "https://docs.maxon.net/r/ZBrush/2024/en-US/"
     kerf:
       status: partial
-      note: "Quad remesh backend; no interactive retopo tool"
-      evidence: "packages/kerf-mesh/"
+      note: "quad/isotropic remesh + retopo_snap + decimate ops (ZRemesher-class); no interactive brush UI"
+      evidence: "packages/kerf-cad-core/src/kerf_cad_core/mesh_implicit_tools.py"
 
   - domain: D13
     feature: "Verticals — jewelry sculpting / organic concept"
@@ -147,8 +147,8 @@ features:
       source: "https://docs.maxon.net/r/ZBrush/2024/en-US/"
     kerf:
       status: partial
-      note: "Jewelry module exists (41 modules, parametric); not sculpting-grade for organic forms"
-      evidence: "packages/kerf-jewelry/"
+      note: "41 parametric modules + SubD authoring/sculpt_brush; not DynaMesh-grade for free organic forms"
+      evidence: "packages/kerf-cad-core/src/kerf_cad_core/subd_tools.py"
 
   - domain: D13
     feature: "Verticals — jewelry parametric configurator"
