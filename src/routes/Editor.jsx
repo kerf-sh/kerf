@@ -642,6 +642,53 @@ function ActivityTimelineBody({ projectId }) {
 //   { airfoil: "naca0012", alpha_range: [-10, 15, 1] }
 // Falls back to showing the raw content as code when parsing fails.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// BIMFileView — compiles a .bim file to IFC4 (POST /compile-ifc) and renders
+// the result via BIMView. Replaces the previous hardcoded ifc_base64={null}.
+// ---------------------------------------------------------------------------
+function BIMFileView({ content, fileName, viewRef }) {
+  const [ifc, setIfc] = useState(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState(null)
+
+  useEffect(() => {
+    setIfc(null)
+    setError(null)
+    if (!content) return
+    let cancelled = false
+    setLoading(true)
+    api.compileIfc(content)
+      .then((data) => {
+        if (cancelled) return
+        setLoading(false)
+        if (data?.errors?.length) { setError(data.errors.join('; ')); return }
+        setIfc(data?.ifc_base64 || null)
+      })
+      .catch((err) => {
+        if (!cancelled) { setError(err?.message || String(err)); setLoading(false) }
+      })
+    return () => { cancelled = true }
+  }, [content])
+
+  return (
+    <div className="flex-1 min-h-0 relative">
+      {loading && (
+        <div className="absolute inset-0 z-10 flex items-center justify-center gap-2 text-ink-400 text-sm">
+          <div className="w-4 h-4 border-2 border-kerf-400 border-t-transparent rounded-full animate-spin" />
+          Compiling IFC…
+        </div>
+      )}
+      {error && (
+        <div className="absolute top-3 left-3 z-20 text-red-400 text-xs font-mono max-w-sm">
+          IFC compile failed: {error}
+        </div>
+      )}
+      <BIMView viewRef={viewRef} ifc_base64={ifc} className="w-full h-full" />
+      <div className="absolute bottom-1 left-2 text-[11px] text-ink-600 font-mono pointer-events-none">{fileName || ''}</div>
+    </div>
+  )
+}
+
 function AirfoilFileView({ content, fileName }) {
   const [polar, setPolar] = useState(null)
   const [loading, setLoading] = useState(false)
@@ -1955,10 +2002,10 @@ export default function Editor() {
             </div>
           ) : bimFile ? (
             <div className="flex-1 min-h-0 relative">
-              <BIMView
+              <BIMFileView
                 viewRef={currentViewRef}
-                ifc_base64={null}
-                className="w-full h-full"
+                content={w.currentFileContent}
+                fileName={w.currentFile?.name}
               />
               {w.toast && (
                 <div className="absolute bottom-3 right-3 z-20 px-3 py-2 rounded-md bg-ink-900 border border-kerf-300/60 text-kerf-300 text-xs shadow-xl"

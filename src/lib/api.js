@@ -613,6 +613,12 @@ export const api = {
       },
     }),
 
+  // ---- BIM → IFC compile ----
+  // Compiles a .bim file's content to IFC4 (via IfcOpenShell) for the viewer.
+  // Returns { ifc_base64: string, warnings: string[], errors: string[] }.
+  compileIfc: (bimContent) =>
+    request(`/compile-ifc`, { method: 'POST', body: { bim_content: bimContent } }),
+
   // ---- Topology optimisation run ----
   // POSTs to the kerf-api thin handler which forwards to pyworker /run-topo.
   // Returns { job_id, status } or { status: 'pending' } when engine not deployed.
