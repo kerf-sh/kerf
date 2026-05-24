@@ -55,6 +55,17 @@ from kerf_cad_core.buildingenergy.energy import (
     ashrae901_envelope_compliance,
 )
 
+from kerf_cad_core.buildingenergy.transient import (
+    sol_air_temp,
+    cltd_wall,
+    cltd_roof,
+    correct_cltd,
+    wall_cooling_load,
+    solar_heat_gain as solar_heat_gain_rts,
+    cooling_load_fenestration_rts,
+    zone_24h_cooling_load,
+)
+
 __all__ = [
     "uvalue_series",
     "uvalue_parallel",
@@ -76,4 +87,13 @@ __all__ = [
     "overheating_hours",
     "eui",
     "ashrae901_envelope_compliance",
+    # transient
+    "sol_air_temp",
+    "cltd_wall",
+    "cltd_roof",
+    "correct_cltd",
+    "wall_cooling_load",
+    "solar_heat_gain_rts",
+    "cooling_load_fenestration_rts",
+    "zone_24h_cooling_load",
 ]
