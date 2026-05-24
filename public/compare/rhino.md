@@ -16,9 +16,9 @@ features:
       note: "BlendSrf, NetworkSrf, Patch — class-leading NURBS kernel"
       source: "https://docs.mcneel.com/rhino/8/help/en-us/commands/blendsrf.htm"
     kerf:
-      status: partial
-      note: "Math complete; OCCT bindings unconfirmed at build"
-      evidence: "packages/kerf-cad-core/src/kerf_cad_core/surfacing.py"
+      status: yes
+      note: "blend_srf, network_srf (Gordon), patch_srf_fit all wired as feature ops"
+      evidence: "packages/kerf-cad-core/src/kerf_cad_core/geom/network_srf.py"
 
   - domain: D1
     feature: "Surface continuity matching (G0–G3)"
@@ -27,9 +27,9 @@ features:
       note: "MatchSrf G0/G1/G2/G3; Sweep2/BlendSrf continuity options"
       source: "https://docs.mcneel.com/rhino/8/help/en-us/commands/blendsrf.htm"
     kerf:
-      status: partial
-      note: "G3 combs in NURBS Phase 4; no full MatchSrf equivalent"
-      evidence: "packages/kerf-cad-core/src/kerf_cad_core/surfacing.py"
+      status: yes
+      note: "match_surface_edge_tool G0–G3 + blend_srf_g3 + continuity audit"
+      evidence: "packages/kerf-cad-core/src/kerf_cad_core/geom/match_srf.py"
 
   - domain: D1
     feature: "Sweep (1 & 2 rail)"
@@ -49,8 +49,8 @@ features:
       note: "Loft with normal, loose, tight, straight options"
       source: "https://docs.mcneel.com/rhino/8/help/en-us/seealso/sak_surface.htm"
     kerf:
-      status: partial
-      note: "Loft wired; no guide-rail overload in binding"
+      status: yes
+      note: "Loft + guide-rail overload (ThruSections.AddWire), ruled/closed/symmetric"
       evidence: "packages/kerf-cad-core/src/kerf_cad_core/feature_loft.py"
 
   - domain: D1
@@ -60,9 +60,9 @@ features:
       note: "Patch command — surface through curves, meshes, point clouds"
       source: "https://docs.mcneel.com/rhino/mac/help/en-us/commands/patch.htm"
     kerf:
-      status: partial
-      note: "Surfacing bindings present; Patch not exposed in UI"
-      evidence: "packages/kerf-cad-core/src/kerf_cad_core/surfacing.py"
+      status: yes
+      note: "patch_srf_fit — least-squares fit through curves/points; wired op"
+      evidence: "packages/kerf-cad-core/src/kerf_cad_core/geom/patch_srf.py"
 
   - domain: D1
     feature: "SubD modelling with creases"
@@ -83,8 +83,8 @@ features:
       source: "http://docs.mcneel.com/rhino/8/help/en-us/commands/shrinkwrap.htm"
     kerf:
       status: partial
-      note: "Quad remesh + mesh decimate; no ShrinkWrap equivalent"
-      evidence: "packages/kerf-cad-core/src/kerf_cad_core/mesh_decimate.py"
+      note: "mesh_repair (fill_holes/manifold), retopo_snap, mesh_to_nurbs; no SDF-envelope ShrinkWrap"
+      evidence: "packages/kerf-cad-core/src/kerf_cad_core/geom/mesh_repair.py"
 
   - domain: D1
     feature: "Constraint sketcher (geo + dim)"
@@ -159,9 +159,9 @@ features:
       note: "No native sheet-metal workspace; requires plugins"
       source: "https://www.food4rhino.com/en/browse?query=sheet+metal"
     kerf:
-      status: partial
-      note: "Single flange + unfold + flat DXF; no hem/jog/multi-flange"
-      evidence: "packages/kerf-cad-core/src/kerf_cad_core/sheet_metal.py"
+      status: yes
+      note: "Flange + hem + jog + multi-flange + unfold + flat DXF (K-factor)"
+      evidence: "packages/kerf-cad-core/src/kerf_cad_core/construction_verbs_tools.py"
 
   - domain: D1
     feature: "Configurations / family variants"
@@ -181,9 +181,9 @@ features:
       note: "Direct mesh/SubD push-pull and NURBS control-point editing"
       source: "https://docs.mcneel.com/rhino/8/help/en-us/seealso/sak_subd.htm"
     kerf:
-      status: partial
-      note: "Planar push-pull only; no move/delete-face"
-      evidence: "packages/kerf-cad-core/src/kerf_cad_core/direct_edit.py"
+      status: yes
+      note: "push_pull (planar + curved), move_face, delete_face wired as ops"
+      evidence: "packages/kerf-cad-core/src/kerf_cad_core/geom/direct_edit.py"
 
   - domain: D1
     feature: "Surface analysis (zebra / curvature combs)"
@@ -192,9 +192,9 @@ features:
       note: "Zebra, EMap, CurvatureAnalysis, Draft built-in"
       source: "http://docs.mcneel.com/rhino/8/help/en-us/commands/zebra.htm"
     kerf:
-      status: partial
-      note: "G3 continuity combs (NURBS Phase 4); no Zebra/EMap UI"
-      evidence: "packages/kerf-cad-core/src/kerf_cad_core/surfacing.py"
+      status: yes
+      note: "zebra_analysis, isophote, curvature combs, Gauss/mean, draft-angle ops"
+      evidence: "packages/kerf-cad-core/src/kerf_cad_core/geom/surface_analysis.py"
 
   # ── D2 Structural / FEA ──────────────────────────────────────────────────────
   - domain: D2
@@ -539,9 +539,9 @@ Rhino 8 — with the RhinoGold / Matrix lineage now consolidated into MatrixGold
 
 ## Honest gaps — where Kerf is behind today
 
-- **NURBS surfacing is early.** NURBS Phase 4 (trim-by-curve, G3 combs) is functional but nowhere near Rhino's depth. blendSrf / networkSrf / sweep2-class freeform tools are roadmap, not shipped.
+- **NURBS surfacing is younger.** blend/network/patch/match-surface, G3 blends, sweep1/2, trim-by-curve, zebra/isophote/curvature-comb analysis and a Class-A continuity harness now ship as wired ops — but Rhino's kernel is decades more battle-tested across edge cases and tolerances, and its freeform UX is far ahead.
 - **No Grasshopper equivalent.** Kerf has no visual parametric environment; chat + the Python SDK fill part of that space but not all of it.
-- **SubD depth is newer.** Kerf now ships SubD authoring with creases, but Rhino 8's SubD tools are more mature and deeply integrated with the NURBS surfacing workflow.
+- **SubD UX is newer.** Kerf ships SubD authoring with creases, poke/extrude-along, sculpt brushes, multires and SubD-to-NURBS conversion, but Rhino 8's SubD tools are more mature and deeply integrated with the NURBS surfacing workflow.
 - **Render quality is narrower.** Kerf's Cycles backend and in-browser path tracer provide photoreal output, but Rhino's plugin ecosystem (V-Ray, Enscape, KeyShot) provides caustics, accurate gem dispersion, and archviz lighting quality that Kerf's render path does not match today.
 - **Jewelry plugin depth.** MatrixGold / RhinoGold have supplier catalogs, wax-path generation, and sizing refinements Kerf is still building toward.
 - **Smaller community.** Rhino has decades of training, forums, and Food4Rhino plugins; Kerf's ecosystem is early-stage.
@@ -554,10 +554,11 @@ Rhino 8 — with the RhinoGold / Matrix lineage now consolidated into MatrixGold
 | Cost | ⚠️ ~US$995 full / ~$595 upgrade; +plugin cost (May 2026) | ✅ Free local; pay-as-you-go hosted |
 | Subscription | ✅ Perpetual licence, no renewal | ✅ No seat subscription |
 | Platform | ⚠️ Windows + macOS desktop | ✅ Browser + single-binary local |
-| NURBS surfacing | ✅ Class-leading kernel (G0–G3) | ⚠️ NURBS Phase 4 — trim-by-curve, G3 combs (early) |
-| SubD modelling | ✅ SubD with creases (Rhino 8) | ✅ SubD authoring with creases; quad remesh |
+| NURBS surfacing | ✅ Class-leading kernel (G0–G3) | ✅ blend/network/patch/match-srf, G3 blends, sweep1/2 (younger kernel) |
+| Surface analysis | ✅ Zebra / EMap / curvature | ✅ Zebra, isophote, curvature combs, Class-A harness |
+| SubD modelling | ✅ SubD with creases (Rhino 8) | ✅ SubD authoring, poke/extrude/sculpt/multires, SubD→NURBS |
 | Parametric solids (B-rep) | ⚠️ Via Grasshopper / plugins | ✅ OCCT feature tree — pad/pocket/revolve/loft |
-| Mesh repair / ShrinkWrap | ✅ ShrinkWrap, mesh tools | ⚠️ Quad remesh; no ShrinkWrap equivalent |
+| Mesh repair / ShrinkWrap | ✅ ShrinkWrap, mesh tools | ⚠️ fill-holes/manifold + retopo + mesh→NURBS; no SDF-envelope ShrinkWrap |
 | Visual node scripting | ✅ Grasshopper — industry standard | ❌ No visual node environment |
 | Plugin marketplace | ✅ Thousands of GH components / Food4Rhino | ⚠️ Plugin API early-stage |
 | Python / scripting | ✅ rhinoscriptsyntax / RhinoCommon | ✅ kerf-sdk on PyPI — HTTP/JSON-RPC |
