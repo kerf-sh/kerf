@@ -7,6 +7,297 @@ right: matrixgold
 hero_tagline: "Industry-standard jewelry CAD — Grasshopper-based goldsmith depth vs MIT open-core."
 reviewed_at: 2026-05-19
 order: 2
+features:
+  - domain: D13
+    feature: "Jewelry — gem catalog"
+    competitor:
+      status: paid
+      note: "MatrixGold gem library with certified-stone lookup; paid subscription"
+      source: "https://gemvision.com/matrixgold"
+    kerf:
+      status: yes
+      note: "Gemstones v2 — 30 cuts"
+      evidence: "packages/kerf-jewelry/gemstones/"
+  - domain: D13
+    feature: "Jewelry — ring builder (profiles + styles)"
+    competitor:
+      status: paid
+      note: "Large shank library with ring-style wizard; paid"
+      source: "https://gemvision.com/matrixgold"
+    kerf:
+      status: yes
+      note: "Ring v4 — 13+ profiles + 31 templates"
+      evidence: "packages/kerf-jewelry/ring/"
+  - domain: D13
+    feature: "Jewelry — prong setting"
+    competitor:
+      status: paid
+      note: "Prong-head builder wizard with configurable prong count; paid"
+      source: "https://gemvision.com/matrixgold"
+    kerf:
+      status: yes
+      note: "Settings v3/v4 — prong style included"
+      evidence: "packages/kerf-jewelry/settings/"
+  - domain: D13
+    feature: "Jewelry — bezel setting"
+    competitor:
+      status: paid
+      note: "Full bezel setting wizard; paid"
+      source: "https://gemvision.com/matrixgold"
+    kerf:
+      status: yes
+      note: "Settings v3/v4 — bezel style included"
+      evidence: "packages/kerf-jewelry/settings/"
+  - domain: D13
+    feature: "Jewelry — pavé setting"
+    competitor:
+      status: paid
+      note: "Automated pavé engine with density and pattern controls; paid"
+      source: "https://gemvision.com/matrixgold"
+    kerf:
+      status: yes
+      note: "Settings v3/v4 — pavé style included"
+      evidence: "packages/kerf-jewelry/settings/"
+  - domain: D13
+    feature: "Jewelry — channel setting"
+    competitor:
+      status: paid
+      note: "Channel-setting wizard with row configuration; paid"
+      source: "https://gemvision.com/matrixgold"
+    kerf:
+      status: yes
+      note: "Settings v3/v4 — channel style included"
+      evidence: "packages/kerf-jewelry/settings/"
+  - domain: D13
+    feature: "Jewelry — halo setting"
+    competitor:
+      status: paid
+      note: "Halo builder with configurable halo geometry; paid"
+      source: "https://gemvision.com/matrixgold"
+    kerf:
+      status: yes
+      note: "Settings v3/v4 — halo style included"
+      evidence: "packages/kerf-jewelry/settings/"
+  - domain: D13
+    feature: "Jewelry — gem seat generation"
+    competitor:
+      status: paid
+      note: "Automated gem-seat cutting with stone-seating wizard; paid"
+      source: "https://gemvision.com/matrixgold"
+    kerf:
+      status: yes
+      note: "Gem-seat v2 automated seat generation"
+      evidence: "packages/kerf-jewelry/gem_seat/"
+  - domain: D13
+    feature: "Jewelry — chain / bracelet builder"
+    competitor:
+      status: paid
+      note: "Chain builder with link library; paid"
+      source: "https://gemvision.com/matrixgold"
+    kerf:
+      status: yes
+      note: "Chain v2"
+      evidence: "packages/kerf-jewelry/chain/"
+  - domain: D13
+    feature: "Jewelry — eternity band"
+    competitor:
+      status: paid
+      note: "Eternity band wizard with uniform stone spacing; paid"
+      source: "https://gemvision.com/matrixgold"
+    kerf:
+      status: yes
+      note: "Eternity band module in settings suite"
+      evidence: "packages/kerf-jewelry/settings/"
+  - domain: D13
+    feature: "Jewelry — head builder"
+    competitor:
+      status: paid
+      note: "Head-builder wizard for solitaire and multi-stone heads; paid"
+      source: "https://gemvision.com/matrixgold"
+    kerf:
+      status: yes
+      note: "Head configurations via settings v3/v4"
+      evidence: "packages/kerf-jewelry/settings/"
+  - domain: D13
+    feature: "Jewelry — weight calculation"
+    competitor:
+      status: paid
+      note: "Alloy-aware metal weight calc integrated in ring builder; paid"
+      source: "https://gemvision.com/matrixgold"
+    kerf:
+      status: yes
+      note: "Full cost/quote panel includes metal weight + alloy pricing"
+      evidence: "packages/kerf-jewelry/cost/"
+  - domain: D13
+    feature: "Jewelry — casting / STL export"
+    competitor:
+      status: paid
+      note: "STL export for DLP/SLA and wax milling; paid"
+      source: "https://gemvision.com/matrixgold"
+    kerf:
+      status: yes
+      note: "Casting + STL production export"
+      evidence: "packages/kerf-jewelry/casting/"
+  - domain: D13
+    feature: "Jewelry — wax-mill toolpaths"
+    competitor:
+      status: paid
+      note: "Purpose-built wax-carving mill-path generation for CNC wax mills; paid"
+      source: "https://gemvision.com/matrixgold"
+    kerf:
+      status: partial
+      note: "Wax-carving plan module present; full mill-path generation not complete"
+      evidence: "packages/kerf-jewelry/casting/"
+  - domain: D13
+    feature: "Jewelry — rendering (PBR / photoreal)"
+    competitor:
+      status: paid
+      note: "Rhino Cycles / KeyShot-compatible render with gem caustics and dispersion; paid"
+      source: "https://gemvision.com/matrixgold"
+    kerf:
+      status: partial
+      note: "PBR materials for metals and gems; no gem caustics/dispersion"
+      evidence: "packages/kerf-jewelry/render/"
+  - domain: D13
+    feature: "Jewelry — findings library"
+    competitor:
+      status: paid
+      note: "Clasps, bails, and findings from integrated supplier catalogs; paid"
+      source: "https://stuller.com"
+    kerf:
+      status: partial
+      note: "Findings modules present; no live supplier catalog integration"
+      evidence: "packages/kerf-jewelry/"
+  - domain: D13
+    feature: "Jewelry — supplier catalog integration"
+    competitor:
+      status: paid
+      note: "Direct Stuller and other supplier stone + findings ordering; paid"
+      source: "https://stuller.com"
+    kerf:
+      status: no
+      note: "Not available; no supplier API integration"
+      evidence: ""
+  - domain: D13
+    feature: "Jewelry — gem-cert output"
+    competitor:
+      status: partial
+      note: "Cert data accessed via supplier catalog integration, not generated natively"
+      source: "https://gemvision.com/matrixgold"
+    kerf:
+      status: yes
+      note: "Gem-cert output built in"
+      evidence: "packages/kerf-jewelry/gem_cert/"
+  - domain: D13
+    feature: "Jewelry — milgrain"
+    competitor:
+      status: partial
+      note: "Milgrain via manual mesh techniques or third-party add-ons; not a first-class wizard"
+      source: "https://gemvision.com/matrixgold"
+    kerf:
+      status: yes
+      note: "Milgrain module built in"
+      evidence: "packages/kerf-jewelry/"
+  - domain: D13
+    feature: "Jewelry — filigree / granulation"
+    competitor:
+      status: partial
+      note: "Filigree and granulation via manual Rhino mesh work; no dedicated wizard"
+      source: "https://gemvision.com/matrixgold"
+    kerf:
+      status: yes
+      note: "Filigree and granulation modules built in"
+      evidence: "packages/kerf-jewelry/"
+  - domain: D13
+    feature: "Jewelry — enamel / engraving / laser marking"
+    competitor:
+      status: partial
+      note: "Engraving and enamel require manual Rhino modeling; no dedicated flow"
+      source: "https://gemvision.com/matrixgold"
+    kerf:
+      status: yes
+      note: "Enamel + laser_marking modules built in"
+      evidence: "packages/kerf-jewelry/"
+  - domain: D13
+    feature: "Jewelry — retail workflow (appraisal / repair estimator / mount_finder)"
+    competitor:
+      status: no
+      note: "Out of scope for MatrixGold; it is a design tool, not a retail POS"
+      source: "https://gemvision.com/matrixgold"
+    kerf:
+      status: yes
+      note: "Appraisal + repair estimator + mount_finder modules included"
+      evidence: "packages/kerf-jewelry/"
+  - domain: D13
+    feature: "Jewelry — cost / quote panel"
+    competitor:
+      status: no
+      note: "No integrated cost/quote engine in MatrixGold core"
+      source: "https://gemvision.com/matrixgold"
+    kerf:
+      status: yes
+      note: "Full metal + gem + labour cost/quote panel"
+      evidence: "packages/kerf-jewelry/cost/"
+  - domain: D13
+    feature: "Jewelry — parametric visual scripting"
+    competitor:
+      status: paid
+      note: "Grasshopper-powered visual scripting for generative jewelry components; paid (via Rhino host)"
+      source: "https://gemvision.com/matrixgold"
+    kerf:
+      status: no
+      note: "No visual node environment; Python scripting via kerf-sdk"
+      evidence: ""
+  - domain: D1
+    feature: "NURBS surfacing (blend/network/patch)"
+    competitor:
+      status: partial
+      note: "Inherited from Rhino host (OpenNURBS kernel); not native to MatrixGold itself"
+      source: "https://docs.mcneel.com/rhino/8/help/en-us/index.htm"
+    kerf:
+      status: partial
+      note: "OCCT surfacing wired; math complete but OCCT bindings unconfirmed at build"
+      evidence: "packages/kerf-cad-core/nurbs/"
+  - domain: D1
+    feature: "NURBS boolean operations (general)"
+    competitor:
+      status: partial
+      note: "Via Rhino host OpenNURBS; MatrixGold adds no boolean engine of its own"
+      source: "https://docs.mcneel.com/rhino/8/help/en-us/index.htm"
+    kerf:
+      status: partial
+      note: "OCCT B-rep booleans functional; no graceful failure handling or fuzzy heal"
+      evidence: "packages/kerf-cad-core/"
+  - domain: D1
+    feature: "Sweep (1 & 2 rail)"
+    competitor:
+      status: partial
+      note: "Via Rhino host sweep commands; not a MatrixGold-native feature"
+      source: "https://docs.mcneel.com/rhino/8/help/en-us/index.htm"
+    kerf:
+      status: yes
+      note: "BRepOffsetAPI_MakePipeShell; wired"
+      evidence: "packages/kerf-cad-core/"
+  - domain: D1
+    feature: "Loft"
+    competitor:
+      status: partial
+      note: "Via Rhino host loft command; MatrixGold does not extend lofting"
+      source: "https://docs.mcneel.com/rhino/8/help/en-us/index.htm"
+    kerf:
+      status: partial
+      note: "Loft wired; no guide-rail overload in binding"
+      evidence: "packages/kerf-cad-core/"
+  - domain: D1
+    feature: "Direct mesh / solid editing"
+    competitor:
+      status: partial
+      note: "Via Rhino host mesh and solid editing tools; MatrixGold adds jewelry-specific deformers only"
+      source: "https://docs.mcneel.com/rhino/8/help/en-us/index.htm"
+    kerf:
+      status: partial
+      note: "Direct edit: planar push-pull only; no move/delete-face"
+      evidence: "packages/kerf-cad-core/"
 ---
 
 # Kerf vs MatrixGold
