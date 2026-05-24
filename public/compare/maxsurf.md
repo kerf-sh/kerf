@@ -65,7 +65,7 @@ features:
       source: "https://www.bentley.com/software/maxsurf/"
     kerf:
       status: partial
-      note: "Structural FEA backend (beam/plate); no class-rule marine scantling specific calculator"
+      note: "Structural FEA backend (beam/plate); no class-rule marine scantling specific calculator. Full Lloyd's/DNV/BV/ABS rule implementation requires rule-tree encoding for each class society — significant scope; flagged for wave 2 (kerf-marine v2 + kerf-structural collaboration)."
       evidence: "packages/kerf-structural/src/"
   - domain: D5
     feature: "Sailing VPP"
@@ -74,9 +74,9 @@ features:
       note: "Velocity prediction program for sailing vessels"
       source: "https://www.bentley.com/software/maxsurf/"
     kerf:
-      status: partial
-      note: "Aerodynamic/hydrodynamic force models exist; no integrated sailing VPP"
-      evidence: "packages/kerf-aero/src/"
+      status: yes
+      note: "Full sailing VPP: ITTC 1957 friction + Delft-series residuary resistance; Dittus empirical sail polar (CL/CD vs AWA) for main+jib; apparent-wind calculation; equilibrium solver (drive=resistance, heel balance); polar generation across TWS/TWA sweep; VMG optimisation"
+      evidence: "packages/kerf-marine/src/kerf_marine/vpp.py"
   - domain: D5
     feature: "Section / body-plan curves"
     competitor:
@@ -125,6 +125,7 @@ Maxsurf (now part of Bentley Systems) is the integrated naval architecture suite
 ## Where Kerf differs
 
 - **MIT open-core.** Maxsurf is proprietary, subscription-priced (Bentley licensing). Kerf is MIT-licensed — free locally.
+- **Sailing VPP.** Kerf includes a full velocity prediction programme: ITTC 1957 frictional resistance, Delft-series residuary resistance, empirical sail polar (CL/CD vs AWA for main+jib), apparent-wind model, equilibrium solver, and polar generation across TWS/TWA sweeps with VMG optimisation.
 - **Multi-domain workspace.** Combine Kerf's marine engineering with structural FEA, thermal analysis, composites, and electronics in one project — typical for fast patrol vessels, autonomous surface vehicles, and naval platforms. Maxsurf is maritime-only.
 - **Chat-native.** Describe vessel parameters in plain language; Kerf runs hydrostatics and stability. Maxsurf has no LLM interface.
 - **Python scripting.** kerf-sdk on PyPI for automated hull analysis workflows. Maxsurf scripting is limited.
@@ -132,8 +133,7 @@ Maxsurf (now part of Bentley Systems) is the integrated naval architecture suite
 ## Honest gaps — where Kerf is behind today
 
 - **No parametric hull form modeller.** The core of Maxsurf — NURBS hull modelling with fairness and section generation — is absent in Kerf.
-- **No sailing VPP.** No integrated velocity prediction for sailing vessels.
-- **No marine class-rule scantlings.** No Lloyd's, DNV, Bureau Veritas, or ABS rule-check for structural scantlings.
+- **No marine class-rule scantlings.** No Lloyd's, DNV, Bureau Veritas, or ABS rule-check for structural scantlings. Full class-rule encoding is a large scope item requiring kerf-marine v2 + kerf-structural collaboration.
 - **Damage stability depth.** Maxsurf's probabilistic damage stability is more comprehensive than Kerf's implementation.
 - **No marine UI.** Kerf's entire marine engineering capability is backend/LLM-tool; there is no interactive naval architecture panel in the browser.
 
@@ -148,7 +148,7 @@ Maxsurf (now part of Bentley Systems) is the integrated naval architecture suite
 | Intact + damage stability | Yes (backend) | Yes (IMO SOLAS probabilistic) |
 | Resistance prediction | Yes (Holtrop-Mennen, backend) | Yes |
 | Seakeeping / RAOs | Yes (backend) | Yes (radiation diffraction) |
-| Sailing VPP | No | Yes |
+| Sailing VPP | Yes (ITTC+Delft+sail polar, backend) | Yes |
 | Structural / scantlings | General FEA (backend) | Class-rule specific |
 | Marine UI | None (backend only) | Full integrated GUI |
 | Chat / LLM editing | Chat-native | None |
