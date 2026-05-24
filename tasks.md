@@ -5699,8 +5699,8 @@ The Phase-4 kernel/pure-Python side is shipped + wired (GK-P01..P08);
 MatchSrf-G3 + isophote are GK-P10/P11. These close the last non-kernel
 remainders flagged in `docs/plans/nurbs-phase-4-full.md`.
 
-- **GK-P40** 🔴 C2-T7 — trim-by-curve LLM doc page. `feature_trim_by_curve` ships but has no user/LLM doc surface. Add the doc entry (match the existing surfacing tool-doc pattern). Size S. DoD: doc page renders; tool discoverable.
-- **GK-P41** 🔴 C2-T8 — trim-by-curve inspector entry. Add the feature-tree inspector row for `feature_trim_by_curve` (match existing inspector entries for sweep/blend/loft). Size S. DoD: a trim-by-curve node shows its params in the inspector.
+- **GK-P40** ✅ C2-T7 — trim-by-curve LLM doc page. `feature_trim_by_curve` ships but has no user/LLM doc surface. Add the doc entry (match the existing surfacing tool-doc pattern). Size S. DoD: doc page renders; tool discoverable.
+- **GK-P41** ✅ C2-T8 — trim-by-curve inspector entry. Add the feature-tree inspector row for `feature_trim_by_curve` (match existing inspector entries for sweep/blend/loft). Size S. DoD: a trim-by-curve node shows its params in the inspector.
 - **GK-P42** 🔴 C2-T1 + C3-T1 — WASM binding-probe verification. The probe CODE exists (`NURBS_PHASE4_C2/C3_BINDINGS` in `occtWorker.js`, boot-time logging, graceful `UnsupportedError` degrade). **Deploy-gated:** confirm `BRepFeat_SplitShape` / `BRepProj_Projection` (C2) and `GeomFill_NSections` (C3) presence on a live OCCT WASM build by reading the boot probe log; record results in `nurbs-phase-4-full.md`. If absent, the graceful fallback already covers it. Needs the WASM build toolchain (like T-405 cutover — not a worktree code task). DoD: probe results recorded; fallback paths confirmed.
 
 **Explicitly NOT doing (documented non-goals, per `occt-phase4.md §6` + `nurbs-phase-4-full.md` "Out of scope"):** OCCT algorithmic G3 enforcement (structurally impossible — `GeomAbs_G3` absent from the enum); general NURBS×NURBS trim (stays OCCT-worker-delegated); G3 via custom OCCT extension (deferred past Phase 4).
