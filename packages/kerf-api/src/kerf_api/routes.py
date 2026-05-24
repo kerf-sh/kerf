@@ -20,7 +20,7 @@ import asyncpg
 import httpx
 import jwt
 from fastapi import APIRouter, Depends, HTTPException, status, Request, Response, Cookie, UploadFile, Form, Query
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, RedirectResponse
 from pydantic import BaseModel
 from urllib.parse import urlencode
 
@@ -360,6 +360,161 @@ async def list_models():
         }]
     return {"models": models}
 
+
+# ── BYO provider-key management (R13, T-402b) ────────────────────────────────
+
+_BYO_SUPPORTED_PROVIDERS = frozenset({"anthropic", "openai", "moonshot", "gemini"})
+
+
+class SaveProviderKeyRequest(BaseModel):
+    provider: str
+    api_key: str
+
+
+async def _validate_provider_key(provider: str, api_key: str) -> None:
+    """Make a minimal live call to *provider* using *api_key*.
+
+    Raises HTTPException(422) with detail="provider_key_invalid" on any
+    auth failure.  Raises HTTPException(422) with
+    detail="provider_key_validation_failed" on network/server errors so the
+    caller can surface a clean message either way.
+    """
+    try:
+        if provider == "anthropic":
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.post(
+                    "https://api.anthropic.com/v1/messages",
+                    headers={
+                        "x-api-key": api_key,
+                        "anthropic-version": "2023-06-01",
+                        "content-type": "application/json",
+                    },
+                    json={
+                        "model": "claude-haiku-4-5",
+                        "max_tokens": 1,
+                        "messages": [{"role": "user", "content": "hi"}],
+                    },
+                )
+            if resp.status_code in (401, 403):
+                raise HTTPException(status_code=422, detail="provider_key_invalid")
+            if resp.status_code >= 400 and resp.status_code not in (529, 500, 503):
+                # Non-auth error that looks like a bad key (e.g. 400 with wrong format)
+                raise HTTPException(status_code=422, detail="provider_key_invalid")
+
+        elif provider == "openai":
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.get(
+                    "https://api.openai.com/v1/models",
+                    headers={"Authorization": f"Bearer {api_key}"},
+                )
+            if resp.status_code in (401, 403):
+                raise HTTPException(status_code=422, detail="provider_key_invalid")
+            if resp.status_code >= 400 and resp.status_code not in (529, 500, 503):
+                raise HTTPException(status_code=422, detail="provider_key_invalid")
+
+        elif provider == "moonshot":
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.get(
+                    "https://api.moonshot.cn/v1/models",
+                    headers={"Authorization": f"Bearer {api_key}"},
+                )
+            if resp.status_code in (401, 403):
+                raise HTTPException(status_code=422, detail="provider_key_invalid")
+            if resp.status_code >= 400 and resp.status_code not in (529, 500, 503):
+                raise HTTPException(status_code=422, detail="provider_key_invalid")
+
+        elif provider == "gemini":
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.get(
+                    f"https://generativelanguage.googleapis.com/v1beta/models?key={api_key}",
+                )
+            if resp.status_code in (400, 401, 403):
+                raise HTTPException(status_code=422, detail="provider_key_invalid")
+            if resp.status_code >= 400 and resp.status_code not in (500, 503):
+                raise HTTPException(status_code=422, detail="provider_key_invalid")
+
+        else:
+            raise HTTPException(status_code=422, detail="provider_key_invalid")
+
+    except HTTPException:
+        raise
+    except Exception:
+        _logger.exception("provider_key_validation: network error for provider=%s", provider)
+        raise HTTPException(status_code=422, detail="provider_key_validation_failed")
+
+
+@router.post("/provider-keys", status_code=200)
+async def save_provider_key(
+    req: SaveProviderKeyRequest,
+    payload: dict = Depends(require_auth),
+):
+    """POST /api/provider-keys — validate + save a BYO provider API key.
+
+    Validates the key by making a minimal live call to the provider.
+    On success, encrypts and upserts into ``user_provider_keys``.
+    On validation failure, returns 422 with ``detail="provider_key_invalid"``.
+    """
+    user_id = payload.get("sub")
+    provider = req.provider.strip().lower()
+
+    if provider not in _BYO_SUPPORTED_PROVIDERS:
+        raise HTTPException(
+            status_code=422,
+            detail="provider_key_invalid",
+        )
+
+    api_key = req.api_key.strip()
+    if not api_key:
+        raise HTTPException(status_code=422, detail="provider_key_invalid")
+
+    # Validate key against the live provider before storing.
+    await _validate_provider_key(provider, api_key)
+
+    # Encrypt and upsert.
+    from kerf_core.utils.encrypt import encrypt_secret
+    encrypted = encrypt_secret(api_key.encode(), "byo-provider-key")
+
+    pool = await get_pool_required()
+    async with pool.acquire() as conn:
+        await conn.execute(
+            """
+            INSERT INTO user_provider_keys (user_id, provider, encrypted_key)
+            VALUES ($1, $2, $3)
+            ON CONFLICT (user_id, provider)
+            DO UPDATE SET encrypted_key = EXCLUDED.encrypted_key,
+                          created_at    = now()
+            """,
+            user_id, provider, encrypted,
+        )
+
+    return {"provider": provider, "saved": True}
+
+
+@router.delete("/provider-keys/{provider}", status_code=200)
+async def delete_provider_key(
+    provider: str,
+    payload: dict = Depends(require_auth),
+):
+    """DELETE /api/provider-keys/:provider — remove a BYO provider key."""
+    user_id = payload.get("sub")
+    provider = provider.strip().lower()
+
+    pool = await get_pool_required()
+    async with pool.acquire() as conn:
+        result = await conn.execute(
+            "DELETE FROM user_provider_keys WHERE user_id = $1 AND provider = $2",
+            user_id, provider,
+        )
+
+    # asyncpg execute returns a command tag string like "DELETE 1"
+    deleted = result.split()[-1] if result else "0"
+    if deleted == "0":
+        raise HTTPException(status_code=404, detail="provider_key_not_found")
+
+    return {"provider": provider, "deleted": True}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 
 @router.get("/share/{token}")
 async def lookup_share(token: str, payload: Optional[dict] = Depends(optional_auth)):
@@ -5443,11 +5598,15 @@ async def serve_project_blob(
     oid: str,
     auth: Optional[dict] = Depends(optional_auth),
     # R15: per-user/per-IP rate limit — 120 blob fetches per minute
-    # TODO(T-409): presign instead of proxy — redirect to Tigris presigned URL
-    # instead of streaming through the app to eliminate bandwidth overhead.
     _rl: None = Depends(rate_limit(max_per_window=120, window_seconds=60, key_prefix="api:blobs")),
 ):
-    """GET /api/projects/:pid/blobs/:oid — stream a content-addressed object.
+    """GET /api/projects/:pid/blobs/:oid — serve a content-addressed object.
+
+    R15 (T-409): When ``STORAGE_BACKEND=s3``, redirects (HTTP 302) to a
+    Tigris presigned GET URL instead of streaming bytes through the app.
+    This offloads egress bandwidth from Koyeb to Tigris/CDN.  For
+    local/self-host mode (any other backend) the original stream-through
+    path is preserved.
 
     The oid must be referenced by the project (a ``blob_refs`` row exists for
     ``(oid, project_id)``).  Returns 404 for any oid the project does not own,
@@ -5495,6 +5654,19 @@ async def serve_project_blob(
 
     storage = get_storage_required()
     key = blob_storage_key(oid)
+
+    # R15 (T-409): S3 backend → redirect to a presigned URL; avoids proxying
+    # bytes through the app and eliminates Koyeb egress cost.
+    from kerf_core.storage.s3 import S3Storage as _S3Storage
+    if isinstance(storage, _S3Storage):
+        try:
+            presigned = await storage.signed_url(key, ttl_seconds=900)
+        except Exception:
+            _logger.exception("serve_project_blob: failed to presign oid=%s", oid)
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="not found")
+        return RedirectResponse(url=presigned, status_code=302)
+
+    # Local / self-host fallback: stream bytes through the app.
     try:
         body, content_type = await storage.get(key)
     except (FileNotFoundError, KeyError):

@@ -334,16 +334,24 @@ class TestR15BlobServeRateLimit:
             "serve_project_blob missing rate_limit dependency (_rl param)"
         )
 
-    def test_todo_presign_marker_present(self):
-        """R15: presign TODO comment must be present as a deferred marker."""
+    def test_presign_implemented_no_deferred_marker(self):
+        """R15 (T-409) complete: TODO marker removed; S3Storage presign path in source."""
         import pathlib
         routes_path = (
             pathlib.Path(__file__).parent.parent
             / "src" / "kerf_api" / "routes.py"
         )
         src = routes_path.read_text()
-        assert "TODO(T-409)" in src, (
-            "R15: TODO(T-409) presign marker not found in serve_project_blob"
+        # Deferred marker must now be gone (presign is implemented).
+        assert "TODO(T-409)" not in src, (
+            "R15: TODO(T-409) still present — presign implementation incomplete"
+        )
+        # The presigned redirect path must be present.
+        assert "RedirectResponse" in src, (
+            "R15: RedirectResponse not found — presign redirect not implemented"
+        )
+        assert "signed_url" in src, (
+            "R15: signed_url call not found in routes.py"
         )
 
 
