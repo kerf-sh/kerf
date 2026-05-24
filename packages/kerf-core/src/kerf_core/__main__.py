@@ -21,6 +21,12 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--host", default=os.environ.get("KERF_HOST", "0.0.0.0"))
     parser.add_argument("--port", type=int, default=int(os.environ.get("KERF_PORT", "8080")))
     parser.add_argument("--reload", action="store_true", default=False)
+    parser.add_argument(
+        "--reload-dir",
+        action="append",
+        default=None,
+        help="Directory to watch when --reload is set (repeatable). Defaults to 'packages'.",
+    )
     parser.add_argument("--workers", type=int, default=1)
     return parser.parse_args(argv)
 
@@ -37,6 +43,17 @@ def main(argv: list[str] | None = None) -> None:
     if args.config:
         os.environ["KERF_CONFIG"] = args.config
 
+    reload_kwargs: dict = {}
+    if args.reload:
+        reload_kwargs["reload_dirs"] = args.reload_dir or ["packages"]
+        reload_kwargs["reload_excludes"] = [
+            ".claude/*",
+            "node_modules/*",
+            ".git/*",
+            "dist/*",
+            "public/*",
+        ]
+
     uvicorn.run(
         "kerf_core.app:create_app",
         host=args.host,
@@ -45,6 +62,7 @@ def main(argv: list[str] | None = None) -> None:
         workers=args.workers if not args.reload else 1,
         factory=True,
         log_level="info",
+        **reload_kwargs,
     )
 
 

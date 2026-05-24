@@ -10,7 +10,7 @@
     "prebuild:compare": "node ./scripts/build-compare-manifest.mjs",
     "prebuild:roadmap": "node ./scripts/build-roadmap-manifest.mjs",
     "predev": "node ./scripts/init-config.mjs && node ./scripts/build-docs-manifest.mjs && node ./scripts/build-compare-manifest.mjs && node ./scripts/build-roadmap-manifest.mjs",
-    "dev": "concurrently -n web,api -c cyan,magenta \"npm:dev:web\" \"npm:dev:api\"",
+    "dev": "concurrently -k --kill-signal SIGTERM -n web,api -c cyan,magenta \"vite\" \"kerf-server --reload --host 0.0.0.0 --port 8080\"",
     "dev:web": "vite",
     "dev:api": "kerf-server --reload --host 0.0.0.0 --port 8080",
     "premigrate": "node ./scripts/init-config.mjs",
