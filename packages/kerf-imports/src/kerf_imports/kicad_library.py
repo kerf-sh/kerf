@@ -33,8 +33,10 @@ import zipfile
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, File, UploadFile
+from fastapi import APIRouter, File, HTTPException, UploadFile
 from pydantic import BaseModel
+
+from kerf_imports._compat import safe_basename, _safe_extract
 
 router = APIRouter()
 
@@ -67,13 +69,17 @@ async def import_kicad_library(
         if req and req.project_path:
             scan_dir = Path(req.project_path)
         elif file:
-            dest = tmp_path / file.filename
+            try:
+                safe_name = safe_basename(file.filename or "")
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc))
+            dest = tmp_path / safe_name
             content = await file.read()
             dest.write_bytes(content)
 
-            if file.filename.endswith(".zip"):
+            if safe_name.endswith(".zip"):
                 with zipfile.ZipFile(dest, "r") as z:
-                    z.extractall(tmp_path)
+                    _safe_extract(z, tmp_path)
             scan_dir = tmp_path
         else:
             return {

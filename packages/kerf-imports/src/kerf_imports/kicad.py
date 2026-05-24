@@ -23,6 +23,8 @@ import os
 from pathlib import Path
 from typing import Optional
 
+from kerf_imports._compat import safe_basename, _safe_extract
+
 router = APIRouter()
 
 
@@ -59,13 +61,17 @@ async def import_kicad(
                 }
 
         elif file:
-            file_path = tmp_path / file.filename
+            try:
+                safe_name = safe_basename(file.filename or "")
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc))
+            file_path = tmp_path / safe_name
             content = await file.read()
             file_path.write_bytes(content)
 
-            if file.filename.endswith(".zip"):
+            if safe_name.endswith(".zip"):
                 with zipfile.ZipFile(file_path, "r") as z:
-                    z.extractall(tmp_path)
+                    _safe_extract(z, tmp_path)
 
             kicad_projects = list(tmp_path.glob("*.kicad_pro"))
             if not kicad_projects:
