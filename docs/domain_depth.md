@@ -106,11 +106,11 @@ Shigley/AGMA/ISO/VDI textbook grade. Entirely backend.
 | Feature | Kerf | Notes |
 |---|---|---|
 | Spur/helical gear rating (AGMA 2001-D04) | [x] (backend) | |
-| Gear rating (ISO 6336) | [ ] | KISSsoft parallel path |
+| Gear rating (ISO 6336) | [x] (backend) | Method B + safety factors (gearstrength/iso6336.py); ZH=2.495, ZE=191 √MPa validated |
 | Worm / bevel gears | [x] (backend) | AGMA 6022/2003 |
 | Planetary / epicyclic gearbox | [ ] | only simple trains |
 | Bearings — ISO 281 L10 | [x] (backend) | |
-| Bearings — ISO/TS 16281 (misalign/contam) | [ ] | |
+| Bearings — ISO/TS 16281 (misalign/contam) | [x] (backend) | aISO + Lnm modified life (bearings/select.py) |
 | Fasteners — VDI 2230 | [x] (backend) | |
 | Springs (compr/ext/torsion/Belleville) | [x] (backend) | |
 | Belt / chain drives | [x] (backend) | |
@@ -147,7 +147,7 @@ Genuinely deep; mostly exposed as LLM tools, no graphical panels.
 | Standard atmosphere (USSA76) | [x] | wired tool |
 | Airfoil geometry (NACA 4/5) | [x] | wired |
 | Airfoil inviscid CL (panel) | [x] | wired |
-| Airfoil viscous Cd (XFOIL-class) | [~] | **engine exists, NOT wired to its LLM tool** |
+| Airfoil viscous Cd (XFOIL-class) | [x] | wired (Squire-Young; NACA0012 Re=1e6 α=4° → Cd=0.0107) |
 | 3D wing VLM | [x] | wired |
 | Doublet-lattice / flutter | [x] (backend) | |
 | 6-DOF flight dynamics + stability derivs | [x] (backend) | |
@@ -157,7 +157,7 @@ Genuinely deep; mostly exposed as LLM tools, no graphical panels.
 | Propulsion (Tsiolkovsky/staging/CEA-lite) | [x] | wired |
 | Turbomachinery / wind-turbine BEM | [x] (backend) | |
 | Naval hydrostatics + GZ stability (IMO) | [x] | wired marine tools |
-| Seakeeping / RAOs (strip theory) | [ ] | biggest marine gap |
+| Seakeeping / RAOs (strip theory) | [x] (backend) | Lewis-form STF + JONSWAP (kerf-marine/seakeeping.py); Wigley validated |
 | Graphical aero/marine panels | [ ] | tools-only |
 
 ## D6 — Electronics / EDA / silicon  · engine ~75% · UI ~40%
@@ -232,13 +232,13 @@ Classical foundations solid; modern/3D pieces missing.
 | Contact / collision dynamics | [ ] | none |
 | Kinematics (four-bar/slider-crank/cam) | [x] (backend) | |
 | Robotics FK/IK (planar) | [x] (backend) | |
-| Robotics 6-DOF spatial IK | [ ] | |
+| Robotics 6-DOF spatial IK | [x] (backend) | DLS Jacobian (robotics/arm.py), PUMA-class validated |
 | Vibration SDOF | [x] (backend) | deep |
-| Vibration n-DOF modal / FRF | [~] (backend) | 2-DOF only |
+| Vibration n-DOF modal / FRF | [x] (backend) | full n-DOF eigen + FRF matrix (vibration/mdof.py) |
 | Rotating-machinery balance | [x] (backend) | |
 | Controls — classical (Routh/Bode/RL/PID tune) | [x] (backend) | |
-| Controls — state-space / LQR / Kalman | [ ] | |
-| Controls — discrete / digital | [ ] | |
+| Controls — state-space / LQR / Kalman | [x] (backend) | Ackermann + LQR (CARE) + Luenberger (controls/statespace.py) |
+| Controls — discrete / digital | [x] (backend) | c2d ZOH + digital PID |
 | System sim (Modelica DAE) | [x] (backend) | thin component library |
 | Any dynamics UI | [ ] | landing page only |
 
@@ -265,10 +265,10 @@ PLC + firmware + wiring genuinely usable; power/solar backend-only.
 | Auto GD&T callout proposal | [x] (backend) | |
 | Limits & fits (ISO 286) | [x] (backend) | |
 | Tolerance stackup — 1D (WC/RSS/MC) | [x] (backend) | Monte-Carlo LCG bug to fix |
-| Tolerance stackup — 3D vector loop | [ ] | CETOL/VisVSA class |
+| Tolerance stackup — 3D vector loop | [x] (backend) | 6-DOF vector loop + sensitivity Jacobian (tolstack/tol3d.py) |
 | CMM fitting & evaluation | [x] (backend) | |
 | Process capability (Cpk/Ppk) | [x] (backend) | |
-| SPC control charts (Shewhart/CUSUM/EWMA) | [ ] | absent |
+| SPC control charts (Shewhart/CUSUM/EWMA) | [x] (backend) | + Nelson/WECO run rules (spc/charts.py) |
 | Reliability (FMEA/MTBF) | [x] (backend) | |
 
 ## D12 — Optics / acoustics  · engine ~55% · UI ~10%
@@ -276,13 +276,13 @@ PLC + firmware + wiring genuinely usable; power/solar backend-only.
 | Feature | Kerf | Notes |
 |---|---|---|
 | Paraxial ABCD ray transfer | [x] (backend) | |
-| Seidel aberrations | [x] (backend) | **S5 distortion hardcoded 0 (bug)** |
+| Seidel aberrations | [x] (backend) | corrected S5 = p³(n+1)/(2n·f) (2026-05-24) |
 | Lensmaker / thick lens / Airy / Snell | [x] (backend) | |
 | Non-sequential ray tracing (stray light) | [ ] | Zemax-class gap |
 | Gaussian beam propagation (M², q-param) | [ ] | |
 | Wave optics / diffraction / polarisation | [ ] | |
 | Photonics (LED/photodiode/TIA/fibre) | [x] (backend) | |
-| Acoustics (ISO 9613, RT60, weighting, mass-law TL) | [x] (backend) | TL can go negative (guard needed) |
+| Acoustics (ISO 9613, RT60, weighting, mass-law TL) | [x] (backend) | TL clamped ≥0 (2026-05-24 fix) |
 | Wave-domain room acoustics / SEA | [ ] | |
 
 ## D13 — Verticals  · engine ~60% · UI ~40%
@@ -290,7 +290,7 @@ PLC + firmware + wiring genuinely usable; power/solar backend-only.
 | Vertical | Kerf | Notes |
 |---|---|---|
 | Jewelry (41 modules) | [x] | **deep**, full configurator UI — RhinoGold/Matrix-class |
-| BIM (walls/slabs/framing/stairs/IFC4) | [~] | Revit-comparable engine; **viewer fed `ifc_base64=null` (bug, Editor.jsx:1960)** |
+| BIM (walls/slabs/framing/stairs/IFC4) | [x] | Revit-comparable engine + viewer wired via /compile-ifc (visual QA pending) |
 | Textiles (weave/knit/drape/cut-room) | [x] (backend) | textiles page; no 3D avatar drape |
 | Packaging (ECMA dieline/fold) | [x] (backend) | page; no BCT structural |
 | Woodworking (cut-list/joinery/grain) | [~] | page |
