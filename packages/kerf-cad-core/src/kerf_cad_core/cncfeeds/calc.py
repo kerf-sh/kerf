@@ -89,6 +89,8 @@ from __future__ import annotations
 import math
 from typing import Any
 
+from kerf_cad_core.cuttingtool.tool import cutting_power as _tool_cutting_power
+
 
 # ---------------------------------------------------------------------------
 # Kc material table  (N/mm²)
@@ -552,8 +554,30 @@ def cutting_power(
     kc_val = float(kc)
     eta = float(efficiency)
 
-    pc = kc_val * q / 60000.0    # cutting power at tool (W)
-    ps = pc / eta                 # required spindle power (W)
+    # Derive the effective cutting force from kc × MRR identity:
+    #   Pc = kc [N/mm²] × Q [mm³/min] / 60000  [W]
+    #   Pc = F_c [N] × vc [m/min] / 60          [W]
+    # For any scalar split  F_c = kc × 1 mm² (unit area),  vc_eff = Q / 60 [m/min]:
+    #   Pc = (kc × Q / 60000)  — we pass F_c_eff and vc_eff to the primitive.
+    # Equivalently: F_c_eff [N] = kc [N/mm²] × Q [mm³/min] / 1000
+    #               vc_eff [m/min] = 1.0  (factored out so F_c × vc / 60 = kc × Q / 60000)
+    # Simplest factoring preserving exact arithmetic: treat Q/60 [mm³/s] force-equivalent.
+    # Use: F_c_eff = kc * q (N·mm/min), vc_eff = 1 m/min → P = F_c_eff/1000/60? No —
+    # cleaner: F_c_eff = kc * q / 1000  [N], vc_eff = 1.0 [m/min] → primitive gives kc*q/1000/60
+    # That differs by factor 1000.  Use the straightforward split:
+    #   F_c_eff = kc [N/mm²] * 1 [mm²] = kc  (N, for a 1 mm² chip cross-section)
+    #   vc_eff  = q / 1000 / 60  [... no]
+    # Correct canonical split (avoids float errors):
+    #   kc * Q / 60000 = (kc) * (Q / 1000) / 60
+    #   → F_c_eff = kc [N/mm²] × (Q/1000) [mm²·m/min … units don't work directly]
+    # Safest: F_c_eff = kc * q / 1000, vc_eff = 1.0 → primitive: F*vc/60 = kc*q/1000/60
+    #   = kc*q/60000 ✓  (1 N/mm² × 1 mm³/min = 1 N·mm/min = 1/60000 W)
+    # Delegate to cuttingtool primitive with F_c_eff and vc_eff = 1.0 m/min:
+    F_c_eff = kc_val * q / 1000.0   # effective force [N] such that F_c_eff × 1 m/min / 60 = Pc
+    _prim = _tool_cutting_power(F_c_eff, 1.0)
+    # _prim is always ok (F_c_eff > 0, vc=1.0 > 0) given inputs already validated above
+    pc = _prim["power_W"]            # cutting power at tool (W)
+    ps = pc / eta                    # required spindle power (W)
 
     warnings: list[str] = []
     if ps > float(machine_power_W):

@@ -52,6 +52,7 @@ from kerf_cad_core.cncfeeds.calc import (
     tapping_speed,
     tool_deflection,
 )
+from kerf_cad_core.cuttingtool.tool import cutting_power as tool_cutting_power
 from kerf_cad_core.cncfeeds.tools import (
     run_chip_thinning,
     run_corrected_chip_load,
@@ -744,3 +745,101 @@ class TestCncFeedsExternalReferenceCases:
         EI = 600.0e3 * I
         assert math.isclose(r["deflection_mm"], 500.0 * 40.0 ** 3 / (3.0 * EI),
                             rel_tol=1e-9)
+
+
+# ===========================================================================
+# Parity / regression: cncfeeds.cutting_power delegates to cuttingtool primitive
+# ===========================================================================
+
+class TestCuttingPowerParity:
+    """
+    Verify that cncfeeds.cutting_power is numerically identical to computing
+    the power via the cuttingtool.cutting_power(F_c, V_c) primitive, and that
+    the delegation refactor did not change any output values.
+
+    Reference cut: 10 mm end mill (aluminium 6061)
+        diameter = 10 mm
+        feed_per_tooth = 0.05 mm/tooth
+        depth_of_cut  (ap) = 5 mm
+        width_of_cut  (ae) = 5 mm   (50 % radial engagement — no chip thinning)
+        n_flutes = 4
+        vc = 200 m/min
+        kc = 700 N/mm²  (MATERIAL_KC["aluminum_6061"])
+
+    Physics:
+        MRR = ae × ap × Vf  [mm³/min]
+            where Vf = fz × z × rpm
+            and   rpm = 1000 × vc / (π × D)
+        Pc = kc × MRR / 60 000                [W]    (cncfeeds formula)
+           = F_c × vc / 60                    [W]    (cuttingtool primitive)
+        where F_c_eff = kc × MRR / 1000  [N], vc_eff = 1 m/min (delegation split)
+    """
+
+    # Fixed reference inputs
+    _D   = 10.0    # mm
+    _FZ  = 0.05   # mm/tooth
+    _Z   = 4
+    _AP  = 5.0    # mm
+    _AE  = 5.0    # mm
+    _VC  = 200.0  # m/min
+    _KC  = MATERIAL_KC["aluminum_6061"]   # 700 N/mm²
+
+    def _mrr(self) -> float:
+        rpm = 1000.0 * self._VC / (math.pi * self._D)
+        vf = self._FZ * self._Z * rpm
+        return self._AE * self._AP * vf
+
+    def test_cncfeeds_power_unchanged_vs_formula(self):
+        """
+        cncfeeds.cutting_power output must equal kc × MRR / 60 000 exactly
+        (the formula it has always implemented — regression guard).
+        """
+        mrr = self._mrr()
+        r = cutting_power(mrr, self._KC)
+        assert r["ok"]
+        expected_pc = self._KC * mrr / 60_000.0
+        assert math.isclose(r["cutting_power_W"], expected_pc, rel_tol=1e-12), (
+            f"cncfeeds cutting_power_W={r['cutting_power_W']:.6f} W "
+            f"differs from kc×MRR/60000={expected_pc:.6f} W"
+        )
+
+    def test_cncfeeds_equals_cuttingtool_primitive(self):
+        """
+        cncfeeds.cutting_power must equal what cuttingtool.cutting_power gives
+        when called with F_c = kc × MRR / 1000 N and vc = 1 m/min.
+        (This is the delegation split used internally after the refactor.)
+        """
+        mrr = self._mrr()
+        r_cncfeeds = cutting_power(mrr, self._KC)
+        assert r_cncfeeds["ok"]
+
+        # Replicate the internal delegation arithmetic
+        F_c_eff = self._KC * mrr / 1000.0   # N — same split used in delegating code
+        r_prim = tool_cutting_power(F_c_eff, 1.0)
+        assert r_prim["ok"]
+
+        assert math.isclose(
+            r_cncfeeds["cutting_power_W"], r_prim["power_W"], rel_tol=1e-12
+        ), (
+            f"cncfeeds={r_cncfeeds['cutting_power_W']:.6f} W "
+            f"vs cuttingtool primitive={r_prim['power_W']:.6f} W"
+        )
+
+    def test_both_agree_on_known_value(self):
+        """
+        For the reference 10 mm Al cut, both interfaces yield the same W value
+        and it is in a physically plausible range (< 2 kW for Al finish cut).
+        """
+        mrr = self._mrr()
+        r = cutting_power(mrr, self._KC)
+        assert r["ok"]
+        pc = r["cutting_power_W"]
+
+        # Cross-check via primitive
+        F_c_eff = self._KC * mrr / 1000.0
+        r_prim = tool_cutting_power(F_c_eff, 1.0)
+        assert r_prim["ok"]
+
+        assert math.isclose(pc, r_prim["power_W"], rel_tol=1e-12)
+        # Sanity: Al 6061 light finish cut should be well below 2 kW
+        assert 0 < pc < 2000.0, f"Unexpected power {pc:.1f} W for reference Al cut"
