@@ -47,7 +47,17 @@ from __future__ import annotations
 import math
 from typing import Dict, List, Optional, Sequence, Tuple
 
-import numpy as np
+# numpy is used for fast mesh operations (normals, cross products, dot products).
+# In constrained environments where numpy is absent the pure-Python fallback
+# path below is used: all numpy-dependent functions (wall_thickness_min,
+# no_draft_faces, undercut_regions, machinability_score) return safe empty
+# results or degraded scalar values rather than crashing on import.
+try:
+    import numpy as np
+    _NP_AVAILABLE = True
+except ImportError:  # pragma: no cover
+    np = None  # type: ignore[assignment]
+    _NP_AVAILABLE = False
 
 # ---------------------------------------------------------------------------
 # Internal helpers
@@ -58,21 +68,21 @@ _PROCESSES = frozenset({"injection_moulding", "cnc_milling", "die_casting", "3d_
 _SEVERITY_RANK = {"error": 0, "warning": 1, "info": 2}
 
 
-def _unit(v: Sequence[float]) -> np.ndarray:
+def _unit(v: Sequence[float]) -> "np.ndarray":
     a = np.asarray(v, dtype=float)
     n = float(np.linalg.norm(a))
     return a / n if n > 1e-15 else np.array([0.0, 0.0, 1.0])
 
 
-def _tri_normal(a: np.ndarray, b: np.ndarray, c: np.ndarray) -> np.ndarray:
+def _tri_normal(a: "np.ndarray", b: "np.ndarray", c: "np.ndarray") -> "np.ndarray":
     return _unit(np.cross(b - a, c - a))
 
 
-def _tri_centroid(a: np.ndarray, b: np.ndarray, c: np.ndarray) -> np.ndarray:
+def _tri_centroid(a: "np.ndarray", b: "np.ndarray", c: "np.ndarray") -> "np.ndarray":
     return (a + b + c) / 3.0
 
 
-def _tri_area(a: np.ndarray, b: np.ndarray, c: np.ndarray) -> float:
+def _tri_area(a: "np.ndarray", b: "np.ndarray", c: "np.ndarray") -> float:
     return float(np.linalg.norm(np.cross(b - a, c - a))) / 2.0
 
 
@@ -92,8 +102,10 @@ def _issue(
     }
 
 
-def _parse_mesh(mesh_or_solid: dict) -> Optional[Tuple[np.ndarray, np.ndarray]]:
+def _parse_mesh(mesh_or_solid: dict) -> "Optional[Tuple[np.ndarray, np.ndarray]]":
     """Return (vertices [N,3], triangles [M,3]) or None on bad input."""
+    if not _NP_AVAILABLE:
+        return None
     try:
         verts = np.asarray(mesh_or_solid["vertices"], dtype=float)
         tris = np.asarray(mesh_or_solid["triangles"], dtype=int)
@@ -283,6 +295,8 @@ def no_draft_faces(
     list of issue dicts (kind="no_draft")
     """
     issues: List[dict] = []
+    if not _NP_AVAILABLE:
+        return issues
     try:
         pull = _unit(pull_direction)
         req = float(required_draft_deg)
@@ -336,6 +350,8 @@ def undercut_regions(
     list of issue dicts (kind="undercut")
     """
     issues: List[dict] = []
+    if not _NP_AVAILABLE:
+        return issues
     try:
         pull = _unit(pull_direction)
         for face in (faces or []):
@@ -400,11 +416,17 @@ def machinability_score(part: dict) -> float:
         # Bounding-box aspect ratio penalty.
         bb = part.get("bounding_box")
         if bb and "min" in bb and "max" in bb:
-            lo = np.asarray(bb["min"], dtype=float)
-            hi = np.asarray(bb["max"], dtype=float)
-            dims = np.abs(hi - lo)
-            dims = np.where(dims < 1e-9, 1e-9, dims)
-            aspect = float(np.max(dims) / np.min(dims))
+            if _NP_AVAILABLE:
+                lo = np.asarray(bb["min"], dtype=float)
+                hi = np.asarray(bb["max"], dtype=float)
+                dims = np.abs(hi - lo)
+                dims = np.where(dims < 1e-9, 1e-9, dims)
+                aspect = float(np.max(dims) / np.min(dims))
+            else:
+                lo = bb["min"]
+                hi = bb["max"]
+                dims = [max(abs(hi[k] - lo[k]), 1e-9) for k in range(3)]
+                aspect = max(dims) / min(dims)
             if aspect > 10:
                 score -= 0.15
             elif aspect > 5:

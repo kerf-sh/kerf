@@ -577,13 +577,22 @@ def mass_law_tl(surface_density_kg_m2: float, freq_hz: float) -> dict:
 
     m = float(surface_density_kg_m2)
     f = float(freq_hz)
-    tl = 20.0 * math.log10(m * f) - 47.0
-    if tl < 0:
+    tl_raw = 20.0 * math.log10(m * f) - 47.0
+
+    # The field-incidence mass-law formula 20·log₁₀(m·f)−47 can yield negative
+    # values at low surface-densities or low frequencies (m·f < 10^(47/20) ≈ 7.1).
+    # Negative TL is physically meaningless — a wall cannot amplify sound — so
+    # we clamp to zero and warn.  The formula remains valid only when m·f ≫ 1
+    # (typically m·f ≥ 50 for ±1 dB accuracy).
+    if tl_raw < 0.0:
         warnings.warn(
-            f"mass_law_tl: computed TL={tl:.1f} dB is negative "
-            f"(m={m} kg/m², f={f} Hz); mass-law formula may not be applicable.",
+            f"mass_law_tl: computed TL={tl_raw:.1f} dB is negative "
+            f"(m={m} kg/m², f={f} Hz); mass-law formula is not valid at this "
+            "m·f product (need m·f ≥ ~7 for TL ≥ 0, ≥ ~50 for accuracy). "
+            "Clamping to 0 dB.",
             stacklevel=2,
         )
+    tl = max(0.0, tl_raw)
     return {"ok": True, "tl_db": tl, "surface_density_kg_m2": m, "freq_hz": f}
 
 

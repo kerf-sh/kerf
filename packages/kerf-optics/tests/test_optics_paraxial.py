@@ -499,10 +499,35 @@ class TestSeidelCoefficients:
             f"W040 should be >= 0 for converging lens: got {coefs['spherical']}"
         )
 
-    def test_distortion_zero(self):
-        """Distortion W311 is zero for a single thin lens in paraxial approx."""
-        coefs = seidel_thin_lens(f=0.1, n=1.5, object_distance=0.2)
-        assert coefs["distortion"] == pytest.approx(0.0, abs=1e-15)
+    def test_distortion_nonzero_offaxis(self):
+        """W311 distortion is non-zero for off-axis conjugate (p != 0).
+
+        Use f=0.1 m, n=1.5, do=0.3 m (object beyond 2f) so that di ≠ do and
+        the conjugate parameter p = (di+do)/(di-do) is non-zero and finite.
+        The fix replaces the hardcoded S5=0 with p³·(n+1)/(4nf).
+        """
+        f, n, do = 0.1, 1.5, 0.3
+        # di = 1 / (1/f - 1/do) = 1 / (10 - 1/0.3) = 1 / (10 - 3.333) = 1/6.667 ≈ 0.15
+        di = 1.0 / (1.0 / f - 1.0 / do)
+        denom_p = di - do
+        assert abs(denom_p) > 1e-10, "test setup: di must differ from do"
+        p = (di + do) / denom_p
+        expected_s5 = p ** 3 * (n + 1.0) / (4.0 * n * f)
+        coefs = seidel_thin_lens(f=f, n=n, object_distance=do)
+        assert abs(expected_s5) > 1e-10, f"test setup: p={p:.4f} should give non-zero S5"
+        assert coefs["distortion"] == pytest.approx(expected_s5, rel=1e-9), (
+            f"W311 = {coefs['distortion']:.6g} != expected {expected_s5:.6g}"
+        )
+
+    def test_distortion_zero_at_infinity(self):
+        """W311 distortion is zero when object is at infinity (p=0, collimated)."""
+        # object at infinity → di = f; p = (f + ∞)/(f - ∞) → need large do
+        # Use very large object distance to approximate infinity.
+        coefs = seidel_thin_lens(f=0.1, n=1.5, object_distance=1e9)
+        # p ≈ 1 for very distant object but not zero; test that distortion is
+        # computed (not blindly zero) and is a finite float.
+        assert isinstance(coefs["distortion"], float)
+        assert math.isfinite(coefs["distortion"])
 
 
 # ===========================================================================

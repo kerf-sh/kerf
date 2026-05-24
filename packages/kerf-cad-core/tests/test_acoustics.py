@@ -441,6 +441,31 @@ class TestMassLawTL:
         res = mass_law_tl(0.0, 500.0)
         assert res["ok"] is False
 
+    def test_low_mf_clamped_to_zero(self):
+        """mass_law_tl clamps to 0 dB when formula would yield negative TL.
+
+        20·log10(0.1 × 1.0) − 47 = 20·log10(0.1) − 47 = −20 − 47 = −67 dB
+        which is physically impossible (a wall cannot amplify sound).
+        The fix clamps to 0.0 and emits a warning.
+        """
+        import warnings as _warnings
+        with _warnings.catch_warnings(record=True) as caught:
+            _warnings.simplefilter("always")
+            res = mass_law_tl(0.1, 1.0)
+        assert res["ok"] is True
+        assert res["tl_db"] == 0.0, f"Expected 0.0 dB clamp, got {res['tl_db']}"
+        assert any("negative" in str(w.message).lower() or "clamp" in str(w.message).lower()
+                   for w in caught), "Expected a warning about negative TL"
+
+    def test_tl_never_negative(self):
+        """mass_law_tl result is always >= 0.0 for any valid positive m and f."""
+        for m, f in [(0.001, 1.0), (1.0, 1.0), (0.5, 10.0), (100.0, 500.0)]:
+            res = mass_law_tl(m, f)
+            assert res["ok"] is True
+            assert res["tl_db"] >= 0.0, (
+                f"mass_law_tl({m}, {f}) returned tl_db={res['tl_db']} < 0"
+            )
+
     def test_tool_happy_path(self):
         raw = _run(run_acoustics_mass_law_tl(
             _ctx(), _args(surface_density_kg_m2=100.0, freq_hz=500.0)

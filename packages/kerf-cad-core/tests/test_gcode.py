@@ -831,3 +831,51 @@ class TestToolsErrorPaths:
         ctx = _ctx()
         raw = _run(run_gcode_parse(ctx, b"not json {"))
         _err(raw)
+
+
+# ===========================================================================
+# Multi-G-per-block parsing (fix: dict overwrite dropped all but last G word)
+# ===========================================================================
+
+class TestParseGcodeMultiGPerBlock:
+    """Verify that multiple G-codes on a single block are all honoured.
+
+    Before the fix, _parse_words stored only the last G value, so a line like
+    'G17 G90 G0 X10' would lose G17 and G90 entirely (dict key overwrite).
+    After the fix G is stored as a list and the modal update loop processes
+    all of them.
+    """
+
+    def test_plane_and_distance_and_motion_on_one_line(self):
+        """G17 G90 G0 X10 — all three modal G-codes must be applied."""
+        prog = "G17 G90 G0 X10\n"
+        result = parse_gcode(prog)
+        assert result["ok"] is True
+        segs = result["segments"]
+        # Should produce at least one rapid segment (G0 with X10 from origin)
+        rapids = [s for s in segs if s["type"] == "rapid"]
+        assert len(rapids) >= 1, "G0 X10 should produce a rapid segment"
+        assert rapids[0]["end"][0] == pytest.approx(10.0)
+        assert rapids[0]["plane"] == "G17"
+        assert rapids[0]["distance_mode"] == "G90"
+
+    def test_units_and_absolute_on_setup_line(self):
+        """G21 G90 on the same block — both must be applied before the move."""
+        prog = "G21 G90\nG0 X5\n"
+        result = parse_gcode(prog)
+        assert result["ok"] is True
+        segs = [s for s in result["segments"] if s["type"] == "rapid"]
+        assert len(segs) >= 1
+        assert segs[0]["units"] == "G21"
+        assert segs[0]["distance_mode"] == "G90"
+
+    def test_plane_switch_and_move_same_line(self):
+        """G18 G1 X5 Z3 — plane switch (XZ) and feed move on same block."""
+        prog = "G21 G90\nG18 G1 X5 Z3 F200\n"
+        result = parse_gcode(prog)
+        assert result["ok"] is True
+        feeds = [s for s in result["segments"] if s["type"] == "feed"]
+        assert len(feeds) >= 1
+        assert feeds[0]["plane"] == "G18", (
+            f"Expected plane G18 from same-block G18 G1, got {feeds[0]['plane']}"
+        )

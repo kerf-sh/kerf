@@ -582,3 +582,70 @@ class TestToolWrappers:
         d2 = _ok_tool(raw2)
         assert d1["sigma_gap"] == d2["sigma_gap"]
         assert d1["defect_ppm"] == d2["defect_ppm"]
+
+
+# ===========================================================================
+# Tolstack Monte-Carlo mixed-distribution IndexError regression
+# ===========================================================================
+
+class TestTolstackMCMixedDistributions:
+    """Regression for IndexError when uniform contributors follow normal ones.
+
+    The pre-fix code allocated n_samples * n_contrib * 2 uniforms (as if every
+    contributor is normal), but consumed fewer of them for uniform contributors
+    (n_samples instead of 2*n_samples), leaving the offset pointing past the
+    end of the buffer on the next normal contributor.  The fix sizes the buffer
+    from the exact per-contributor consumption.
+    """
+
+    def test_normal_then_uniform_no_crash(self):
+        """Mixed normal/uniform contributors must not IndexError."""
+        from kerf_cad_core.tolstack.stack import analyze_stack
+        contributors = [
+            {"nominal": 10.0, "plus_tol": 0.1, "minus_tol": 0.1,
+             "direction": 1, "distribution": "normal"},
+            {"nominal": 5.0, "plus_tol": 0.05, "minus_tol": 0.05,
+             "direction": -1, "distribution": "uniform"},
+        ]
+        result = analyze_stack(contributors, method="monte-carlo", n_samples=5000)
+        assert result["ok"] is True
+        assert result["sigma_gap"] > 0.0
+
+    def test_uniform_then_normal_no_crash(self):
+        """Uniform before normal — also must not IndexError."""
+        from kerf_cad_core.tolstack.stack import analyze_stack
+        contributors = [
+            {"nominal": 5.0, "plus_tol": 0.05, "minus_tol": 0.05,
+             "direction": 1, "distribution": "uniform"},
+            {"nominal": 10.0, "plus_tol": 0.1, "minus_tol": 0.1,
+             "direction": -1, "distribution": "normal"},
+        ]
+        result = analyze_stack(contributors, method="monte-carlo", n_samples=5000)
+        assert result["ok"] is True
+
+    def test_all_uniform_no_crash(self):
+        """All uniform contributors — correct allocation (n_samples each, not 2×)."""
+        from kerf_cad_core.tolstack.stack import analyze_stack
+        contributors = [
+            {"nominal": float(i), "plus_tol": 0.1, "minus_tol": 0.1,
+             "direction": 1, "distribution": "uniform"}
+            for i in range(5)
+        ]
+        result = analyze_stack(contributors, method="monte-carlo", n_samples=10000)
+        assert result["ok"] is True
+        assert result["sigma_gap"] > 0.0
+
+    def test_many_normal_many_uniform_consistent(self):
+        """Large mixed stack: result is deterministic and gap_nominal is correct."""
+        from kerf_cad_core.tolstack.stack import analyze_stack
+        contributors = [
+            {"nominal": 1.0, "plus_tol": 0.1, "minus_tol": 0.1,
+             "direction": 1, "distribution": "normal" if i % 2 == 0 else "uniform"}
+            for i in range(8)
+        ]
+        r1 = analyze_stack(contributors, method="monte-carlo", n_samples=2000, seed=99)
+        r2 = analyze_stack(contributors, method="monte-carlo", n_samples=2000, seed=99)
+        assert r1["ok"] is True
+        assert r1["gap_nominal"] == pytest.approx(8.0, rel=1e-9)
+        # Deterministic seed → identical results
+        assert r1["sigma_gap"] == r2["sigma_gap"]

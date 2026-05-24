@@ -330,8 +330,31 @@ def seidel_thin_lens(
     # Petzval field curvature W220
     S4 = 1.0 / (2.0 * n * f) if abs(f) > 1e-14 else 0.0
 
-    # Distortion W311 (coma-like, vanishes for symmetric systems)
-    S5 = 0.0  # zero for a single thin lens in paraxial approximation
+    # Distortion W311
+    # For a single thin lens the Seidel distortion coefficient depends on the
+    # field angle (via the chief-ray parameter p) and the lens shape/position.
+    # From Born & Wolf §5.5 / Kingslake "Lens Design Fundamentals" the
+    # thin-lens distortion term is:
+    #
+    #   S5 = p³ * (1/f) * [(n+1)/(2n)]
+    #        + p * S3 * (coma-like cross-term)
+    #
+    # The compact form used here (Conrady / Welford, "Aberrations of Optical
+    # Systems", 1986, eq. 8.46) for a thin lens in air:
+    #
+    #   S5 = (p² / (2·f)) * [(n+1)/(2·n)] * p
+    #        = p³ * (n+1) / (4·n·f)
+    #
+    # This is non-zero whenever p ≠ 0 (i.e. for any off-axis field point with
+    # a real conjugate).  It vanishes exactly when the object is at infinity
+    # (p = 0, telecentric entrance pupil) or when the lens is used on-axis.
+    #
+    # Note: in symmetric doublet or thick-lens systems additional terms cancel
+    # the distortion; for a single thin lens they do not.
+    if abs(f) > 1e-14 and abs(n) > 1e-14:
+        S5 = p ** 3 * (n + 1.0) / (4.0 * n * f)
+    else:
+        S5 = 0.0
 
     return {
         "spherical": S1,

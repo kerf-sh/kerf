@@ -95,13 +95,25 @@ def _strip_comment(line: str) -> tuple[str, str]:
     return line.strip(), comment.strip()
 
 
-def _parse_words(line: str) -> dict[str, float]:
-    """Return dict of {letter_upper: float_value} for all words in line."""
-    result: dict[str, float] = {}
+def _parse_words(line: str) -> dict[str, Any]:
+    """Return dict of {letter_upper: value} for all words in line.
+
+    The ``G`` key is special: because multiple G-codes from different modal
+    groups can appear on one block (e.g. ``G17 G90 G0 X10``), its value is
+    always a ``list[float]`` containing every G number found on the line.
+    All other letters store only the last occurrence (standard behaviour).
+    """
+    result: dict[str, Any] = {}
+    g_vals: list[float] = []
     for m in _WORD_RE.finditer(line):
         letter = m.group(1).upper()
         value = float(m.group(2))
-        result[letter] = value
+        if letter == "G":
+            g_vals.append(value)
+        else:
+            result[letter] = value
+    if g_vals:
+        result["G"] = g_vals
     return result
 
 
@@ -324,8 +336,9 @@ def parse_gcode(
         words = _parse_words(line)
 
         # ── modal G-code updates ──────────────────────────────────────────
-        for g_val in sorted(words.get("G", []) if isinstance(words.get("G"), list) else
-                            ([words["G"]] if "G" in words else [])):
+        # words["G"] is always a list[float] (see _parse_words); multiple G
+        # codes from different modal groups on one block are all honoured.
+        for g_val in sorted(words.get("G", [])):
             g_int = int(g_val)
             if g_int in (0, 1, 2, 3):
                 modal["motion"] = f"G{g_int}"
@@ -401,7 +414,7 @@ def parse_gcode(
                 segments.append(seg)
 
         # ── dwell ─────────────────────────────────────────────────────────
-        if "G" in words and int(words["G"]) == 4:
+        if "G" in words and 4.0 in words["G"]:
             p_dwell = words.get("P", 0.0)
             seg = {
                 "type": "dwell",

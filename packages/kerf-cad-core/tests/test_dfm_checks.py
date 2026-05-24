@@ -446,3 +446,63 @@ class TestDfmAudit:
         result = dfm_audit({}, "laser_cutting")
         assert isinstance(result, dict)
         # Should not raise; falls back to cnc defaults.
+
+
+# ===========================================================================
+# DFM numpy import guard
+# ===========================================================================
+
+class TestDFMNumpyGuard:
+    """Verify that importing kerf_cad_core.dfm.checks never hard-fails even
+    when numpy is absent, and that the guarded functions degrade gracefully."""
+
+    def test_module_import_succeeds(self):
+        """The module must be importable (numpy present in test env)."""
+        import importlib
+        mod = importlib.import_module("kerf_cad_core.dfm.checks")
+        assert mod is not None
+
+    def test_np_available_flag_exposed(self):
+        """_NP_AVAILABLE flag must exist and be a bool."""
+        from kerf_cad_core.dfm.checks import _NP_AVAILABLE
+        assert isinstance(_NP_AVAILABLE, bool)
+
+    def test_numpy_absent_wall_thickness_returns_empty(self, monkeypatch):
+        """When numpy is absent, wall_thickness_min must return [] not raise."""
+        import kerf_cad_core.dfm.checks as _mod
+        monkeypatch.setattr(_mod, "_NP_AVAILABLE", False)
+        monkeypatch.setattr(_mod, "np", None)
+        mesh = {
+            "vertices": [[0,0,0],[1,0,0],[0,1,0]],
+            "triangles": [[0,1,2]],
+        }
+        result = _mod.wall_thickness_min(mesh, threshold_mm=1.0)
+        assert result == [], f"Expected [] when numpy absent, got {result}"
+
+    def test_numpy_absent_no_draft_faces_returns_empty(self, monkeypatch):
+        """no_draft_faces must return [] not raise when numpy is absent."""
+        import kerf_cad_core.dfm.checks as _mod
+        monkeypatch.setattr(_mod, "_NP_AVAILABLE", False)
+        monkeypatch.setattr(_mod, "np", None)
+        faces = [{"normal": [0, 0, 1], "centroid": [0, 0, 0], "area": 1.0}]
+        result = _mod.no_draft_faces(faces, [0, 0, 1], required_draft_deg=0.5)
+        assert result == []
+
+    def test_numpy_absent_undercut_returns_empty(self, monkeypatch):
+        """undercut_regions must return [] not raise when numpy is absent."""
+        import kerf_cad_core.dfm.checks as _mod
+        monkeypatch.setattr(_mod, "_NP_AVAILABLE", False)
+        monkeypatch.setattr(_mod, "np", None)
+        faces = [{"normal": [0, 0, -1], "centroid": [0, 0, 0], "area": 1.0}]
+        result = _mod.undercut_regions(faces, [0, 0, 1])
+        assert result == []
+
+    def test_dfm_audit_still_returns_dict_without_numpy(self, monkeypatch):
+        """dfm_audit must return a valid dict (not crash) when numpy is absent."""
+        import kerf_cad_core.dfm.checks as _mod
+        monkeypatch.setattr(_mod, "_NP_AVAILABLE", False)
+        monkeypatch.setattr(_mod, "np", None)
+        result = _mod.dfm_audit({}, "cnc_milling")
+        assert isinstance(result, dict)
+        assert "ok" in result
+        assert "issues" in result

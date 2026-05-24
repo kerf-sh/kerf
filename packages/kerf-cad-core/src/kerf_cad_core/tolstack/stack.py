@@ -380,9 +380,15 @@ def _mc_analysis(
     gap_nom, gap_min_wc, gap_max_wc = _wc_gap(parsed)
     n_contrib = len(parsed)
 
-    # Pre-generate samples for all contributors at once to avoid repeated
-    # LCG initialisation.  Use seed + contributor index to vary the stream.
-    all_uniform = _lcg_uniform(seed, n_samples * n_contrib * 2)
+    # Compute the exact number of uniform variates needed: normal contributors
+    # require 2·n_samples (Box-Muller pairs), uniform contributors require
+    # n_samples.  Pre-size the buffer exactly to avoid IndexError when uniform
+    # and normal contributors are mixed in the same stack.
+    n_uniforms_needed = sum(
+        n_samples * 2 if p["distribution"] == "normal" else n_samples
+        for p in parsed
+    )
+    all_uniform = _lcg_uniform(seed, max(n_uniforms_needed, 1))
 
     # Reconstruct per-contributor sample arrays
     gap_samples = [0.0] * n_samples
