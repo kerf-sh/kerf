@@ -64,6 +64,7 @@ LLM tool schema (Anthropic tool_use format)
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -174,3 +175,52 @@ TOOL_SCHEMA = {
         "required": ["project", "rule_pack"],
     },
 }
+
+
+# ── ToolSpec + async handler for ctx.tools.register ────────────────────────
+
+try:
+    from kerf_chat.tools.registry import ToolSpec, err_payload, ok_payload
+    from kerf_core.utils.context import ProjectCtx
+
+    validate_against_rules_spec = ToolSpec(
+        name="validate_against_rules",
+        description=TOOL_SCHEMA["description"],
+        input_schema=TOOL_SCHEMA["input_schema"],
+    )
+
+    async def run_validate_against_rules(ctx: "ProjectCtx", args: bytes) -> str:
+        """Async handler: parse args JSON, delegate to sync validate_against_rules()."""
+        try:
+            a = json.loads(args) if args else {}
+        except Exception as e:
+            return err_payload(f"invalid args: {e}", "BAD_ARGS")
+
+        project = a.get("project")
+        rule_pack = a.get("rule_pack")
+
+        if not isinstance(project, dict) or "elements" not in project:
+            return err_payload("'project' must be an object with an 'elements' list", "BAD_ARGS")
+        if not rule_pack:
+            return err_payload("'rule_pack' is required", "BAD_ARGS")
+        if rule_pack not in ("aisc", "eurocode2", "asme_b18"):
+            return err_payload(
+                f"'rule_pack' must be one of: aisc, eurocode2, asme_b18. Got: {rule_pack!r}",
+                "BAD_ARGS",
+            )
+
+        try:
+            result = validate_against_rules(project, rule_pack)
+        except FileNotFoundError as exc:
+            return err_payload(str(exc), "RULE_PACK_NOT_FOUND")
+        except Exception as exc:
+            return err_payload(str(exc), "RULES_ERROR")
+
+        return ok_payload(result)
+
+    TOOLS = [
+        (validate_against_rules_spec.name, validate_against_rules_spec, run_validate_against_rules),
+    ]
+
+except ImportError:
+    TOOLS = []
