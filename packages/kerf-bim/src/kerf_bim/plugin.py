@@ -70,6 +70,8 @@ def _register_tools(ctx, provides: list) -> None:
         ("kerf_bim.tools.space", "bim.space"),
         # GK-P50: structural grid + framing layout
         ("kerf_bim.tools.grid_framing", "bim.grid-framing"),
+        # Compound walls and floor/roof slabs
+        ("kerf_bim.tools.walls_slabs", "bim.walls-slabs"),
     ]
 
     for module_path, capability in tool_modules:
