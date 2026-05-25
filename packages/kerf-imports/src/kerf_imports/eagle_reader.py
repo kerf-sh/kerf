@@ -504,7 +504,7 @@ try:
             "warnings": model["warnings"],
         })
 
-    TOOLS = []  # tools registered via @register decorator; list kept for symmetry
+    TOOLS = [(_import_eagle_spec.name, _import_eagle_spec, run_import_eagle)]
 
 except ImportError:
     pass

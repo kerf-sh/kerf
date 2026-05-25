@@ -520,7 +520,7 @@ try:
             "warnings": model["warnings"],
         })
 
-    TOOLS = []  # tools registered via @register decorator; list kept for symmetry
+    TOOLS = [(_import_geda_spec.name, _import_geda_spec, run_import_geda)]
 
 except ImportError:
     pass

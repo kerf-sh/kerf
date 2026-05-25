@@ -689,7 +689,7 @@ try:
 
     # Expose TOOLS list for plugin loader (mirrors jt_reader / parasolid_reader
     # pattern — plugin.py iterates mod.TOOLS if present).
-    TOOLS = []  # tools registered via @register decorator; list kept for symmetry
+    TOOLS = [(_import_qif_spec.name, _import_qif_spec, run_import_qif)]
 
 except ImportError:
     # Standalone / test mode — no Kerf runtime available

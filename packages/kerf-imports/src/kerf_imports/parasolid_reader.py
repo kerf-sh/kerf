@@ -964,7 +964,9 @@ try:
         result.pop("_model", None)
         return ok_payload(result)
 
+    TOOLS = [(import_xt_spec.name, import_xt_spec, run_import_xt)]
     _LLM_TOOL_REGISTERED = True
 
 except ImportError:
+    TOOLS = []
     _LLM_TOOL_REGISTERED = False

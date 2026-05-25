@@ -631,7 +631,7 @@ try:
             "warnings": model["warnings"],
         })
 
-    TOOLS = []  # tools registered via @register decorator; list kept for symmetry
+    TOOLS = [(_import_allegro_spec.name, _import_allegro_spec, run_import_allegro)]
 
 except ImportError:
     pass

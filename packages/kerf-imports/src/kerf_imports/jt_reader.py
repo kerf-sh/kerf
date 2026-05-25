@@ -1024,3 +1024,8 @@ def _count_nodes(nodes: list[dict]) -> int:
         total += 1
         total += _count_nodes(n.get("children", []))
     return total
+
+
+# Expose TOOLS list for the plugin loader (kerf_imports.plugin._register_tools
+# iterates mod.TOOLS when present).
+TOOLS = [(_import_jt_spec.name, _import_jt_spec, run_import_jt)]

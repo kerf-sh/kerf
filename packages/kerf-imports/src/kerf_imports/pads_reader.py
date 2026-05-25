@@ -501,7 +501,7 @@ try:
             "warnings": model["warnings"],
         })
 
-    TOOLS = []  # tools registered via @register decorator; list kept for symmetry
+    TOOLS = [(_import_pads_spec.name, _import_pads_spec, run_import_pads)]
 
 except ImportError:
     pass

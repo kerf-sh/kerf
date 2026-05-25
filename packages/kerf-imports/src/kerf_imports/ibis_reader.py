@@ -778,7 +778,7 @@ try:
         })
 
     # Expose TOOLS list for plugin loader (mirrors qif_reader pattern).
-    TOOLS = []  # tools registered via @register decorator; list kept for symmetry
+    TOOLS = [(_import_ibis_spec.name, _import_ibis_spec, run_import_ibis)]
 
 except ImportError:
     # Standalone / test mode — no Kerf runtime available
