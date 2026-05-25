@@ -3,7 +3,8 @@ kerf-civil plugin entry-point.
 
 Registers:
   - LLM tools: civil_horizontal_alignment, civil_vertical_alignment,
-               civil_corridor_sections, civil_earthwork_volume
+               civil_corridor_sections, civil_earthwork_volume,
+               civil_tin_terrain, civil_crs_transform
 """
 
 from __future__ import annotations
@@ -57,6 +58,17 @@ async def register(app: FastAPI, ctx):
             "kerf-civil: failed to load tools_corridor: %s", _exc
         )
 
+    # TIN terrain model + CRS transforms (coverage sweep 2026-05-25)
+    try:
+        from kerf_civil.tools_terrain import TOOLS as _terrain_tools
+        for _tool_name, _tool_spec, _tool_handler in _terrain_tools:
+            ctx.tools.register(_tool_name, _tool_spec, _tool_handler)
+    except Exception as _exc:
+        import logging as _logging
+        _logging.getLogger(__name__).warning(
+            "kerf-civil: failed to load tools_terrain: %s", _exc
+        )
+
     provides = [
         "civil.horizontal_alignment",
         "civil.vertical_alignment",
@@ -65,6 +77,8 @@ async def register(app: FastAPI, ctx):
         "civil.corridor-brep",
         "civil.corridor-volume",
         "civil.corridor-ifc",
+        "civil.tin-terrain",
+        "civil.crs-transform",
     ]
 
     try:
