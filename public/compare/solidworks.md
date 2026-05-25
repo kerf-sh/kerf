@@ -194,8 +194,8 @@ features:
       source: "https://help.solidworks.com/2026/english/simtutorialonline/c_simconn_fatigue.htm"
     kerf:
       status: partial
-      note: "Consistent-mass modal + Riks + J2 plasticity backend"
-      evidence: "packages/kerf-fem/src/kerf_fem/modal.py"
+      note: "Consistent-mass modal + linear eigenvalue buckling (Euler-Bernoulli Kg) + harmonic/FRF (mode superposition) + random-vibration PSD (Miles' equation + shaped PSD) + Riks + J2 plasticity backend; no UI"
+      evidence: "packages/kerf-fem/src/kerf_fem/buckling.py"
 
   - domain: D2
     feature: "AISC 360 / ACI 318 member design"
@@ -476,8 +476,8 @@ features:
       source: "https://help.solidworks.com/2026/english/simtutorialonline/c_simconn_fatigue.htm"
     kerf:
       status: partial
-      note: "Full n-DOF eigen + FRF matrix backend; no UI"
-      evidence: "packages/kerf-cad-core/src/kerf_cad_core/vibration/mdof.py"
+      note: "Full n-DOF eigen + FRF matrix + harmonic response (mode superposition, DAF, phase) + random-vibration PSD (Miles' equation + shaped PSD via trapezoidal integration) backend; no UI"
+      evidence: "packages/kerf-fem/src/kerf_fem/harmonic.py"
 
   # ── D10 Electrical / energy / PLC / firmware ──────────────────────────────
   - domain: D10
@@ -690,7 +690,7 @@ SOLIDWORKS (Dassault Systèmes) is the dominant professional mechanical CAD plat
 ## Honest gaps — where Kerf is behind today
 
 - **Assembly motion study.** Kerf now matches SOLIDWORKS' joint type set (including gear, cam, pin-slot), but motion analysis, contact sets, and interference detection are not yet shipped in Kerf.
-- **FEM multi-physics depth and CFD.** Kerf ships linear static, thermal, and nonlinear plasticity FEM, but SOLIDWORKS Simulation (fatigue, frequency, buckling) and Flow Simulation (CFD) are significantly more mature. CFD is not in Kerf.
+- **FEM multi-physics depth and CFD.** Kerf now ships linear static + nonlinear plasticity + fatigue + linear eigenvalue buckling + harmonic FRF + random-vibration PSD FEM (all backend only, no UI). SOLIDWORKS Simulation is significantly more mature in pre/post-processing depth. CFD (Flow Simulation) is not in Kerf.
 - **NURBS surfacing depth.** SOLIDWORKS Premium's surfacing tools are significantly ahead of Kerf's NURBS Phase 4, which is early and scope-limited.
 - **Weldments workspace.** SOLIDWORKS' structural member profiles, weldment cut lists, and gussets are a fabrication workflow Kerf does not replicate.
 - **Large assembly tooling.** Lightweight components, SpeedPak, and large-assembly performance settings have no Kerf equivalent today.

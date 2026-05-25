@@ -312,7 +312,7 @@ Kerf wraps CalculiX's `ccx` solver as its FEM backend and integrates it into the
 | Non-linear static FEA | Selected cases | Full (large deformation, contact) |
 | Modal analysis | Yes | Yes |
 | Thermal / thermo-mechanical | Yes | Yes |
-| Buckling analysis | Roadmap | Yes |
+| Buckling analysis | Yes (linear eigenvalue, Euler-Bernoulli Kg; backend) | Yes |
 | Explicit dynamics | Roadmap | Yes |
 | Abaqus input format | Yes (internally) | Yes (primary format) |
 | UMAT (user materials) | Not yet | Yes |

@@ -642,7 +642,7 @@ FreeCAD reached 1.0 in November 2024 after ~20 years of development: a genuinely
 
 - **Mature, proven parametric modelling.** The Part Design and Sketcher workbenches have been refined for roughly two decades. FreeCAD 1.0 largely resolved the long-standing topological-naming problem for Sketcher and Part Design.
 - **Built-in Assembly workbench.** FreeCAD 1.0 ships a first-party Assembly workbench with a modern constraint solver — no longer a third-party add-on. Kerf's assembly mates are newer and less battle-tested.
-- **Real FEM simulation.** The FEM workbench drives CalculiX, Elmer, Z88, and Mystran for structural (static, modal, buckling) and thermal analysis — a depth Kerf has not yet matched.
+- **Real FEM simulation.** The FEM workbench drives CalculiX, Elmer, Z88, and Mystran for structural (static, modal, buckling) and thermal analysis with a full mesh/BC/result UI. Kerf now ships linear eigenvalue buckling, harmonic FRF, and random-vibration PSD modules, but without a dedicated FEM UI the workflow gap remains significant.
 - **Hundreds of community workbenches.** SheetMetal, Path/CAM, Arch/BIM, FEM, Render, and many more. If a specialised workflow exists, there is usually a workbench for it.
 - **Deep, in-process Python API.** FreeCAD's scripting surface covers virtually every internal object type, with an enormous body of macros and documentation.
 - **Completely free, fully offline.** No subscription, no account, no cloud dependency — Windows, macOS, and Linux desktop.

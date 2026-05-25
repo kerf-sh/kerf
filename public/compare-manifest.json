@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "generatedAt": "2026-05-24T22:30:49.727Z",
+  "generatedAt": "2026-05-25T23:16:31.837Z",
   "items": [
     {
       "slug": "revit",
@@ -333,9 +333,9 @@
             "source": "https://help.autodesk.com/view/CIV3D/2026/ENU/?guid=GUID-4D3E2C98-E4A5-4F9D-9EFE-8A1F0BDCB5A1"
           },
           "kerf": {
-            "status": "no",
-            "note": "TR-55 hydrology + D8 flow accumulation exist; no gravity pipe network design/sizing/plan workflow",
-            "evidence": "packages/kerf-civil/src/kerf_civil/"
+            "status": "partial",
+            "note": "Manning's equation for circular/trapezoidal gravity flow (normal-depth solver, full-flow capacity, part-full geometry); no network design, sizing wizard, or plan-production workflow",
+            "evidence": "packages/kerf-civil/src/kerf_civil/hydraulics_gravity.py"
           }
         },
         {
@@ -348,8 +348,8 @@
           },
           "kerf": {
             "status": "partial",
-            "note": "Hardy-Cross steady-state pressure pipe network solver (Darcy-Weisbach, Hazen-Williams) in kerf-cad-core; no plan-production or fittings layout",
-            "evidence": "packages/kerf-cad-core/src/kerf_cad_core/civil/hydraulics.py"
+            "note": "Hardy-Cross / Global Gradient Algorithm steady-state solver (Hazen-Williams + Darcy-Weisbach with Swamee-Jain friction); no plan-production or fittings layout",
+            "evidence": "packages/kerf-civil/src/kerf_civil/hydraulics_pressure.py"
           }
         },
         {
@@ -418,8 +418,8 @@
           },
           "kerf": {
             "status": "yes",
-            "note": "Backend; TR-55 runoff, time of concentration",
-            "evidence": "packages/kerf-civil/"
+            "note": "Rational method (ASCE/EWRI 77-17) + TR-55 runoff + HDS-5 culvert inlet-control (unsubmerged/submerged, concrete box + circular)",
+            "evidence": "packages/kerf-civil/src/kerf_civil/storm.py"
           }
         },
         {
@@ -516,8 +516,8 @@
           },
           "kerf": {
             "status": "yes",
-            "note": "Hardy-Cross steady-state pressure pipe network + Method-of-Characteristics transient solver",
-            "evidence": "packages/kerf-cad-core/src/kerf_cad_core/civil/hydraulics.py"
+            "note": "Hardy-Cross / Global Gradient Algorithm (Hazen-Williams + Darcy-Weisbach) steady-state solver; also Manning gravity flow for circular/trapezoidal sections",
+            "evidence": "packages/kerf-civil/src/kerf_civil/hydraulics_pressure.py"
           }
         },
         {
@@ -5954,8 +5954,8 @@
           },
           "kerf": {
             "status": "partial",
-            "note": "Consistent-mass modal + Riks + J2 plasticity backend",
-            "evidence": "packages/kerf-fem/src/kerf_fem/modal.py"
+            "note": "Consistent-mass modal + linear eigenvalue buckling (Euler-Bernoulli Kg) + harmonic/FRF (mode superposition) + random-vibration PSD (Miles' equation + shaped PSD) + Riks + J2 plasticity backend; no UI",
+            "evidence": "packages/kerf-fem/src/kerf_fem/buckling.py"
           }
         },
         {
@@ -6304,8 +6304,8 @@
           },
           "kerf": {
             "status": "partial",
-            "note": "Full n-DOF eigen + FRF matrix backend; no UI",
-            "evidence": "packages/kerf-cad-core/src/kerf_cad_core/vibration/mdof.py"
+            "note": "Full n-DOF eigen + FRF matrix + harmonic response (mode superposition, DAF, phase) + random-vibration PSD (Miles' equation + shaped PSD via trapezoidal integration) backend; no UI",
+            "evidence": "packages/kerf-fem/src/kerf_fem/harmonic.py"
           }
         },
         {

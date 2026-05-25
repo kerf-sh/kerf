@@ -60,9 +60,9 @@ features:
       note: "Full storm and sanitary gravity pipe design, sizing, plan production"
       source: "https://help.autodesk.com/view/CIV3D/2026/ENU/?guid=GUID-4D3E2C98-E4A5-4F9D-9EFE-8A1F0BDCB5A1"
     kerf:
-      status: no
-      note: "TR-55 hydrology + D8 flow accumulation exist; no gravity pipe network design/sizing/plan workflow"
-      evidence: "packages/kerf-civil/src/kerf_civil/"
+      status: partial
+      note: "Manning's equation for circular/trapezoidal gravity flow (normal-depth solver, full-flow capacity, part-full geometry); no network design, sizing wizard, or plan-production workflow"
+      evidence: "packages/kerf-civil/src/kerf_civil/hydraulics_gravity.py"
 
   - domain: D8
     feature: "Pressure pipe networks"
@@ -72,8 +72,8 @@ features:
       source: "https://help.autodesk.com/view/CIV3D/2026/ENU/?guid=GUID-A57BA96E-A2F5-4A4F-B0B3-2E3D8F6E1C9D"
     kerf:
       status: partial
-      note: "Hardy-Cross steady-state pressure pipe network solver (Darcy-Weisbach, Hazen-Williams) in kerf-cad-core; no plan-production or fittings layout"
-      evidence: "packages/kerf-cad-core/src/kerf_cad_core/civil/hydraulics.py"
+      note: "Hardy-Cross / Global Gradient Algorithm steady-state solver (Hazen-Williams + Darcy-Weisbach with Swamee-Jain friction); no plan-production or fittings layout"
+      evidence: "packages/kerf-civil/src/kerf_civil/hydraulics_pressure.py"
 
   - domain: D8
     feature: "Survey / COGO"
@@ -127,8 +127,8 @@ features:
       source: "https://help.autodesk.com/view/CIV3D/2026/ENU/?guid=GUID-A1B2C3D4-E5F6-7A8B-9C0D-E1F2A3B4C5D6"
     kerf:
       status: yes
-      note: "Backend; TR-55 runoff, time of concentration"
-      evidence: "packages/kerf-civil/"
+      note: "Rational method (ASCE/EWRI 77-17) + TR-55 runoff + HDS-5 culvert inlet-control (unsubmerged/submerged, concrete box + circular)"
+      evidence: "packages/kerf-civil/src/kerf_civil/storm.py"
 
   - domain: D8
     feature: "Spillway / dam / railway / earthworks"
@@ -206,8 +206,8 @@ features:
       source: "https://help.autodesk.com/view/CIV3D/2026/ENU/?guid=GUID-A57BA96E-A2F5-4A4F-B0B3-2E3D8F6E1C9D"
     kerf:
       status: yes
-      note: "Hardy-Cross steady-state pressure pipe network + Method-of-Characteristics transient solver"
-      evidence: "packages/kerf-cad-core/src/kerf_cad_core/civil/hydraulics.py"
+      note: "Hardy-Cross / Global Gradient Algorithm (Hazen-Williams + Darcy-Weisbach) steady-state solver; also Manning gravity flow for circular/trapezoidal sections"
+      evidence: "packages/kerf-civil/src/kerf_civil/hydraulics_pressure.py"
 
   # D1 — Geometry & core CAD
   - domain: D1
@@ -347,7 +347,7 @@ Autodesk Civil 3D is the industry-standard civil infrastructure design tool: cor
 ## Where Kerf differs
 
 - **MIT open-core, dramatically lower cost.** Civil 3D requires the AEC Collection at ~US$4,150/yr (as of May 2026) and is Windows-only. Kerf is MIT-licensed — free locally on Windows, macOS, and Linux.
-- **Civil-adjacent analysis modules.** Kerf ships TR-55 hydrology (runoff, time of concentration), Coulomb/Rankine geotechnical analysis (earth pressure, bearing capacity), Vincenty-validated geodesy, ASCE 7 wind load and seismic response modules, and basic earthworks — useful for civil engineering calculations alongside design work.
+- **Civil-adjacent analysis modules.** Kerf ships: rational method + TR-55 hydrology (runoff, time of concentration) + HDS-5 culvert inlet-control sizing; Manning's gravity flow for circular/trapezoidal sections; Hardy-Cross / Global Gradient Algorithm pressure-pipe solver (Hazen-Williams + Darcy-Weisbach); Coulomb/Rankine geotechnical analysis; Vincenty-validated geodesy; ASCE 7 wind/seismic modules; and basic earthworks — all useful for civil engineering calculations alongside design work.
 - **Multi-discipline in one workspace.** Civil 3D is a civil infrastructure tool. Kerf adds full EDA (PCB schematic + layout), OCCT mechanical CAD, jewelry tooling, and BIM-adjacent primitives in the same workspace — useful for infrastructure projects that involve embedded electronics or smart-city components.
 - **Chat-native workflow.** Describe an analysis setup, parameter change, or model query in plain language; the LLM edits the source backed by live doc-search. Civil 3D has no LLM integration we're aware of (as of May 2026).
 - **kerf-sdk Python scripting.** Automate analysis workflows and model manipulation from Python over HTTP/JSON-RPC on your own machine.
@@ -358,7 +358,7 @@ Autodesk Civil 3D is the industry-standard civil infrastructure design tool: cor
 - **Corridor modelling is absent.** Civil 3D's full corridor assemblies, subassemblies, and targets for road/highway design have no Kerf equivalent. This is the core of Civil 3D's value.
 - **Alignments, profiles, and cross-sections.** Kerf has no horizontal/vertical alignment design or automated cross-section extraction workflow.
 - **Dynamic TIN surfaces and grading.** Civil 3D's composite TINs and grading objects are production civil tools Kerf does not replicate. Kerf has a basic earthworks module but no corridor-driven volumes.
-- **Pipe network design.** Full gravity/pressure pipe network design, sizing, and plan production are absent in Kerf.
+- **Pipe network design.** Kerf now has Manning's gravity flow equations (normal-depth solver, full-flow capacity) and a Hardy-Cross / Global Gradient Algorithm pressure solver (Hazen-Williams + Darcy-Weisbach). What is absent is the full pipe network design workflow: no network topology editor, no sizing wizard, no fittings catalogue, and no plan-production output.
 - **Survey database.** Civil 3D's survey database, figures, and least-squares adjustment have no Kerf equivalent. Kerf has basic surveying module validation but not a survey DB.
 - **AutoCAD DWG authoring.** Kerf imports DWG but writes DXF — not native DWG. For teams that live in the DWG ecosystem, this is a meaningful limitation.
 - **Automated civil plan production.** Civil 3D's automated plan and profile sheets and sheet set manager are mature production tools with no Kerf equivalent.
@@ -374,8 +374,8 @@ Autodesk Civil 3D is the industry-standard civil infrastructure design tool: cor
 | Corridor modelling (roads / rail) | ✅ Industry-standard — full assemblies / subassemblies | ❌ Not available |
 | Alignments + profiles + cross-sections | ✅ Full alignment/profile/section design | ❌ Not available |
 | Dynamic TIN surfaces | ✅ Composite TINs, grading, surface comparison | ⚠️ Basic earthwork / site grading |
-| Gravity pipe networks | ✅ Full storm + sanitary design | ❌ Not available |
-| Pressure pipe networks | ✅ Pressure pipe parts + plan production | ❌ Not available |
+| Gravity pipe networks | ✅ Full storm + sanitary design | ⚠️ Manning flow equations (normal-depth solver); no network design or plan production |
+| Pressure pipe networks | ✅ Pressure pipe parts + plan production | ⚠️ Hardy-Cross/GGA solver (HW + DW); no fittings catalogue or plan production |
 | Parcels + lot layout | ✅ Parcel creation + sizing + reports | ❌ Not available |
 | Point clouds | ✅ ReCap integration | ❌ Not available |
 | Survey data integration | ✅ Survey database + least-squares | ⚠️ Surveying module; no survey DB |
