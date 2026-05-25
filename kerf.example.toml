@@ -191,7 +191,7 @@ enabled = false
   # Real git integration (cloud-only). Bare repos are stored as S3 objects
   # under `<prefix>/<project_id>/...` in the same bucket as `[storage.s3]`,
   # so the service is fully stateless and safe on ephemeral filesystems
-  # (Cloud Run, Fly Machines, etc.). Requires `storage.backend = "s3"` and
+  # (Koyeb, Cloud Run, etc.). Requires `storage.backend = "s3"` and
   # a configured `[storage.s3]`. GitHub sync (push/pull/import) requires
   # the OAuth app below.
   [cloud.git]

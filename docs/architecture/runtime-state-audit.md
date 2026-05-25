@@ -15,10 +15,9 @@ _Anchored at commit `ccb91c8` — 2026-05-19_
   wired to any HTTP endpoint yet, but it **will break** the moment a second instance
   is added or presence is exposed.
 
-  > The original audit was written against the Fly.io deployment (`fly.toml`
-  > `min_machines_running = 1`). The hosted tier has since migrated to Koyeb
-  > (Frankfurt). The multi-instance safety analysis below remains valid for any
-  > horizontally-scaled container deployment.
+  > This audit was written against the Koyeb deployment (`koyeb.yaml`).
+  > The multi-instance safety analysis below applies to any horizontally-scaled
+  > container deployment.
 
 - **IndexedDB save status: IMPLEMENTED but not wired to editors.** `localStash`,
   `autosaveScheduler`, and `dirtyStore` are fully coded and tested. `reconcile()` is
@@ -59,29 +58,23 @@ Key Koyeb knobs to review when scaling:
 - **No sticky-session config by default**: requests are round-robined across
   replicas. Do not rely on in-process state surviving across requests.
 
-### (Fly.io / deprecated) fly.toml audit
+### koyeb.yaml audit
 
-> This section applies only to CPU-only self-hosted deployments still using Fly.
-
-```toml
-[http_service]
-  auto_stop_machines = "stop"
-  auto_start_machines = true
-  min_machines_running = 1
+```yaml
+# koyeb.yaml (relevant scaling fields)
+# replicas: 1          # single replica by default
+# min_scale: 1
+# max_scale: 3         # autoscale up to 3 on concurrency
 ```
 
-- `min_machines_running = 1` → one machine kept hot at all times; scale-out
-  (additional machines) can happen under concurrency pressure.
-- `soft_limit = 200`, `hard_limit = 250` — concurrency thresholds that trigger
-  new machine starts.
-- **No sticky-session config**: no `[[http_service.headers]]` for
-  `fly-force-instance-id` or `fly-replay`; no session-affinity annotation.
-- **No secondary region VMs** are active (the `[[vm]] region = "fra"` block is
-  commented out).
+- `min_scale: 1` → one replica kept running at all times; Koyeb autoscales
+  up under concurrency pressure up to `max_scale`.
+- **No sticky-session config by default**: Koyeb round-robins requests across
+  replicas. Do not rely on in-process state surviving across requests.
+- **Health check**: `/healthz` — Koyeb routes traffic only to healthy replicas.
 
-**Today** only one active machine is realistic for the current traffic level, but
-Fly _can_ spin up a second machine on concurrency spikes and the config does not
-prevent it.
+**Today** only one replica is realistic for the current traffic level, but
+Koyeb _can_ add a replica on concurrency spikes and the config does not prevent it.
 
 ### In-memory state audit
 
@@ -120,8 +113,7 @@ as a stub: _"In production it would be backed by Redis pub/sub or a WebSocket fa
 JWT tokens are stateless. There are no in-memory caches that differ between
 instances, no WebSocket fan-out, no SSE persistent connections.
 
-**Risk window:** If the Koyeb autoscaler adds a second replica (or if Fly's
-concurrency autoscaler fires on CPU-only self-host), requests will be
+**Risk window:** If the Koyeb autoscaler adds a second replica, requests will be
 round-robined without affinity. This is safe for current features, but the
 `auto_commit_loop` and `_sweep_loop` tasks will each run on every instance —
 wasted work, not corruption, because Postgres constraints make both idempotent.
@@ -129,17 +121,16 @@ wasted work, not corruption, because Postgres constraints make both idempotent.
 ### What would need to change for presence/cursor-sharing
 
 - `PresenceChannel` must be backed by **Redis pub/sub** (e.g. Upstash Redis, or
-  a managed Redis on Koyeb/Fly) rather than an in-process dict.
+  a managed Redis on Koyeb) rather than an in-process dict.
 - Presence events must be pushed to clients via a persistent transport. The
   current `StreamingResponse` usages are one-shot downloads, not SSE streams.
   Real-time delivery would require a new SSE or WebSocket endpoint on the server
   plus a frontend EventSource/WebSocket connection.
 - Until that transport exists, a second instance means cursor events are silently
   dropped (they'd reach subscribers on the same instance only).
-- Sticky sessions (Koyeb session-affinity header, or Fly's `fly-force-instance-id`
-  for CPU-only Fly deployments) could be a short-term workaround if presence is
-  collocated with a long-lived SSE connection per user, but that breaks horizontal
-  scale.
+- Sticky sessions (Koyeb session-affinity header) could be a short-term
+  workaround if presence is collocated with a long-lived SSE connection per
+  user, but that breaks horizontal scale.
 
 ---
 
@@ -319,10 +310,9 @@ absent.
 5. **Redis-back `PresenceChannel` before enabling presence** — when cursor-sharing
    is added, replace the in-process `_slots`/`_subscribers` dicts with a Redis
    pub/sub channel keyed by `project_id`. Do this before enabling auto-scale
-   beyond 1 replica on Koyeb (or beyond 1 machine on CPU-only Fly deployments).
+   beyond 1 replica on Koyeb.
 
 6. **Duplicate auto_commit/sweep_loop work on multi-instance** — if/when replica
-   count is raised above 1 on Koyeb (or `min_machines_running` above 1 on Fly
-   for CPU-only deployments), consider a Postgres advisory lock to avoid N
+   count is raised above 1 on Koyeb, consider a Postgres advisory lock to avoid N
    instances each polling all workspaces every 60 s. Not a correctness issue
    today, but will become noisy at scale.

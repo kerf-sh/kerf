@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # dev-cloud.sh — run the FULL system locally in CLOUD mode against a
-# local Postgres + local API. Same surface as the Fly "dev" deployment
+# local Postgres + local API. Same surface as the Koyeb "dev" deployment
 # (real signup/login, Workshop, Library, billing-dormant) but everything
 # on your machine.
 #

@@ -108,7 +108,7 @@ Without GC the table would grow continuously; with default window sizes
 
 ## When to migrate to Redis
 
-Operational signals that justify adding Fly Upstash Redis:
+Operational signals that justify adding a managed Redis (e.g. Upstash Redis):
 
 1. **Postgres CPU**: `rate_limit_buckets` UPSERTs appear in
    `pg_stat_statements` with > 5% of total `total_exec_time`.
@@ -121,7 +121,7 @@ Operational signals that justify adding Fly Upstash Redis:
 ### Migration path (same call site)
 
 1. Add `upstash_redis_url` to settings and the Koyeb service env vars
-   (or `fly.toml` for CPU-only Fly deployments).
+   (via `koyeb secrets create` or the Koyeb dashboard).
 2. Implement `kerf_core.rate_limit_redis.enforce(client, key, ...)` with
    the same signature as the Postgres `enforce`.
 3. In `kerf_core/rate_limit.py`, check a feature flag / env var and
@@ -129,7 +129,9 @@ Operational signals that justify adding Fly Upstash Redis:
 4. The FastAPI dependency (`rate_limit()` factory in `dependencies.py`)
    and all route call sites are unchanged.
 
-#### (Fly.io / deprecated)
+#### Managed Redis options
 
-If running on Fly (CPU-only self-host), Upstash Redis is available as a
-Fly addon: https://fly.io/docs/reference/redis/
+- **Upstash Redis** — serverless Redis with a free tier; works from any
+  host including Koyeb. See https://upstash.com/docs/redis/overall/getstarted.
+- **Koyeb managed Redis** — if your provider offers a Redis addon, add it
+  via the Koyeb dashboard and inject the `REDIS_URL` as a secret.

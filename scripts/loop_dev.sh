@@ -10,8 +10,6 @@
 #   2. DROP + recreate the dev Neon schema
 #   3. Deploy to Koyeb dev via  scripts/deploy-koyeb.sh --dev  (runs migrations
 #      via the pre_deploy_command defined in koyeb.yaml).
-#      NOTE: The legacy Fly path (scripts/deploy-fly.sh --dev) is kept for
-#      self-hosters; see deployment/fly.md.
 #   4. Smoke: curl /healthz + one API smoke hit
 #   5. Report
 #

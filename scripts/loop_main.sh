@@ -6,8 +6,6 @@
 #   .env.main + kerf-prod Koyeb service.  This is a destructive script: it
 #   drops and recreates the prod Neon schema and triggers a Koyeb deploy.
 #   It is the prod equivalent of loop_dev.sh.
-#   NOTE: The legacy Fly path (scripts/deploy-fly.sh) is kept for
-#   self-hosters; see deployment/fly.md.
 #
 # Usage:
 #   ./scripts/loop_main.sh --yes

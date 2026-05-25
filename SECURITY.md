@@ -42,7 +42,7 @@ Anything in this repository:
 ## Out-of-scope
 
 - Third-party services Kerf depends on (Anthropic, Paystack, Resend,
-  Tigris, fly.io, etc.) — report directly to those vendors.
+  Tigris, Koyeb, etc.) — report directly to those vendors.
 - Issues that require an attacker with physical access to a victim's
   unlocked machine.
 - Social-engineering attacks against Kerf staff.

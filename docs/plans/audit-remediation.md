@@ -105,12 +105,12 @@ redundancy + security audits). Populated from the scalability audit. Expected th
 - [ ] **S7-STORAGE** — stream large artifacts (don't buffer in memory); signed/expiring URLs (ties to the security thumbnail finding).
 - [ ] **S7-LIMITS** — rate limiting + request size limits + worker autoscale policy.
 
-## Phase 8 — GPU compute backend (cloud Fly GPU + OSS-compatible)
+## Phase 8 — GPU compute backend (cloud Koyeb GPU + OSS-compatible)
 
-Directive: add GPU instances on Fly for advanced rendering and advanced
+Directive: add GPU instances on Koyeb for advanced rendering and advanced
 projects (heavy FEM/CFD/topo), with an abstraction so OSS/self-host can use GPU too.
-- [ ] **G8-IFACE** — define a `ComputeBackend` abstraction (enqueue job → run → artifact → notify) used by render + heavy-compute. Two implementations: `local` (host subprocess, optional local GPU via CUDA/Metal detection, CPU fallback) and `cloud-gpu` (Fly GPU machine pool). MIT-root: the interface + local backend are open; the Fly-pool orchestration lives under the proprietary cloud/ tree.
-- [ ] **G8-FLY** — Fly GPU machine config (e.g. l40s/a100), scale-to-zero, on-demand spin-up per job, GPU worker image (Blender + CUDA), job dispatch + result fetch. Build kerf-workers GPU worker. **Do NOT `fly deploy` / provision GPU machines autonomously — user triggers deployment.**
+- [ ] **G8-IFACE** — define a `ComputeBackend` abstraction (enqueue job → run → artifact → notify) used by render + heavy-compute. Two implementations: `local` (host subprocess, optional local GPU via CUDA/Metal detection, CPU fallback) and `cloud-gpu` (Koyeb GPU service pool). MIT-root: the interface + local backend are open; the Koyeb-pool orchestration lives under the proprietary cloud/ tree.
+- [ ] **G8-KOYEB** — Koyeb GPU service config (L4 default, scale-to-zero), on-demand spin-up per job, GPU worker image (Blender + CUDA), job dispatch + result fetch. Build kerf-workers GPU worker. **Do NOT `koyeb deploy` / provision GPU instances autonomously — user triggers deployment.**
 - [ ] **G8-OSS** — self-host docs + config so a self-hoster points Kerf at a local/own GPU box; no proprietary dependency in the OSS path; graceful CPU fallback.
 - [ ] **G8-WIRE** — route GPU-eligible jobs (render quality tiers, large sims) to the GPU backend; expose status in the UI (ties to TopoView/render wiring in Phase 2).
 
@@ -119,7 +119,7 @@ projects (heavy FEM/CFD/topo), with an abstraction so OSS/self-host can use GPU 
 Directive: fix and run the billing model to account for GPU.
 - [ ] **B9-METER** — meter GPU-seconds as a billable resource; emit usage events from the GPU backend; atomic, server-authoritative credit decrement (builds on the P1-API billing fail-closed fix).
 - [ ] **B9-BUCKETS** — extend the three-bucket model: GPU jobs require kerf_paid credits (priced at cost + markup, consistent with existing model); kerf_free = CPU-only or a tight GPU cap; kerf_byo / self-host = own infra, zero Kerf billing.
-- [ ] **B9-MODEL** — update the `billingmodel/` calculator with GPU line items (Fly GPU machine $/s + markup) and RUN it to produce refreshed pricing numbers; reconcile with the Free/Studio/Pro/Enterprise tiers.
+- [ ] **B9-MODEL** — update the `billingmodel/` calculator with GPU line items (Koyeb GPU service $/s + markup) and RUN it to produce refreshed pricing numbers; reconcile with the Free/Studio/Pro/Enterprise tiers.
 - [ ] **B9-AUDIT** — close the billing-bypass + storage-URL-signing security findings as part of this pass.
 
 Sequencing: Phase 7 (scalability) and the Phase 8/9 design depend on the
@@ -142,7 +142,7 @@ done. Remaining: the domain_depth Tier 1/2/3 backlog + GUARDS + sidebar.
 - Per-wave package tests must pass before integrate; periodic consolidated runs.
 - Update `domain_depth.md` checkboxes + tasks in the same pass as each feature.
 - Migrations folded into baseline (no ALTER shims). Never reset the shared DB.
-- **No `fly deploy` / GPU provisioning; no `git push`.**
+- **No `koyeb deploy` / GPU provisioning; no `git push`.**
 - UI cannot be visually QA'd here — UI features land with vitest + build green and are flagged for the user's visual sign-off (not claimed "perfect").
 
 **Wave order:** Tier 1 (UI surfacing, highest ROI) + Tier 3 (correctness, cheap)

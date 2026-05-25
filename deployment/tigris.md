@@ -11,31 +11,39 @@ the real public hostname; it is not Fly-specific.
 
 ## Why Tigris (vs Cloudflare R2 or AWS S3)
 
-- **Anycast network** — low-latency access from any region; zero egress
-  when used alongside fly.io (`jnb`/`fra` machines). From Koyeb Frankfurt,
-  Tigris Frankfurt-replicated objects are served with minimal round-trip.
+- **Anycast network** — low-latency access from any region; from Koyeb
+  Frankfurt (`fra`), Tigris Frankfurt-replicated objects are served with
+  minimal round-trip (~1–5 ms typical for same-region cache hits).
 - **S3-compatible API** — drop-in for the existing `STORAGE_BACKEND=s3`
   path. No code changes.
 - **Multi-region by default** — Tigris replicates writes to multiple
   regions automatically.
-- **Pricing**: ~$0.02/GB-month storage, $0/GB egress within fly; egress
-  to external hosts at standard rates. R2 is $0.015/GB; AWS S3 is
-  $0.023/GB plus $0.09/GB egress.
+- **Pricing**: ~$0.02/GB-month storage; egress at standard Tigris rates
+  from any host. R2 is $0.015/GB; AWS S3 is $0.023/GB plus $0.09/GB egress.
 
 The model in `billingmodel/projections.py` uses $0.02/GB-mo for Tigris.
 
 ## Provisioning
 
-```sh
-# Creates a bucket and prints credentials.
-flyctl storage create kerf-blobs
+Sign in to [console.tigris.dev](https://console.tigris.dev), create an
+organisation (if you haven't already), then create a bucket:
 
-# Output:
-#   BUCKET_NAME=kerf-blobs-abc123
+```sh
+# Using the Tigris CLI (pip install tigris-cli, or use the web console).
+# The CLI prints credentials on bucket creation:
+tigris bucket create kerf-blobs
+
+# Output (save these values):
+#   BUCKET_NAME=kerf-blobs
 #   AWS_ACCESS_KEY_ID=tid_...
 #   AWS_SECRET_ACCESS_KEY=tsec_...
 #   AWS_ENDPOINT_URL_S3=https://fly.storage.tigris.dev
 ```
+
+Alternatively, create the bucket and access key from the
+[Tigris web console](https://console.tigris.dev) under
+**Buckets → Create bucket**, then generate an access key under
+**Access Keys → Create key**.
 
 Map these to Kerf's env vars:
 
@@ -46,11 +54,17 @@ Map these to Kerf's env vars:
 | `AWS_SECRET_ACCESS_KEY` | `KERF_STORAGE_S3_SECRET_KEY` |
 | `AWS_ENDPOINT_URL_S3` | `KERF_STORAGE_S3_ENDPOINT` |
 
-Plus pin region to auto-route:
+Inject into your Koyeb service as secrets:
 
 ```sh
-flyctl secrets set KERF_STORAGE_S3_REGION="auto"
+koyeb secrets create KERF_STORAGE_S3_BUCKET    --value "kerf-blobs"
+koyeb secrets create KERF_STORAGE_S3_ACCESS_KEY --value "tid_..."
+koyeb secrets create KERF_STORAGE_S3_SECRET_KEY --value "tsec_..."
+koyeb secrets create KERF_STORAGE_S3_ENDPOINT   --value "https://fly.storage.tigris.dev"
+koyeb secrets create KERF_STORAGE_S3_REGION     --value "auto"
 ```
+
+Then reference each secret name in your `koyeb.yaml` service env block.
 
 ## Versioning (recommended)
 
@@ -108,11 +122,10 @@ The `docker-compose.yml` includes a MinIO service for this.
 
 - **403 forbidden on upload**: check `KERF_STORAGE_S3_BUCKET` matches the
   exact bucket name (it's prefixed with a random suffix).
-- **Upload latency from non-Fly hosts**: Tigris is highly optimized for
-  Fly-native traffic. From Koyeb or other external hosts, uploads go
-  through the public `fly.storage.tigris.dev` endpoint; latency is
-  comparable to R2 from outside the Fly network.
-- **Egress charges**: $0 from inside the Fly network. From Koyeb or
-  other external hosts, standard Tigris egress rates apply. If you see
-  unexpected egress, verify `KERF_STORAGE_S3_ENDPOINT` is set to
+- **Upload latency**: Tigris uses anycast routing. From Koyeb Frankfurt,
+  requests hit Tigris's Frankfurt edge; latency is typically 1–10 ms for
+  small objects. For very large uploads, multipart is automatically used
+  by the Kerf chunked-upload helpers.
+- **Egress charges**: standard Tigris egress rates apply from all hosts.
+  If you see unexpected egress, verify `KERF_STORAGE_S3_ENDPOINT` is set to
   `https://fly.storage.tigris.dev`.
