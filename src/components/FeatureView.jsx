@@ -2384,6 +2384,533 @@ const FEATURE_KINDS = [
       { key: 'tolerance',  kind: 'number', label: 'Fit tolerance (mm)', min: 1e-6, step: 0.001 },
     ],
   },
+
+  // ── Mechanical / solids (coverage sweep) ────────────────────────────────
+
+  // feature_draft — taper-angle on faces for mold release
+  {
+    op: 'feature_draft',
+    label: 'Draft',
+    icon: SlidersHorizontal,
+    caption: (
+      'Apply a taper draft angle to a set of faces relative to a neutral plane. ' +
+      'Standard operation for injection-molded parts to enable mold release. ' +
+      'angle_deg is clamped to [-30, 30].'
+    ),
+    defaults: {
+      face_ids: [],
+      neutral_plane_face_id: 0,
+      angle_deg: 3,
+      pull_direction: 'outward',
+    },
+    fields: [
+      { key: 'neutral_plane_face_id', kind: 'number', label: 'Neutral plane face id', min: 0, step: 1 },
+      { key: 'angle_deg',     kind: 'number', label: 'Draft angle (°)', min: -30, max: 30, step: 0.5 },
+      { key: 'pull_direction', kind: 'select', label: 'Pull direction', options: [
+        { value: 'outward', label: 'Outward (widen from mold axis)' },
+        { value: 'inward',  label: 'Inward (taper toward mold axis)' },
+      ] },
+    ],
+  },
+
+  // feature_mirror — mirror body about a world plane or face
+  {
+    op: 'feature_mirror',
+    label: 'Mirror Body',
+    icon: FlipHorizontal,
+    caption: (
+      'Mirror an existing feature or body about a world plane (XY/XZ/YZ) or a planar face id. ' +
+      'When merge=true the mirrored copy is boolean-unioned with the original.'
+    ),
+    defaults: {
+      source_feature_id: '',
+      mirror_plane: 'XZ',
+      merge: true,
+    },
+    fields: [
+      { key: 'source_feature_id', kind: 'feature_picker', label: 'Source feature / body' },
+      { key: 'mirror_plane', kind: 'select', label: 'Mirror plane (world)', options: [
+        { value: 'XY', label: 'XY (horizontal)' },
+        { value: 'XZ', label: 'XZ (front-back)' },
+        { value: 'YZ', label: 'YZ (left-right)' },
+      ] },
+      { key: 'mirror_face_id', kind: 'number', label: 'Mirror face id (overrides plane)', min: 0, step: 1 },
+      { key: 'merge', kind: 'boolean', label: 'Merge (union) with original' },
+    ],
+  },
+
+  // feature_tapped_hole — parametric tapped hole from thread designation
+  {
+    op: 'feature_tapped_hole',
+    label: 'Tapped Hole',
+    icon: Drill,
+    caption: (
+      'Parametric tapped hole from standard thread designation (ISO metric or ASME UNC/UNF). ' +
+      'Looks up tap-drill diameter from the thread-spec catalog and appends a hole-cut recipe. ' +
+      'Accepted: "M6", "M6x0.75", "1/4-20 UNC", "#10-24 UNC".'
+    ),
+    defaults: {
+      designation: 'M6',
+      depth: 12,
+      hole_type: 'through',
+      target_id: '',
+    },
+    fields: [
+      { key: 'designation', kind: 'text',   label: 'Thread designation (e.g. M6, 1/4-20 UNC)' },
+      { key: 'depth',       kind: 'number', label: 'Hole depth (mm)', min: 0.001 },
+      { key: 'hole_type',   kind: 'select', label: 'Hole type', options: [
+        { value: 'through', label: 'Through' },
+        { value: 'blind',   label: 'Blind' },
+      ] },
+      { key: 'thread_depth', kind: 'number', label: 'Thread depth (mm, blind only)', min: 0.001,
+        showWhen: (n) => n.hole_type === 'blind' },
+      { key: 'target_id', kind: 'feature_picker', label: 'Target body' },
+    ],
+  },
+
+  // feature_thread_external — external thread annotation / validation
+  {
+    op: 'feature_thread_external',
+    label: 'External Thread',
+    icon: Wrench,
+    caption: (
+      'Validate and annotate an external thread on a shaft. ' +
+      'Checks shaft_dia matches the designation nominal major diameter within ±0.3 mm. ' +
+      'Returns thread parameters for cosmetic annotation. ' +
+      'Accepted: "M6", "M6x0.75", "1/4-20 UNC".'
+    ),
+    defaults: {
+      shaft_dia: 6.0,
+      designation: 'M6',
+      length: 15,
+    },
+    fields: [
+      { key: 'shaft_dia',   kind: 'number', label: 'Shaft outer dia. (mm)', min: 0.1, step: 0.1 },
+      { key: 'designation', kind: 'text',   label: 'Thread designation (e.g. M6, 1/4-20 UNC)' },
+      { key: 'length',      kind: 'number', label: 'Thread length (mm)', min: 0.001 },
+      { key: 'thread_class', kind: 'text',  label: 'Tolerance class (optional, e.g. 6g, 2A)' },
+    ],
+  },
+
+  // feature_hole_pattern_from_sketch — hole pattern driven by sketch points
+  {
+    op: 'feature_hole_pattern_from_sketch',
+    label: 'Hole Pattern (Sketch)',
+    icon: LayoutGrid,
+    caption: (
+      'Cut a cylinder at every point entity in a sketch. ' +
+      'Parametric: editing the sketch and re-evaluating updates all holes. ' +
+      'Sketch must contain at least one type:"point" entity.'
+    ),
+    defaults: {
+      sketch_path: '',
+      target_id: '',
+      diameter: 3,
+      depth: 10,
+      through: true,
+    },
+    fields: [
+      { key: 'sketch_path', kind: 'sketch_picker', label: 'Points sketch' },
+      { key: 'target_id',   kind: 'feature_picker', label: 'Target body' },
+      { key: 'diameter',    kind: 'number', label: 'Hole diameter (mm)', min: 0.001 },
+      { key: 'depth',       kind: 'number', label: 'Hole depth (mm)', min: 0.001 },
+      { key: 'through',     kind: 'boolean', label: 'Through-hole' },
+    ],
+  },
+
+  // sheet_metal_flat_pattern — flat-pattern DXF output from flange params
+  {
+    op: 'sheet_metal_flat_pattern',
+    label: 'Flat Pattern',
+    icon: Layers,
+    caption: (
+      'Produce a 2D flat-pattern DXF for a sheet-metal part. ' +
+      'Uses the neutral-axis bend-allowance formula: BA = angle_rad × (radius + k_factor × thickness). ' +
+      'Emits a DXF R12 with outline on layer "0" and bend lines on layer "BEND".'
+    ),
+    defaults: {
+      base_length: 100,
+      width: 80,
+      flange_length: 25,
+      bend_angle_deg: 90,
+      bend_radius: 2,
+      thickness: 1.5,
+      k_factor: 0.44,
+    },
+    fields: [
+      { key: 'base_length',    kind: 'number', label: 'Base length — bend dir (mm)', min: 0.1, step: 1 },
+      { key: 'width',          kind: 'number', label: 'Width — perp. to bend (mm)',  min: 0.1, step: 1 },
+      { key: 'flange_length',  kind: 'number', label: 'Flange length (mm)',           min: 0.1, step: 1 },
+      { key: 'bend_angle_deg', kind: 'number', label: 'Bend angle (°)',               min: 0.1, max: 180, step: 1 },
+      { key: 'bend_radius',    kind: 'number', label: 'Inside bend radius (mm)',      min: 0, step: 0.5 },
+      { key: 'thickness',      kind: 'number', label: 'Sheet thickness (mm)',         min: 0.1, step: 0.1 },
+      { key: 'k_factor',       kind: 'number', label: 'K-factor (0–1)',               min: 0.01, max: 0.99, step: 0.01 },
+    ],
+  },
+
+  // sheet_metal_unfold — compute developed length of sheet-metal part
+  {
+    op: 'sheet_metal_unfold',
+    label: 'Sheet Unfold',
+    icon: Layers,
+    caption: (
+      'Compute the developed (flat) length of a sheet-metal part. ' +
+      'Uses BA = angle_rad × (bend_radius + k_factor × thickness). ' +
+      'Returns bend_allowance, developed_length, and bend_line positions.'
+    ),
+    defaults: {
+      base_length: 100,
+      flange_length: 25,
+      bend_angle_deg: 90,
+      bend_radius: 2,
+      thickness: 1.5,
+      k_factor: 0.44,
+    },
+    fields: [
+      { key: 'base_length',    kind: 'number', label: 'Base length — bend dir (mm)', min: 0.1, step: 1 },
+      { key: 'flange_length',  kind: 'number', label: 'Flange length (mm)',           min: 0.1, step: 1 },
+      { key: 'bend_angle_deg', kind: 'number', label: 'Bend angle (°)',               min: 0.1, max: 180, step: 1 },
+      { key: 'bend_radius',    kind: 'number', label: 'Inside bend radius (mm)',      min: 0, step: 0.5 },
+      { key: 'thickness',      kind: 'number', label: 'Sheet thickness (mm)',         min: 0.1, step: 0.1 },
+      { key: 'k_factor',       kind: 'number', label: 'K-factor (0–1)',               min: 0.01, max: 0.99, step: 0.01 },
+    ],
+  },
+
+  // ── Gears ───────────────────────────────────────────────────────────────
+
+  // gear_spur — external involute spur gear (ISO 21771)
+  {
+    op: 'gear_spur',
+    label: 'Spur Gear',
+    icon: GitBranch,
+    caption: (
+      'External involute spur gear profile (ISO 21771). ' +
+      'Returns pitch/base/root/tip diameters, whole depth, circular pitch, ' +
+      'tooth thickness, and a closed tooth-profile polyline.'
+    ),
+    defaults: {
+      module: 2,
+      teeth: 20,
+      pressure_angle_deg: 20,
+      face_width: 10,
+      profile_shift: 0,
+    },
+    fields: [
+      { key: 'module',             kind: 'number', label: 'Module m (mm)', min: 0.001, step: 0.25 },
+      { key: 'teeth',              kind: 'number', label: 'Number of teeth z', min: 3, step: 1 },
+      { key: 'pressure_angle_deg', kind: 'number', label: 'Pressure angle α (°)', min: 10, max: 30, step: 1 },
+      { key: 'face_width',         kind: 'number', label: 'Face width b (mm)', min: 0.1, step: 1 },
+      { key: 'profile_shift',      kind: 'number', label: 'Profile-shift x', step: 0.05 },
+    ],
+  },
+
+  // gear_helical — helical gear (ISO 21771, transverse-plane analysis)
+  {
+    op: 'gear_helical',
+    label: 'Helical Gear',
+    icon: GitBranch,
+    caption: (
+      'Helical gear profile — extends spur with a helix angle β. ' +
+      'Transverse module m_t = m_n / cos(β). ' +
+      'Returns ISO 21771 helical gear data + transverse-plane tooth polyline.'
+    ),
+    defaults: {
+      module: 2,
+      teeth: 20,
+      helix_angle_deg: 20,
+      pressure_angle_deg: 20,
+      face_width: 15,
+    },
+    fields: [
+      { key: 'module',             kind: 'number', label: 'Normal module m_n (mm)', min: 0.001, step: 0.25 },
+      { key: 'teeth',              kind: 'number', label: 'Number of teeth z', min: 3, step: 1 },
+      { key: 'helix_angle_deg',    kind: 'number', label: 'Helix angle β (°)', min: 1, max: 89, step: 1 },
+      { key: 'pressure_angle_deg', kind: 'number', label: 'Normal pressure angle α_n (°)', min: 10, max: 30, step: 1 },
+      { key: 'face_width',         kind: 'number', label: 'Face width b (mm)', min: 0.1, step: 1 },
+    ],
+  },
+
+  // gear_internal — internal (ring/annular) gear (ISO 21771)
+  {
+    op: 'gear_internal',
+    label: 'Internal Gear',
+    icon: GitBranch,
+    caption: (
+      'Internal (ring/annular) involute gear profile (ISO 21771 §4.3). ' +
+      'Teeth point inward; tip dia < pitch dia, root dia > pitch dia. ' +
+      'Returns ring-gear data + closed tooth polyline.'
+    ),
+    defaults: {
+      module: 2,
+      teeth: 40,
+      pressure_angle_deg: 20,
+      face_width: 10,
+    },
+    fields: [
+      { key: 'module',             kind: 'number', label: 'Module m (mm)', min: 0.001, step: 0.25 },
+      { key: 'teeth',              kind: 'number', label: 'Number of teeth z (ring)', min: 3, step: 1 },
+      { key: 'pressure_angle_deg', kind: 'number', label: 'Pressure angle α (°)', min: 10, max: 30, step: 1 },
+      { key: 'face_width',         kind: 'number', label: 'Face width b (mm)', min: 0.1, step: 1 },
+      { key: 'profile_shift',      kind: 'number', label: 'Profile-shift x', step: 0.05 },
+    ],
+  },
+
+  // gear_rack — linear involute rack (ISO 21771 §4.4)
+  {
+    op: 'gear_rack',
+    label: 'Gear Rack',
+    icon: GitBranch,
+    caption: (
+      'Linear involute rack profile (ISO 21771 §4.4). ' +
+      'Flanks are straight lines at the pressure angle. ' +
+      'Returns linear_pitch p = π·m, addendum/dedendum, and n-tooth outline polyline.'
+    ),
+    defaults: {
+      module: 2,
+      pressure_angle_deg: 20,
+      n_teeth: 6,
+      face_width: 10,
+    },
+    fields: [
+      { key: 'module',             kind: 'number', label: 'Module m (mm)', min: 0.001, step: 0.25 },
+      { key: 'pressure_angle_deg', kind: 'number', label: 'Pressure angle α (°)', min: 10, max: 30, step: 1 },
+      { key: 'n_teeth',            kind: 'number', label: 'Number of rack teeth', min: 2, max: 50, step: 1 },
+      { key: 'face_width',         kind: 'number', label: 'Face width b (mm)', min: 0.1, step: 1 },
+    ],
+  },
+
+  // ── Jewelry gem-seat cuts (coverage sweep) ───────────────────────────────
+
+  // jewelry_cut_baguette_channel_seat — rectangular bearing for step-cut stones
+  {
+    op: 'jewelry_cut_baguette_channel_seat',
+    label: 'Baguette Channel Seat',
+    icon: Layers,
+    caption: (
+      'Rectangular bearing groove for step-cut stones (baguette, emerald, princess). ' +
+      'Prismatic rectangular slot — correct profile for rectangular/square girdles. ' +
+      'Use auto_cut_host_id to subtract from the host solid.'
+    ),
+    defaults: {
+      length_mm: 5.0,
+      width_mm: 3.0,
+      pavilion_depth_mm: 2.5,
+      n_stones: 5,
+      pitch_mm: 5.5,
+    },
+    fields: [
+      { key: 'length_mm',         kind: 'number', label: 'Stone length (mm)',     min: 0.1, step: 0.1 },
+      { key: 'width_mm',          kind: 'number', label: 'Stone width (mm)',      min: 0.1, step: 0.1 },
+      { key: 'pavilion_depth_mm', kind: 'number', label: 'Pavilion depth (mm)',   min: 0.1, step: 0.1 },
+      { key: 'n_stones',          kind: 'number', label: 'Stone count',           min: 1, step: 1 },
+      { key: 'pitch_mm',          kind: 'number', label: 'C-to-C pitch (mm)',     min: 0.1, step: 0.1 },
+      { key: 'wall_thickness_mm', kind: 'number', label: 'Min wall thickness (mm)', min: 0, step: 0.05 },
+      { key: 'auto_cut_host_id',  kind: 'feature_picker', label: 'Auto-cut host body' },
+    ],
+  },
+
+  // jewelry_cut_cluster_halo_seat — center + ring of accent seats (halo/cluster)
+  {
+    op: 'jewelry_cut_cluster_halo_seat',
+    label: 'Cluster Halo Seat',
+    icon: Disc,
+    caption: (
+      'Center-stone seat surrounded by a ring of equally-spaced accent seats (halo/cluster setting). ' +
+      'All accent seats are identical and placed at equal angular intervals. ' +
+      'Use auto_cut_host_id to subtract all seats from the host.'
+    ),
+    defaults: {
+      center_diameter_mm: 6.5,
+      accent_diameter_mm: 1.3,
+      n_accent: 18,
+      halo_radius_mm: 4.5,
+    },
+    fields: [
+      { key: 'center_diameter_mm',  kind: 'number', label: 'Center stone dia. (mm)', min: 0.1, step: 0.1 },
+      { key: 'accent_diameter_mm',  kind: 'number', label: 'Accent stone dia. (mm)', min: 0.1, step: 0.1 },
+      { key: 'n_accent',            kind: 'number', label: 'Accent stone count',     min: 3, step: 1 },
+      { key: 'halo_radius_mm',      kind: 'number', label: 'Halo ring radius (mm)',  min: 0.1, step: 0.1 },
+      { key: 'start_angle_deg',     kind: 'number', label: 'Start angle (°)',        step: 1 },
+      { key: 'auto_cut_host_id',    kind: 'feature_picker', label: 'Auto-cut host body' },
+    ],
+  },
+
+  // jewelry_cut_gypsy_seat — flush/gypsy countersink seat
+  {
+    op: 'jewelry_cut_gypsy_seat',
+    label: 'Gypsy Seat',
+    icon: Disc,
+    caption: (
+      'Flush/gypsy countersink seat — stone girdle sits at the metal surface with no bearing cone overhang. ' +
+      'Straight cylinder with shallow countersink for lower crown facets. ' +
+      'Use for gypsy, burnish, and tube-set stones.'
+    ),
+    defaults: {
+      diameter_mm: 4.0,
+      countersink_angle_deg: 45,
+      countersink_depth_mm: 0.3,
+    },
+    fields: [
+      { key: 'diameter_mm',           kind: 'number', label: 'Stone diameter (mm)',         min: 0.1, step: 0.1 },
+      { key: 'countersink_angle_deg', kind: 'number', label: 'Countersink angle (°)',       min: 1, max: 89, step: 1 },
+      { key: 'countersink_depth_mm',  kind: 'number', label: 'Countersink depth (mm)',      min: 0.01, step: 0.05 },
+      { key: 'girdle_clearance_mm',   kind: 'number', label: 'Girdle clearance (mm)',       min: 0, step: 0.01 },
+      { key: 'auto_cut_host_id',      kind: 'feature_picker', label: 'Auto-cut host body' },
+    ],
+  },
+
+  // jewelry_cut_multi_stone_seat — graduated multi-stone shared seat
+  {
+    op: 'jewelry_cut_multi_stone_seat',
+    label: 'Multi-Stone Seat',
+    icon: Layers,
+    caption: (
+      'Graduated multi-stone shared seat: center stone flanked by smaller side stones (3-stone, 5-stone). ' +
+      'n_side_stones must be even (symmetric) and ≥ 2.'
+    ),
+    defaults: {
+      center_diameter_mm: 6.5,
+      side_diameter_mm: 3.0,
+      n_side_stones: 2,
+      side_pitch_mm: 4.5,
+    },
+    fields: [
+      { key: 'center_diameter_mm', kind: 'number', label: 'Center stone dia. (mm)', min: 0.1, step: 0.1 },
+      { key: 'side_diameter_mm',   kind: 'number', label: 'Side stone dia. (mm)',   min: 0.1, step: 0.1 },
+      { key: 'n_side_stones',      kind: 'number', label: 'Side stone count (even ≥ 2)', min: 2, step: 2 },
+      { key: 'side_pitch_mm',      kind: 'number', label: 'Side C-to-C pitch (mm)', min: 0.1, step: 0.1 },
+      { key: 'auto_cut_host_id',   kind: 'feature_picker', label: 'Auto-cut host body' },
+    ],
+  },
+
+  // jewelry_cut_pave_field_seat — grid/honeycomb of small bearing seats for pavé
+  {
+    op: 'jewelry_cut_pave_field_seat',
+    label: 'Pavé Field Seat',
+    icon: LayoutGrid,
+    caption: (
+      'Grid or honeycomb of small identical bearing seats for pavé-field settings. ' +
+      'Use arrangement="honeycomb" for the classic offset-row pavé look.'
+    ),
+    defaults: {
+      diameter_mm: 1.5,
+      field_width_mm: 10.0,
+      field_height_mm: 10.0,
+      arrangement: 'honeycomb',
+    },
+    fields: [
+      { key: 'diameter_mm',     kind: 'number', label: 'Stone dia. (mm)',      min: 0.1, step: 0.05 },
+      { key: 'field_width_mm',  kind: 'number', label: 'Field width (mm)',     min: 0.1, step: 0.5 },
+      { key: 'field_height_mm', kind: 'number', label: 'Field height (mm)',    min: 0.1, step: 0.5 },
+      { key: 'arrangement', kind: 'select', label: 'Arrangement', options: [
+        { value: 'honeycomb', label: 'Honeycomb (offset rows)' },
+        { value: 'grid',      label: 'Grid (square)' },
+      ] },
+      { key: 'stone_gap_mm',    kind: 'number', label: 'Stone gap (mm)',       min: 0, step: 0.05 },
+      { key: 'auto_cut_host_id', kind: 'feature_picker', label: 'Auto-cut host body' },
+    ],
+  },
+
+  // ── BIM elements ─────────────────────────────────────────────────────────
+
+  // bim_make_grid — structural grid (column + row axes)
+  {
+    op: 'bim_make_grid',
+    label: 'BIM Grid',
+    icon: Grid3x3,
+    caption: (
+      'Create a named structural grid from column axes (letters) and row axes (numbers). ' +
+      'Supports regular (equal-bay) or irregular (custom spacing) modes.'
+    ),
+    defaults: {
+      mode: 'regular',
+      n_cols: 4,
+      n_rows: 3,
+      bay_width_m: 6.0,
+      bay_depth_m: 6.0,
+    },
+    fields: [
+      { key: 'mode', kind: 'select', label: 'Grid mode', options: [
+        { value: 'regular', label: 'Regular (equal bays)' },
+        { value: 'custom',  label: 'Custom (explicit coords)' },
+      ] },
+      { key: 'n_cols',       kind: 'number', label: 'Column axes', min: 2, step: 1, showWhen: (n) => n.mode === 'regular' },
+      { key: 'n_rows',       kind: 'number', label: 'Row axes',    min: 2, step: 1, showWhen: (n) => n.mode === 'regular' },
+      { key: 'bay_width_m',  kind: 'number', label: 'Bay width (m)',  min: 0.1, step: 0.5, showWhen: (n) => n.mode === 'regular' },
+      { key: 'bay_depth_m',  kind: 'number', label: 'Bay depth (m)',  min: 0.1, step: 0.5, showWhen: (n) => n.mode === 'regular' },
+    ],
+  },
+
+  // bim_make_framing — structural framing (columns + beams) on grid
+  {
+    op: 'bim_make_framing',
+    label: 'BIM Framing',
+    icon: LayoutGrid,
+    caption: (
+      'Create a structural framing layout (columns + beams) on a regular grid. ' +
+      'Generates columns at every grid intersection and beams along grid lines at each storey.'
+    ),
+    defaults: {
+      n_cols: 3,
+      n_rows: 3,
+      bay_width_m: 6.0,
+      bay_depth_m: 6.0,
+      column_section: 'UC203x203x46',
+      beam_section: 'UB305x165x46',
+    },
+    fields: [
+      { key: 'n_cols',          kind: 'number', label: 'Column-axis grid lines', min: 2, step: 1 },
+      { key: 'n_rows',          kind: 'number', label: 'Row-axis grid lines',    min: 2, step: 1 },
+      { key: 'bay_width_m',     kind: 'number', label: 'Bay width (m)',          min: 0.1, step: 0.5 },
+      { key: 'bay_depth_m',     kind: 'number', label: 'Bay depth (m)',          min: 0.1, step: 0.5 },
+      { key: 'column_section',  kind: 'text',   label: 'Column section (e.g. UC203x203x46)' },
+      { key: 'beam_section',    kind: 'text',   label: 'Beam section (e.g. UB305x165x46)' },
+    ],
+  },
+
+  // bim_make_wall — compound-layered wall instance
+  {
+    op: 'bim_make_wall',
+    label: 'BIM Wall',
+    icon: Box,
+    caption: (
+      'Create a compound-layered wall instance. ' +
+      'Supply a preset_name for a pre-defined type or define custom layers. ' +
+      'Geometry: start/end [x,y] in metres + height in metres.'
+    ),
+    defaults: {
+      height_m: 3.0,
+      preset_name: 'Ext - Single Brick 230',
+    },
+    fields: [
+      { key: 'height_m',    kind: 'number', label: 'Wall height (m)',  min: 0.01, step: 0.1 },
+      { key: 'preset_name', kind: 'text',   label: 'Wall preset (e.g. "Ext - Single Brick 230")' },
+    ],
+  },
+
+  // bim_make_slab — floor or roof slab from boundary polygon
+  {
+    op: 'bim_make_slab',
+    label: 'BIM Slab',
+    icon: Layers,
+    caption: (
+      'Create a floor or roof slab from a boundary polygon. ' +
+      'Supply a preset_name or define custom layers. ' +
+      'Boundary: list of [x, y] vertices in metres (min 3 points).'
+    ),
+    defaults: {
+      preset_name: 'RC Flat Slab 200',
+      slab_function: 'floor',
+    },
+    fields: [
+      { key: 'preset_name',    kind: 'text',   label: 'Slab preset (e.g. "RC Flat Slab 200")' },
+      { key: 'slab_function',  kind: 'select', label: 'Slab function', options: [
+        { value: 'floor',      label: 'Floor' },
+        { value: 'roof',       label: 'Roof' },
+        { value: 'foundation', label: 'Foundation' },
+      ] },
+    ],
+  },
 ]
 
 const KIND_BY_OP = Object.fromEntries(FEATURE_KINDS.map((k) => [k.op, k]))
@@ -2393,10 +2920,17 @@ export { FEATURE_KINDS, FEATURE_CATEGORIES }
 
 const FEATURE_CATEGORIES = [
   { id: 'sketch',   label: 'Sketch-based',  ops: ['pad', 'boss_with_draft', 'pocket', 'cut_from_sketch', 'revolve', 'hole', 'hole_pattern', 'rib', 'helix'] },
-  { id: 'modify',   label: 'Modify',        ops: ['fillet', 'chamfer', 'shell', 'push_pull', 'variable_radius_fillet', 'to_solid', 'boolean', 'section', 'quad_remesh', 'delete_face', 'isotropic_remesh'] },
+  { id: 'modify',   label: 'Modify',        ops: [
+    'fillet', 'chamfer', 'shell', 'push_pull', 'variable_radius_fillet',
+    'to_solid', 'boolean', 'section', 'quad_remesh', 'delete_face', 'isotropic_remesh',
+    // Coverage sweep additions
+    'feature_draft', 'feature_mirror',
+    'feature_tapped_hole', 'feature_thread_external', 'feature_hole_pattern_from_sketch',
+  ] },
   { id: 'pattern',  label: 'Pattern',       ops: ['linear_pattern', 'polar_pattern', 'mirror_pattern', 'multi_transform'] },
   { id: 'surface',  label: 'Surfacing',     ops: ['sweep1', 'sweep2', 'loft', 'network_srf', 'blend_srf', 'blend_srf_g3', 'g3_chain_blend', 'fit_surface', 'surface_boolean', 'trim_by_curve', 'surface_curvature_combs', 'isophote_analysis', 'uv_unwrap'] },
   { id: 'analysis', label: 'Analysis',      ops: ['zebra_analysis', 'class_a_check', 'global_continuity_audit'] },
+  { id: 'gears',    label: 'Gears',         ops: ['gear_spur', 'gear_helical', 'gear_internal', 'gear_rack'] },
   { id: 'jewelry',  label: 'Jewelry',       ops: [
     // Gemstones
     'gemstone',
@@ -2411,6 +2945,9 @@ const FEATURE_CATEGORIES = [
     'jewelry_trellis_prong', 'jewelry_bar_channel_graduated',
     // Gem seat types
     'gem_seat', 'channel_seat', 'bezel_seat', 'fishtail_seat',
+    // Gem seat cuts (coverage sweep additions)
+    'jewelry_cut_baguette_channel_seat', 'jewelry_cut_cluster_halo_seat',
+    'jewelry_cut_gypsy_seat', 'jewelry_cut_multi_stone_seat', 'jewelry_cut_pave_field_seat',
     // Ring ops
     'ring_shank', 'eternity_band', 'signet_ring', 'stacking_band_set',
     'contoured_band', 'solitaire_ring', 'mens_band', 'wedding_set',
@@ -2425,9 +2962,14 @@ const FEATURE_CATEGORIES = [
     // Decorative
     'decorative_apply',
   ] },
-  { id: 'sheetmetal', label: 'Sheet Metal', ops: ['sheet_metal_flange', 'hem_sheet', 'jog_sheet', 'multi_flange'] },
+  { id: 'sheetmetal', label: 'Sheet Metal', ops: [
+    'sheet_metal_flange', 'hem_sheet', 'jog_sheet', 'multi_flange',
+    // Coverage sweep additions
+    'sheet_metal_flat_pattern', 'sheet_metal_unfold',
+  ] },
   { id: 'subd',      label: 'SubD / Mesh',  ops: ['subd_poke', 'subd_extrude_along', 'sculpt_brush', 'multires_evaluate', 'sdf_csg', 'retopo_snap'] },
   { id: 'weldment',  label: 'Weldment',     ops: ['gusset_plate', 'cope_notch'] },
+  { id: 'bim',       label: 'BIM',          ops: ['bim_make_grid', 'bim_make_framing', 'bim_make_wall', 'bim_make_slab'] },
 ]
 
 const DEBOUNCE_MS = 300
