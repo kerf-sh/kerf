@@ -116,10 +116,10 @@ class LocalSubprocessBackend(ComputeBackend):
 
     Extension point
     ~~~~~~~~~~~~~~~
-    For GPU rendering on Fly Machines (on-demand GPU VMs), replace this
-    backend with a ``FlyGPUBackend`` from the proprietary ``cloud/`` tree.
-    The swap is transparent to callers because both implement
-    :class:`ComputeBackend`.
+    For GPU rendering on Koyeb (on-demand, scale-to-zero GPU instances),
+    replace this backend with a ``KoyebGPUBackend`` from the proprietary
+    ``cloud/`` tree. The swap is transparent to callers because both
+    implement :class:`ComputeBackend`.
 
     Parameters
     ----------

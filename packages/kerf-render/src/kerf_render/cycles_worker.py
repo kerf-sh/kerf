@@ -438,9 +438,9 @@ def _build_render_script(
     compute device type, and enables all available CUDA devices.  If no CUDA
     devices are found at runtime Blender silently falls back to CPU rendering.
 
-    To use a future ``FlyGPUBackend`` (see
-    ``kerf_workers.compute_backend.FlyGPUBackend`` extension point in
-    ``cloud/``), set ``KERF_RENDER_GPU=1`` in the GPU machine environment.
+    To use a future ``KoyebGPUBackend`` (see
+    ``kerf_workers.compute_backend.KoyebGPUBackend`` extension point in
+    ``cloud/``), set ``KERF_RENDER_GPU=1`` in the GPU instance environment.
     """
     # The translator's generated script defines ``main()`` but deliberately
     # does NOT call ``bpy.ops.render.render``.  We append that here together
