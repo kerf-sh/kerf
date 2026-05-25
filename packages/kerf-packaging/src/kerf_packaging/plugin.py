@@ -46,6 +46,8 @@ def _register_tools(ctx, provides: list) -> None:
         run_packaging_dieline_to_dxf,
         packaging_fold_preview_spec,
         run_packaging_fold_preview,
+        packaging_bct_estimate_spec,
+        run_packaging_bct_estimate,
     )
 
     tool_entries = [
@@ -55,6 +57,8 @@ def _register_tools(ctx, provides: list) -> None:
          "packaging.dieline-to-dxf"),
         (packaging_fold_preview_spec, run_packaging_fold_preview,
          "packaging.fold-preview"),
+        (packaging_bct_estimate_spec, run_packaging_bct_estimate,
+         "packaging.bct-estimate"),
     ]
 
     for spec, handler, capability in tool_entries:
