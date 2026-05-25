@@ -567,3 +567,14 @@ async def run_render(ctx: ProjectCtx, args: bytes) -> str:
         "render_seconds": render_seconds,
         "image_url": image_url,
     })
+
+
+# Expose TOOLS list for the plugin loader (kerf_render.plugin._register_tools
+# checks `hasattr(mod, "TOOLS")` and iterates it).
+TOOLS = [
+    (create_render_spec.name, create_render_spec, create_render),
+    (set_render_camera_spec.name, set_render_camera_spec, set_render_camera),
+    (add_render_light_spec.name, add_render_light_spec, add_render_light),
+    (set_render_material_override_spec.name, set_render_material_override_spec, set_render_material_override),
+    (run_render_spec.name, run_render_spec, run_render),
+]
