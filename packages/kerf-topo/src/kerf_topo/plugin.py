@@ -45,9 +45,12 @@ async def register(app: FastAPI, ctx):
     from kerf_topo.routes import router
     app.include_router(router)
 
-    # Register LLM tool
+    # Register LLM tools
     from kerf_topo.tools import topo_run_spec, run_topo_run
     ctx.tools.register("topo_run", topo_run_spec, run_topo_run)
+
+    from kerf_topo.advanced import topo_advanced_spec, run_topo_advanced
+    ctx.tools.register("topo_advanced", topo_advanced_spec, run_topo_advanced)
 
     # topo.simp is only fully functional when dolfinx + skimage are present
     provides = []
