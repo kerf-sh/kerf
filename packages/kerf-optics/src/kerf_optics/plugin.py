@@ -18,9 +18,11 @@ async def register(app: FastAPI, ctx):
     from kerf_optics.tools import (
         optics_trace_ray_spec, run_optics_trace_ray,
         optics_lens_design_spec, run_optics_lens_design,
+        optics_pop_propagate_spec, run_optics_pop_propagate,
     )
     ctx.tools.register("optics_trace_ray", optics_trace_ray_spec, run_optics_trace_ray)
     ctx.tools.register("optics_lens_design", optics_lens_design_spec, run_optics_lens_design)
+    ctx.tools.register("optics_pop_propagate", optics_pop_propagate_spec, run_optics_pop_propagate)
 
     from kerf_optics.gaussian_tools import (
         gaussian_beam_propagate_spec, run_gaussian_beam_propagate,

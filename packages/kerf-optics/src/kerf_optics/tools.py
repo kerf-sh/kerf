@@ -523,3 +523,178 @@ async def run_optics_mtf(args: dict[str, Any], ctx: "ProjectCtx") -> str:
 
     except Exception as exc:
         return err_payload(str(exc), "MTF_ERROR")
+
+
+# ---------------------------------------------------------------------------
+# optics_pop_propagate
+# ---------------------------------------------------------------------------
+
+optics_pop_propagate_spec = ToolSpec(
+    name="optics_pop_propagate",
+    description=(
+        "Physical-Optics Propagation (POP) / angular-spectrum + Fresnel/Fraunhofer "
+        "scalar diffraction propagation of a monochromatic wavefront.  "
+        "Generates a Gaussian TEM₀₀ source field, optionally applies a thin-lens "
+        "or circular-aperture phase screen, then propagates by distance z.  "
+        "Returns: intensity peak, beam waist (1/e² radius), energy conservation "
+        "ratio, propagation method used, grid parameters, and Fresnel number.  "
+        "Method auto-selects Angular Spectrum (near-field) or Fresnel (far-field)."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "lambda_um": {
+                "type": "number",
+                "description": "Wavelength in micrometres (e.g. 0.633 for HeNe, 1.064 for Nd:YAG). Default 0.633.",
+            },
+            "w0_mm": {
+                "type": "number",
+                "description": "Beam waist radius (1/e² field) in mm. Default 1.0.",
+            },
+            "z_mm": {
+                "type": "number",
+                "description": "Propagation distance in mm. Default 100.0.",
+            },
+            "grid_N": {
+                "type": "integer",
+                "description": "Grid size N×N pixels (power-of-2 recommended). Default 128.",
+            },
+            "dx_um": {
+                "type": "number",
+                "description": "Pixel pitch in micrometres. Default 20.0.",
+            },
+            "method": {
+                "type": "string",
+                "enum": ["auto", "asm", "fresnel"],
+                "description": (
+                    "Propagation method: 'auto' (Fresnel-number adaptive), "
+                    "'asm' (Angular Spectrum — near-field), "
+                    "'fresnel' (Fresnel TF — paraxial far-field). Default 'auto'."
+                ),
+            },
+            "aperture_radius_mm": {
+                "type": "number",
+                "description": "Optional circular aperture radius (mm) applied before propagation. Omit = no aperture.",
+            },
+            "lens_focal_length_mm": {
+                "type": "number",
+                "description": "Optional thin-lens focal length (mm) applied before propagation. Omit = no lens.",
+            },
+        },
+        "required": [],
+    },
+)
+
+
+async def run_optics_pop_propagate(args: dict[str, Any], ctx: "ProjectCtx") -> str:
+    try:
+        import math
+        import numpy as np
+        from kerf_optics.pop import (
+            make_grid,
+            gaussian_source,
+            thin_lens_phase,
+            circular_aperture,
+            propagate,
+            parseval_energy,
+            gaussian_waist_analytic,
+        )
+
+        lambda_um = float(args.get("lambda_um", 0.633))
+        w0_mm = float(args.get("w0_mm", 1.0))
+        z_mm = float(args.get("z_mm", 100.0))
+        N = int(args.get("grid_N", 128))
+        dx_um = float(args.get("dx_um", 20.0))
+        method = str(args.get("method", "auto"))
+
+        # Convert to SI metres
+        lambda_m = lambda_um * 1e-6
+        w0_m = w0_mm * 1e-3
+        z_m = z_mm * 1e-3
+        dx_m = dx_um * 1e-6
+
+        if lambda_m <= 0:
+            return err_payload("lambda_um must be positive", "BAD_ARGS")
+        if w0_m <= 0:
+            return err_payload("w0_mm must be positive", "BAD_ARGS")
+        if N < 16 or N > 1024:
+            return err_payload("grid_N must be in [16, 1024]", "BAD_ARGS")
+        if dx_m <= 0:
+            return err_payload("dx_um must be positive", "BAD_ARGS")
+
+        x, y = make_grid(N, dx_m)
+
+        # Source field
+        U = gaussian_source(x, y, w0=w0_m, lambda_m=lambda_m)
+
+        E_in = parseval_energy(U, dx_m)
+
+        # Optional lens
+        lens_f = args.get("lens_focal_length_mm")
+        if lens_f is not None:
+            f_m = float(lens_f) * 1e-3
+            if f_m != 0:
+                lens_phase = thin_lens_phase(x, y, f=f_m, lambda_m=lambda_m)
+                U = U * lens_phase
+
+        # Optional aperture
+        ap_r = args.get("aperture_radius_mm")
+        if ap_r is not None:
+            R_m = float(ap_r) * 1e-3
+            mask = circular_aperture(x, y, radius=R_m)
+            U = U * mask
+
+        # Propagate
+        U_out = propagate(U, dx=dx_m, z=z_m, lambda_m=lambda_m, method=method)
+
+        # Determine actual method used
+        if method == "auto":
+            half_ap = (N * dx_m) / 2.0
+            NF = half_ap ** 2 / (lambda_m * abs(z_m)) if z_m != 0 else float("inf")
+            actual_method = "asm" if NF > 10.0 else "fresnel"
+        else:
+            actual_method = method
+            NF = ((N * dx_m) / 2.0) ** 2 / (lambda_m * abs(z_m)) if z_m != 0 else float("inf")
+
+        # Output field metrics
+        I_out = np.abs(U_out) ** 2
+        E_out = parseval_energy(U_out, dx_m)
+        energy_ratio = float(E_out / E_in) if E_in > 0 else None
+
+        I_peak = float(np.max(I_out))
+
+        # Beam waist estimate: radius where I >= I_peak / e²
+        I_threshold = I_peak / math.e ** 2
+        r2 = x ** 2 + y ** 2
+        beam_pixels = r2[I_out >= I_threshold]
+        beam_waist_m = float(math.sqrt(float(np.max(beam_pixels)))) if len(beam_pixels) > 0 else None
+
+        # Analytic beam waist for comparison (no lens)
+        if lens_f is None and ap_r is None:
+            w_analytic_m = gaussian_waist_analytic(w0=w0_m, lambda_m=lambda_m, z=z_m)
+        else:
+            w_analytic_m = None
+
+        Rayleigh_m = math.pi * w0_m ** 2 / lambda_m
+
+        payload: dict[str, Any] = {
+            "lambda_um": lambda_um,
+            "w0_mm": w0_mm,
+            "z_mm": z_mm,
+            "grid_N": N,
+            "dx_um": dx_um,
+            "method_requested": method,
+            "method_used": actual_method,
+            "fresnel_number": round(NF, 4) if math.isfinite(NF) else None,
+            "Rayleigh_range_mm": round(Rayleigh_m * 1e3, 4),
+            "intensity_peak": round(I_peak, 8),
+            "energy_in": round(float(E_in), 8),
+            "energy_out": round(float(E_out), 8),
+            "energy_conservation_ratio": round(energy_ratio, 6) if energy_ratio is not None else None,
+            "beam_waist_mm": round(beam_waist_m * 1e3, 4) if beam_waist_m is not None else None,
+            "beam_waist_analytic_mm": round(w_analytic_m * 1e3, 4) if w_analytic_m is not None else None,
+        }
+        return ok_payload(payload)
+
+    except Exception as exc:
+        return err_payload(str(exc), "POP_ERROR")
