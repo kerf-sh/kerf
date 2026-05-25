@@ -335,3 +335,261 @@ async def run_fem_truss_plastic(ctx, args: bytes) -> str:
         tol=float(a.get("tol", 1e-8)),
     )
     return ok_payload(result)
+
+
+# ---------------------------------------------------------------------------
+# fem_buckling_linear  — linear eigenvalue (Euler) buckling
+# ---------------------------------------------------------------------------
+
+fem_buckling_linear_spec = ToolSpec(
+    name="fem_buckling_linear",
+    description=(
+        "Solve the linear eigenvalue buckling problem K·φ = λ·Kg·φ for a "
+        "beam/column under axial pre-stress. Returns buckling load factors λ_i "
+        "and mode shapes. Supports pinned-pinned and fixed-free boundary "
+        "conditions. Validated against Euler closed-form Pcr = π²EI/(KL)²."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "E": {"type": "number", "description": "Young's modulus [Pa]"},
+            "I": {"type": "number", "description": "Second moment of area [m⁴]"},
+            "A": {"type": "number", "description": "Cross-section area [m²]"},
+            "L": {"type": "number", "description": "Column length [m]"},
+            "P_ref": {
+                "type": "number",
+                "description": "Reference compressive load [N] for geometric stiffness assembly",
+            },
+            "supports": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "type": {"type": "string", "enum": ["pinned", "fixed"]},
+                        "x": {"type": "number", "description": "Position along beam [m]"},
+                    },
+                    "required": ["type", "x"],
+                },
+                "description": "Boundary conditions: list of {type, x} dicts",
+            },
+            "n_elem": {
+                "type": "integer",
+                "description": "Number of beam elements (default 12)",
+                "default": 12,
+            },
+            "n_modes": {
+                "type": "integer",
+                "description": "Number of buckling modes to return (default 3)",
+                "default": 3,
+            },
+        },
+        "required": ["E", "I", "A", "L", "P_ref", "supports"],
+    },
+)
+
+
+@register(fem_buckling_linear_spec)
+async def run_fem_buckling_linear(ctx, args: bytes) -> str:
+    try:
+        a = json.loads(args)
+    except Exception as e:
+        return err_payload(f"invalid args: {e}", "BAD_ARGS")
+
+    for key in ["E", "I", "A", "L", "P_ref", "supports"]:
+        if a.get(key) is None:
+            return err_payload(f"{key} is required", "BAD_ARGS")
+
+    from kerf_fem.buckling import buckling_linear
+
+    result = buckling_linear(
+        E=float(a["E"]),
+        I=float(a["I"]),
+        A=float(a["A"]),
+        L=float(a["L"]),
+        P_ref=float(a["P_ref"]),
+        supports=a["supports"],
+        n_elem=int(a.get("n_elem", 12)),
+        n_modes=int(a.get("n_modes", 3)),
+    )
+    return ok_payload(result)
+
+
+# ---------------------------------------------------------------------------
+# fem_harmonic_response  — steady-state harmonic response (mode superposition)
+# ---------------------------------------------------------------------------
+
+fem_harmonic_response_spec = ToolSpec(
+    name="fem_harmonic_response",
+    description=(
+        "Compute steady-state harmonic (frequency) response to F·e^(iωt) via "
+        "mode superposition over a frequency sweep. Returns complex amplitude "
+        "and phase vs frequency, plus SDOF dynamic amplification factor for "
+        "validation. Supports modal damping ζ per mode."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "modes": {
+                "type": "object",
+                "properties": {
+                    "omega": {
+                        "type": "array",
+                        "items": {"type": "number"},
+                        "description": "Natural circular frequencies [rad/s]",
+                    },
+                    "mode_shapes": {
+                        "type": "array",
+                        "items": {"type": "array", "items": {"type": "number"}},
+                        "description": "Mode shape vectors, each of length n_dof",
+                    },
+                },
+                "required": ["omega", "mode_shapes"],
+                "description": "Modal data from a prior modal analysis",
+            },
+            "modal_damping": {
+                "description": "Damping ratio ζ (scalar for all modes, or list per mode)",
+                "oneOf": [
+                    {"type": "number"},
+                    {"type": "array", "items": {"type": "number"}},
+                ],
+            },
+            "force_vector": {
+                "type": "array",
+                "items": {"type": "number"},
+                "description": "Nodal force vector F [N], length = n_dof",
+            },
+            "freq_range": {
+                "type": "object",
+                "properties": {
+                    "f_min": {"type": "number", "description": "Min frequency [Hz]"},
+                    "f_max": {"type": "number", "description": "Max frequency [Hz]"},
+                    "n_pts": {"type": "integer", "description": "Number of sweep points (default 200)"},
+                },
+                "required": ["f_min", "f_max"],
+                "description": "Frequency sweep parameters",
+            },
+            "dof_index": {
+                "type": "integer",
+                "description": "Output DOF index (default 0)",
+                "default": 0,
+            },
+        },
+        "required": ["modes", "modal_damping", "force_vector", "freq_range"],
+    },
+)
+
+
+@register(fem_harmonic_response_spec)
+async def run_fem_harmonic_response(ctx, args: bytes) -> str:
+    try:
+        a = json.loads(args)
+    except Exception as e:
+        return err_payload(f"invalid args: {e}", "BAD_ARGS")
+
+    for key in ["modes", "modal_damping", "force_vector", "freq_range"]:
+        if a.get(key) is None:
+            return err_payload(f"{key} is required", "BAD_ARGS")
+
+    from kerf_fem.harmonic import harmonic_response
+
+    result = harmonic_response(
+        modes=a["modes"],
+        modal_damping=a["modal_damping"],
+        force_vector=a["force_vector"],
+        freq_range=a["freq_range"],
+        dof_index=int(a.get("dof_index", 0)),
+    )
+    return ok_payload(result)
+
+
+# ---------------------------------------------------------------------------
+# fem_random_vibration_psd  — random vibration response to input PSD
+# ---------------------------------------------------------------------------
+
+fem_random_vibration_psd_spec = ToolSpec(
+    name="fem_random_vibration_psd",
+    description=(
+        "Compute random-vibration RMS response to a shaped input acceleration PSD "
+        "via the modal method. Returns 1σ/3σ response, per-mode RMS contributions, "
+        "and Miles' equation approximation. Implements GRMS = √((π/2)·fn·Q·PSD) "
+        "for SDOF validation."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "modes": {
+                "type": "object",
+                "properties": {
+                    "omega": {
+                        "type": "array",
+                        "items": {"type": "number"},
+                        "description": "Natural circular frequencies [rad/s]",
+                    },
+                    "mode_shapes": {
+                        "type": "array",
+                        "items": {"type": "array", "items": {"type": "number"}},
+                        "description": "Mode shape vectors",
+                    },
+                },
+                "required": ["omega", "mode_shapes"],
+            },
+            "modal_damping": {
+                "description": "Damping ratio ζ (scalar or list per mode)",
+                "oneOf": [
+                    {"type": "number"},
+                    {"type": "array", "items": {"type": "number"}},
+                ],
+            },
+            "modal_participation": {
+                "type": "array",
+                "items": {"type": "number"},
+                "description": "Modal participation factors Γ_i for base-excitation direction",
+            },
+            "psd_table": {
+                "type": "array",
+                "items": {
+                    "type": "array",
+                    "items": {"type": "number"},
+                    "minItems": 2,
+                    "maxItems": 2,
+                },
+                "description": "Input acceleration PSD as [[freq_Hz, PSD_value], ...] pairs. Units: (m/s²)²/Hz or g²/Hz",
+            },
+            "dof_index": {
+                "type": "integer",
+                "description": "Output DOF index (default 0)",
+                "default": 0,
+            },
+            "n_sigma": {
+                "type": "integer",
+                "description": "Sigma multiplier for peak response (default 3)",
+                "default": 3,
+            },
+        },
+        "required": ["modes", "modal_damping", "modal_participation", "psd_table"],
+    },
+)
+
+
+@register(fem_random_vibration_psd_spec)
+async def run_fem_random_vibration_psd(ctx, args: bytes) -> str:
+    try:
+        a = json.loads(args)
+    except Exception as e:
+        return err_payload(f"invalid args: {e}", "BAD_ARGS")
+
+    for key in ["modes", "modal_damping", "modal_participation", "psd_table"]:
+        if a.get(key) is None:
+            return err_payload(f"{key} is required", "BAD_ARGS")
+
+    from kerf_fem.random_vibration import random_vibration_psd
+
+    result = random_vibration_psd(
+        modes=a["modes"],
+        modal_damping=a["modal_damping"],
+        modal_participation=a["modal_participation"],
+        psd_table=a["psd_table"],
+        dof_index=int(a.get("dof_index", 0)),
+        n_sigma=int(a.get("n_sigma", 3)),
+    )
+    return ok_payload(result)

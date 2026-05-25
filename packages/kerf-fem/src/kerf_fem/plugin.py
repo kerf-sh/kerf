@@ -52,11 +52,17 @@ async def register(app: FastAPI, ctx):
         fem_job_status_spec, run_fem_job_status,
         fem_nonlinear_bar_spec, run_fem_nonlinear_bar,
         fem_truss_plastic_spec, run_fem_truss_plastic,
+        fem_buckling_linear_spec, run_fem_buckling_linear,
+        fem_harmonic_response_spec, run_fem_harmonic_response,
+        fem_random_vibration_psd_spec, run_fem_random_vibration_psd,
     )
     ctx.tools.register("fem_run", fem_run_spec, run_fem_run)
     ctx.tools.register("fem_job_status", fem_job_status_spec, run_fem_job_status)
     ctx.tools.register("fem_nonlinear_bar", fem_nonlinear_bar_spec, run_fem_nonlinear_bar)
     ctx.tools.register("fem_truss_plastic", fem_truss_plastic_spec, run_fem_truss_plastic)
+    ctx.tools.register("fem_buckling_linear", fem_buckling_linear_spec, run_fem_buckling_linear)
+    ctx.tools.register("fem_harmonic_response", fem_harmonic_response_spec, run_fem_harmonic_response)
+    ctx.tools.register("fem_random_vibration_psd", fem_random_vibration_psd_spec, run_fem_random_vibration_psd)
     from kerf_fem.nonlinear import _fem_nonlinear_spec, run_fem_nonlinear; ctx.tools.register("fem_nonlinear", _fem_nonlinear_spec, run_fem_nonlinear)
     from kerf_fem.fatigue_fem import _fem_fatigue_spec, run_fem_fatigue; ctx.tools.register("fem_fatigue", _fem_fatigue_spec, run_fem_fatigue)  # kerf-fem: fatigue & durability
     from kerf_fem.plate import _fem_plate_static_spec, run_fem_plate_static_solve; ctx.tools.register("fem_plate_static_solve", _fem_plate_static_spec, run_fem_plate_static_solve)  # kerf-fem: MITC4 plate/shell
@@ -85,6 +91,7 @@ async def register(app: FastAPI, ctx):
         "fem.nonlinear", "fem.electromagnetics",
         "fem.acoustics", "fem.electrostatics", "fem.magnetostatics",
         "fem.cfd-navier-stokes", "fem.cfd-potential",
+        "fem.buckling", "fem.harmonic-response", "fem.random-vibration",
     ]
     if _DOLFINX_AVAILABLE:
         provides.append("fem.linear-static")
