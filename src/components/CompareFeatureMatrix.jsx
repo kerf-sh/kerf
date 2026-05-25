@@ -106,7 +106,7 @@ function DomainSection({ domainMeta, rows, competitor }) {
       </summary>
 
       {/* ── Table (desktop) / stacked rows (mobile) ── */}
-      <div className="hidden sm:block overflow-x-auto">
+      <div className="hidden sm:block overflow-x-auto" data-testid="matrix-desktop-table">
         <table className="min-w-[560px] w-full text-sm">
           <thead className="border-b border-t border-ink-800 bg-ink-900/30">
             <tr>
@@ -154,7 +154,7 @@ function DomainSection({ domainMeta, rows, competitor }) {
       </div>
 
       {/* Mobile: stacked rows */}
-      <div className="sm:hidden divide-y divide-ink-800/50">
+      <div className="sm:hidden divide-y divide-ink-800/50" data-testid="matrix-mobile-cards">
         {rows.map((row, idx) => (
           <div key={idx} className="px-4 py-3 space-y-2">
             <p className="text-sm font-medium text-ink-200">{row.feature}</p>

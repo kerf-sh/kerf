@@ -118,11 +118,26 @@ function BlockQuote({ children }) {
  */
 function Table({ children }) {
   return (
-    <div className="overflow-x-auto rounded-xl border border-ink-800 mb-6">
+    <div className="overflow-x-auto rounded-xl border border-ink-800 mb-6" data-testid="table-scroll-container">
       <table className="min-w-[640px] w-full text-sm">
         {children}
       </table>
     </div>
+  )
+}
+
+/**
+ * Fenced code blocks in compare markdown — wrap in a scrollable container
+ * so wide code samples don't blow out the layout on narrow viewports.
+ */
+function Pre({ children }) {
+  return (
+    <pre
+      className="overflow-x-auto bg-ink-900 rounded-md p-3 my-3 text-sm border border-ink-800 leading-[1.6]"
+      data-testid="pre-scroll-container"
+    >
+      {children}
+    </pre>
   )
 }
 
@@ -322,6 +337,7 @@ function makeComponents() {
     td: ({ children }) => {
       return <TD>{children}</TD>
     },
+    pre: Pre,
   }
 }
 

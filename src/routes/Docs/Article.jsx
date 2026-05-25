@@ -487,13 +487,13 @@ const mdComponents = {
   },
   // pre wraps the highlighted code block.
   pre: ({ children }) => (
-    <pre className="overflow-x-auto bg-ink-900 rounded-md p-3 my-3 text-sm border border-ink-800 leading-[1.6]">
+    <pre className="overflow-x-auto bg-ink-900 rounded-md p-3 my-3 text-sm border border-ink-800 leading-[1.6]" data-testid="docs-pre-scroll">
       {children}
     </pre>
   ),
   hr: (props) => <hr className="my-8 border-ink-800" {...props} />,
   table: ({ children, ...props }) => (
-    <div className="my-5 overflow-x-auto rounded-lg border border-ink-800">
+    <div className="my-5 overflow-x-auto rounded-lg border border-ink-800" data-testid="docs-table-scroll">
       <table className="w-full text-sm border-collapse" {...props}>{children}</table>
     </div>
   ),

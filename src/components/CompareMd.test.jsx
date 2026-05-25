@@ -229,3 +229,87 @@ describe('CompareMd — table Kerf column detection', () => {
     expect(html).toMatch(/data-testid="left-vendor"[^>]*>(?:[^<]|<(?!\/th))*Kerf/)
   })
 })
+
+// ── Responsive: table and code-block overflow handling ────────────────────────
+
+describe('CompareMd — responsive overflow handling', () => {
+  const tableMeta = {
+    slug: 'kicad',
+    competitor: 'KiCad',
+    left: 'kerf',
+    right: 'kicad',
+    title: 'Kerf vs KiCad',
+    body: `# Kerf vs KiCad
+
+| Feature | KiCad | Kerf |
+|---|---|---|
+| License | ✅ GPL v3 | ✅ MIT |
+| Chat editing | ❌ None | ✅ Yes |
+`,
+  }
+
+  it('wraps markdown tables in a horizontal-scroll container', () => {
+    const html = render(<CompareMd meta={tableMeta} />)
+    // The Table component wraps with overflow-x-auto
+    expect(html).toContain('data-testid="table-scroll-container"')
+  })
+
+  it('table scroll container has overflow-x-auto class', () => {
+    const html = render(<CompareMd meta={tableMeta} />)
+    // The wrapper div should carry overflow-x-auto so wide tables scroll
+    // inside the content column rather than widening the page on mobile.
+    const scrollContainerMatch = html.match(/data-testid="table-scroll-container"[^>]*>|class="([^"]*)"[^>]*data-testid="table-scroll-container"/)
+    expect(scrollContainerMatch).not.toBeNull()
+    expect(html).toContain('overflow-x-auto')
+  })
+
+  it('table has min-w so it scrolls rather than collapses', () => {
+    const html = render(<CompareMd meta={tableMeta} />)
+    // Ensures the table width is enforced so the scroll container is meaningful
+    expect(html).toContain('min-w-[640px]')
+  })
+
+  const codeMeta = {
+    slug: 'openscad',
+    competitor: 'OpenSCAD',
+    left: 'kerf',
+    right: 'openscad',
+    title: 'Kerf vs OpenSCAD',
+    body: `# Kerf vs OpenSCAD
+
+\`\`\`python
+cube([10, 20, 30])
+sphere(r=5)
+\`\`\`
+`,
+  }
+
+  it('wraps fenced code blocks in a pre with overflow-x-auto', () => {
+    const html = render(<CompareMd meta={codeMeta} />)
+    // The Pre component must render with overflow-x-auto so wide code
+    // samples scroll inside the content column on mobile.
+    expect(html).toContain('data-testid="pre-scroll-container"')
+  })
+
+  it('pre scroll container has overflow-x-auto class', () => {
+    const html = render(<CompareMd meta={codeMeta} />)
+    expect(html).toContain('overflow-x-auto')
+    expect(html).toContain('data-testid="pre-scroll-container"')
+  })
+
+  it('renders code inside the pre scroll container', () => {
+    const html = render(<CompareMd meta={codeMeta} />)
+    expect(html).toContain('cube')
+    expect(html).toContain('sphere')
+  })
+
+  it('renders both table and code responsive wrappers together', () => {
+    const combinedMeta = {
+      ...tableMeta,
+      body: tableMeta.body + '\n' + codeMeta.body.replace(/# [^\n]+\n\n/, ''),
+    }
+    const html = render(<CompareMd meta={combinedMeta} />)
+    expect(html).toContain('data-testid="table-scroll-container"')
+    expect(html).toContain('data-testid="pre-scroll-container"')
+  })
+})

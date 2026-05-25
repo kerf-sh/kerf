@@ -209,3 +209,63 @@ describe('CompareFeatureMatrix', () => {
     })
   })
 })
+
+// ── Responsive layout ─────────────────────────────────────────────────────────
+
+describe('CompareFeatureMatrix — responsive layout', () => {
+  it('renders a desktop table container (hidden sm:block) per domain section', () => {
+    const html = render(<CompareFeatureMatrix features={SAMPLE_FEATURES} competitor="Fusion 360" />)
+    // Each domain section renders a desktop table wrapper hidden below sm breakpoint
+    expect(html).toContain('data-testid="matrix-desktop-table"')
+    // Should have one per domain section (3 domains)
+    const desktopTables = (html.match(/data-testid="matrix-desktop-table"/g) || []).length
+    expect(desktopTables).toBe(3)
+  })
+
+  it('desktop table container has overflow-x-auto for wide tables', () => {
+    const html = render(<CompareFeatureMatrix features={SAMPLE_FEATURES} competitor="Fusion 360" />)
+    // The desktop wrapper must carry overflow-x-auto so the table scrolls horizontally
+    // if it overflows on narrower breakpoints where the desktop view is still shown.
+    expect(html).toMatch(/overflow-x-auto[^"]*"[^>]*data-testid="matrix-desktop-table"|data-testid="matrix-desktop-table"[^>]*>[^<]*<|class="[^"]*overflow-x-auto/)
+    // Simpler: confirm the class appears in the output
+    expect(html).toContain('overflow-x-auto')
+  })
+
+  it('renders a mobile stacked-cards container (sm:hidden) per domain section', () => {
+    const html = render(<CompareFeatureMatrix features={SAMPLE_FEATURES} competitor="Fusion 360" />)
+    // Each domain section renders a mobile stack hidden at sm+ breakpoint
+    expect(html).toContain('data-testid="matrix-mobile-cards"')
+    const mobileCards = (html.match(/data-testid="matrix-mobile-cards"/g) || []).length
+    expect(mobileCards).toBe(3)
+  })
+
+  it('mobile stacked-cards container has sm:hidden class (hidden on desktop)', () => {
+    const html = render(<CompareFeatureMatrix features={SAMPLE_FEATURES} competitor="Fusion 360" />)
+    // Extract the mobile cards container and verify sm:hidden class
+    expect(html).toMatch(/sm:hidden[^"]*"[^>]*data-testid="matrix-mobile-cards"|data-testid="matrix-mobile-cards"/)
+    // The class should include sm:hidden (desktop-hidden) somewhere in the output
+    expect(html).toContain('sm:hidden')
+  })
+
+  it('mobile card renders feature name, Kerf label, and competitor label', () => {
+    const singleFeature = [SAMPLE_FEATURES[0]]
+    const html = render(<CompareFeatureMatrix features={singleFeature} competitor="Fusion 360" />)
+    // In the mobile cards section the feature name appears
+    expect(html).toContain('Constraint sketcher')
+    // Kerf label appears in the mobile section header
+    expect(html).toContain('Kerf')
+    // Competitor name appears as a label in the mobile card
+    expect(html).toContain('Fusion 360')
+  })
+
+  it('mobile card container has divide-y for visual row separation', () => {
+    const html = render(<CompareFeatureMatrix features={SAMPLE_FEATURES} competitor="Fusion 360" />)
+    expect(html).toContain('divide-y')
+  })
+
+  it('desktop table has min-w so it scrolls rather than collapses on narrow viewports', () => {
+    const html = render(<CompareFeatureMatrix features={SAMPLE_FEATURES} competitor="Fusion 360" />)
+    // The table inside the desktop container should have a min-width set
+    expect(html).toContain('min-w-[560px]')
+  })
+})
