@@ -12,13 +12,20 @@ from fastapi import FastAPI
 
 async def register(app: FastAPI, ctx):
     """Plugin entry-point — called by the kerf-core plugin loader at startup."""
-    # Trigger self-registering @register decorators for existing mold tools
-    try:
-        import kerf_mold.tools  # noqa: F401
-    except ImportError:
-        pass
+    # Register mold check / parting / draft tools explicitly via ctx
+    from kerf_mold.tools import (
+        _CHECK_SPEC, run_mold_check_moldability,
+        _PARTING_SPEC, run_mold_generate_parting_surface,
+        _DRAFT_SPEC, run_mold_draft_angle_per_face,
+    )
+    ctx.tools.register("mold_check_moldability",
+                       _CHECK_SPEC, run_mold_check_moldability)
+    ctx.tools.register("mold_generate_parting_surface",
+                       _PARTING_SPEC, run_mold_generate_parting_surface)
+    ctx.tools.register("mold_draft_angle_per_face",
+                       _DRAFT_SPEC, run_mold_draft_angle_per_face)
 
-    # Register new cooling analysis tool via ctx
+    # Register cooling analysis tool
     from kerf_mold.cooling_tool import mold_cooling_analysis_spec, run_mold_cooling_analysis
     ctx.tools.register(
         "mold_cooling_analysis",

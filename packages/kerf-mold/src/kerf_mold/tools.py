@@ -29,6 +29,7 @@ try:
     from kerf_core.utils.context import ProjectCtx
     _REGISTRY_AVAILABLE = True
 except ImportError:
+    from kerf_mold._compat import ToolSpec, err_payload, ok_payload, register, ProjectCtx
     _REGISTRY_AVAILABLE = False
 
 from kerf_mold.mold import (
@@ -136,206 +137,205 @@ def _mold_design_from_args(a: dict) -> tuple:
     return mold, ""
 
 
-if _REGISTRY_AVAILABLE:
 
-    # ------------------------------------------------------------------
-    # Tool: mold_check_moldability
-    # ------------------------------------------------------------------
+# ------------------------------------------------------------------
+# Tool: mold_check_moldability
+# ------------------------------------------------------------------
 
-    _CHECK_SPEC = ToolSpec(
-        name="mold_check_moldability",
-        description=(
-            "Check an injection-mold design for moldability: minimum draft angle per "
-            "face, wall-thickness uniformity, and parting-surface planarity relative "
-            "to the pull direction.\n\n"
-            "Returns: {ok, all_checks_pass, checks{draft_angle, wall_uniformity, "
-            "parting_continuity}, failing_faces, warnings}. Never raises."
-        ),
-        input_schema={
-            "type": "object",
-            "properties": {
-                "core_faces": {
-                    "type": "array",
-                    "description": "Core-half faces. Each: {vertices:[[x,y,z],...], normal:[nx,ny,nz], face_id?}.",
-                    "items": {"type": "object"},
-                },
-                "cavity_faces": {
-                    "type": "array",
-                    "description": "Cavity-half faces.",
-                    "items": {"type": "object"},
-                },
-                "parting_line_points": {
-                    "type": "array",
-                    "description": "Ordered closed loop of [x,y,z] points forming the parting boundary.",
-                    "items": {"type": "array", "items": {"type": "number"}},
-                },
-                "pull_direction": {
-                    "type": "array",
-                    "items": {"type": "number"},
-                    "description": "Mold opening direction [dx, dy, dz] (need not be unit).",
-                },
-                "min_draft_deg": {
-                    "type": "number",
-                    "description": "Minimum acceptable draft angle in degrees (default 1.0).",
-                },
-                "max_wall_ratio": {
-                    "type": "number",
-                    "description": "Maximum acceptable wall thickness max/min ratio (default 3.0).",
-                },
-                "wall_thicknesses_mm": {
-                    "type": "array",
-                    "items": {"type": "number"},
-                    "description": "Sampled wall thicknesses (mm) for uniformity check. Optional.",
-                },
-                "ejector_pins": {
-                    "type": "array",
-                    "items": {"type": "object"},
-                    "description": "Optional ejector pins: [{position:[x,y,z], diameter_mm, length_mm}, ...]",
-                },
-                "gate": {
-                    "type": "object",
-                    "description": "Optional gate: {point:[x,y,z], gate_type?}",
-                },
-                "part_name": {"type": "string"},
+_CHECK_SPEC = ToolSpec(
+    name="mold_check_moldability",
+    description=(
+        "Check an injection-mold design for moldability: minimum draft angle per "
+        "face, wall-thickness uniformity, and parting-surface planarity relative "
+        "to the pull direction.\n\n"
+        "Returns: {ok, all_checks_pass, checks{draft_angle, wall_uniformity, "
+        "parting_continuity}, failing_faces, warnings}. Never raises."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "core_faces": {
+                "type": "array",
+                "description": "Core-half faces. Each: {vertices:[[x,y,z],...], normal:[nx,ny,nz], face_id?}.",
+                "items": {"type": "object"},
             },
-            "required": ["parting_line_points", "pull_direction"],
-        },
-    )
-
-    @register(_CHECK_SPEC, write=False)
-    async def run_mold_check_moldability(ctx: "ProjectCtx", args: bytes) -> str:
-        try:
-            a = json.loads(args)
-        except Exception as exc:
-            return err_payload(f"invalid args JSON: {exc}", "BAD_ARGS")
-
-        mold, err = _mold_design_from_args(a)
-        if mold is None:
-            return err_payload(err, "BAD_ARGS")
-
-        min_draft = float(a.get("min_draft_deg", 1.0))
-        max_ratio = float(a.get("max_wall_ratio", 3.0))
-        result = check_moldability(mold, min_draft_deg=min_draft, max_wall_ratio=max_ratio)
-        if not result["ok"]:
-            return err_payload(result["reason"], "OP_FAILED")
-        return ok_payload(result)
-
-    # ------------------------------------------------------------------
-    # Tool: mold_generate_parting_surface
-    # ------------------------------------------------------------------
-
-    _PARTING_SPEC = ToolSpec(
-        name="mold_generate_parting_surface",
-        description=(
-            "Extend a closed parting-line loop into a flat or ruled surface patch.\n\n"
-            "'flat' — project all parting-line points onto the best-fit plane and "
-            "fan-triangulate from the centroid.\n"
-            "'ruled' — extrude each parting-line edge along pull_dir to "
-            "extrusion_depth_mm, producing a ruled band.\n\n"
-            "Returns: {ok, style, vertices, faces, area_mm2, is_flat, centroid, "
-            "warnings}. Never raises."
-        ),
-        input_schema={
-            "type": "object",
-            "properties": {
-                "parting_line_points": {
-                    "type": "array",
-                    "description": "Ordered closed loop of [x,y,z] points.",
-                    "items": {"type": "array", "items": {"type": "number"}},
-                },
-                "style": {
-                    "type": "string",
-                    "enum": ["flat", "ruled"],
-                    "description": "'flat' (default) or 'ruled'.",
-                },
-                "pull_direction": {
-                    "type": "array",
-                    "items": {"type": "number"},
-                    "description": "Required for 'ruled' style: [dx, dy, dz].",
-                },
-                "extrusion_depth_mm": {
-                    "type": "number",
-                    "description": "Ruled extrusion depth in mm (default 50).",
-                },
+            "cavity_faces": {
+                "type": "array",
+                "description": "Cavity-half faces.",
+                "items": {"type": "object"},
             },
-            "required": ["parting_line_points"],
-        },
-    )
-
-    @register(_PARTING_SPEC, write=False)
-    async def run_mold_generate_parting_surface(ctx: "ProjectCtx", args: bytes) -> str:
-        try:
-            a = json.loads(args)
-        except Exception as exc:
-            return err_payload(f"invalid args JSON: {exc}", "BAD_ARGS")
-
-        pl_raw = a.get("parting_line_points")
-        if not pl_raw or len(pl_raw) < 3:
-            return err_payload("parting_line_points must have >= 3 points", "BAD_ARGS")
-
-        try:
-            pl = PartingLine(points=[[float(x) for x in p[:3]] for p in pl_raw])
-        except Exception as exc:
-            return err_payload(f"parting_line_points: {exc}", "BAD_ARGS")
-
-        style = str(a.get("style", "flat"))
-        pull = a.get("pull_direction")
-        depth = float(a.get("extrusion_depth_mm", 50.0))
-
-        result = generate_parting_surface(pl, style=style, pull_dir=pull, extrusion_depth_mm=depth)
-        if not result["ok"]:
-            return err_payload(result["reason"], "OP_FAILED")
-        return ok_payload(result)
-
-    # ------------------------------------------------------------------
-    # Tool: mold_draft_angle_per_face
-    # ------------------------------------------------------------------
-
-    _DRAFT_SPEC = ToolSpec(
-        name="mold_draft_angle_per_face",
-        description=(
-            "Compute signed draft angle (degrees) for each mold face relative to "
-            "the pull direction.\n\n"
-            "draft_deg = degrees(asin(n · pull_hat))\n"
-            "Positive → good draft; negative → undercut; zero → no draft (may stick).\n\n"
-            "Returns: list of {face_id, draft_deg, is_undercut, normal} per face. "
-            "Never raises."
-        ),
-        input_schema={
-            "type": "object",
-            "properties": {
-                "faces": {
-                    "type": "array",
-                    "description": "Faces: [{vertices:[[x,y,z],...], normal:[nx,ny,nz], face_id?}, ...]",
-                    "items": {"type": "object"},
-                },
-                "pull_direction": {
-                    "type": "array",
-                    "items": {"type": "number"},
-                    "description": "Mold opening direction [dx, dy, dz].",
-                },
+            "parting_line_points": {
+                "type": "array",
+                "description": "Ordered closed loop of [x,y,z] points forming the parting boundary.",
+                "items": {"type": "array", "items": {"type": "number"}},
             },
-            "required": ["faces", "pull_direction"],
+            "pull_direction": {
+                "type": "array",
+                "items": {"type": "number"},
+                "description": "Mold opening direction [dx, dy, dz] (need not be unit).",
+            },
+            "min_draft_deg": {
+                "type": "number",
+                "description": "Minimum acceptable draft angle in degrees (default 1.0).",
+            },
+            "max_wall_ratio": {
+                "type": "number",
+                "description": "Maximum acceptable wall thickness max/min ratio (default 3.0).",
+            },
+            "wall_thicknesses_mm": {
+                "type": "array",
+                "items": {"type": "number"},
+                "description": "Sampled wall thicknesses (mm) for uniformity check. Optional.",
+            },
+            "ejector_pins": {
+                "type": "array",
+                "items": {"type": "object"},
+                "description": "Optional ejector pins: [{position:[x,y,z], diameter_mm, length_mm}, ...]",
+            },
+            "gate": {
+                "type": "object",
+                "description": "Optional gate: {point:[x,y,z], gate_type?}",
+            },
+            "part_name": {"type": "string"},
         },
-    )
+        "required": ["parting_line_points", "pull_direction"],
+    },
+)
 
-    @register(_DRAFT_SPEC, write=False)
-    async def run_mold_draft_angle_per_face(ctx: "ProjectCtx", args: bytes) -> str:
-        try:
-            a = json.loads(args)
-        except Exception as exc:
-            return err_payload(f"invalid args JSON: {exc}", "BAD_ARGS")
+@register(_CHECK_SPEC, write=False)
+async def run_mold_check_moldability(ctx: "ProjectCtx", args: bytes) -> str:
+    try:
+        a = json.loads(args)
+    except Exception as exc:
+        return err_payload(f"invalid args JSON: {exc}", "BAD_ARGS")
 
-        raw_faces = a.get("faces")
-        pull = a.get("pull_direction")
-        if not raw_faces:
-            return err_payload("faces is required and must be non-empty", "BAD_ARGS")
-        if not pull or len(pull) != 3:
-            return err_payload("pull_direction ([dx,dy,dz]) is required", "BAD_ARGS")
+    mold, err = _mold_design_from_args(a)
+    if mold is None:
+        return err_payload(err, "BAD_ARGS")
 
-        faces, err = _faces_from_args(raw_faces)
-        if faces is None:
-            return err_payload(err, "BAD_ARGS")
+    min_draft = float(a.get("min_draft_deg", 1.0))
+    max_ratio = float(a.get("max_wall_ratio", 3.0))
+    result = check_moldability(mold, min_draft_deg=min_draft, max_wall_ratio=max_ratio)
+    if not result["ok"]:
+        return err_payload(result["reason"], "OP_FAILED")
+    return ok_payload(result)
 
-        results = draft_angle_per_face(faces, pull)
-        return ok_payload({"ok": True, "results": results, "num_faces": len(results)})
+# ------------------------------------------------------------------
+# Tool: mold_generate_parting_surface
+# ------------------------------------------------------------------
+
+_PARTING_SPEC = ToolSpec(
+    name="mold_generate_parting_surface",
+    description=(
+        "Extend a closed parting-line loop into a flat or ruled surface patch.\n\n"
+        "'flat' — project all parting-line points onto the best-fit plane and "
+        "fan-triangulate from the centroid.\n"
+        "'ruled' — extrude each parting-line edge along pull_dir to "
+        "extrusion_depth_mm, producing a ruled band.\n\n"
+        "Returns: {ok, style, vertices, faces, area_mm2, is_flat, centroid, "
+        "warnings}. Never raises."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "parting_line_points": {
+                "type": "array",
+                "description": "Ordered closed loop of [x,y,z] points.",
+                "items": {"type": "array", "items": {"type": "number"}},
+            },
+            "style": {
+                "type": "string",
+                "enum": ["flat", "ruled"],
+                "description": "'flat' (default) or 'ruled'.",
+            },
+            "pull_direction": {
+                "type": "array",
+                "items": {"type": "number"},
+                "description": "Required for 'ruled' style: [dx, dy, dz].",
+            },
+            "extrusion_depth_mm": {
+                "type": "number",
+                "description": "Ruled extrusion depth in mm (default 50).",
+            },
+        },
+        "required": ["parting_line_points"],
+    },
+)
+
+@register(_PARTING_SPEC, write=False)
+async def run_mold_generate_parting_surface(ctx: "ProjectCtx", args: bytes) -> str:
+    try:
+        a = json.loads(args)
+    except Exception as exc:
+        return err_payload(f"invalid args JSON: {exc}", "BAD_ARGS")
+
+    pl_raw = a.get("parting_line_points")
+    if not pl_raw or len(pl_raw) < 3:
+        return err_payload("parting_line_points must have >= 3 points", "BAD_ARGS")
+
+    try:
+        pl = PartingLine(points=[[float(x) for x in p[:3]] for p in pl_raw])
+    except Exception as exc:
+        return err_payload(f"parting_line_points: {exc}", "BAD_ARGS")
+
+    style = str(a.get("style", "flat"))
+    pull = a.get("pull_direction")
+    depth = float(a.get("extrusion_depth_mm", 50.0))
+
+    result = generate_parting_surface(pl, style=style, pull_dir=pull, extrusion_depth_mm=depth)
+    if not result["ok"]:
+        return err_payload(result["reason"], "OP_FAILED")
+    return ok_payload(result)
+
+# ------------------------------------------------------------------
+# Tool: mold_draft_angle_per_face
+# ------------------------------------------------------------------
+
+_DRAFT_SPEC = ToolSpec(
+    name="mold_draft_angle_per_face",
+    description=(
+        "Compute signed draft angle (degrees) for each mold face relative to "
+        "the pull direction.\n\n"
+        "draft_deg = degrees(asin(n · pull_hat))\n"
+        "Positive → good draft; negative → undercut; zero → no draft (may stick).\n\n"
+        "Returns: list of {face_id, draft_deg, is_undercut, normal} per face. "
+        "Never raises."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "faces": {
+                "type": "array",
+                "description": "Faces: [{vertices:[[x,y,z],...], normal:[nx,ny,nz], face_id?}, ...]",
+                "items": {"type": "object"},
+            },
+            "pull_direction": {
+                "type": "array",
+                "items": {"type": "number"},
+                "description": "Mold opening direction [dx, dy, dz].",
+            },
+        },
+        "required": ["faces", "pull_direction"],
+    },
+)
+
+@register(_DRAFT_SPEC, write=False)
+async def run_mold_draft_angle_per_face(ctx: "ProjectCtx", args: bytes) -> str:
+    try:
+        a = json.loads(args)
+    except Exception as exc:
+        return err_payload(f"invalid args JSON: {exc}", "BAD_ARGS")
+
+    raw_faces = a.get("faces")
+    pull = a.get("pull_direction")
+    if not raw_faces:
+        return err_payload("faces is required and must be non-empty", "BAD_ARGS")
+    if not pull or len(pull) != 3:
+        return err_payload("pull_direction ([dx,dy,dz]) is required", "BAD_ARGS")
+
+    faces, err = _faces_from_args(raw_faces)
+    if faces is None:
+        return err_payload(err, "BAD_ARGS")
+
+    results = draft_angle_per_face(faces, pull)
+    return ok_payload({"ok": True, "results": results, "num_faces": len(results)})
