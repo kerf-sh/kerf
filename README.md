@@ -205,7 +205,7 @@ file types, capability grid, and an LLM-prompt example.
 | Capability | Status |
 |---|---|
 | JSCAD authoring + chat-driven edits | ✅ |
-| OpenCascade `.feature` files (Pad / Pocket / Revolve / Fillet / Chamfer / Shell / Hole / Patterns / Push-Pull / Sweep1 / Sweep2 / Loft / NURBS surfacing) | ✅ |
+| OpenCascade `.feature` files (Pad / Pocket / Revolve / Fillet / Chamfer / Shell / Hole / Patterns / Push-Pull / Sweep1 / Sweep2 / Loft / NURBS surfacing + G3 blends + surface-direct booleans + trim-by-curve + matchSrf) | ✅ |
 | FreeCAD-parity sketch shortcuts (boss-with-draft, cut-from-sketch, hole-pattern-from-sketch, symmetric loft, tangent-locked sweep) | ✅ |
 | 2D parametric sketcher (planegcs constraints, live length/angle, BREP face/edge picker) | ✅ |
 | TechDraw-flavored drawings (multi-sheet, dimensions, GD&T, hatching, leaders, balloons) | ✅ |
@@ -234,10 +234,11 @@ file types, capability grid, and an LLM-prompt example.
 | 5-axis CAM v1 (constant-tilt finishing + 3+2 indexed) | ✅ |
 | Wiring / harness diagrams (`.wiring` via WireViz YAML → SVG) | ✅ |
 | Quad remesher (Instant Meshes, optional binary) | ✅ |
-| 📋 NURBS Phase 4 — surface-direct booleans + trim-by-curve + matchSrf + G3 | in flight |
-| 📋 PLC structured text (`.plc.st` via IEC 61131-3 + OpenPLC) | next |
-| 📋 Slicing — cross-section + CNC layered + 3D-print G-code | next |
-| 📋 SubD modelling / Grasshopper node graph | planned |
+| NURBS Phase 4 — surface-direct booleans (`feature_surface_boolean`) + trim-by-curve + matchSrf G3 continuity (`feature_blend_srf_g3`, `feature_g3_chain_blend`) | ✅ |
+| PLC structured text (`.plc` / `.st` via IEC 61131-3 + PLCopen XML, Ladder + ST + FBD + simulator) | ✅ |
+| Slicing — 3D-print G-code via Cura engine (`run_print_slice`) | ✅ |
+| SubD modelling (Catmull-Clark, create / extrude-face / bevel-edge / crease) | ✅ |
+| 📋 Grasshopper-style node graph | planned |
 
 The full ROADMAP — shipped, in-flight, next, planned — is in [ROADMAP.md](./ROADMAP.md).
 
