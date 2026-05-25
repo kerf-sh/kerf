@@ -1437,66 +1437,83 @@ export default function Editor() {
 
   return (
     <div className="h-screen flex flex-col bg-ink-950 text-ink-100 overflow-hidden">
-      {/* ---------- Top bar ---------- */}
-      <header className="flex items-center gap-2 sm:gap-3 h-12 px-2 sm:px-3 border-b border-ink-800 bg-ink-900 flex-shrink-0">
-        <button
-          type="button"
-          onClick={() => navigate('/projects')}
-          className="p-1.5 rounded hover:bg-ink-800 text-ink-300 hover:text-kerf-300"
-          title="Back to projects"
-          aria-label="Back to projects"
-        >
-          <ArrowLeft size={15} aria-hidden="true" />
-        </button>
-        {/* T-L1: file-tree drawer toggle — only visible < lg where the inline
-            aside is hidden. Opens the off-canvas file-tree drawer. */}
-        <button
-          type="button"
-          ref={treeOpenerRef}
-          onClick={() => setTreeDrawerOpen(true)}
-          className="lg:hidden p-1.5 rounded hover:bg-ink-800 text-ink-300 hover:text-kerf-300"
-          title="Open file tree"
-          aria-label="Open file tree"
-          aria-expanded={treeDrawerOpen}
-          aria-controls="editor-tree-drawer"
-        >
-          <PanelLeftOpen size={15} aria-hidden="true" />
-        </button>
-        <button
-          type="button"
-          onClick={() => navigate('/')}
-          className="flex items-center hover:opacity-80 transition-opacity"
-          title="Kerf home"
-          aria-label="Kerf home"
-        >
-          <LogoWordmark />
-        </button>
-        <span className="text-ink-700">/</span>
-        {editingName ? (
-          <input
-            key={w.project?.id}
-            ref={nameInputRef}
-            defaultValue={w.project?.name || ''}
-            autoFocus
-            onBlur={commitName}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') commitName()
-              if (e.key === 'Escape') { setEditingName(false) }
-            }}
-            className="bg-ink-850 border border-kerf-300/50 rounded px-2 py-0.5 text-sm text-ink-100 outline-none w-64"
-          />
-        ) : (
+      {/* ---------- Top bar ----------
+          Mobile layout (< 768px):
+            - Logo and slash hidden at < sm (480px) to reclaim width
+            - Project name truncated with max-w to prevent overflow
+            - SaveIndicator text hidden at < sm (icon-only)
+            - Right-side actions wrapped flex-shrink-0 so they never get
+              squeezed by a long project name
+          Desktop layout unchanged at ≥ 768px.
+      */}
+      <header
+        data-testid="editor-topbar"
+        className="flex items-center gap-1.5 sm:gap-2 md:gap-3 h-12 px-2 sm:px-3 border-b border-ink-800 bg-ink-900 flex-shrink-0 min-w-0 overflow-hidden"
+      >
+        {/* Fixed-size left group: back button + tree toggle + logo + slash + name */}
+        <div className="flex items-center gap-1 sm:gap-2 min-w-0 flex-1">
           <button
             type="button"
-            onClick={() => setEditingName(true)}
-            className="text-sm text-ink-200 hover:text-kerf-300 px-1 rounded"
-            title="Click to rename"
+            onClick={() => navigate('/projects')}
+            className="flex-shrink-0 p-1.5 rounded hover:bg-ink-800 text-ink-300 hover:text-kerf-300"
+            title="Back to projects"
+            aria-label="Back to projects"
           >
-            {w.project?.name || 'Loading…'}
+            <ArrowLeft size={15} aria-hidden="true" />
           </button>
-        )}
+          {/* T-L1: file-tree drawer toggle — only visible < lg where the inline
+              aside is hidden. Opens the off-canvas file-tree drawer. */}
+          <button
+            type="button"
+            ref={treeOpenerRef}
+            onClick={() => setTreeDrawerOpen(true)}
+            className="flex-shrink-0 lg:hidden p-1.5 rounded hover:bg-ink-800 text-ink-300 hover:text-kerf-300"
+            title="Open file tree"
+            aria-label="Open file tree"
+            aria-expanded={treeDrawerOpen}
+            aria-controls="editor-tree-drawer"
+          >
+            <PanelLeftOpen size={15} aria-hidden="true" />
+          </button>
+          {/* Logo: hidden at < sm (480px) where every px matters) */}
+          <button
+            type="button"
+            onClick={() => navigate('/')}
+            className="hidden sm:flex items-center hover:opacity-80 transition-opacity flex-shrink-0"
+            title="Kerf home"
+            aria-label="Kerf home"
+          >
+            <LogoWordmark />
+          </button>
+          {/* Slash separator: hidden with the logo */}
+          <span className="hidden sm:inline text-ink-700 flex-shrink-0">/</span>
+          {editingName ? (
+            <input
+              key={w.project?.id}
+              ref={nameInputRef}
+              defaultValue={w.project?.name || ''}
+              autoFocus
+              onBlur={commitName}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') commitName()
+                if (e.key === 'Escape') { setEditingName(false) }
+              }}
+              className="bg-ink-850 border border-kerf-300/50 rounded px-2 py-0.5 text-sm text-ink-100 outline-none min-w-0 w-40 sm:w-64"
+            />
+          ) : (
+            <button
+              type="button"
+              onClick={() => setEditingName(true)}
+              className="min-w-0 truncate max-w-[110px] sm:max-w-[180px] md:max-w-[280px] lg:max-w-none text-sm text-ink-200 hover:text-kerf-300 px-1 rounded text-left"
+              title="Click to rename"
+            >
+              {w.project?.name || 'Loading…'}
+            </button>
+          )}
+        </div>
 
-        <div className="flex-1" />
+        {/* Right-side actions: flex-shrink-0 so they're never squeezed by the name */}
+        <div className="flex items-center gap-1 sm:gap-1.5 flex-shrink-0">
 
         <SaveIndicator status={saveStatus} />
 
@@ -1681,6 +1698,7 @@ export default function Editor() {
         </TopBarMoreMenu>
 
         <EditorUserMenu user={user} />
+        </div>{/* end right-side actions */}
       </header>
 
       {/* ---------- Main grid ----------
@@ -2657,23 +2675,24 @@ function lookupFeatureLocal(sel, t) {
   return null
 }
 
+// SaveIndicator — icon + text label on ≥ sm; icon-only on < sm to save width.
 function SaveIndicator({ status }) {
   if (status === 'saving') return (
-    <span className="inline-flex items-center gap-1 text-[11px] text-ink-400">
-      <Loader2 size={11} className="animate-spin" />
-      Saving…
+    <span className="inline-flex items-center gap-1 text-[11px] text-ink-400" title="Saving…">
+      <Loader2 size={11} className="animate-spin" aria-hidden="true" />
+      <span className="hidden sm:inline">Saving…</span>
     </span>
   )
   if (status === 'dirty') return (
-    <span className="inline-flex items-center gap-1 text-[11px] text-kerf-400">
-      <Save size={11} />
-      Unsaved
+    <span className="inline-flex items-center gap-1 text-[11px] text-kerf-400" title="Unsaved changes">
+      <Save size={11} aria-hidden="true" />
+      <span className="hidden sm:inline">Unsaved</span>
     </span>
   )
   return (
-    <span className="inline-flex items-center gap-1 text-[11px] text-ink-500">
-      <Check size={11} />
-      Saved
+    <span className="inline-flex items-center gap-1 text-[11px] text-ink-500" title="Saved">
+      <Check size={11} aria-hidden="true" />
+      <span className="hidden sm:inline">Saved</span>
     </span>
   )
 }

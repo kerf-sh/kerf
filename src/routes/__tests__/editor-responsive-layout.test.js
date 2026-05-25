@@ -8,6 +8,11 @@
  *   - Off-canvas chat drawer is rendered conditionally (chatDrawerOpen state)
  *   - Toggle buttons have correct aria-expanded / aria-controls / aria-label
  *   - Drawers have role="dialog" + aria-modal="true" + aria-label
+ *   - Topbar: overflow-hidden + min-w-0 prevents flex spillover on mobile
+ *   - Topbar: logo hidden on < sm, project name truncated with max-w
+ *   - Topbar: SaveIndicator text hidden on < sm (icon-only)
+ *   - Topbar: right-side actions wrapped in flex-shrink-0 container
+ *   - Topbar: data-testid="editor-topbar" for automated testing
  *   - Drawers have close buttons with aria-label
  *   - Focus-trap / focus-return refs exist (treeOpenerRef / chatOpenerRef)
  *   - Pointer-event split handles have touch-none + touchAction: none
@@ -300,5 +305,130 @@ describe('Editor.jsx — route-change auto-close', () => {
     )
     expect(autoCloseBlock).toContain('setTreeDrawerOpen(false)')
     expect(autoCloseBlock).toContain('setChatDrawerOpen(false)')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Mobile topbar: overflow prevention (new responsive additions)
+// ---------------------------------------------------------------------------
+
+describe('Editor.jsx — mobile topbar overflow prevention', () => {
+  // Extract the header element for scoped assertions
+  const headerBlock = (() => {
+    const start = EDITOR_SRC.indexOf('data-testid="editor-topbar"')
+    // Find the closing </header> after the topbar start
+    const end = EDITOR_SRC.indexOf('</header>', start)
+    return EDITOR_SRC.slice(start, end + 9)
+  })()
+
+  it('topbar carries data-testid="editor-topbar" for testing', () => {
+    expect(EDITOR_SRC).toContain('data-testid="editor-topbar"')
+  })
+
+  it('topbar has overflow-hidden to prevent flex child spillover', () => {
+    expect(headerBlock).toContain('overflow-hidden')
+  })
+
+  it('topbar has min-w-0 to let flex children shrink below intrinsic width', () => {
+    expect(headerBlock).toContain('min-w-0')
+  })
+
+  it('project name has truncate class to clip long names', () => {
+    // The project name button carries truncate
+    expect(headerBlock).toContain('truncate')
+  })
+
+  it('project name has a mobile max-width (max-w-[110px]) to prevent overflow at < sm', () => {
+    expect(headerBlock).toContain('max-w-[110px]')
+  })
+
+  it('project name max-width expands at sm breakpoint (max-w-[180px])', () => {
+    expect(headerBlock).toContain('sm:max-w-[180px]')
+  })
+
+  it('project name max-width expands further at md breakpoint (max-w-[280px])', () => {
+    expect(headerBlock).toContain('md:max-w-[280px]')
+  })
+
+  it('project name has lg:max-w-none to restore unconstrained width on desktop', () => {
+    expect(headerBlock).toContain('lg:max-w-none')
+  })
+
+  it('logo button is hidden on < sm and shown on ≥ sm (hidden sm:flex)', () => {
+    expect(headerBlock).toContain('hidden sm:flex')
+  })
+
+  it('slash separator is hidden on < sm (hidden sm:inline)', () => {
+    expect(headerBlock).toContain('hidden sm:inline')
+  })
+
+  it('right-side actions are in a flex-shrink-0 wrapper so they are never squeezed', () => {
+    // There must be at least one flex-shrink-0 in the right-actions group
+    expect(headerBlock).toContain('flex-shrink-0')
+  })
+
+  it('left name group has flex-1 to take available space between fixed groups', () => {
+    expect(headerBlock).toContain('flex-1')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Mobile topbar: SaveIndicator icon-only on narrow screens
+// ---------------------------------------------------------------------------
+
+describe('Editor.jsx — SaveIndicator mobile behaviour', () => {
+  // Grab the SaveIndicator function body
+  const saveIndicatorBlock = (() => {
+    const start = EDITOR_SRC.indexOf('function SaveIndicator(')
+    const end = EDITOR_SRC.indexOf('\n}', start) + 2
+    return EDITOR_SRC.slice(start, end)
+  })()
+
+  it('SaveIndicator text labels are hidden on < sm (hidden sm:inline)', () => {
+    expect(saveIndicatorBlock).toContain('hidden sm:inline')
+  })
+
+  it('SaveIndicator shows at least 3 hidden sm:inline spans (saving/dirty/saved)', () => {
+    const matches = saveIndicatorBlock.match(/hidden sm:inline/g) || []
+    expect(matches.length).toBeGreaterThanOrEqual(3)
+  })
+
+  it('SaveIndicator icons have aria-hidden="true" when text is visually hidden', () => {
+    expect(saveIndicatorBlock).toContain('aria-hidden="true"')
+  })
+
+  it('SaveIndicator wrapper has title attribute for tooltip on mobile', () => {
+    // title="Saved" / title="Unsaved changes" / title="Saving…"
+    expect(saveIndicatorBlock).toMatch(/title="(Saved|Unsaved changes|Saving…)"/)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Desktop regression guard: desktop layout classes are preserved
+// ---------------------------------------------------------------------------
+
+describe('Editor.jsx — desktop layout regression guard', () => {
+  it('inline left aside still uses hidden lg:flex (desktop layout unchanged)', () => {
+    expect(EDITOR_SRC).toContain('hidden lg:flex')
+  })
+
+  it('Export button still visible at ≥ md (hidden md:block)', () => {
+    expect(EDITOR_SRC).toContain('hidden md:block')
+  })
+
+  it('Share button still visible at ≥ lg (hidden lg:inline-flex)', () => {
+    expect(EDITOR_SRC).toContain('hidden lg:inline-flex')
+  })
+
+  it('Refresh thumbnail still visible at ≥ xl (hidden xl:inline-flex)', () => {
+    expect(EDITOR_SRC).toContain('hidden xl:inline-flex')
+  })
+
+  it('kerf-editor-grid CSS class still present for 3-pane layout at ≥ lg', () => {
+    expect(EDITOR_SRC).toContain('kerf-editor-grid')
+  })
+
+  it('right drawer still uses hidden lg:flex (desktop-only overlay)', () => {
+    expect(EDITOR_SRC).toContain('hidden lg:flex')
   })
 })
