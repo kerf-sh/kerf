@@ -1,7 +1,7 @@
 # GCP Cloud Run deployment
 
 Kerf deploys to Google Cloud Platform as a **single container image** on
-Cloud Run. The same image that runs on Koyeb works here unchanged — the
+Cloud Run. The same image that runs on Fly.io works here unchanged — the
 frontend SPA is embedded in the image and served as static files by
 FastAPI.
 

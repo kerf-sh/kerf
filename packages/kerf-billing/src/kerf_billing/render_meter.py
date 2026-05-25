@@ -169,7 +169,7 @@ async def gate_render_job(
         from kerf_billing.buckets import load_user_billing  # local import to avoid cycle
         user_billing = await load_user_billing(pool, user_id)
 
-        # Estimate cost using the L4 rate (Koyeb entry-level, conservative
+        # Estimate cost using the L4 rate (RunPod entry-level, conservative
         # lower-bound; actual GPU type is resolved by the worker after dispatch).
         from kerf_render.pricing_meter import GPU_RATES_USD_PER_SECOND, GPU_MARKUP_PCT
         base_rate = GPU_RATES_USD_PER_SECOND.get("l4", 0.000194)

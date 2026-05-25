@@ -12,13 +12,31 @@ The authoritative source for what's shipped vs in-flight is
 See `🔮 planned` rows in [ROADMAP.md](./ROADMAP.md). The v0.2 milestone
 focus is in [docs/plans/v0.2-milestone.md](./docs/plans/v0.2-milestone.md).
 
-### 2026-05-24 — Infrastructure: Fly.io → Koyeb migration
+### 2026-05-26 — Infrastructure: hosted stack settled (Fly + Neon + R2 + RunPod + Resend)
+
+- **Infrastructure** — hosted-tier stack settled after reversing the
+  2026-05-24 Koyeb migration (Koyeb removed pay-as-you-go Starter tier,
+  imposing a ~$29/mo floor). Final stack:
+  - **Engine:** Fly.io, region `jnb` (Johannesburg), `shared-cpu-2x`/2 GB,
+    apps `kerf-dev` / `kerf-prod`, workers in-process, auto start/stop.
+    Deploy via `./scripts/deploy-fly.sh`.
+  - **Database:** Neon Postgres, `eu-central-1`.
+  - **Object storage:** Cloudflare R2 — zero egress, $0.015/GB-month.
+  - **GPU renders:** RunPod Serverless (L4→H100, scale-to-zero) —
+    dispatch seam exists; `RunPodGPUBackend` **planned**, not yet built.
+  - **Email:** Resend (`EMAIL_PROVIDER=resend`); SES migration is a
+    one-env-var flip when ready.
+  - See [deployment/fly.md](./deployment/fly.md) and
+    [decisions.md — 2026-05-26 ADR](./decisions.md).
+
+### 2026-05-24 — Infrastructure: Fly.io → Koyeb migration (reversed 2026-05-26)
 
 - **Infrastructure** — hosted tier migrated from Fly.io to Koyeb. GPU
   rendering unblocked (T4/A100 ladder now available). Frankfurt
   data-centre retained for GDPR data-residency. No application code
-  changes — same Docker image, same env-var contract. See
-  [ROADMAP §7.1](./ROADMAP.md) and [deployment/koyeb.md](./deployment/koyeb.md).
+  changes — same Docker image, same env-var contract. Migration was
+  reversed on 2026-05-26 before the DNS cutover completed (T-405). See
+  decisions.md for both ADRs.
 
 ### 2026-05-17 (later) — Compare hub matrices, scroll-to-top, CFD foundation, FEM ref-values
 

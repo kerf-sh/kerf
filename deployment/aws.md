@@ -2,7 +2,7 @@
 
 Kerf deploys to AWS as a **single container image** using ECS Fargate
 (recommended for production) or App Runner (simpler for a first cut).
-The same image that runs on Koyeb or Cloud Run works here — frontend
+The same image that runs on Fly.io or Cloud Run works here — frontend
 SPA embedded, FastAPI backend, health check on `/healthz`.
 
 S3 is the native storage backend: `STORAGE_BACKEND=s3` requires no

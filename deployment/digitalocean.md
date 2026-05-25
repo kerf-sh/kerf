@@ -12,8 +12,8 @@ DigitalOcean Kubernetes (DOKS) is the upgrade path. See
 **No SA region**: DigitalOcean does not have a data centre in South
 Africa. The closest options are `lon1` (London) and `fra1` (Frankfurt).
 Expect 150-250 ms round trips from Johannesburg. For latency-sensitive
-SA workloads, Koyeb (`fra` Frankfurt, CPU-only) gives comparable latency
-to the hosted `kerf.sh` tier and is the recommended self-host option.
+SA workloads, Fly.io (`jnb` Johannesburg) is the hosted-tier and
+self-host option with the lowest SA latency.
 
 ## Prerequisites
 
@@ -33,7 +33,8 @@ to the hosted `kerf.sh` tier and is the recommended self-host option.
 | US users | `nyc3` (New York) | |
 
 There is no `jnb` or African region on DigitalOcean. If SA latency is a
-hard requirement, use Koyeb (`fra` Frankfurt, CPU-only self-host) instead.
+hard requirement, use Fly.io (`jnb` Johannesburg) instead — see
+[fly.md](./fly.md).
 
 ## Image registry (DOCR)
 
@@ -304,7 +305,7 @@ teams using Kerf, App Platform is the right default.
   count, CPU, memory, HTTP error rate
 - **Alerts**: set up an alert policy in the DO control panel on
   CPU > 80% or HTTP 5xx rate > 1%
-- **Depth**: App Platform metrics are less granular than Koyeb metrics
+- **Depth**: App Platform metrics are less granular than Fly.io metrics
   or CloudWatch. For production monitoring, consider exporting metrics to
   an external provider (Datadog, Grafana Cloud) via the App Platform
   metrics endpoint.
@@ -381,5 +382,5 @@ App → Activity → select deployment → Redeploy.
   after schema-changing deploys.
 - **No SA region**: this is not a configuration error — DO simply has no
   JNB or Cape Town data centre. Users in SA will see ~150-250 ms latency
-  to `lon1`. For lower SA latency, use Koyeb (`fra` Frankfurt, CPU-only
-  self-host) — comparable latency to the hosted `kerf.sh` tier.
+  to `lon1`. For lower SA latency, use Fly.io (`jnb` Johannesburg) —
+  the hosted-tier canonical target. See [fly.md](./fly.md).

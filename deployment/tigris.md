@@ -1,51 +1,87 @@
-# Tigris storage
+# Object storage: Cloudflare R2 (hosted tier) and Tigris / S3 alternatives
 
-[Tigris](https://www.tigrisdata.com/) is an S3-compatible object-storage
-service. Kerf uses it as the object-storage backend for project blobs,
-mesh tessellations, project thumbnails, and Workshop content.
+## Hosted tier — Cloudflare R2
 
-Tigris was originally developed as a fly.io-native service but is
-accessible via the public endpoint `fly.storage.tigris.dev` from
-**any host** — including Koyeb, GCP, and AWS. The endpoint hostname is
-the real public hostname; it is not Fly-specific.
+The hosted tier (`kerf.sh`, running on Fly.io) uses **Cloudflare R2** as
+the canonical blob store. R2's zero egress cost makes it the cheapest
+option at scale — there is no charge for data transferred out of R2 to
+the internet. Storage is $0.015/GB-month.
 
-## Why Tigris (vs Cloudflare R2 or AWS S3)
+### Provisioning R2
 
-- **Anycast network** — low-latency access from any region; from Koyeb
-  Frankfurt (`fra`), Tigris Frankfurt-replicated objects are served with
-  minimal round-trip (~1–5 ms typical for same-region cache hits).
-- **S3-compatible API** — drop-in for the existing `STORAGE_BACKEND=s3`
-  path. No code changes.
-- **Multi-region by default** — Tigris replicates writes to multiple
-  regions automatically.
-- **Pricing**: ~$0.02/GB-month storage; egress at standard Tigris rates
-  from any host. R2 is $0.015/GB; AWS S3 is $0.023/GB plus $0.09/GB egress.
+1. Log in to [dash.cloudflare.com](https://dash.cloudflare.com) →
+   **R2 Object Storage** → **Create bucket** (e.g. `kerf-blobs-prod`).
+2. Under **Manage R2 API tokens** → **Create API token** with
+   **Object Read & Write** permission scoped to the bucket.
+3. Note your **Account ID** (shown in the URL bar after login:
+   `https://dash.cloudflare.com/<ACCOUNT_ID>/r2`).
 
-The model in `billingmodel/projections.py` uses $0.02/GB-mo for Tigris.
+Map to Kerf env vars / Fly secrets:
 
-## Provisioning
+| R2 value | Kerf env var |
+|---|---|
+| Bucket name | `KERF_STORAGE_S3_BUCKET` |
+| `https://<ACCOUNT_ID>.r2.cloudflarestorage.com` | `KERF_STORAGE_S3_ENDPOINT` |
+| `auto` | `KERF_STORAGE_S3_REGION` |
+| Access Key ID | `KERF_STORAGE_S3_ACCESS_KEY` |
+| Secret Access Key | `KERF_STORAGE_S3_SECRET_KEY` |
 
-Sign in to [console.tigris.dev](https://console.tigris.dev), create an
-organisation (if you haven't already), then create a bucket:
+Always set `STORAGE_BACKEND=s3`. The endpoint is the **account-level
+host only** — no bucket suffix in the URL. Kerf's storage layer appends
+the bucket name.
+
+### Enable versioning (recommended)
 
 ```sh
-# Using the Tigris CLI (pip install tigris-cli, or use the web console).
-# The CLI prints credentials on bucket creation:
+aws --endpoint-url "https://<ACCOUNT_ID>.r2.cloudflarestorage.com" \
+  s3api put-bucket-versioning \
+  --bucket kerf-blobs-prod \
+  --versioning-configuration Status=Enabled
+```
+
+### Lifecycle policies
+
+R2 supports S3-compatible lifecycle rules. Useful examples:
+
+- Expire derived mesh tessellations after 30 days unused.
+- Expire temporary upload staging objects after 7 days.
+
+```sh
+aws --endpoint-url "https://<ACCOUNT_ID>.r2.cloudflarestorage.com" \
+  s3api put-bucket-lifecycle-configuration \
+  --bucket kerf-blobs-prod \
+  --lifecycle-configuration file://lifecycle.json
+```
+
+---
+
+## Self-host alternatives — Tigris, S3, B2, and other S3-compatible stores
+
+The `STORAGE_BACKEND=s3` path works with **any S3-compatible endpoint**
+— Tigris, Backblaze B2, AWS S3, MinIO, and others. All require the same
+four env vars (`KERF_STORAGE_S3_BUCKET`, `KERF_STORAGE_S3_ENDPOINT`,
+`KERF_STORAGE_S3_ACCESS_KEY`, `KERF_STORAGE_S3_SECRET_KEY`) plus
+`KERF_STORAGE_S3_REGION`.
+
+### Tigris
+
+[Tigris](https://www.tigrisdata.com/) is an S3-compatible object-storage
+service with anycast routing and automatic multi-region replication.
+It is a valid self-host option — provisioned at
+[console.tigris.dev](https://console.tigris.dev):
+
+```sh
+# Using the Tigris CLI:
 tigris bucket create kerf-blobs
 
-# Output (save these values):
+# Output includes:
 #   BUCKET_NAME=kerf-blobs
 #   AWS_ACCESS_KEY_ID=tid_...
 #   AWS_SECRET_ACCESS_KEY=tsec_...
 #   AWS_ENDPOINT_URL_S3=https://fly.storage.tigris.dev
 ```
 
-Alternatively, create the bucket and access key from the
-[Tigris web console](https://console.tigris.dev) under
-**Buckets → Create bucket**, then generate an access key under
-**Access Keys → Create key**.
-
-Map these to Kerf's env vars:
+Map to Kerf env vars:
 
 | Tigris var | Kerf env var |
 |---|---|
@@ -53,79 +89,63 @@ Map these to Kerf's env vars:
 | `AWS_ACCESS_KEY_ID` | `KERF_STORAGE_S3_ACCESS_KEY` |
 | `AWS_SECRET_ACCESS_KEY` | `KERF_STORAGE_S3_SECRET_KEY` |
 | `AWS_ENDPOINT_URL_S3` | `KERF_STORAGE_S3_ENDPOINT` |
+| `auto` | `KERF_STORAGE_S3_REGION` |
 
-Inject into your Koyeb service as secrets:
+> The endpoint `fly.storage.tigris.dev` is Tigris's own public hostname —
+> it is S3-compatible and reachable from any host, not just Fly.io.
 
-```sh
-koyeb secrets create KERF_STORAGE_S3_BUCKET    --value "kerf-blobs"
-koyeb secrets create KERF_STORAGE_S3_ACCESS_KEY --value "tid_..."
-koyeb secrets create KERF_STORAGE_S3_SECRET_KEY --value "tsec_..."
-koyeb secrets create KERF_STORAGE_S3_ENDPOINT   --value "https://fly.storage.tigris.dev"
-koyeb secrets create KERF_STORAGE_S3_REGION     --value "auto"
-```
+Pricing: ~$0.02/GB-month storage with standard egress charges. For
+zero-egress storage, use R2.
 
-Then reference each secret name in your `koyeb.yaml` service env block.
+### AWS S3
 
-## Versioning (recommended)
+See [s3.md](./s3.md) for the full S3 guide.
 
-Enable bucket versioning so that an accidental delete or overwrite is
-recoverable. Run once per bucket using the AWS CLI against the Tigris
-endpoint:
+### Backblaze B2
 
-```sh
-aws --endpoint-url=https://fly.storage.tigris.dev \
-  s3api put-bucket-versioning \
-  --bucket kerf-blobs-abc123 \
-  --versioning-configuration Status=Enabled
-```
+Set `KERF_STORAGE_S3_ENDPOINT=https://s3.<REGION>.backblazeb2.com` and
+use B2's S3-compatible application keys. Pricing: $0.006/GB-month storage,
+$0.01/GB egress (first 1 GB/day free).
 
-## Lifecycle policies (optional)
+---
 
-Tigris supports S3-compatible lifecycle rules. Useful examples:
+## LFS objects
 
-- Expire derived artifacts (mesh tessellations) after 30 days unused.
-- Transition project thumbnails older than 90 days to colder storage if
-  Tigris adds tiering.
+Large binary assets in git-backed projects live on **bunny.net** (see
+the Git LFS substrate docs). LFS is independent of the R2/Tigris/S3
+blob backend — the two stores serve different purposes and are not
+interchangeable.
 
-```sh
-# Apply a lifecycle.json describing your rules:
-aws --endpoint-url=https://fly.storage.tigris.dev \
-  s3api put-bucket-lifecycle-configuration \
-  --bucket kerf-blobs-abc123 \
-  --lifecycle-configuration file://lifecycle.json
-```
-
-## Limits worth knowing
-
-- **Per-object size**: 5 TiB (S3 standard).
-- **Multipart upload threshold**: Kerf uses chunked uploads above ~50MB
-  (see `kerf-api` chunked-upload helpers). Tigris fully supports S3
-  multipart.
-- **Bucket count**: per Tigris org pricing — check the Tigris dashboard.
+---
 
 ## Local dev
 
-For local dev or test, point at MinIO instead:
+For local dev or testing, point at MinIO:
 
 ```sh
-# In .env or kerf.toml
 STORAGE_BACKEND=s3
 KERF_STORAGE_S3_ENDPOINT=http://localhost:9000
 KERF_STORAGE_S3_BUCKET=kerf-local
 KERF_STORAGE_S3_ACCESS_KEY=minioadmin
 KERF_STORAGE_S3_SECRET_KEY=minioadmin
+KERF_STORAGE_S3_REGION=us-east-1
 ```
 
 The `docker-compose.yml` includes a MinIO service for this.
 
+---
+
 ## Troubleshooting
 
-- **403 forbidden on upload**: check `KERF_STORAGE_S3_BUCKET` matches the
-  exact bucket name (it's prefixed with a random suffix).
-- **Upload latency**: Tigris uses anycast routing. From Koyeb Frankfurt,
-  requests hit Tigris's Frankfurt edge; latency is typically 1–10 ms for
-  small objects. For very large uploads, multipart is automatically used
-  by the Kerf chunked-upload helpers.
-- **Egress charges**: standard Tigris egress rates apply from all hosts.
-  If you see unexpected egress, verify `KERF_STORAGE_S3_ENDPOINT` is set to
-  `https://fly.storage.tigris.dev`.
+- **403 forbidden on upload**: check `KERF_STORAGE_S3_BUCKET` matches
+  the exact bucket name. For R2, also confirm the API token has write
+  permission on that specific bucket.
+- **Endpoint misconfiguration (R2)**: the endpoint must be the
+  account-level URL only — `https://<ACCOUNT_ID>.r2.cloudflarestorage.com`.
+  Do not append the bucket name or a path.
+- **Unexpected egress charges**: if using Tigris or S3, egress is billed
+  per GB. R2 has zero egress. Verify `KERF_STORAGE_S3_ENDPOINT` is set
+  to the correct provider endpoint.
+- **Per-object size limit**: 5 TiB (S3 standard). Kerf uses chunked
+  multipart uploads above ~50 MB; all listed providers support S3
+  multipart.

@@ -4,19 +4,19 @@ Kerf ships as a **single Docker image** — the compiled Vite SPA plus
 FastAPI backend plus the chosen plugin persona — built from the root
 `Dockerfile`. The same image runs everywhere.
 
-> **Production runs on Koyeb.** That's what powers `kerf.sh`. The other
+> **Production runs on Fly.io.** That's what powers `kerf.sh`. The other
 > guides in this directory (GCP, AWS, Azure, DigitalOcean) are **reference
 > configurations** for users self-hosting Kerf on a cloud they already
 > use. We don't operate Kerf on those platforms — but the Docker image
 > + env-var contract is identical everywhere, so the configurations are
 > known-working starting points. If you don't have a strong reason to
-> pick something else, use [koyeb.md](./koyeb.md).
+> pick something else, use [fly.md](./fly.md).
 
 ## Provider comparison
 
 | Provider | Best for | Cost @ 1k users | SA region | S3-compatible storage | Workers |
 |---|---|---|---|---|---|
-| **Koyeb** | GPU workloads, hosted tier, Frankfurt presence | ~$60-90/mo | no (closest: `fra`) | Tigris (any host) | separate service |
+| **Fly.io** | Hosted tier (kerf.sh), `jnb` SA region, pay-as-you-go, large VMs | ~$60-90/mo | yes (`jnb` Johannesburg) | Cloudflare R2 (zero egress) | in-process (`KERF_INPROCESS_WORKERS=true`) |
 | **GCP Cloud Run** | Serverless scale-to-zero, existing GCP shop | ~$50-80/mo | yes (`africa-south1`) | Cloud Storage (S3 interop) | Cloud Run Jobs / second service |
 | **AWS ECS Fargate** | Compliance-heavy, GovCloud, S3-native | ~$120-150/mo | yes (`af-south-1`) | S3 (native) | separate task |
 | **Azure Container Apps** | Microsoft shop, SSO via Entra ID | ~$100-130/mo | yes (`southafricanorth`) | Blob + MinIO facade (not native — see caveat) | separate revision |
@@ -24,10 +24,12 @@ FastAPI backend plus the chosen plugin persona — built from the root
 
 ## Which provider to choose
 
-**Koyeb** is the hosted-tier default. It provides a full GPU ladder
-(L4 / L40S / A100 / H100) for rendering and FEM workloads, scale-to-zero
-GPU billing, and a Frankfurt (`fra`) presence that meets GDPR
-data-residency requirements. See [koyeb.md](./koyeb.md).
+**Fly.io** is the hosted-tier default — it powers `kerf.sh`. It has a
+native `jnb` (Johannesburg) region for low-latency SA access, supports
+VMs up to 16 vCPU / 128 GB (the engine needs at least 2 GB), offers
+pay-as-you-go pricing with no monthly floor, and already ran the engine
+cleanly before any migration. GPU rendering moves to RunPod Serverless
+(scale-to-zero, L4→H100 ladder). See [fly.md](./fly.md).
 
 **GCP Cloud Run** makes sense if you are already on GCP (Workspace,
 BigQuery, etc.) or want serverless scale-to-zero with a $0 floor when
@@ -58,20 +60,21 @@ See [digitalocean.md](./digitalocean.md) and [spaces.md](./spaces.md).
 
 ## Storage compatibility quick-reference
 
-| Storage | S3-compatible | Extra setup |
-|---|---|---|
-| Tigris (`fly.storage.tigris.dev`) | yes | endpoint URL only — works from any host |
-| AWS S3 | yes (native) | none |
-| GCP Cloud Storage | yes (HMAC interop) | enable interop, create HMAC keys |
-| DO Spaces | yes | endpoint URL only |
-| Azure Blob Storage | **no** | MinIO facade or cross-cloud S3 (see [azure-blob.md](./azure-blob.md)) |
+| Storage | S3-compatible | Extra setup | Notes |
+|---|---|---|---|
+| Cloudflare R2 | yes | endpoint URL + `region=auto` | **Hosted-tier default** — zero egress cost |
+| Tigris (`fly.storage.tigris.dev`) | yes | endpoint URL only | Works from any host; valid self-host option |
+| AWS S3 | yes (native) | none | |
+| GCP Cloud Storage | yes (HMAC interop) | enable interop, create HMAC keys | |
+| DO Spaces | yes | endpoint URL only | |
+| Azure Blob Storage | **no** | MinIO facade or cross-cloud S3 (see [azure-blob.md](./azure-blob.md)) | |
 
 ## Guide index
 
 | Guide | Content |
 |---|---|
-| [koyeb.md](./koyeb.md) | Koyeb — hosted-tier canonical target, GPU ladder, Frankfurt |
-| [tigris.md](./tigris.md) | Tigris object storage (works from any host) |
+| [fly.md](./fly.md) | **Fly.io — hosted-tier canonical target, `jnb` SA region, R2 storage** |
+| [tigris.md](./tigris.md) | Tigris object storage — S3-compatible, valid self-host alternative |
 | [gcp.md](./gcp.md) | GCP Cloud Run — deploy, workers, custom domain, cost |
 | [gcs.md](./gcs.md) | Google Cloud Storage — HMAC keys, interop, lifecycle |
 | [aws.md](./aws.md) | AWS ECS Fargate — deploy, ALB, workers, multi-region |
@@ -116,7 +119,7 @@ The method to exec this command differs per provider:
 
 | Provider | How to run migrations |
 |---|---|
-| Koyeb | `koyeb service exec kerf -- python -m kerf_core.db.migrations.runner $DATABASE_URL` |
+| **Fly.io (canonical/hosted)** | `flyctl ssh console --app kerf-prod -C "python -m kerf_core.db.migrations.runner $DATABASE_URL"` |
 | GCP | `gcloud run jobs execute kerf-migrate --region=africa-south1 --wait` |
 | AWS | `aws ecs execute-command --cluster kerf --interactive --command "python -m kerf_core.db.migrations.runner $DATABASE_URL"` |
 | Azure | `az containerapp exec --name kerf --resource-group kerf-rg --command "python -m kerf_core.db.migrations.runner"` |

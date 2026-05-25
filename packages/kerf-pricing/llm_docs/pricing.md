@@ -67,27 +67,28 @@ Kerf has four pricing tiers. There are no feature gates — all features are MIT
 
 Credit pricing — **LLM tokens: COGS × 1.20** (20% markup, `CLOUD_PRICING_TOKEN_MARKUP_PCT=20`). Credits are consumed from the `cloud_user_balances.credits_usd` column.
 
-Credit pricing — **GPU render seconds: COGS × 1.35** (35% markup, lifted from 20% in the 2026-05-24 Koyeb migration to absorb per-second billing variance, storage egress and operational buffer). GPU rate table is grounded to live Koyeb hourly pricing — see `packages/kerf-render/src/kerf_render/pricing_meter.py` for the ladder (rtx_a4000 → h200) and ROADMAP §7.1 for the rationale.
+Credit pricing — **GPU render seconds: COGS × 1.35** (35% markup to absorb per-second billing variance and operational buffer). GPU rate table is grounded to live RunPod Serverless Secure Cloud pricing — see `packages/kerf-render/src/kerf_render/pricing_meter.py` for the ladder and ROADMAP §7 for the rationale.
 
-Storage: **$0.20 / GB / month** (`CLOUD_PRICING_STORAGE_USD_PER_GB_MONTH=0.20`). First 50 MB free (`CLOUD_PRICING_FREE_STORAGE_MB=50`).
+Storage: **$0.20 / GB / month** (`CLOUD_PRICING_STORAGE_USD_PER_GB_MONTH=0.20`). First 50 MB free (`CLOUD_PRICING_FREE_STORAGE_MB=50`). Storage COGS are Cloudflare R2 ($0.015/GB-month, zero egress).
 
 Currency: displayed in USD, settled in the configured settlement currency (default ZAR) using a live FX rate with a configurable spread (`CLOUD_FX_SPREAD_PCT=1.5`).
 
-### GPU render cost-of-goods (Koyeb-grounded, 2026-05-24)
+### GPU render cost-of-goods (RunPod Serverless Secure Cloud, 2026-05-26)
 
-| GPU SKU | VRAM | Koyeb $/hr (COGS) | User $/hr @ 35% markup |
+> **Note:** the RunPod GPU backend is **planned** (not yet built). The
+> rate table below is the target COGS once `RunPodGPUBackend` ships.
+> The pricing_meter.py ladder will be updated to match at that point.
+
+| GPU SKU | VRAM | RunPod $/hr (COGS) | User $/hr @ 35% markup |
 |---|---|---|---|
-| rtx_a4000 | 20 GB | 0.50 | 0.68 |
-| l4 (default) | 24 GB | 0.70 | 0.95 |
-| a6000 | 48 GB | 0.75 | 1.01 |
-| l40s | 48 GB | 1.20 | 1.62 |
-| a100 | 80 GB | 1.60 | 2.16 |
-| a100_sxm | 80 GB | 2.15 | 2.90 |
-| rtx_pro_6000 | 96 GB | 2.20 | 2.97 |
-| h100 | 80 GB | 2.50 | 3.38 |
-| h200 | 141 GB | 3.00 | 4.05 |
+| L4 (default) | 24 GB | 0.84 | 1.13 |
+| A100 80 GB | 80 GB | 1.39 | 1.88 |
+| H100 | 80 GB | 2.49 | 3.36 |
 
-User-facing rates are roughly 2-3× lower than the previous Modal-tier defaults (a10g $2.59/hr, a100 $6.05/hr at 20% markup). The 35% markup retains a healthy gross margin per render-second.
+RunPod Serverless Secure Cloud offers scale-to-zero with per-second
+billing and no monthly floor. User-facing rates are roughly 2-3× lower
+than previous Modal-tier defaults. The 35% markup retains a healthy
+gross margin per render-second.
 
 **Self-host.** None of these rates are charged when `KERF_RENDER_BILLING_DISABLED=1` (set in the standard self-host docker image). Self-hosters bring their own GPU and pay the cloud provider directly.
 

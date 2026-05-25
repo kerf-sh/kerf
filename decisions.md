@@ -664,3 +664,75 @@ for IF/WHEN this is revisited.
 - Roadmap: 34 done / 38 open.
 - STILL RUNNING (user said pause after here): GK-14 revolve_to_body (agent acfe205c), GK-37 surface Hausdorff deviation (agent ac6f81fa). Will integrate when they notify; NOT refilling/rescheduling.
 - Completed worktrees lock-held pending runtime reap; final sweep when GK-14/37 land.
+
+## ADR — Hosted stack: Fly + Neon + R2 + RunPod + Resend (2026-05-26)
+
+**Supersedes:** "ADR — Move hosted tier from Fly.io to Koyeb (2026-05-24)"
+above. That ADR's history is preserved; this entry records the reversal.
+
+**Context:** The 2026-05-24 ADR migrated `kerf.sh` from Fly.io to Koyeb
+to gain GPU support. Before the cutover completed (T-405 was pending DNS
+and secrets), Koyeb removed their free/pay-as-you-go Starter tier,
+imposing a ~$29/month minimum floor regardless of usage. This removed the
+primary cost advantage over Fly and introduced a fixed monthly cost that
+scales poorly at zero/low traffic.
+
+**Decision:** Reverse the Koyeb migration. Remain on **Fly.io** for the
+engine. Adopt **RunPod Serverless** for GPU renders, **Cloudflare R2**
+for blob storage, **Neon** for Postgres (unchanged), and **Resend** for
+email. Specific choices:
+
+- **Engine host:** Fly.io, apps `kerf-dev` / `kerf-prod`, primary region
+  `jnb` (Johannesburg). VM `shared-cpu-2x` / 2 GB. Workers in-process
+  (`KERF_INPROCESS_WORKERS=true`). Autoscaling via Fly machine auto
+  start/stop; scale-out via `flyctl scale count N`.
+- **GPU renders:** RunPod Serverless, Secure Cloud tier, scale-to-zero.
+  The `RunPodGPUBackend` is **planned** (dispatch seam exists in
+  `kerf-render/dispatch.py`; not yet built). Rate ladder: L4 $0.84/hr,
+  A100 80 GB $1.39/hr, H100 $2.49/hr.
+- **Object storage:** Cloudflare R2, zero egress, $0.015/GB-month.
+  `STORAGE_BACKEND=s3`, endpoint `https://<ACCOUNT_ID>.r2.cloudflarestorage.com`
+  (account-level host, no bucket suffix), `KERF_STORAGE_S3_REGION=auto`.
+- **Database:** Neon Postgres, region `eu-central-1` (nearest Neon
+  region to jnb; Neon has no Africa region). `DATABASE_URL` unchanged.
+- **Email:** Resend (`EMAIL_PROVIDER=resend`). SES is the planned
+  migration path — flip `EMAIL_PROVIDER=ses` and set `ses_*` vars, no
+  code change required.
+
+**Why Fly over Koyeb:**
+- No monthly floor — pay only for actual machine-seconds used; idle cost
+  is near-zero with `min_machines_running=1` + auto-stop.
+- `jnb` (Johannesburg) native region; Koyeb's closest region was `fra`
+  (Frankfurt, ~80 ms vs ~10 ms from JNB to Fly jnb).
+- VM sizes up to 16 vCPU / 128 GB vs Koyeb's Cloud Run-class 8/32 GB
+  ceiling — headroom for the OCCT + numpy/scipy stack.
+- Already ran the engine cleanly (original platform before the migration).
+- Koyeb's GPU removal was the original trigger; GPU workloads are now
+  on RunPod Serverless (cheaper, no monthly floor, scale-to-zero).
+
+**Why R2 over Tigris:**
+- Zero egress cost. Tigris charges standard egress rates from all hosts.
+  At the expected blob volume, R2 egress savings exceed the storage-price
+  difference ($0.015 vs $0.02/GB-month).
+- Cloudflare R2 is S3-compatible — the `STORAGE_BACKEND=s3` path is
+  unchanged.
+
+**Why RunPod over Koyeb GPU:**
+- No monthly floor; per-second billing; scale-to-zero is native.
+- Broader GPU ladder (L4 → H100 SXM) and cheaper than Koyeb GPU rates
+  at comparable SKUs.
+- Secure Cloud tier for production (dedicated, not spot).
+
+**Alternatives ruled out:**
+- **Stay on Koyeb with $29/mo floor:** unacceptable fixed cost at low
+  early-stage traffic; removes the pay-as-you-go property.
+- **Modal for GPU:** higher per-second rates than RunPod; cold-starts
+  measurable on the Blender Cycles workload.
+- **GCS / Tigris for blobs:** both have egress charges; R2 zero-egress
+  wins on COGS.
+
+**Affected:** `deployment/fly.md` (new canonical guide replacing
+`deployment/koyeb.md`), `deployment/README.md`, `deployment/tigris.md`,
+`ROADMAP.md` §7, `CHANGELOG.md`,
+`packages/kerf-pricing/llm_docs/pricing.md` (GPU rate table updated to
+RunPod), `decisions.md` (this entry).
