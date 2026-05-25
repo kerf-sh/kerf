@@ -4,7 +4,7 @@
 
 # Kerf
 
-**Chat-driven, multi-discipline CAD across 14 engineering domains — mechanical, electronics, BIM, aerospace, silicon, civil, and more — MIT open-core.**
+**Chat-driven, multi-discipline CAD across 22 engineering domains — mechanical, electronics, BIM, aerospace, silicon, civil, piping, mold, packaging, and more — MIT open-core.**
 
 JSCAD code · OpenCascade B-rep features · planegcs sketcher · tscircuit electronics · TechDraw drawings · assemblies · library + BOM · workshop sharing · workspace billing — with an LLM editing the source for you.
 
@@ -36,7 +36,7 @@ JSCAD code · OpenCascade B-rep features · planegcs sketcher · tscircuit elect
 
 ## What it is
 
-A single workspace for 14 engineering domains — mechanical, electronics / PCB / silicon, structural / FEA, thermal / fluid / HVAC, aerospace / marine / space, manufacturing / CAM, civil / geotechnical, dynamics / controls, electrical / PLC / firmware, tolerancing / QA, optics / acoustics, jewelry, BIM, and cost / materials / LCA — written entirely in code (JSCAD / `.feature` JSON / `.circuit.tsx` / `.sketch` / `.drawing`) so an LLM can read, diff, and edit it. Multi-domain projects via free-form tags. Browser-native. Local install or hosted at [kerf.sh](https://kerf.sh).
+A single workspace for 22 engineering domains — mechanical, electronics / PCB / silicon, structural / FEA, thermal / fluid / HVAC, aerospace / marine / space, manufacturing / CAM, civil / geotechnical / hydraulics, dynamics / controls, electrical / PLC / firmware, tolerancing / QA, optics / acoustics, jewelry, BIM, cost / materials / LCA, injection mold, piping / P&ID, packaging / dieline, and more — written entirely in code (JSCAD / `.feature` JSON / `.circuit.tsx` / `.sketch` / `.drawing`) so an LLM can read, diff, and edit it. Multi-domain projects via free-form tags. Browser-native. Local install or hosted at [kerf.sh](https://kerf.sh).
 
 ## Why
 
@@ -49,12 +49,14 @@ A single workspace for 14 engineering domains — mechanical, electronics / PCB 
 
 ## Coverage
 
-Kerf tracks feature parity against 14 professional CAD / CAE / EDA tools in [`docs/domain_depth.md`](./docs/domain_depth.md). That file is updated in the same PR as the corresponding code change and includes a checkbox-level audit of every shipped capability.
+Kerf tracks feature parity against 39 professional CAD / CAE / EDA tools in [`docs/domain_depth.md`](./docs/domain_depth.md). That file is updated in the same PR as the corresponding code change and includes a checkbox-level audit of every shipped capability.
 
 Recent additions (2026-05-24):
 
-- **Structural codes** — full Eurocode EC2/3/5/8 + AISC 360-22 (members + connections) + ACI 318-19 (flexure / shear / PM / punching shear / torsion) + NDS 2018 timber + ASCE 7-22 (LRFD+ASD, ELF, RSA SRSS+CQC, Newmark time-history).
+- **Structural codes** — full Eurocode EC2/3/5/8 + AISC 360-22 (members + connections) + ACI 318-19 (flexure / shear / PM / punching shear / torsion) + NDS 2018 timber + ASCE 7-22 (LRFD+ASD, ELF, RSA SRSS+CQC, Newmark time-history) + AISI S100-16 cold-formed steel (flexure / web crippling / compression) + TMS 402 masonry ASD (flexure / shear / axial).
+- **FEM dynamics** — linear buckling (geometric stiffness, iterative Krylov solver); harmonic / frequency-response analysis (direct and modal superposition); random-vibration PSD (Miles' equation + full spectral integration) — all in addition to the existing linear-static / modal / thermal / nonlinear solvers.
 - **Native FE** — MITC4 (Bathe-Dvorkin) plate/shell element with consistent mass + modal via inverse iteration; 2D/3D frame stiffness solver; geotech liquefaction (Seed-Idriss); multi-axial fatigue (Findley / SWT / Brown-Miller).
+- **Civil hydraulics** — LandXML 1.2 I/O (alignment / TIN / parcel round-trip); steady-state pressurised water-distribution network (Hazen-Williams + Darcy-Weisbach); gravity sewer / drainage (Manning full-pipe + partial-flow); storm-water routing (rational method + time-area hydrograph + detention pond routing).
 - **Machine elements** — ISO 6336 gear rating (Method B), ISO/TS 16281 bearing aISO life modification, planetary gearbox (3 Willis modes + compound).
 - **Thermo-fluid** — IAPWS-IF97 steam properties (Regions 1/2/4, validated to <1e-3 vs reference tables), Bell-Delaware shell-and-tube HX, transient pipe-network (MOC waterhammer), ASHRAE CLTD/RTS transient cooling loads.
 - **Electronics depth** — IBIS-AMI signal integrity (Bergeron channel + PRBS eye), AC PDN impedance sweep, AC load-flow (Newton-Raphson, 3+5-bus validated), protection coordination (IEC 60255 + IEEE C37.112), arc-flash (IEEE 1584), photonics fibre link budget.
@@ -116,11 +118,12 @@ pip install 'kerf[full]'          # everything
 ```sh
 git clone https://github.com/kerf-sh/kerf
 cd kerf
+pip install -e .[mech]   # or .[full] for everything; choose your persona
 npm install
-npm run dev          # vite :5173 + uvicorn :8080
+npm run dev              # vite :5173 + kerf-server :8080
 ```
 
-You'll need Python 3.11+, Node 22+, and Postgres 14+.
+You'll need Python 3.11+, Node 22+, and Postgres 14+. Run `npm run init` to generate `kerf.toml` from the example (add at least one LLM API key), then `npm run migrate` to initialise the database before starting the dev server.
 
 ## Build
 
@@ -168,7 +171,7 @@ Full schema: see [`kerf.example.toml`](./kerf.example.toml).
 
 ## Domains
 
-Kerf is a single chat-driven tool across 19 engineering disciplines. Each
+Kerf is a single chat-driven tool across 22 engineering disciplines. Each
 domain has a dedicated page (`/domains/<slug>`) with a hero illustration,
 file types, capability grid, and an LLM-prompt example.
 
@@ -190,9 +193,12 @@ file types, capability grid, and an LLM-prompt example.
 | **Marine** (`/domains/marine`) | `.feature` `.iges` | Hull hydrostatics, GZ stability, IMO criteria |
 | **Woodworking** (`/domains/woodworking`) | `.feature` `.dxf` | Joinery, cabinet designer, CNC router, cut list |
 | **Textiles** (`/domains/textiles`) | `.pat` `.dxf` `.svg` | Pattern blocks, grading, marker making, drape sim |
-| **Civil** (`/domains/civil`) | `.civ` `.ifc` `.dxf` | Horizontal/vertical alignment, corridor sweep, earthwork |
+| **Civil** (`/domains/civil`) | `.civ` `.ifc` `.dxf` `.landxml` | Horizontal/vertical alignment, corridor sweep, earthwork, LandXML I/O, water-distribution / sewer / storm hydraulics |
 | **Motion sim** (`/domains/motion`) | `.motion` `.urdf` | Multibody dynamics (RK4), 6 joint types, IK/FK |
-| **FEM + CFD** (`/domains/femcfd`) | `.fem` `.cfd` `.bdf` | Linear/modal/nonlinear FEM, k-ω SST CFD, OpenFOAM bridge |
+| **FEM + CFD** (`/domains/femcfd`) | `.fem` `.cfd` `.bdf` | Linear/modal/nonlinear FEM, buckling, harmonic, random-vibration PSD, k-ω SST CFD, OpenFOAM bridge |
+| **Mold** (`/domains/mold`) | `.feature` `.step` | Core/cavity split, parting surface, gate/runner design, cooling channels, moldflow |
+| **Piping / P&ID** (`/domains/piping`) | `.pid` `.isogen` | P&ID with ISO 10628 symbols, 3D isometric model, ASME B31.3 stress compliance, spool drawings |
+| **Packaging** (`/domains/packaging`) | `.dieline` `.dxf` | Parametric dielines, folding cartons, corrugated shippers, crease-rule DXF |
 
 ## What you can do today
 
@@ -205,7 +211,7 @@ file types, capability grid, and an LLM-prompt example.
 | TechDraw-flavored drawings (multi-sheet, dimensions, GD&T, hatching, leaders, balloons) | ✅ |
 | Electronics via tscircuit (TSX → schematic + PCB + 3D board viewers) | ✅ |
 | SPICE simulation (ngspice), RF s-parameters (scikit-rf), autoroute (FreeRouting) | ✅ |
-| FEM (FEniCSx + CalculiX) — linear-static + modal + thermal + deformed-shape overlay | ✅ |
+| FEM (FEniCSx + CalculiX) — linear-static + modal + thermal + linear buckling + harmonic response + random-vibration PSD + deformed-shape overlay | ✅ |
 | Topology optimization (FEniCSx SIMP + Gmsh mesh + NURBS STEP export) | ✅ |
 | CAM (OpenCAMlib) — 2.5D + 3D parallel/waterline + lathe; G-code posts | ✅ |
 | BIM (`.bim` text-DSL → IFC4 via IfcOpenShell; Revit-parity families/schedules/views/sheets/stairs/MEP/curtain wall) | ✅ |
