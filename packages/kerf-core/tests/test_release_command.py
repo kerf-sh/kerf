@@ -1,9 +1,8 @@
 """Regression: migration runner CLI must accept DATABASE_URL env fallback.
 
-Both the Koyeb `pre_deploy_command` (koyeb.yaml) and the Fly.io
-`[deploy] release_command` (fly.toml, self-host path) rely on the runner
-reading the DSN from the environment — neither can inject secrets directly
-into the command string. We moved migrations into these pre-deploy hooks to
+The Koyeb pre-deploy migration job (scripts/deploy-koyeb.sh) relies on the
+runner reading the DSN from the environment — it can't inject secrets directly
+into the command string. We moved migrations into this pre-deploy hook to
 fix the race where in-process workers booted and crashed on UndefinedTableError
 (fem_jobs / sim_jobs / step_tessellation_jobs / model_prices) before a
 post-deploy manual migration step could land.
@@ -68,9 +67,9 @@ def test_database_url_env_is_picked_up():
 
 
 def test_argv_dsn_still_works():
-    """Legacy `python -m runner <dsn>` path (used by scripts/deploy-fly.sh and
-    any self-host scripts that pass the DSN directly) must still work —
-    env is the alternative, not the replacement."""
+    """Explicit `python -m runner <dsn>` path (used by self-host scripts that
+    pass the DSN directly) must still work — env is the alternative, not the
+    replacement."""
     env = {"PATH": "/usr/bin:/bin"}  # no DATABASE_URL
     code, out, err = _run(env, ["postgres://x:x@127.0.0.1:1/x"])
     assert code != 0

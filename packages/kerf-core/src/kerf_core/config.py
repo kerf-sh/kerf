@@ -148,8 +148,8 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _s3_env_aliases(self):
-        # Storage secrets are provisioned/staged as KERF_STORAGE_S3_* (fly
-        # Tigris convention), but the code reads s3_* (env S3_*). Map the
+        # Storage secrets are provisioned/staged as KERF_STORAGE_S3_*
+        # (Tigris/S3 convention), but the code reads s3_* (env S3_*). Map the
         # former onto the latter when the canonical var is unset.
         _aliases = {
             "s3_bucket": "KERF_STORAGE_S3_BUCKET",

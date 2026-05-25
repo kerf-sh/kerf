@@ -1,11 +1,8 @@
 # Deploying Kerf on Koyeb
 
-Koyeb is the canonical hosted-tier provider for Kerf as of the 2026-05-24
-migration ([ROADMAP § 7.1](../ROADMAP.md#71--flyio--koyeb-p0-2026-05-24)).
-The previous Fly.io configuration ([`deployment/fly.md`](./fly.md)) is kept
-for self-hosters who only need CPU and prefer Fly; for the hosted tier
-we require GPU support (Cycles renders, future ML-accel workloads), which
-Fly no longer sells.
+Koyeb is the hosted-tier provider for Kerf (ROADMAP § 7.1). The hosted tier
+requires GPU support — Cycles renders and future ML-accel workloads — and
+Koyeb sells on-demand, scale-to-zero GPU instances billed by the second.
 
 This doc covers a fresh Koyeb install of the engine + workers. The
 self-host story (single Go binary, your own Postgres) is unchanged —
@@ -33,7 +30,7 @@ Create them once with `koyeb app create kerf-{dev,prod}`.
 
 ## Secrets
 
-Map 1:1 from the Fly secret list. Set each via:
+Set each via:
 
 ```sh
 koyeb secrets create <NAME> --value "$VALUE"
@@ -41,8 +38,8 @@ koyeb secrets create <NAME> --value "$VALUE"
 
 | Koyeb secret name | Purpose |
 | --- | --- |
-| `database-url`         | Postgres connection string (Neon or Koyeb-managed) |
-| `tigris-bucket`        | Tigris S3 bucket name (Tigris is external; works from any host) |
+| `database-url`         | Postgres connection string (Koyeb-managed Postgres) |
+| `tigris-bucket`        | S3 blob-store bucket name (external; Koyeb has no object storage) |
 | `tigris-access-key`    | Tigris access key |
 | `tigris-secret-key`    | Tigris secret key |
 | `paystack-secret-key`  | Paystack live secret key |
@@ -59,33 +56,33 @@ do not commit values.
 
 ## Storage
 
-We keep Tigris (`fly.storage.tigris.dev`) for blob storage. Tigris is an
-S3-compatible service that lived on Fly's marketplace but is reachable
-from anywhere — moving the engine to Koyeb does not require moving the
-data. If you want one less vendor, Cloudflare R2, Backblaze B2, or AWS
-S3 work — set `STORAGE_BACKEND=s3` and update the four `KERF_STORAGE_S3_*`
-env vars / secrets.
+**Koyeb has no object storage** — only compute and managed Postgres — so
+blobs live in an external S3-compatible service. We use Tigris
+(`fly.storage.tigris.dev`, an S3-compatible endpoint reachable from any
+host — the `fly.` in the hostname is Tigris's own domain, not a Fly
+dependency). Cloudflare R2, Backblaze B2, or AWS S3 work equally well —
+set `STORAGE_BACKEND=s3` and the four `KERF_STORAGE_S3_*` env vars /
+secrets. If you want zero association with the old `fly.storage.tigris.dev`
+domain, migrate the bucket to R2/B2 and re-point those vars.
 
-LFS objects continue to live on Bunny.net (see
-[`memory: git_lfs_substrate`](../docs/architecture/) for rationale).
-That is independent of the engine host and unchanged by this migration.
+LFS objects live on Bunny.net (see `memory: git_lfs_substrate` for
+rationale). That is independent of the engine host.
 
 ## Postgres
 
-**Use Neon — this is the recommended path for the T-405 cutover.**
-`DATABASE_URL` already points at Neon; the Koyeb engine reads it
-unchanged. No migration is required.
+**Use Koyeb's managed Postgres** — keeps the database on the same vendor
+and region as the engine (one bill, lowest round-trip latency). Koyeb
+Postgres is serverless, billed by the second, with a free 5 h/month tier
+and `$0.50/GB-month` storage. Provision and migrate with the runbook below.
 
-See [`decisions.md` — ADR Postgres host (2026-05-24)](../decisions.md)
-for the full rationale (Neon branching / PITR, zero cutover risk,
-reversibility).
+> **Lower-risk alternative — Neon.** If you'd rather avoid a data migration
+> at cutover, Neon works unchanged (`DATABASE_URL` just points at it) and
+> gives branching / PITR / instant rollback. See
+> [`decisions.md` — ADR Postgres host (2026-05-24)](../decisions.md) for
+> the original rationale. The runbook below is also how you'd move from
+> Neon to Koyeb PG later.
 
-### Optional future migration to Koyeb PG
-
-> **Not required for the T-405 cutover.** Follow this runbook only if
-> you later decide to consolidate onto Koyeb's serverless Postgres —
-> for example, to simplify vendor billing or reduce round-trip latency
-> to the engine.
+### Provision + migrate to Koyeb Postgres
 
 **Prerequisites:**
 
@@ -206,10 +203,10 @@ User-facing render prices apply a 35% markup over Koyeb COGS — see
 
 ## Pre-deploy migration
 
-The Fly `release_command` (run-migrations-then-deploy) is replaced by a
-one-off Koyeb job, dispatched by `scripts/deploy-koyeb.sh` before the
-new image takes traffic. Same effect, same guarantee that the new
-revision never boots against an un-migrated DB.
+Migrations run as a one-off Koyeb job (`koyeb job create … --wait`),
+dispatched by `scripts/deploy-koyeb.sh` before the new image takes traffic.
+This guarantees the new revision never boots against an un-migrated DB.
+The `test_koyeb_predeploy_migration.py` regression pins that ordering.
 
 ## Regions
 
@@ -229,7 +226,9 @@ log target of choice via Koyeb's log drains.
 1. Build + push image, deploy to `kerf-dev` via this script.
 2. Run e2e suite against the staging URL.
 3. When green, swap DNS for `kerf.sh` to the Koyeb endpoint.
-4. Keep the Fly app warm for 7 days as rollback. Then `flyctl apps destroy kerf-prod kerf-workers`.
+4. Watch metrics for 24–48 h. Koyeb retains the previous service revision,
+   so rollback is a one-command `koyeb service redeploy` (see below) — no
+   second provider to keep warm.
 
 ## Required production env vars
 
@@ -253,6 +252,14 @@ do not need it as a secret.
 
 ## Rolling back
 
-The Fly app and its secrets remain intact during the 7-day cutover
-window. To roll back, point DNS back at the Fly endpoint — no code
-change required (engine is portable Docker).
+Koyeb keeps prior service revisions. To roll back the engine to the
+previous good image:
+
+```sh
+koyeb service revisions kerf-prod/engine   # list revision IDs
+koyeb service redeploy kerf-prod/engine --revision <previous-id>
+```
+
+The engine is portable Docker, so a redeploy is a pure image swap — no
+code change. For a DB-level rollback after a Koyeb-PG migration, see the
+Postgres runbook's Step 6.

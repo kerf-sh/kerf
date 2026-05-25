@@ -111,10 +111,10 @@ async def run_migrations(database_url: str):
 
 
 if __name__ == "__main__":
-    # Accept the DSN either as argv[1] (legacy explicit path used by
-    # scripts/deploy-fly.sh's ssh-console invocation) or via $DATABASE_URL
-    # (used by Fly's `[deploy] release_command`, which can't substitute
-    # secrets into the command string itself — it has to read env).
+    # Accept the DSN either as argv[1] (explicit path, e.g. a self-host
+    # script that passes the DSN directly) or via $DATABASE_URL (used by the
+    # Koyeb pre-deploy migration job in scripts/deploy-koyeb.sh, which can't
+    # substitute secrets into the command string itself — it has to read env).
     dsn = sys.argv[1] if len(sys.argv) >= 2 else os.environ.get("DATABASE_URL")
     if not dsn:
         print(

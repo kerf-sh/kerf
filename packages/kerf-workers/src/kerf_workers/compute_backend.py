@@ -12,11 +12,11 @@ Concrete implementations
 
 Future proprietary extension point (DO NOT implement here)
 ----------------------------------------------------------
-A ``FlyGPUBackend`` that provisions on-demand Fly Machines for GPU rendering
-belongs in the **proprietary cloud/ tree**, NOT in this module.  It should
-subclass :class:`ComputeBackend` and live at::
+A ``KoyebGPUBackend`` that provisions on-demand Koyeb GPU instances for
+rendering belongs in the **proprietary cloud/ tree**, NOT in this module.
+It should subclass :class:`ComputeBackend` and live at::
 
-    cloud/kerf_cloud/compute/fly_gpu_backend.py
+    cloud/kerf_cloud/compute/koyeb_gpu_backend.py
 
 The interface contract is intentionally minimal so the swap is transparent to
 callers.  Typical usage::
@@ -25,14 +25,14 @@ callers.  Typical usage::
     backend = LocalSubprocessBackend(pool=pool)
 
     # Proprietary path (cloud/):
-    # from kerf_cloud.compute.fly_gpu_backend import FlyGPUBackend
-    # backend = FlyGPUBackend(fly_api_token=..., region=...)
+    # from kerf_cloud.compute.koyeb_gpu_backend import KoyebGPUBackend
+    # backend = KoyebGPUBackend(koyeb_api_token=..., region=...)
 
     job_id = await backend.submit("render", payload)
     status = await backend.poll(job_id)
 
 Open-core seam: nothing in this file may import the ``cloud`` package or any
-proprietary module.  The ``FlyGPUBackend`` integration point is documented
+proprietary module.  The ``KoyebGPUBackend`` integration point is documented
 here only as a docstring — no import, no reference at runtime.
 """
 
@@ -47,7 +47,7 @@ class ComputeBackend(ABC):
     """Abstract compute backend: submit a job, poll for its status/result.
 
     All methods are ``async`` so implementations can use asyncpg, aiohttp,
-    or the Fly Machines API without blocking the event loop.
+    or the Koyeb GPU-provider API without blocking the event loop.
     """
 
     @abstractmethod

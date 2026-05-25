@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # scripts/deploy-koyeb.sh — drive a Koyeb deployment.
 #
-# Mirrors scripts/deploy-fly.sh's flow but targets Koyeb.
-# (ROADMAP §7.1, T-404 — Fly→Koyeb migration.)
+# Builds + pushes the engine image, runs migrations as a one-off pre-deploy
+# job, then deploys the engine (and optionally workers) service. (ROADMAP §7.1.)
 #
 # Usage:
 #   ./scripts/deploy-koyeb.sh                   # defaults: --env prod
@@ -68,8 +68,8 @@ run docker build --platform linux/amd64 \
 run docker push "${IMAGE}"
 
 # 3. Run the migration release step in a one-off Koyeb job. This must
-#    finish before traffic shifts to the new image, same as fly.toml's
-#    release_command.
+#    finish before traffic shifts to the new image, so the new revision
+#    never boots against an un-migrated schema.
 run koyeb job create kerf-migrate-${IMAGE_TAG} \
     --app "${APP}" \
     --docker "${IMAGE}" \

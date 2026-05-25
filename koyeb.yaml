@@ -1,12 +1,11 @@
-# Koyeb service definition — replaces fly.toml after the Fly→Koyeb migration
-# (ROADMAP §7.1, T-403). One service per env (kerf-dev / kerf-prod).
+# Koyeb service definition — the hosted-tier deploy config (ROADMAP §7.1,
+# T-403). One service per env (kerf-dev / kerf-prod).
 #
 # Apply with: koyeb-cli service deploy --file koyeb.yaml --app kerf-prod
 # (CLI flag equivalents live in scripts/deploy-koyeb.sh.)
 #
-# This file mirrors fly.toml 1:1: same Dockerfile, same env-var set, same
-# Tigris S3 bindings (Tigris is external to both Fly and Koyeb, so the
-# storage layer keeps working unchanged), same in-process worker model
+# Single Docker image, S3-compatible blob storage (Tigris is external, so
+# the storage layer is host-independent), in-process worker model
 # (KERF_INPROCESS_WORKERS=true). To split workers onto their own service
 # later, see koyeb.worker.yaml.
 
@@ -18,20 +17,19 @@ services:
   - name: engine
     type: WEB
     regions:
-      - fra        # Frankfurt — primary, matches current Fly setup
+      - fra        # Frankfurt — primary region
       # Add more regions when traffic justifies — Koyeb pricing is per
       # region-replica, so this is a deliberate cost knob, not autoscale.
 
     instance_types:
-      - type: large   # 4 vCPU, 4 GB RAM, 40 GB SSD — $42.85/mo, closest
-                      # match to current Fly performance-2x.
+      - type: large   # 4 vCPU, 4 GB RAM, 40 GB SSD — $42.85/mo.
 
     scalings:
       - min: 1
         max: 4
         targets:
           - concurrent_requests:
-              value: 200    # matches current fly.toml soft_limit
+              value: 200    # per-replica concurrent-request soft limit
           # Add CPU/memory targets here later if we want belt-and-braces.
 
     docker:
@@ -99,7 +97,7 @@ services:
         secret: jwt-secret
 
 # Pre-deploy migration: Koyeb runs `pre_deploy_command` once before the
-# new revision takes traffic, same role as fly.toml's release_command.
+# new revision takes traffic, so schema changes land before any worker boots.
 # Set via CLI flag when deploying:
 #   --pre-deploy-command "python -m kerf_core.db.migrations.runner"
 # (Pre-deploy isn't a top-level YAML key in the v1 schema; it's a
