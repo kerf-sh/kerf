@@ -368,3 +368,139 @@ async def run_piping_export_svg(args: dict[str, Any], ctx: "ProjectCtx") -> str:
         return ok_payload(payload)
     except Exception as exc:
         return err_payload(str(exc), "PIPING_SVG_ERROR")
+
+
+# ---------------------------------------------------------------------------
+# piping_pipe_spec_check  (ASME B31.3)
+# ---------------------------------------------------------------------------
+
+piping_pipe_spec_check_spec = ToolSpec(
+    name="piping_pipe_spec_check",
+    description=(
+        "Check whether a pipe (nominal diameter + schedule) complies with an "
+        "ASME B31.3 pipe class specification.  "
+        "Validates: (1) DN in permitted list, (2) schedule vs spec-driven selection, "
+        "(3) actual wall ≥ Barlow/B31.3 minimum, (4) design pressure ≤ class limit, "
+        "(5) design temperature ≤ material maximum.  "
+        "Returns: compliant (bool), violations, warnings, actual_wall_mm, "
+        "min_required_wall_mm.  "
+        "Material grades: A106-B (carbon steel), A312-316L/304L (stainless), "
+        "A333-6 (low-temp), API5L-X42/X52/X65 (line pipe)."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "dn": {
+                "type": "integer",
+                "description": "Nominal pipe diameter (DN, mm). E.g. 50, 100, 150, 200, 250, 300.",
+            },
+            "schedule": {
+                "type": "string",
+                "description": "Pipe schedule code. E.g. '40', '80', 'STD', 'XS', '160'.",
+            },
+            "design_pressure_barg": {
+                "type": "number",
+                "description": "Design gauge pressure (barg).",
+            },
+            "design_temp_c": {
+                "type": "number",
+                "description": "Design temperature (°C).",
+            },
+            "material_spec": {
+                "type": "string",
+                "enum": ["A106", "A53", "A312", "A333", "API5L"],
+                "description": "ASME/API material specification. Default 'A106'.",
+            },
+            "material_grade": {
+                "type": "string",
+                "description": "Material grade (e.g. 'B', '316L', '304L', '6', 'X52'). Default 'B'.",
+            },
+            "corrosion_allowance_mm": {
+                "type": "number",
+                "description": "Corrosion allowance to add to minimum wall (mm). Default 1.5.",
+            },
+            "class_name": {
+                "type": "string",
+                "description": "Pipe class identifier for the report. Default 'CS-A'.",
+            },
+            "class_pressure_barg": {
+                "type": "number",
+                "description": "Maximum pressure this pipe class is rated for (barg). Default = design_pressure_barg.",
+            },
+            "permitted_dn": {
+                "type": "array",
+                "items": {"type": "integer"},
+                "description": "Permitted DN sizes for this class. Empty = no restriction.",
+            },
+            "default_schedule": {
+                "type": "string",
+                "description": "Default schedule for this pipe class. Default '40'.",
+            },
+        },
+        "required": ["dn", "schedule", "design_pressure_barg", "design_temp_c"],
+    },
+)
+
+
+async def run_piping_pipe_spec_check(args: dict[str, Any], ctx: "ProjectCtx") -> str:
+    try:
+        from kerf_piping.pipe_spec import (
+            MaterialSpec,
+            PipeSpec,
+            check_spec_compliance,
+            ALLOWABLE_STRESS_MPA,
+        )
+
+        dn = int(args["dn"])
+        schedule = str(args["schedule"]).upper()
+        design_pressure_barg = float(args["design_pressure_barg"])
+        design_temp_c = float(args["design_temp_c"])
+        mat_spec = str(args.get("material_spec", "A106")).upper()
+        mat_grade = str(args.get("material_grade", "B")).upper()
+        ca_mm = float(args.get("corrosion_allowance_mm", 1.5))
+        class_name = str(args.get("class_name", "CS-A"))
+        class_pressure = float(args.get("class_pressure_barg", design_pressure_barg))
+        permitted_dn = [int(d) for d in args.get("permitted_dn", [])]
+        default_sched = str(args.get("default_schedule", "40")).upper()
+
+        # Build MaterialSpec
+        try:
+            material = MaterialSpec.from_designation(
+                spec=mat_spec,
+                grade=mat_grade,
+                corrosion_allowance_mm=ca_mm,
+            )
+        except ValueError as exc:
+            return err_payload(str(exc), "BAD_MATERIAL")
+
+        # Build PipeSpec
+        spec = PipeSpec(
+            name=class_name,
+            material=material,
+            design_pressure_barg=class_pressure,
+            design_temp_c=design_temp_c,
+            permitted_dn=permitted_dn,
+            default_schedule=default_sched,
+        )
+
+        # Run compliance check
+        result = check_spec_compliance(
+            dn=dn,
+            schedule=schedule,
+            design_pressure_barg=design_pressure_barg,
+            design_temp_c=design_temp_c,
+            spec=spec,
+        )
+
+        payload: dict[str, Any] = result.as_dict()
+        payload["ok"] = True
+        payload["dn"] = dn
+        payload["schedule"] = schedule
+        payload["material_spec"] = mat_spec
+        payload["material_grade"] = mat_grade
+        payload["class_name"] = class_name
+
+        return ok_payload(payload)
+
+    except Exception as exc:
+        return err_payload(str(exc), "PIPING_SPEC_ERROR")
