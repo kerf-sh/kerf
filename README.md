@@ -65,7 +65,7 @@ Recent additions (2026-05-24):
 - **Optics / acoustics** — Gaussian beam (M², complex-q, ISO 11146-1), non-sequential ray tracing with Fresnel split (stray/ghost), wave acoustics (image-source IR + Schroeder RT60 + SEA), Seidel aberrations (corrected S5).
 - **Silicon** — analog PVT corner simulation (60 corners × Monte-Carlo mismatch, Pelgrom σ matched), full RTL-to-GDS flow (Yosys + OpenROAD + Magic/KLayout/STA).
 - **Materials + LCA** — Ashby database (~200 materials, Pareto frontier multi-objective selection), full ISO 14040/44 LCA (cradle/use/transport/EoL: GWP/AP/EP/HTP/water/PM2.5 + uncertainty).
-- **Compare matrices** — 14 of 30 reference CADs now have grounded D1-D14 feature matrices (741 rows total) sourced to vendor documentation: Fusion 360, SolidWorks, Onshape, FreeCAD, Rhino, KiCad, CATIA, Creo, NX, Inventor, AutoCAD, Altium, Revit, Blender.
+- **Compare matrices** — 39 reference CADs have grounded D1-D14 feature matrices (1,200+ rows) sourced to vendor documentation, every claim with a source URL: the MCAD/surfacing tools (Fusion 360, SolidWorks, Onshape, FreeCAD, Rhino, CATIA, Creo, NX, Inventor, AutoCAD), EDA (KiCad, Altium, Eagle, EasyEDA), BIM (Revit, ArchiCAD, Vectorworks, Civil 3D), DCC/SubD (Blender, ZBrush, 3ds Max, SketchUp), and domain specialists (ArtiosCAD, CLO3D, Mozaik, AVEVA E3D, Cimatron, MSC Adams, Zemax, 3Shape, Fibersim, Maxsurf, OpenFOAM, CalculiX, GMAT, OpenRocket, OpenROAD, OpenPLC, MatrixGold).
 
 ## Install
 
