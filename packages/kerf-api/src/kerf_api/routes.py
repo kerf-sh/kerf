@@ -5546,10 +5546,13 @@ async def upload_project_thumbnail(
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"decode/resize: {str(e)}")
 
         key = f"projects/{pid}/thumbnail.jpg"
+        # Thumbnails stay in the PRIVATE bucket — they're served via the
+        # auth-gated streaming endpoint (/api/projects/:id/thumbnail), which
+        # enforces project visibility. Returning that relative URL (not a
+        # public CDN URL) keeps private-project thumbnails confidential.
         await storage.put(key, io.BytesIO(jpg_bytes), "image/jpeg", len(jpg_bytes))
 
         now = datetime.utcnow()
-        public_url = storage.public_url(key, now)
 
         row = await conn.fetchrow(
             """
@@ -5565,7 +5568,7 @@ async def upload_project_thumbnail(
 
         return {
             "id": pid,
-            "thumbnail_url": public_url,
+            "thumbnail_url": f"/api/projects/{pid}/thumbnail",
             "updated_at": row["thumbnail_updated_at"].isoformat() if row else now.isoformat(),
         }
 
@@ -5854,7 +5857,9 @@ async def upload_avatar(
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"decode/resize: {str(e)}")
 
         key = f"users/{uid}/avatar.jpg"
-        await storage.put(key, io.BytesIO(jpg_bytes), "image/jpeg", len(jpg_bytes))
+        # Avatars render as a direct <img src> (no auth-gated endpoint), so
+        # they go to the public CDN bucket. Everything else stays private.
+        await storage.put_public(key, io.BytesIO(jpg_bytes), "image/jpeg", len(jpg_bytes))
 
         now = datetime.utcnow()
         public_url = storage.public_url(key, now)
@@ -5884,7 +5889,7 @@ async def upload_avatar(
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="user not found")
 
         if row["prev"]["avatar_storage_key"] and row["prev"]["avatar_storage_key"] != key:
-            await storage.delete(row["prev"]["avatar_storage_key"])
+            await storage.delete_public(row["prev"]["avatar_storage_key"])
 
         return {
             "id": str(row["id"]),

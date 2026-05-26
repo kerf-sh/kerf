@@ -29,6 +29,21 @@ class Storage(ABC):
     @abstractmethod
     def public_url(self, key: str, updated_at: datetime | None = None) -> str: ...
 
+    async def put_public(
+        self, key: str, body: IO[bytes], content_type: str, size: int
+    ) -> PutResult:
+        """Write a world-readable asset (e.g. avatars).
+
+        Backends with a dedicated public bucket override this to target it;
+        the default delegates to ``put`` so local / single-bucket setups work
+        unchanged.
+        """
+        return await self.put(key, body, content_type, size)
+
+    async def delete_public(self, key: str) -> None:
+        """Delete an object written via ``put_public``. Defaults to ``delete``."""
+        await self.delete(key)
+
     @abstractmethod
     async def put_chunk(
         self,

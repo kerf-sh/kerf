@@ -52,6 +52,11 @@ def _wire_storage(config):
         s3_endpoint=config.s3_endpoint,
         s3_public_url_base=config.s3_public_url_base,
         cdn_base_url=config.cdn_base_url,
+        cdn_s3_bucket=config.cdn_s3_bucket,
+        cdn_s3_region=config.cdn_s3_region,
+        cdn_s3_access_key_id=config.cdn_s3_access_key_id,
+        cdn_s3_secret_access_key=config.cdn_s3_secret_access_key,
+        cdn_s3_endpoint=config.cdn_s3_endpoint,
         local_storage_path=config.local_storage_path,
     )
 

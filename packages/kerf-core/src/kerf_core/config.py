@@ -41,6 +41,16 @@ class Settings(BaseSettings):
     s3_public_url_base: str = ""
     cdn_base_url: str = ""
 
+    # Public CDN bucket — a SEPARATE S3/R2 bucket (own credentials) that holds
+    # only world-readable assets (user avatars). The private bucket above is
+    # never made public; avatars live here because they render as direct
+    # <img src>. When unset, public assets fall back to the private bucket.
+    cdn_s3_bucket: str = ""
+    cdn_s3_region: str = ""
+    cdn_s3_access_key_id: str = ""
+    cdn_s3_secret_access_key: str = ""
+    cdn_s3_endpoint: str = ""
+
     usage_enabled: bool = False
     max_threads_per_project: int = 50
     file_revisions_max: int = 200
@@ -170,6 +180,11 @@ class Settings(BaseSettings):
             "s3_access_key_id": "KERF_STORAGE_S3_ACCESS_KEY",
             "s3_secret_access_key": "KERF_STORAGE_S3_SECRET_KEY",
             "s3_endpoint": "KERF_STORAGE_S3_ENDPOINT",
+            "cdn_s3_bucket": "KERF_STORAGE_CDN_BUCKET",
+            "cdn_s3_region": "KERF_STORAGE_CDN_REGION",
+            "cdn_s3_access_key_id": "KERF_STORAGE_CDN_ACCESS_KEY",
+            "cdn_s3_secret_access_key": "KERF_STORAGE_CDN_SECRET_KEY",
+            "cdn_s3_endpoint": "KERF_STORAGE_CDN_ENDPOINT",
         }
         for field, env_name in _aliases.items():
             if not getattr(self, field):

@@ -31,11 +31,38 @@ class S3Storage(Storage):
         endpoint: str = "",
         public_url_base: str = "",
         cdn_url: str = "",
+        public_bucket: str = "",
+        public_region: str = "",
+        public_access_key_id: str = "",
+        public_secret_access_key: str = "",
+        public_endpoint: str = "",
     ):
         self.bucket = bucket
         self.public_url_base = public_url_base.rstrip("/") if public_url_base else ""
         self.cdn_url = cdn_url.rstrip("/") if cdn_url else ""
 
+        self.client = self._build_client(
+            region, access_key_id, secret_access_key, endpoint
+        )
+
+        # Optional dedicated public bucket (own credentials). Holds only
+        # world-readable assets served via the CDN/public URL. When unset,
+        # public writes fall back to the private bucket + client.
+        self.public_bucket = public_bucket
+        if public_bucket:
+            self.public_client = self._build_client(
+                public_region or region,
+                public_access_key_id,
+                public_secret_access_key,
+                public_endpoint or endpoint,
+            )
+        else:
+            self.public_client = self.client
+
+        self._multipart: dict[str, dict] = {}
+
+    @staticmethod
+    def _build_client(region, access_key_id, secret_access_key, endpoint):
         client_kwargs = {"region_name": region} if region else {}
 
         if access_key_id and secret_access_key:
@@ -47,8 +74,7 @@ class S3Storage(Storage):
             config = boto3.session.Config(s3={"addressing_style": "path"})
             client_kwargs["config"] = config
 
-        self.client = boto3.client("s3", **client_kwargs)
-        self._multipart: dict[str, dict] = {}
+        return boto3.client("s3", **client_kwargs)
 
     def _temp_key(self, upload_key: str) -> str:
         return f"{CHUNK_DIR}/{upload_key}"
@@ -83,6 +109,35 @@ class S3Storage(Storage):
     async def delete(self, key: str) -> None:
         await _run_sync(self.client.delete_object, Bucket=self.bucket, Key=key)
 
+    async def put_public(
+        self, key: str, body: IO[bytes], content_type: str, size: int
+    ) -> PutResult:
+        if not self.public_bucket:
+            return await self.put(key, body, content_type, size)
+
+        if not content_type:
+            content_type = self._guess_content_type(key)
+        content = await _run_sync(body.read) if hasattr(body, "read") else body
+
+        put_kwargs = dict(
+            Bucket=self.public_bucket,
+            Key=key,
+            Body=content,
+            ContentType=content_type,
+        )
+        if size > 0:
+            put_kwargs["ContentLength"] = size
+
+        await _run_sync(self.public_client.put_object, **put_kwargs)
+        return PutResult(key=key, size=size, content_type=content_type)
+
+    async def delete_public(self, key: str) -> None:
+        if not self.public_bucket:
+            return await self.delete(key)
+        await _run_sync(
+            self.public_client.delete_object, Bucket=self.public_bucket, Key=key
+        )
+
     async def signed_url(self, key: str, ttl_seconds: int = 900) -> str:
         if ttl_seconds <= 0:
             ttl_seconds = 900
@@ -100,7 +155,8 @@ class S3Storage(Storage):
         elif self.public_url_base:
             base = f"{self.public_url_base}/{self._escape_key(key)}"
         else:
-            base = f"https://{self.bucket}.s3.amazonaws.com/{self._escape_key(key)}"
+            host_bucket = self.public_bucket or self.bucket
+            base = f"https://{host_bucket}.s3.amazonaws.com/{self._escape_key(key)}"
 
         if updated_at:
             base += f"?v={int(updated_at.timestamp())}"
